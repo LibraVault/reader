@@ -1,0 +1,33 @@
+# Gradle
+.gradle/
+build/
+**/build/
+local.properties
+*.hprof
+.caches/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.externalNativeBuild/
+.cxx/
+*.DS_Store
+
+# Keystore — NEVER commit signing keys
+*.jks
+*.keystore
+keystore.properties
+
+# Generated
+app/src/main/assets/index.android.bundle
+
+# Kotlin / Java
+*.class
+out/
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Libravault backs up user preferences and reading progress only.
+  It never backs up vault URIs, as those are device-specific SAF grants.
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="libravault_prefs.xml" />
+    <exclude domain="database"   path="libravault.db-wal" />
+    <exclude domain="database"   path="libravault.db-shm" />
+</full-backup-content>

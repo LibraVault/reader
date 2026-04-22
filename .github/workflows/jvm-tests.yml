@@ -1,0 +1,62 @@
+name: JVM Tests
+
+# Runs on every push and every PR — fast, no emulator needed (~2-3 min)
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+concurrency:
+  group: jvm-${{ github.ref }}
+  cancel-in-progress: true  # Cancel superseded runs on the same branch
+
+jobs:
+  test:
+    name: Unit & Integration Tests (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Run all JVM-based tests across all modules:
+      #   - Domain use case tests (JUnit 5 + MockK + Turbine)
+      #   - Repository tests (JUnit 5 + Robolectric)
+      #   - ViewModel tests (JUnit 5 + MockK + Turbine)
+      - name: Run JVM tests
+        run: ./gradlew testDebugUnitTest --continue
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-test-results
+          path: "**/build/reports/tests/"
+          retention-days: 7
+
+      - name: Run Lint
+        run: ./gradlew lint
+
+      - name: Upload lint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: "**/build/reports/lint-results-*.html"
+          retention-days: 7
