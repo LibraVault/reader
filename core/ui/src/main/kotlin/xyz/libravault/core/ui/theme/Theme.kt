@@ -52,10 +52,11 @@ private val LightColorScheme = lightColorScheme(
 fun LibravaultTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     readingTheme: ReadingTheme = ReadingTheme.DARK,
+    useDynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         }

@@ -61,6 +61,7 @@ import xyz.libravault.core.domain.model.MediaFormat
 @Composable
 fun LibraryScreen(
     onItemClick: (LibraryItem) -> Unit,
+    onSettingsClick: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -94,6 +95,12 @@ fun LibraryScreen(
                     actions = {
                         IconButton(onClick = { searchActive = true }) {
                             Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                        IconButton(onClick = onSettingsClick) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.Settings,
+                                contentDescription = "Settings",
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
