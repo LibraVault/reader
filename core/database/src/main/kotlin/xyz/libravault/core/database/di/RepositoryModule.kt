@@ -10,6 +10,7 @@ import xyz.libravault.core.database.repository.LibraryRepositoryImpl
 import xyz.libravault.core.database.repository.ProgressRepositoryImpl
 import xyz.libravault.core.database.repository.VaultRepositoryImpl
 import xyz.libravault.core.domain.repository.BookmarkRepository
+import xyz.libravault.core.domain.repository.HighlightRepository
 import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.domain.repository.ProgressRepository
 import xyz.libravault.core.domain.repository.VaultRepository

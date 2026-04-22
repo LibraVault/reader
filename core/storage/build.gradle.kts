@@ -9,4 +9,8 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:logger"))
     implementation(libs.coroutines.android)
+
+    testImplementation(libs.bundles.testing.jvm)
+    testImplementation(libs.junit5.engine)
+    testRuntimeOnly(libs.junit5.engine)
 }

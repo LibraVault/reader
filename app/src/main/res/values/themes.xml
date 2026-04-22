@@ -2,7 +2,7 @@
 <resources>
     <!-- Base theme — Compose handles all real theming via LibravaultTheme.
          This stub is required for the Activity window before Compose renders. -->
-    <style name="Theme.Libravault" parent="android:Theme.Material.NoTitleBar">
+    <style name="Theme.Libravault" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

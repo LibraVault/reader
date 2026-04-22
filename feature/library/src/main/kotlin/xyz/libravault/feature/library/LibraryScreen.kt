@@ -23,6 +23,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -98,7 +102,7 @@ fun LibraryScreen(
                         }
                         IconButton(onClick = onSettingsClick) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Default.Settings,
+                                imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
                             )
                         }

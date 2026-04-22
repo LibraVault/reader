@@ -9,6 +9,9 @@ android {
 dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    // Use cases are injected by Hilt — pull in javax.inject only
     implementation("javax.inject:javax.inject:1")
+
+    testImplementation(libs.bundles.testing.jvm)
+    testImplementation(libs.junit5.engine)
+    testRuntimeOnly(libs.junit5.engine)
 }
