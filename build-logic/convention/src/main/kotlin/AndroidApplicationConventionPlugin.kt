@@ -18,8 +18,6 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 isCoreLibraryDesugaringEnabled = true
             }
         }
-        target.dependencies {
-            add("coreLibraryDesugaring", "com.android.tools:desugar_jdk_libs:2.0.4")
-        }
+        target.dependencies.add("coreLibraryDesugaring", "com.android.tools:desugar_jdk_libs:2.0.4")
     }
 }
