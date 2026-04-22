@@ -3,10 +3,12 @@ package xyz.libravault.core.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import xyz.libravault.core.database.dao.BookmarkDao
+import xyz.libravault.core.database.dao.HighlightDao
 import xyz.libravault.core.database.dao.LibraryItemDao
 import xyz.libravault.core.database.dao.ProgressDao
 import xyz.libravault.core.database.dao.VaultFolderDao
 import xyz.libravault.core.database.entity.BookmarkEntity
+import xyz.libravault.core.database.entity.HighlightEntity
 import xyz.libravault.core.database.entity.LibraryItemEntity
 import xyz.libravault.core.database.entity.ListeningProgressEntity
 import xyz.libravault.core.database.entity.ReadingProgressEntity
