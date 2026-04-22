@@ -10,6 +10,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -239,7 +241,7 @@ private fun PdfPaginatedView(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .androidx.compose.foundation.layout.padding(bottom = 12.dp),
+                .padding(bottom = 12.dp),
         )
     }
 }
@@ -270,7 +272,7 @@ private fun PdfPageImage(
             modifier    = modifier,
         )
     } ?: Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(modifier = androidx.compose.ui.Modifier.androidx.compose.foundation.layout.size(32.dp))
+        CircularProgressIndicator(modifier = Modifier.size(32.dp))
     }
 }
 

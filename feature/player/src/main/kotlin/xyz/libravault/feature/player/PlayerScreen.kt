@@ -1,6 +1,7 @@
 package xyz.libravault.feature.player
 
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -156,7 +157,7 @@ fun PlayerScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .androidx.compose.foundation.background(
+                                        .background(
                                             MaterialTheme.colorScheme.surfaceVariant
                                         ),
                                     contentAlignment = Alignment.Center,

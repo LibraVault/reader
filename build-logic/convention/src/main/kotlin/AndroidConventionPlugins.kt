@@ -39,8 +39,8 @@ class AndroidHiltConventionPlugin : Plugin<Project> {
             apply("com.google.devtools.ksp")
         }
         dependencies {
-            add("implementation", "com.google.dagger:hilt-android:2.51.1")
-            add("ksp", "com.google.dagger:hilt-android-compiler:2.51.1")
+            add("implementation", "com.google.dagger:hilt-android:2.52")
+            add("ksp", "com.google.dagger:hilt-android-compiler:2.52")
         }
     }
 }

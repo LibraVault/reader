@@ -9,7 +9,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import dagger.hilt.android.AndroidEntryPoint
-import xyz.libravault.app.MainActivity
 import javax.inject.Inject
 
 /**
@@ -35,16 +34,18 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val sessionActivity = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val sessionActivity = packageManager
+            .getLaunchIntentForPackage(packageName)
+            ?.let { intent ->
+                PendingIntent.getActivity(
+                    this, 0, intent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+            }
 
-        mediaSession = MediaSession.Builder(this, player)
-            .setSessionActivity(sessionActivity)
-            .build()
+        val builder = MediaSession.Builder(this, player)
+        sessionActivity?.let { builder.setSessionActivity(it) }
+        mediaSession = builder.build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =

@@ -1,7 +1,6 @@
 package xyz.libravault.feature.reader
 
 import android.net.Uri
-import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +18,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import xyz.libravault.core.domain.model.MediaFormat
@@ -85,7 +85,7 @@ fun ReaderScreen(
                     Box(Modifier.fillMaxSize().padding(innerPadding)) {
                         when (item.format) {
                             MediaFormat.EPUB -> {
-                                val activity = LocalActivity.current as? FragmentActivity
+                                val activity = LocalContext.current as? FragmentActivity
                                 if (activity != null) {
                                     EpubReaderScreen(
                                         fileUri          = uri,
