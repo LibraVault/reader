@@ -18,12 +18,14 @@ kotlin {
 }
 
 dependencies {
-    compileOnly(libs.plugins.android.application.get().let { "${it.pluginId}:${it.version}" })
-    compileOnly(libs.plugins.android.library.get().let    { "${it.pluginId}:${it.version}" })
-    compileOnly(libs.plugins.kotlin.android.get().let     { "${it.pluginId}:${it.version}" })
-    compileOnly(libs.plugins.compose.compiler.get().let   { "${it.pluginId}:${it.version}" })
-    compileOnly(libs.plugins.ksp.get().let                { "${it.pluginId}:${it.version}" })
-    compileOnly(libs.plugins.hilt.get().let               { "${it.pluginId}:${it.version}" })
+    // Plugin artifacts needed at convention plugin compile time.
+    // Hardcoded because the root version catalog is not available to
+    // included builds in Gradle 9.x without re-declaring it (which
+    // triggers a duplicate-from() error). Keep in sync with libs.versions.toml.
+    compileOnly("com.android.tools.build:gradle:8.5.0")
+    compileOnly("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
+    compileOnly("com.google.devtools.ksp:symbol-processing-gradle-plugin:2.0.0-1.0.21")
+    compileOnly("com.google.dagger:hilt-android-gradle-plugin:2.51.1")
 }
 
 gradlePlugin {

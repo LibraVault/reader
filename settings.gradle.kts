@@ -18,12 +18,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://s01.oss.sonatype.org/content/repositories/snapshots/") // Readium snapshots
-    }
-    versionCatalogs {
-        create("libs") {
-            from(files("gradle/libs.versions.toml"))
-        }
+        maven("https://s01.oss.sonatype.org/content/repositories/snapshots/")
     }
 }
 

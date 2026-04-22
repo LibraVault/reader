@@ -25,7 +25,6 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
             apply("libravault.android.hilt")
             apply("libravault.android.compose")
         }
-        val libs = extensions.getByType<org.gradle.api.artifacts.dsl.DependencyHandler>()
         dependencies {
             add("implementation", project(":core:domain"))
             add("implementation", project(":core:ui"))
