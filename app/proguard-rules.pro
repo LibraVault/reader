@@ -1,22 +1,46 @@
-# Libravault ProGuard rules
+# Libravault ProGuard / R8 rules
+# Applied to release builds only.
 
-# Keep Room entity classes
--keep class xyz.libravault.core.database.entity.** { *; }
-
-# Keep Hilt generated components
--keep class dagger.hilt.** { *; }
--keep class javax.inject.** { *; }
-
-# Keep Kotlin coroutines
+# ── Kotlin ────────────────────────────────────────────────────────────────────
 -keepclassmembernames class kotlinx.** { volatile <fields>; }
+-keepattributes *Annotation*, InnerClasses, Signature, EnclosingMethod
 
-# Keep Readium (M2 — uncomment when added)
-# -keep class org.readium.** { *; }
-
-# Keep Media3 service (M3 — uncomment when added)
-# -keep class androidx.media3.** { *; }
-
-# Kotlin serialization
--keepattributes *Annotation*, InnerClasses
+# ── Kotlinx Serialization ─────────────────────────────────────────────────────
 -dontnote kotlinx.serialization.AnnotationsKt
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
+-keepclasseswithmembers class **$$serializer { *; }
+
+# ── Room entities ─────────────────────────────────────────────────────────────
+-keep class xyz.libravault.core.database.entity.** { *; }
+
+# ── Hilt ──────────────────────────────────────────────────────────────────────
+-keep class dagger.hilt.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends dagger.hilt.android.internal.managers.** { *; }
+
+# ── Readium ───────────────────────────────────────────────────────────────────
+-keep class org.readium.** { *; }
+-dontwarn org.readium.**
+
+# ── Media3 / ExoPlayer ────────────────────────────────────────────────────────
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+
+# ── Coil 3 ────────────────────────────────────────────────────────────────────
+-keep class coil3.** { *; }
+-dontwarn coil3.**
+
+# ── AndroidX PDF Viewer ───────────────────────────────────────────────────────
+-keep class androidx.pdf.** { *; }
+-dontwarn androidx.pdf.**
+
+# ── Guava (MediaController) ───────────────────────────────────────────────────
+-dontwarn com.google.common.**
+-keep class com.google.common.util.concurrent.** { *; }
+
+# ── Suppress known-safe warnings ──────────────────────────────────────────────
+-dontwarn org.bouncycastle.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
+-dontwarn okhttp3.**
+-dontwarn okio.**

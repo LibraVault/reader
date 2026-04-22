@@ -1,0 +1,40 @@
+Libravault is a modern, privacy-first media reader for Android. One secure vault for all your books and audio — with zero unnecessary file permissions and zero required accounts.
+
+Unlike existing apps, Libravault never requests broad storage access. You choose exactly which folders it can see. Nothing else on your device is ever accessed.
+
+<b>Supported formats</b>
+• EPUB — full Readium-powered rendering with font, theme, and layout controls
+• PDF — native Android PDF viewer with pinch-to-zoom and paginated mode
+• Audiobooks — MP3, M4B, OGG, FLAC, Opus, AAC with chapter navigation
+
+<b>Reader features</b>
+• Dark, light, and sepia reading themes
+• Adjustable font size, font family, and line spacing
+• Paginated or continuous scroll mode
+• Tap zones for one-handed page navigation
+• Bookmarks and highlights (EPUB and PDF)
+• Last-position restore — silently, with no dialogs
+
+<b>Player features</b>
+• Chapter navigation for M4B and ID3v2 chapter-tagged MP3s
+• Variable playback speed from 0.5× to 3.0×
+• Sleep timer with 6 presets, end-of-chapter option, and 10-second fade-out
+• Lock screen and notification controls
+• Android Auto ready
+• Position saved every 5 seconds — never lose your place
+
+<b>Privacy</b>
+• No internet permission — ever
+• No account required
+• No analytics, telemetry, or crash reporting to remote servers
+• Optional local-only crash logging — stored on your device, never transmitted
+• Scoped Storage: you grant access to specific folders only
+• 100% open source (GPL-3.0) — verify every claim yourself
+
+<b>Library</b>
+• Instant library load from local cache — no waiting on startup
+• Background scan on first launch; pull-to-refresh for updates
+• Search by title, author, narrator, or series
+• "Continue reading" and "Continue listening" cards on the home screen
+
+Libravault is free on F-Droid. A one-time purchase is available on Google Play. No subscription. No in-app purchases. No ads.

@@ -1,0 +1,37 @@
+Categories:
+  - Reading
+  - Multimedia
+
+License: GPL-3.0-only
+
+WebSite: https://libravault.xyz
+SourceCode: https://github.com/libravault-xyz/libravault
+IssueTracker: https://github.com/libravault-xyz/libravault/issues
+
+AutoName: Libravault
+
+Description: |-
+  A modern, privacy-first media reader. EPUB, PDF, and audiobooks in one app.
+  No account. No internet permission. No broad storage access.
+  See the full description in the store listing.
+
+RepoType: git
+Repo: https://github.com/libravault-xyz/libravault
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: v0.1.0
+    subdir: app
+    gradle:
+      - release
+    prebuild: ./gradlew :app:generateReleaseBuildConfig
+    scanignore:
+      - gradle/wrapper/gradle-wrapper.jar
+
+AllowedAPKSigningKeys: TO_BE_FILLED_AFTER_FIRST_SIGNED_RELEASE
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

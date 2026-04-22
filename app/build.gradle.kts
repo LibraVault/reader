@@ -1,6 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("libravault.android.application")
     id("libravault.android.hilt")
+}
+
+// ── Signing ───────────────────────────────────────────────────────────────────
+// keystore.properties is gitignored — copy keystore.properties.template to get started.
+// In CI, signing is handled by the release.yml workflow via GitHub Secrets.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) load(keystorePropertiesFile.inputStream())
 }
 
 android {
@@ -12,6 +22,18 @@ android {
         versionName   = "0.1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                storeFile     = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias      = keystoreProperties["keyAlias"] as String
+                keyPassword   = keystoreProperties["keyPassword"] as String
+            }
+            // In CI, signing params are injected via -P flags in release.yml
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -21,11 +43,26 @@ android {
         release {
             isMinifyEnabled    = true
             isShrinkResources  = true
+            signingConfig      = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // signing config added when release keystore is set up
+        }
+    }
+
+    // ── Reproducible builds (required for F-Droid) ────────────────────────────
+    // Strips timestamps and ordering non-determinism from the APK so that
+    // F-Droid's build servers can verify the binary matches the source.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/*.kotlin_module",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+            )
         }
     }
 }
