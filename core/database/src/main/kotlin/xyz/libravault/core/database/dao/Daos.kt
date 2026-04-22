@@ -66,6 +66,9 @@ interface LibraryItemDao {
     @Query("DELETE FROM library_items WHERE vaultFolderId = :vaultId")
     suspend fun deleteByVault(vaultId: Long)
 
+    @Query("SELECT * FROM library_items WHERE id = :id LIMIT 1")
+    suspend fun getItemById(id: Long): LibraryItemEntity?
+
     @Query("SELECT * FROM library_items WHERE filePath = :path LIMIT 1")
     suspend fun findByPath(path: String): LibraryItemEntity?
 }

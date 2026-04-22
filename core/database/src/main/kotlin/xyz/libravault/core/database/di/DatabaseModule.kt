@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import xyz.libravault.core.database.LibravaultDatabase
 import xyz.libravault.core.database.dao.BookmarkDao
+import xyz.libravault.core.database.dao.HighlightDao
 import xyz.libravault.core.database.dao.LibraryItemDao
 import xyz.libravault.core.database.dao.ProgressDao
 import xyz.libravault.core.database.dao.VaultFolderDao
@@ -33,4 +34,5 @@ object DatabaseModule {
     @Provides fun provideLibraryItemDao(db: LibravaultDatabase): LibraryItemDao = db.libraryItemDao()
     @Provides fun provideProgressDao(db: LibravaultDatabase): ProgressDao = db.progressDao()
     @Provides fun provideBookmarkDao(db: LibravaultDatabase): BookmarkDao = db.bookmarkDao()
+    @Provides fun provideHighlightDao(db: LibravaultDatabase): HighlightDao = db.highlightDao()
 }

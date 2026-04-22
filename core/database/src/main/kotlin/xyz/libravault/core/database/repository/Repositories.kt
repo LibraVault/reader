@@ -70,6 +70,9 @@ class LibraryRepositoryImpl @Inject constructor(
     override suspend fun search(query: String): List<LibraryItem> =
         dao.search(query).map(LibraryItemEntity::toDomain)
 
+    override suspend fun getItemById(id: Long): LibraryItem? =
+        dao.getItemById(id)?.toDomain()
+
     override suspend fun upsert(item: LibraryItem): Long =
         dao.upsert(item.toEntity())
 
@@ -207,3 +210,44 @@ private fun Bookmark.toEntity() = BookmarkEntity(
     label       = label,
     createdAt   = createdAt.toEpochMilli(),
 )
+
+// ── HighlightRepository ──────────────────────────────────────────────────────
+
+@Singleton
+class HighlightRepositoryImpl @Inject constructor(
+    private val dao: xyz.libravault.core.database.dao.HighlightDao,
+) : xyz.libravault.core.domain.repository.HighlightRepository {
+
+    override fun observeHighlights(itemId: Long): kotlinx.coroutines.flow.Flow<List<xyz.libravault.core.domain.model.Highlight>> =
+        dao.observeHighlights(itemId).map { it.map { e -> e.toDomain() } }
+
+    override suspend fun addHighlight(highlight: xyz.libravault.core.domain.model.Highlight): Long =
+        dao.insert(highlight.toEntity())
+
+    override suspend fun deleteHighlight(id: Long) = dao.deleteById(id)
+
+    override suspend fun updateHighlightNote(id: Long, note: String?) =
+        dao.updateNote(id, note)
+}
+
+private fun xyz.libravault.core.database.entity.HighlightEntity.toDomain() =
+    xyz.libravault.core.domain.model.Highlight(
+        id              = id,
+        itemId          = itemId,
+        positionRef     = positionRef,
+        highlightedText = highlightedText,
+        colorHex        = colorHex,
+        note            = note,
+        createdAt       = java.time.Instant.ofEpochMilli(createdAt),
+    )
+
+private fun xyz.libravault.core.domain.model.Highlight.toEntity() =
+    xyz.libravault.core.database.entity.HighlightEntity(
+        id              = id,
+        itemId          = itemId,
+        positionRef     = positionRef,
+        highlightedText = highlightedText,
+        colorHex        = colorHex,
+        note            = note,
+        createdAt       = createdAt.toEpochMilli(),
+    )

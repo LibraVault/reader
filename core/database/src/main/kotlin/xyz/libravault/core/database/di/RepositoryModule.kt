@@ -5,6 +5,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import xyz.libravault.core.database.repository.BookmarkRepositoryImpl
+import xyz.libravault.core.database.repository.HighlightRepositoryImpl
 import xyz.libravault.core.database.repository.LibraryRepositoryImpl
 import xyz.libravault.core.database.repository.ProgressRepositoryImpl
 import xyz.libravault.core.database.repository.VaultRepositoryImpl
@@ -29,4 +30,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindBookmarkRepository(impl: BookmarkRepositoryImpl): BookmarkRepository
+
+    @Binds @Singleton
+    abstract fun bindHighlightRepository(impl: HighlightRepositoryImpl): HighlightRepository
 }

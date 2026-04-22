@@ -19,8 +19,9 @@ import xyz.libravault.core.database.entity.VaultFolderEntity
         ReadingProgressEntity::class,
         ListeningProgressEntity::class,
         BookmarkEntity::class,
+        HighlightEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class LibravaultDatabase : RoomDatabase() {
@@ -28,6 +29,7 @@ abstract class LibravaultDatabase : RoomDatabase() {
     abstract fun libraryItemDao(): LibraryItemDao
     abstract fun progressDao(): ProgressDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun highlightDao(): HighlightDao
 
     companion object {
         const val DATABASE_NAME = "libravault.db"

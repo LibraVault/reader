@@ -19,6 +19,7 @@ interface LibraryRepository {
     fun observeByVault(vaultId: Long): Flow<List<LibraryItem>>
     fun observeByFormat(format: MediaFormat): Flow<List<LibraryItem>>
     fun observeRecentlyAccessed(limit: Int = 10): Flow<List<LibraryItem>>
+    suspend fun getItemById(id: Long): LibraryItem?
     suspend fun search(query: String): List<LibraryItem>
     suspend fun upsert(item: LibraryItem): Long
     suspend fun deleteItem(id: Long)
@@ -38,4 +39,11 @@ interface BookmarkRepository {
     fun observeBookmarks(itemId: Long): Flow<List<Bookmark>>
     suspend fun addBookmark(bookmark: Bookmark): Long
     suspend fun deleteBookmark(id: Long)
+}
+
+interface HighlightRepository {
+    fun observeHighlights(itemId: Long): Flow<List<Highlight>>
+    suspend fun addHighlight(highlight: Highlight): Long
+    suspend fun deleteHighlight(id: Long)
+    suspend fun updateHighlightNote(id: Long, note: String?)
 }
