@@ -7,10 +7,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
-import xyz.libravault.core.logger.LibravaultLogger
-import xyz.libravault.core.storage.CoverArtCache
-import xyz.libravault.core.ui.theme.ReadingTheme
 import javax.inject.Inject
 
 @HiltViewModel
@@ -23,7 +21,7 @@ class SettingsViewModel @Inject constructor(
     val preferences: StateFlow<UserPreferences> = prefsRepo.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), prefsRepo.read())
 
-    fun onReadingThemeChanged(theme: ReadingTheme) = update { it.copy(defaultReadingTheme = theme) }
+    fun onReadingThemeChanged(theme: AppReadingTheme) = update { it.copy(defaultReadingTheme = theme) }
 
     fun onPlaybackSpeedChanged(speed: Float) = update {
         it.copy(defaultPlaybackSpeed = speed.coerceIn(0.5f, 3.0f))

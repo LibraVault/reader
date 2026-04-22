@@ -10,10 +10,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
-import xyz.libravault.core.logger.LibravaultLogger
-import xyz.libravault.core.storage.CoverArtCache
-import xyz.libravault.core.ui.theme.ReadingTheme
 
 class SettingsViewModelTest {
 
@@ -33,7 +31,7 @@ class SettingsViewModelTest {
     fun `emits initial preferences`() = runTest {
         viewModel().preferences.test {
             val prefs = awaitItem()
-            assertEquals(ReadingTheme.DARK, prefs.defaultReadingTheme)
+            assertEquals(AppReadingTheme.DARK, prefs.defaultReadingTheme)
             assertEquals(1.0f, prefs.defaultPlaybackSpeed)
             assertFalse(prefs.loggingEnabled)
             cancelAndIgnoreRemainingEvents()
@@ -43,8 +41,8 @@ class SettingsViewModelTest {
     @Test
     fun `reading theme change persists`() = runTest {
         val vm = viewModel()
-        vm.onReadingThemeChanged(ReadingTheme.SEPIA)
-        verify { prefsRepo.update(match { it.defaultReadingTheme == ReadingTheme.SEPIA }) }
+        vm.onReadingThemeChanged(AppReadingTheme.SEPIA)
+        verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.SEPIA }) }
     }
 
     @Test

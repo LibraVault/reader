@@ -14,6 +14,12 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             configureAndroidCommon(this)
             defaultConfig.targetSdk = 35
             buildFeatures.compose = true
+            compileOptions {
+                isCoreLibraryDesugaringEnabled = true
+            }
+        }
+        target.dependencies {
+            add("coreLibraryDesugaring", "com.android.tools:desugar_jdk_libs:2.0.4")
         }
     }
 }

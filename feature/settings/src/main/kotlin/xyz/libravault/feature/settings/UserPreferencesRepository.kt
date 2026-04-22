@@ -7,8 +7,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
-import xyz.libravault.core.ui.theme.ReadingTheme
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,8 +36,8 @@ class UserPreferencesRepository @Inject constructor(
     }.distinctUntilChanged()
 
     fun read(): UserPreferences = UserPreferences(
-        defaultReadingTheme  = ReadingTheme.valueOf(
-            prefs.getString(KEY_READING_THEME, ReadingTheme.DARK.name) ?: ReadingTheme.DARK.name
+        defaultReadingTheme  = AppReadingTheme.valueOf(
+            prefs.getString(KEY_READING_THEME, AppReadingTheme.DARK.name) ?: AppReadingTheme.DARK.name
         ),
         defaultPlaybackSpeed = prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f),
         defaultSkipDurationSec = prefs.getInt(KEY_SKIP_DURATION, 30),

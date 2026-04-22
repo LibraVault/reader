@@ -33,7 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import xyz.libravault.core.ui.theme.ReadingTheme
+import xyz.libravault.core.domain.model.AppReadingTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +74,7 @@ fun SettingsScreen(
                 subtitle = "Applied when opening a book or PDF",
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReadingTheme.entries.forEach { theme ->
+                AppReadingTheme.entries.forEach { theme ->
                     FilterChip(
                         selected = prefs.defaultReadingTheme == theme,
                         onClick  = { viewModel.onReadingThemeChanged(theme) },

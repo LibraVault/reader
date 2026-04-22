@@ -38,8 +38,12 @@ class MainActivity : ComponentActivity() {
             )
 
             LibravaultTheme(
-                readingTheme       = prefs.defaultReadingTheme,
-                useDynamicColor    = prefs.dynamicColorEnabled,
+                readingTheme    = when (prefs.defaultReadingTheme) {
+                    xyz.libravault.core.domain.model.AppReadingTheme.DARK  -> xyz.libravault.core.ui.theme.ReadingTheme.DARK
+                    xyz.libravault.core.domain.model.AppReadingTheme.LIGHT -> xyz.libravault.core.ui.theme.ReadingTheme.LIGHT
+                    xyz.libravault.core.domain.model.AppReadingTheme.SEPIA -> xyz.libravault.core.ui.theme.ReadingTheme.SEPIA
+                },
+                useDynamicColor = prefs.dynamicColorEnabled,
             ) {
                 val navController = rememberNavController()
                 val start = remember {
