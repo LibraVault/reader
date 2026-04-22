@@ -40,17 +40,15 @@
             </intent-filter>
         </activity>
 
-        <!-- M3: Media playback service (uncomment when implementing player) -->
-        <!--
+        <!-- M3: Media playback service -->
         <service
-            android:name=".playback.LibravaultPlaybackService"
+            android:name="xyz.libravault.feature.player.service.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
-        -->
 
     </application>
 
