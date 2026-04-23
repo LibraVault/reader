@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
+import xyz.libravault.core.storage.CoverArtCache
+import xyz.libravault.core.logger.LibravaultLogger
 
 class SettingsViewModelTest {
 
