@@ -73,12 +73,12 @@ class PlayerViewModel @Inject constructor(
         private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L
     }
 
-    private val itemId: Long = checkNotNull(savedStateHandle["itemId"])
+    private val itemId: Long? = savedStateHandle.get<Long>("itemId")?.takeIf { it > 0 }
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
-    val bookmarks: StateFlow<List<Bookmark>> = observeBookmarks(itemId)
+    val bookmarks: StateFlow<List<Bookmark>> = (itemId?.let { observeBookmarks(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var controller: MediaController? = null
@@ -100,7 +100,12 @@ class PlayerViewModel @Inject constructor(
 
     private fun loadItem() {
         viewModelScope.launch {
-            val item = getItem(itemId)
+            val id = itemId ?: run {
+                // Opened via external intent — item loaded by PlayerScreen directly
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                return@launch
+            }
+            val item = getItem(id)
             if (item == null) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
                 return@launch
@@ -252,9 +257,10 @@ class PlayerViewModel @Inject constructor(
     fun addBookmark(label: String? = null) {
         val positionMs = controller?.currentPosition ?: return
         viewModelScope.launch {
+            val id = itemId ?: return@launch
             addBookmark(
                 Bookmark(
-                    itemId      = itemId,
+                    itemId      = id,
                     positionRef = "ms:$positionMs",
                     label       = label ?: formatPosition(positionMs),
                 )
@@ -301,9 +307,10 @@ class PlayerViewModel @Inject constructor(
                 delay(PROGRESS_SAVE_INTERVAL_MS)
                 val pos     = controller?.currentPosition ?: continue
                 val chapIdx = _uiState.value.currentChapterIndex
+                val id      = itemId ?: continue
                 saveProgress(
                     ListeningProgress(
-                        itemId         = itemId,
+                        itemId         = id,
                         positionMs     = pos,
                         chapterIndex   = chapIdx,
                         lastListenedAt = Instant.now(),

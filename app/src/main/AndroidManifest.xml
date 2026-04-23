@@ -34,10 +34,109 @@
             android:exported="true"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Libravault">
+
+            <!-- Launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- ── EPUB ─────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.epub" />
+            </intent-filter>
+
+            <!-- ── PDF ──────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.pdf" />
+            </intent-filter>
+
+            <!-- ── MP3 ──────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/mpeg" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.mp3" />
+            </intent-filter>
+
+            <!-- ── M4B ──────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/x-m4b" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.m4b" />
+            </intent-filter>
+
+            <!-- ── OGG ──────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/ogg" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.ogg" />
+            </intent-filter>
+
+            <!-- ── FLAC ─────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/flac" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.flac" />
+            </intent-filter>
+
+            <!-- ── OPUS ─────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/opus" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.opus" />
+            </intent-filter>
+
+            <!-- ── AAC ──────────────────────────────────────────────────── -->
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/aac" />
+            </intent-filter>
+            <intent-filter android:label="Open with Libravault">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.aac" />
+            </intent-filter>
+
         </activity>
 
         <!-- M3: Media playback service -->

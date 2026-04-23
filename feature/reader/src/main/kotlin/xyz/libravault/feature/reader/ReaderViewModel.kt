@@ -54,25 +54,29 @@ class ReaderViewModel @Inject constructor(
 ) : ViewModel() {
 
     // itemId comes from navigation back-stack
-    private val itemId: Long = checkNotNull(savedStateHandle["itemId"])
+    private val itemId: Long? = savedStateHandle.get<Long>("itemId")?.takeIf { it > 0 }
 
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
-    val bookmarks: StateFlow<List<Bookmark>> = observeBookmarks(itemId)
+    val bookmarks: StateFlow<List<Bookmark>> = (itemId?.let { observeBookmarks(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val highlights: StateFlow<List<Highlight>> = observeHighlights(itemId)
+    val highlights: StateFlow<List<Highlight>> = (itemId?.let { observeHighlights(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
-            val item = getItem(itemId)
+            val id = itemId ?: run {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                return@launch
+            }
+            val item = getItem(id)
             if (item == null) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
                 return@launch
             }
-            val progress = getProgress(itemId)
+            val progress = getProgress(id)
             _uiState.value = _uiState.value.copy(
                 item      = item,
                 progress  = progress,
@@ -87,9 +91,10 @@ class ReaderViewModel @Inject constructor(
     /** Called by EPUB navigator on position change (CFI string). */
     fun onEpubPositionChanged(cfi: String) {
         viewModelScope.launch {
+            val id = itemId ?: return@launch
             saveProgress(
                 ReadingProgress(
-                    itemId      = itemId,
+                    itemId      = id,
                     positionCfi = cfi,
                     lastReadAt  = Instant.now(),
                 )
@@ -100,9 +105,10 @@ class ReaderViewModel @Inject constructor(
     /** Called by PDF viewer on page change. */
     fun onPdfPageChanged(pageIndex: Int) {
         viewModelScope.launch {
+            val id = itemId ?: return@launch
             saveProgress(
                 ReadingProgress(
-                    itemId     = itemId,
+                    itemId     = id,
                     pageIndex  = pageIndex,
                     lastReadAt = Instant.now(),
                 )
@@ -155,7 +161,8 @@ class ReaderViewModel @Inject constructor(
 
     fun addBookmark(positionRef: String, label: String? = null) {
         viewModelScope.launch {
-            addBookmark(Bookmark(itemId = itemId, positionRef = positionRef, label = label))
+            val id = itemId ?: return@launch
+            addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
             logger.i("Reader", "Bookmark added at $positionRef")
         }
     }
@@ -170,7 +177,7 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch {
             addHighlight(
                 Highlight(
-                    itemId          = itemId,
+                    itemId          = itemId ?: return@launch,
                     positionRef     = positionRef,
                     highlightedText = text,
                     colorHex        = colorHex,

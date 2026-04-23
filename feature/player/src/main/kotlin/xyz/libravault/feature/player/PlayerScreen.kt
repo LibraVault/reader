@@ -58,7 +58,8 @@ import xyz.libravault.feature.player.service.SleepTimerState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
-    itemId: Long,
+    itemId: Long? = null,
+    fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {

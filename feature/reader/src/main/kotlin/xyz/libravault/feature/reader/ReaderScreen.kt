@@ -39,7 +39,8 @@ import xyz.libravault.feature.reader.pdf.PdfReaderScreen
  */
 @Composable
 fun ReaderScreen(
-    itemId: Long,
+    itemId: Long? = null,
+    fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
