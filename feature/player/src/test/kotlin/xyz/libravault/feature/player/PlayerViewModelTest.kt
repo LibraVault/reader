@@ -6,7 +6,6 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,20 +56,23 @@ class PlayerViewModelTest {
         Chapter(2, "Chapter 3", 3_600_000L, 7_200_000L),
     )
 
-    private val getItem           = mockk<GetLibraryItemUseCase>()
-    private val saveProgress      = mockk<SaveListeningProgressUseCase>(relaxed = true)
-    private val observeBookmarks  = mockk<ObserveBookmarksUseCase>()
-    private val addBookmark       = mockk<AddBookmarkUseCase>(relaxed = true)
-    private val chapterExtractor  = mockk<ChapterExtractor>()
-    private val sleepTimer        = mockk<SleepTimer>(relaxed = true)
-    private val logger            = mockk<LibravaultLogger>(relaxed = true)
+    private val getItem          = mockk<GetLibraryItemUseCase>()
+    private val saveProgress     = mockk<SaveListeningProgressUseCase>(relaxed = true)
+    private val observeBookmarks = mockk<ObserveBookmarksUseCase>()
+    private val addBookmark      = mockk<AddBookmarkUseCase>(relaxed = true)
+    private val chapterExtractor = mockk<ChapterExtractor>()
+    private val sleepTimer       = mockk<SleepTimer>(relaxed = true)
+    private val logger           = mockk<LibravaultLogger>(relaxed = true)
 
-    private val mockController    = mockk<MediaController>(relaxed = true)
-    private val controllerFuture  = SettableFuture.create<MediaController>()
-    private val sleepTimerState   = MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
+    private val mockController   = mockk<MediaController>(relaxed = true)
+    private val controllerFuture = SettableFuture.create<MediaController>()
+    private val sleepTimerState  = MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
 
     @BeforeEach
     fun setUp() {
+        // UnconfinedTestDispatcher runs viewModelScope coroutines eagerly/synchronously.
+        // This means loadItem() completes before the test starts collecting uiState,
+        // so the initial loading=true state is never observable — tests check final state only.
         Dispatchers.setMain(UnconfinedTestDispatcher())
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
@@ -101,10 +103,9 @@ class PlayerViewModelTest {
 
     @Test
     fun `loads item on init`() = runTest {
+        // loadItem() runs synchronously with UnconfinedTestDispatcher, so the
+        // first (and only) emission is already the loaded state.
         viewModel().uiState.test {
-            val loading = awaitItem()
-            assertTrue(loading.isLoading)
-
             val loaded = awaitItem()
             assertFalse(loaded.isLoading)
             assertNotNull(loaded.item)
@@ -130,8 +131,8 @@ class PlayerViewModelTest {
             logger           = logger,
         )
 
+        // loadItem() already completed — first emission is the error state
         vm.uiState.test {
-            awaitItem() // loading
             val error = awaitItem()
             assertNotNull(error.error)
             assertNull(error.item)
@@ -143,7 +144,7 @@ class PlayerViewModelTest {
     fun `sleep timer sheet shows and hides`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            awaitItem(); awaitItem() // skip loading states
+            awaitItem() // loaded state (loading already completed)
             assertFalse(vm.uiState.value.showSleepTimerSheet)
             vm.showSleepTimer()
             assertTrue(awaitItem().showSleepTimerSheet)
@@ -157,7 +158,7 @@ class PlayerViewModelTest {
     fun `bookmarks sheet shows and hides`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            awaitItem(); awaitItem()
+            awaitItem() // loaded state (loading already completed)
             vm.showBookmarks()
             assertTrue(awaitItem().showBookmarksSheet)
             vm.hideBookmarks()
@@ -169,7 +170,6 @@ class PlayerViewModelTest {
     @Test
     fun `chapter navigation clamps to valid range`() = runTest {
         val vm = viewModel()
-        vm.uiState.value // trigger init
         vm.goToChapter(-1)  // should be ignored
         vm.goToChapter(999) // should be ignored
         // No exception = pass

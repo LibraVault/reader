@@ -2,7 +2,9 @@ package xyz.libravault.feature.settings
 
 import app.cash.turbine.test
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.Runs
 import io.mockk.verify
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
@@ -35,8 +37,9 @@ class SettingsViewModelTest {
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
-        every { prefsRepo.observe() } returns flowOf(defaultPrefs)
-        every { prefsRepo.read() }    returns defaultPrefs
+        every { prefsRepo.observe() }       returns flowOf(defaultPrefs)
+        every { prefsRepo.read() }          returns defaultPrefs
+        every { prefsRepo.update(any()) }   just Runs  // stub so ViewModel can call it
     }
 
     @AfterEach

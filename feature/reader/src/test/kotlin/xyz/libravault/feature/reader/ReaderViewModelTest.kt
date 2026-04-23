@@ -59,23 +59,26 @@ class ReaderViewModelTest {
         lastReadAt  = Instant.now(),
     )
 
-    private val getItem          = mockk<GetLibraryItemUseCase>()
-    private val getProgress      = mockk<GetReadingProgressUseCase>()
-    private val saveProgress     = mockk<SaveReadingProgressUseCase>(relaxed = true)
-    private val observeBookmarks = mockk<ObserveBookmarksUseCase>()
-    private val addBookmark      = mockk<AddBookmarkUseCase>(relaxed = true)
-    private val deleteBookmark   = mockk<DeleteBookmarkUseCase>(relaxed = true)
+    private val getItem           = mockk<GetLibraryItemUseCase>()
+    private val getProgress       = mockk<GetReadingProgressUseCase>()
+    private val saveProgress      = mockk<SaveReadingProgressUseCase>(relaxed = true)
+    private val observeBookmarks  = mockk<ObserveBookmarksUseCase>()
+    private val addBookmark       = mockk<AddBookmarkUseCase>(relaxed = true)
+    private val deleteBookmark    = mockk<DeleteBookmarkUseCase>(relaxed = true)
     private val observeHighlights = mockk<ObserveHighlightsUseCase>()
-    private val addHighlight     = mockk<AddHighlightUseCase>(relaxed = true)
-    private val deleteHighlight  = mockk<DeleteHighlightUseCase>(relaxed = true)
-    private val logger           = mockk<LibravaultLogger>(relaxed = true)
+    private val addHighlight      = mockk<AddHighlightUseCase>(relaxed = true)
+    private val deleteHighlight   = mockk<DeleteHighlightUseCase>(relaxed = true)
+    private val logger            = mockk<LibravaultLogger>(relaxed = true)
 
     @BeforeEach
     fun setUp() {
+        // UnconfinedTestDispatcher runs viewModelScope coroutines eagerly/synchronously.
+        // The init coroutine completes before tests start collecting, so only the
+        // final state is observable — no loading state in emissions.
         Dispatchers.setMain(UnconfinedTestDispatcher())
-        coEvery { getItem(any()) }          returns fakeItem
-        coEvery { getProgress(any()) }      returns fakeProgress
-        coEvery { observeBookmarks(any()) } returns flowOf(emptyList())
+        coEvery { getItem(any()) }           returns fakeItem
+        coEvery { getProgress(any()) }       returns fakeProgress
+        coEvery { observeBookmarks(any()) }  returns flowOf(emptyList())
         coEvery { observeHighlights(any()) } returns flowOf(emptyList())
     }
 
@@ -109,10 +112,8 @@ class ReaderViewModelTest {
 
     @Test
     fun `loads item and progress on init`() = runTest {
+        // init coroutine completes synchronously — first emission is already loaded
         viewModel().uiState.test {
-            val loading = awaitItem()
-            assertTrue(loading.isLoading)
-
             val loaded = awaitItem()
             assertFalse(loaded.isLoading)
             assertNotNull(loaded.item)
@@ -143,8 +144,8 @@ class ReaderViewModelTest {
             logger            = logger,
         )
 
+        // init coroutine already completed — first emission is the error state
         vm.uiState.test {
-            awaitItem() // loading
             val error = awaitItem()
             assertNotNull(error.error)
             assertNull(error.item)
@@ -158,17 +159,14 @@ class ReaderViewModelTest {
     fun `centre tap toggles toolbar visibility`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            awaitItem(); awaitItem() // skip loading states
-
+            awaitItem() // loaded state (loading already completed)
             assertTrue(vm.uiState.value.showToolbar)
 
             vm.onCentreTap()
-            val hidden = awaitItem()
-            assertFalse(hidden.showToolbar)
+            assertFalse(awaitItem().showToolbar)
 
             vm.onCentreTap()
-            val visible = awaitItem()
-            assertTrue(visible.showToolbar)
+            assertTrue(awaitItem().showToolbar)
 
             cancelAndIgnoreRemainingEvents()
         }
