@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "xyz.libravault.feature.library"
+    namespace = "xyz.libravault.feature.onboarding"
 }
 
 dependencies {
@@ -13,5 +13,4 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
     implementation(libs.navigation.compose)
     implementation(libs.bundles.lifecycle)
-    implementation(libs.coil.compose)
 }
