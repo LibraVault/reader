@@ -5,12 +5,17 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.junit5.MockKExtension
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.AppReadingTheme
@@ -23,13 +28,20 @@ class SettingsViewModelTest {
 
     private val defaultPrefs = UserPreferences()
 
-    private val prefsRepo    = mockk<UserPreferencesRepository>()
-    private val coverCache   = mockk<CoverArtCache>(relaxed = true)
-    private val logger       = mockk<LibravaultLogger>(relaxed = true)
+    private val prefsRepo  = mockk<UserPreferencesRepository>()
+    private val coverCache = mockk<CoverArtCache>(relaxed = true)
+    private val logger     = mockk<LibravaultLogger>(relaxed = true)
 
-    init {
+    @BeforeEach
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
         every { prefsRepo.observe() } returns flowOf(defaultPrefs)
-        every { prefsRepo.read() } returns defaultPrefs
+        every { prefsRepo.read() }    returns defaultPrefs
+    }
+
+    @AfterEach
+    fun tearDown() {
+        Dispatchers.resetMain()
     }
 
     private fun viewModel(): SettingsViewModel {
@@ -92,7 +104,6 @@ class SettingsViewModelTest {
     fun `clear cover cache delegates to CoverArtCache`() = runTest {
         val vm = viewModel()
         vm.clearCoverCache()
-        // clearCoverCache launches in viewModelScope - verify was called
         verify(exactly = 1) { coverCache.clearAll() }
     }
 }

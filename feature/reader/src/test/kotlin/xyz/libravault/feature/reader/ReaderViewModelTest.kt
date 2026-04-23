@@ -7,14 +7,19 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.junit5.MockKExtension
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.Bookmark
@@ -65,17 +70,24 @@ class ReaderViewModelTest {
     private val deleteHighlight  = mockk<DeleteHighlightUseCase>(relaxed = true)
     private val logger           = mockk<LibravaultLogger>(relaxed = true)
 
-    init {
-        coEvery { getItem(any()) } returns fakeItem
-        coEvery { getProgress(any()) } returns fakeProgress
+    @BeforeEach
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        coEvery { getItem(any()) }          returns fakeItem
+        coEvery { getProgress(any()) }      returns fakeProgress
         coEvery { observeBookmarks(any()) } returns flowOf(emptyList())
         coEvery { observeHighlights(any()) } returns flowOf(emptyList())
     }
 
+    @AfterEach
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
     private fun viewModel(itemId: Long = 1L): ReaderViewModel {
-        coEvery { getItem(itemId) }          returns fakeItem
-        coEvery { getProgress(itemId) }      returns fakeProgress
-        coEvery { observeBookmarks(itemId) } returns flowOf(emptyList())
+        coEvery { getItem(itemId) }           returns fakeItem
+        coEvery { getProgress(itemId) }       returns fakeProgress
+        coEvery { observeBookmarks(itemId) }  returns flowOf(emptyList())
         coEvery { observeHighlights(itemId) } returns flowOf(emptyList())
 
         return ReaderViewModel(
@@ -98,11 +110,9 @@ class ReaderViewModelTest {
     @Test
     fun `loads item and progress on init`() = runTest {
         viewModel().uiState.test {
-            // Initial loading state
             val loading = awaitItem()
             assertTrue(loading.isLoading)
 
-            // Loaded state
             val loaded = awaitItem()
             assertFalse(loaded.isLoading)
             assertNotNull(loaded.item)
@@ -114,9 +124,9 @@ class ReaderViewModelTest {
 
     @Test
     fun `emits error state when item not found`() = runTest {
-        coEvery { getItem(99L) } returns null
-        coEvery { getProgress(99L) } returns null
-        coEvery { observeBookmarks(99L) } returns flowOf(emptyList())
+        coEvery { getItem(99L) }           returns null
+        coEvery { getProgress(99L) }       returns null
+        coEvery { observeBookmarks(99L) }  returns flowOf(emptyList())
         coEvery { observeHighlights(99L) } returns flowOf(emptyList())
 
         val vm = ReaderViewModel(
@@ -150,7 +160,6 @@ class ReaderViewModelTest {
         vm.uiState.test {
             awaitItem(); awaitItem() // skip loading states
 
-            // Toolbar starts visible
             assertTrue(vm.uiState.value.showToolbar)
 
             vm.onCentreTap()
@@ -205,7 +214,6 @@ class ReaderViewModelTest {
     fun `pdf page change triggers save`() = runTest {
         val vm = viewModel()
         vm.onPdfPageChanged(7)
-        advanceUntilIdle()
 
         val saved = slot<ReadingProgress>()
         coVerify { saveProgress(capture(saved)) }

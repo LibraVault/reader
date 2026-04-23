@@ -8,17 +8,21 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.junit5.MockKExtension
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.setMain
 import xyz.libravault.feature.player.service.SleepTimerState
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.LibraryItem
@@ -44,7 +48,7 @@ class PlayerViewModelTest {
         title         = "Test Audiobook",
         author        = "Test Author",
         format        = MediaFormat.M4B,
-        durationMs    = 7_200_000L, // 2 hours
+        durationMs    = 7_200_000L,
     )
 
     private val fakeChapters = listOf(
@@ -61,21 +65,26 @@ class PlayerViewModelTest {
     private val sleepTimer        = mockk<SleepTimer>(relaxed = true)
     private val logger            = mockk<LibravaultLogger>(relaxed = true)
 
-    // MediaController future — completed with mock to avoid blocking in tests
-    private val mockController = mockk<MediaController>(relaxed = true)
-    private val controllerFuture: SettableFuture<MediaController> = SettableFuture.create()
-    private val sleepTimerState = MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
-    
-    init {
+    private val mockController    = mockk<MediaController>(relaxed = true)
+    private val controllerFuture  = SettableFuture.create<MediaController>()
+    private val sleepTimerState   = MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
+
+    @BeforeEach
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
         every { sleepTimer.state } returns sleepTimerState
     }
 
+    @AfterEach
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
         coEvery { getItem(itemId) }          returns fakeItem
         coEvery { observeBookmarks(itemId) } returns flowOf(emptyList())
-        every { mockController.addListener(any()) } returns Unit
 
         return PlayerViewModel(
             savedStateHandle  = SavedStateHandle(mapOf("itemId" to itemId)),
@@ -92,10 +101,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `loads item on init`() = runTest {
-        advanceUntilIdle()
-        val vm = viewModel()
-        advanceUntilIdle()
-        vm.uiState.test {
+        viewModel().uiState.test {
             val loading = awaitItem()
             assertTrue(loading.isLoading)
 
@@ -137,7 +143,7 @@ class PlayerViewModelTest {
     fun `sleep timer sheet shows and hides`() = runTest {
         val vm = viewModel()
         vm.uiState.test {
-            awaitItem(); awaitItem() // skip loading
+            awaitItem(); awaitItem() // skip loading states
             assertFalse(vm.uiState.value.showSleepTimerSheet)
             vm.showSleepTimer()
             assertTrue(awaitItem().showSleepTimerSheet)
@@ -163,7 +169,6 @@ class PlayerViewModelTest {
     @Test
     fun `chapter navigation clamps to valid range`() = runTest {
         val vm = viewModel()
-        // goToChapter with out-of-range index should not throw
         vm.uiState.value // trigger init
         vm.goToChapter(-1)  // should be ignored
         vm.goToChapter(999) // should be ignored
