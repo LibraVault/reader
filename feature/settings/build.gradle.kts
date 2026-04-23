@@ -8,8 +8,8 @@ android {
 }
 
 dependencies {
-    api(project(":core:storage"))
-    api(project(":core:logger"))
+    implementation(project(":core:storage"))
+    implementation(project(":core:logger"))
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
