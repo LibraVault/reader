@@ -24,10 +24,15 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
             apply("libravault.android.library")
             apply("libravault.android.hilt")
             apply("libravault.android.compose")
+            apply("de.mannodermaus.android-junit5")
         }
         dependencies {
             add("implementation", project(":core:domain"))
             add("implementation", project(":core:ui"))
+            
+            // Test dependencies for JVM-based unit tests
+            add("testImplementation", libs.findBundle("testing-jvm").get())
+            add("testImplementation", libs.findLibrary("junit5-engine").get())
         }
     }
 }
