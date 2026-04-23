@@ -6,8 +6,8 @@ plugins {
 android { namespace = "xyz.libravault.core.storage" }
 
 dependencies {
-    implementation(project(":core:domain"))
-    implementation(project(":core:logger"))
+    api(project(":core:domain"))
+    api(project(":core:logger"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
