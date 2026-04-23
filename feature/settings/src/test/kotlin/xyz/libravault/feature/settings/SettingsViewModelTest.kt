@@ -84,7 +84,7 @@ class SettingsViewModelTest {
     @Test
     fun `clear cover cache delegates to CoverArtCache`() = runTest {
         viewModel().clearCoverCache()
-        // Allow coroutine to run
-        verify(timeout = 1000) { coverCache.clearAll() }
+        advanceUntilIdle()
+        verify { coverCache.clearAll() }
     }
 }
