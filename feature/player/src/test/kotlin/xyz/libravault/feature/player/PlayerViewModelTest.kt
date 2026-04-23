@@ -7,7 +7,9 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -60,7 +62,7 @@ class PlayerViewModelTest {
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
         coEvery { getItem(itemId) }          returns fakeItem
         coEvery { observeBookmarks(itemId) } returns flowOf(emptyList())
-        every { sleepTimer.state }           returns flowOf(
+        every { sleepTimer.state }           returns MutableStateFlow<SleepTimerState>(
             xyz.libravault.feature.player.service.SleepTimerState.Inactive
         )
 

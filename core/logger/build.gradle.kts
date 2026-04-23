@@ -8,5 +8,5 @@ android {
 }
 
 dependencies {
-    implementation(libs.coroutines.android)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
