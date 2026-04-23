@@ -20,13 +20,16 @@ class SettingsViewModelTest {
 
     private val defaultPrefs = UserPreferences()
 
-    private val prefsRepo    = mockk<UserPreferencesRepository>(relaxed = true)
+    private val prefsRepo    = mockk<UserPreferencesRepository>()
     private val coverCache   = mockk<CoverArtCache>(relaxed = true)
     private val logger       = mockk<LibravaultLogger>(relaxed = true)
 
-    private fun viewModel(): SettingsViewModel {
+    init {
         every { prefsRepo.observe() } returns flowOf(defaultPrefs)
-        every { prefsRepo.read() }    returns defaultPrefs
+        every { prefsRepo.read() } returns defaultPrefs
+    }
+
+    private fun viewModel(): SettingsViewModel {
         return SettingsViewModel(prefsRepo, coverCache, logger)
     }
 

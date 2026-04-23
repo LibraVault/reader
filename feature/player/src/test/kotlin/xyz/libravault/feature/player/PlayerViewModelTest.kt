@@ -55,7 +55,7 @@ class PlayerViewModelTest {
     private val observeBookmarks  = mockk<ObserveBookmarksUseCase>()
     private val addBookmark       = mockk<AddBookmarkUseCase>(relaxed = true)
     private val chapterExtractor  = mockk<ChapterExtractor>()
-    private val sleepTimer        = mockk<SleepTimer>(relaxed = true)
+    private val sleepTimer        = mockk<SleepTimer>()
     private val logger            = mockk<LibravaultLogger>(relaxed = true)
 
     // MediaController future — completed with mock to avoid blocking in tests
@@ -65,14 +65,12 @@ class PlayerViewModelTest {
     init {
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
+        every { sleepTimer.state } returns MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
     }
 
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
         coEvery { getItem(itemId) }          returns fakeItem
         coEvery { observeBookmarks(itemId) } returns flowOf(emptyList())
-        every { sleepTimer.state }           returns MutableStateFlow<SleepTimerState>(
-            SleepTimerState.Inactive
-        )
         every { mockController.addListener(any()) } returns Unit
 
         return PlayerViewModel(

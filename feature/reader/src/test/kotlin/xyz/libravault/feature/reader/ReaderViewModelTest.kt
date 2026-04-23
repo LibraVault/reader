@@ -62,6 +62,13 @@ class ReaderViewModelTest {
     private val deleteHighlight  = mockk<DeleteHighlightUseCase>(relaxed = true)
     private val logger           = mockk<LibravaultLogger>(relaxed = true)
 
+    init {
+        coEvery { getItem(any()) } returns fakeItem
+        coEvery { getProgress(any()) } returns fakeProgress
+        coEvery { observeBookmarks(any()) } returns flowOf(emptyList())
+        coEvery { observeHighlights(any()) } returns flowOf(emptyList())
+    }
+
     private fun viewModel(itemId: Long = 1L): ReaderViewModel {
         coEvery { getItem(itemId) }          returns fakeItem
         coEvery { getProgress(itemId) }      returns fakeProgress
