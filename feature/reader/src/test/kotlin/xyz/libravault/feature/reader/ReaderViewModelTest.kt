@@ -80,7 +80,7 @@ class ReaderViewModelTest {
             addHighlight      = addHighlight,
             deleteHighlight   = deleteHighlight,
             logger            = logger,
-        )
+        ).also { advanceUntilIdle() }
     }
 
     // ── Init ─────────────────────────────────────────────────────────────────
@@ -194,7 +194,6 @@ class ReaderViewModelTest {
     @Test
     fun `pdf page change triggers save`() = runTest {
         val vm = viewModel()
-        advanceUntilIdle()
         vm.onPdfPageChanged(7)
         advanceUntilIdle()
 

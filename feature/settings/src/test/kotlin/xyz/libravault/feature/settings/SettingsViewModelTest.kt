@@ -27,7 +27,7 @@ class SettingsViewModelTest {
     private fun viewModel(): SettingsViewModel {
         every { prefsRepo.observe() } returns flowOf(defaultPrefs)
         every { prefsRepo.read() }    returns defaultPrefs
-        return SettingsViewModel(prefsRepo, coverCache, logger)
+        return SettingsViewModel(prefsRepo, coverCache, logger).also { advanceUntilIdle() }
     }
 
     @Test
@@ -86,7 +86,6 @@ class SettingsViewModelTest {
     fun `clear cover cache delegates to CoverArtCache`() = runTest {
         val vm = viewModel()
         vm.clearCoverCache()
-        advanceUntilIdle()
         // clearCoverCache launches in viewModelScope - verify was called
         verify(exactly = 1) { coverCache.clearAll() }
     }

@@ -63,6 +63,7 @@ class PlayerViewModelTest {
     
     init {
         controllerFuture.set(mockController)
+        every { mockController.addListener(any()) } returns Unit
     }
 
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
