@@ -59,7 +59,11 @@ class PlayerViewModelTest {
 
     // MediaController future — completed with mock to avoid blocking in tests
     private val mockController = mockk<MediaController>(relaxed = true)
-    private val controllerFuture = SettableFuture.create<MediaController>().apply { set(mockController) }
+    private val controllerFuture: SettableFuture<MediaController> = SettableFuture.create()
+    
+    init {
+        controllerFuture.set(mockController)
+    }
 
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
         coEvery { getItem(itemId) }          returns fakeItem
