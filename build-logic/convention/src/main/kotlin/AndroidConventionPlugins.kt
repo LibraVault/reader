@@ -24,7 +24,8 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
             apply("libravault.android.library")
             apply("libravault.android.hilt")
             apply("libravault.android.compose")
-            apply("de.mannodermaus.android-junit5")
+            // Note: de.mannodermaus.android-junit5 must be applied in the module's build.gradle.kts
+            // plugins block, not here, because it needs to be resolved by the target project
         }
         dependencies {
             add("implementation", project(":core:domain"))

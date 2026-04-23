@@ -1,5 +1,6 @@
 plugins {
     id("libravault.android.feature")
+    id("de.mannodermaus.android-junit5")
 }
 
 android {
