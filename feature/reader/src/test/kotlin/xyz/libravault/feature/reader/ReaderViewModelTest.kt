@@ -193,7 +193,9 @@ class ReaderViewModelTest {
     @Test
     fun `pdf page change triggers save`() = runTest {
         val vm = viewModel()
+        advanceUntilIdle()
         vm.onPdfPageChanged(7)
+        advanceUntilIdle()
 
         val saved = slot<ReadingProgress>()
         coVerify { saveProgress(capture(saved)) }

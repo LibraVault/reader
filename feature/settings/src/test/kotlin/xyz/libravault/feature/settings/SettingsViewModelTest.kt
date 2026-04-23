@@ -86,6 +86,7 @@ class SettingsViewModelTest {
     fun `clear cover cache delegates to CoverArtCache`() = runTest {
         val vm = viewModel()
         vm.clearCoverCache()
+        advanceUntilIdle()
         // clearCoverCache launches in viewModelScope - verify was called
         verify(exactly = 1) { coverCache.clearAll() }
     }

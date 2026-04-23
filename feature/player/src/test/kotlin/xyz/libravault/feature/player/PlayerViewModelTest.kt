@@ -57,8 +57,9 @@ class PlayerViewModelTest {
     private val sleepTimer        = mockk<SleepTimer>(relaxed = true)
     private val logger            = mockk<LibravaultLogger>(relaxed = true)
 
-    // MediaController future that never resolves — keeps tests isolated from Media3
-    private val controllerFuture  = SettableFuture.create<MediaController>()
+    // MediaController future — completed with mock to avoid blocking in tests
+    private val mockController = mockk<MediaController>(relaxed = true)
+    private val controllerFuture = SettableFuture.create<MediaController>().apply { set(mockController) }
 
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
         coEvery { getItem(itemId) }          returns fakeItem
@@ -66,6 +67,7 @@ class PlayerViewModelTest {
         every { sleepTimer.state }           returns MutableStateFlow<SleepTimerState>(
             SleepTimerState.Inactive
         )
+        every { mockController.addListener(any()) } returns mockController
 
         return PlayerViewModel(
             savedStateHandle  = SavedStateHandle(mapOf("itemId" to itemId)),
