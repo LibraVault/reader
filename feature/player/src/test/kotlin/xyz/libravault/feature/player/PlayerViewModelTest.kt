@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.StandardTestDispatcher
 import xyz.libravault.feature.player.service.SleepTimerState
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -89,7 +90,10 @@ class PlayerViewModelTest {
 
     @Test
     fun `loads item on init`() = runTest {
-        viewModel().uiState.test {
+        advanceUntilIdle()
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.uiState.test {
             val loading = awaitItem()
             assertTrue(loading.isLoading)
 
