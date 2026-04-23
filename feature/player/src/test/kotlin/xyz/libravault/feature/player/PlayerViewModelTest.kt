@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import xyz.libravault.feature.player.service.SleepTimerState
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -63,7 +64,7 @@ class PlayerViewModelTest {
         coEvery { getItem(itemId) }          returns fakeItem
         coEvery { observeBookmarks(itemId) } returns flowOf(emptyList())
         every { sleepTimer.state }           returns MutableStateFlow<SleepTimerState>(
-            xyz.libravault.feature.player.service.SleepTimerState.Inactive
+            SleepTimerState.Inactive
         )
 
         return PlayerViewModel(
