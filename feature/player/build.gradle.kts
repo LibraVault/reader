@@ -24,4 +24,8 @@ dependencies {
 
     // Guava for ListenableFuture (MediaController.buildAsync)
     implementation("com.google.guava:guava:33.2.1-android")
+    
+    // Test dependencies
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
 }
