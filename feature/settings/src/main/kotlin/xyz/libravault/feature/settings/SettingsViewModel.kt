@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
+import xyz.libravault.core.storage.CoverArtCache
+import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
 
 @HiltViewModel
