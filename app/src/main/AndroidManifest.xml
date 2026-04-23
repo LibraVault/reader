@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
         PERMISSIONS POLICY — Libravault never requests:
@@ -139,11 +140,15 @@
 
         </activity>
 
-        <!-- M3: Media playback service -->
+        <!-- M3: Media playback service.
+             tools:ignore="Instantiatable" suppresses a lint false-positive:
+             PlaybackService extends Media3's MediaSessionService which extends
+             android.app.Service, but lint cannot resolve the chain through the AAR. -->
         <service
             android:name="xyz.libravault.feature.player.service.PlaybackService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="Instantiatable">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
