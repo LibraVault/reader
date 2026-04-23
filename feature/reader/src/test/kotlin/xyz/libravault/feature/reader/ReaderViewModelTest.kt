@@ -80,7 +80,7 @@ class ReaderViewModelTest {
             addHighlight      = addHighlight,
             deleteHighlight   = deleteHighlight,
             logger            = logger,
-        ).also { advanceUntilIdle() }
+        )
     }
 
     // ── Init ─────────────────────────────────────────────────────────────────

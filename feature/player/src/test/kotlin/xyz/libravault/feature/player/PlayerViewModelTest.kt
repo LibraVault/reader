@@ -72,7 +72,7 @@ class PlayerViewModelTest {
         every { sleepTimer.state }           returns MutableStateFlow<SleepTimerState>(
             SleepTimerState.Inactive
         )
-        every { mockController.addListener(any()) } returns mockController
+        every { mockController.addListener(any()) } returns Unit
 
         return PlayerViewModel(
             savedStateHandle  = SavedStateHandle(mapOf("itemId" to itemId)),

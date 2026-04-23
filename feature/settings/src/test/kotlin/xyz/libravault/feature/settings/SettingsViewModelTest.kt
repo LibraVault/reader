@@ -27,7 +27,7 @@ class SettingsViewModelTest {
     private fun viewModel(): SettingsViewModel {
         every { prefsRepo.observe() } returns flowOf(defaultPrefs)
         every { prefsRepo.read() }    returns defaultPrefs
-        return SettingsViewModel(prefsRepo, coverCache, logger).also { advanceUntilIdle() }
+        return SettingsViewModel(prefsRepo, coverCache, logger)
     }
 
     @Test
