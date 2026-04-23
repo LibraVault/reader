@@ -31,8 +31,13 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
             add("implementation", project(":core:ui"))
             
             // Test dependencies for JVM-based unit tests
-            add("testImplementation", libs.findBundle("testing-jvm").get())
-            add("testImplementation", libs.findLibrary("junit5-engine").get())
+            // Using string-based notation since version catalog isn't available in build-logic
+            add("testImplementation", "org.junit.jupiter:junit-jupiter-api:5.10.2")
+            add("testImplementation", "org.junit.jupiter:junit-jupiter-engine:5.10.2")
+            add("testImplementation", "org.junit.jupiter:junit-jupiter-params:5.10.2")
+            add("testImplementation", "io.mockk:mockk:1.13.11")
+            add("testImplementation", "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+            add("testImplementation", "app.cash.turbine:turbine:1.1.0")
         }
     }
 }
