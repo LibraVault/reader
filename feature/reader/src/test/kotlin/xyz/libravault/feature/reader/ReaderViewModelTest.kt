@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.Bookmark
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.domain.model.LibraryItem
@@ -32,6 +34,7 @@ import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import java.time.Instant
 
+@ExtendWith(MockKExtension::class)
 class ReaderViewModelTest {
 
     // ── Fakes ────────────────────────────────────────────────────────────────

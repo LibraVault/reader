@@ -7,6 +7,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
@@ -32,6 +34,7 @@ import xyz.libravault.feature.player.service.SleepTimer
 import com.google.common.util.concurrent.SettableFuture
 import androidx.media3.session.MediaController
 
+@ExtendWith(MockKExtension::class)
 class PlayerViewModelTest {
 
     private val fakeItem = LibraryItem(
@@ -55,17 +58,18 @@ class PlayerViewModelTest {
     private val observeBookmarks  = mockk<ObserveBookmarksUseCase>()
     private val addBookmark       = mockk<AddBookmarkUseCase>(relaxed = true)
     private val chapterExtractor  = mockk<ChapterExtractor>()
-    private val sleepTimer        = mockk<SleepTimer>()
+    private val sleepTimer        = mockk<SleepTimer>(relaxed = true)
     private val logger            = mockk<LibravaultLogger>(relaxed = true)
 
     // MediaController future — completed with mock to avoid blocking in tests
     private val mockController = mockk<MediaController>(relaxed = true)
     private val controllerFuture: SettableFuture<MediaController> = SettableFuture.create()
+    private val sleepTimerState = MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
     
     init {
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
-        every { sleepTimer.state } returns MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
+        every { sleepTimer.state } returns sleepTimerState
     }
 
     private fun viewModel(itemId: Long = 1L): PlayerViewModel {
