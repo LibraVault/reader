@@ -60,6 +60,7 @@ class ReaderViewModelTest {
     )
 
     private val getItem           = mockk<GetLibraryItemUseCase>()
+    private val openFile          = mockk<xyz.libravault.core.storage.usecase.OpenFileUseCase>(relaxed = true)
     private val getProgress       = mockk<GetReadingProgressUseCase>()
     private val saveProgress      = mockk<SaveReadingProgressUseCase>(relaxed = true)
     private val observeBookmarks  = mockk<ObserveBookmarksUseCase>()
@@ -96,6 +97,7 @@ class ReaderViewModelTest {
         return ReaderViewModel(
             savedStateHandle  = SavedStateHandle(mapOf("itemId" to itemId)),
             getItem           = getItem,
+            openFile          = openFile,
             getProgress       = getProgress,
             saveProgress      = saveProgress,
             observeBookmarks  = observeBookmarks,
@@ -133,6 +135,7 @@ class ReaderViewModelTest {
         val vm = ReaderViewModel(
             savedStateHandle  = SavedStateHandle(mapOf("itemId" to 99L)),
             getItem           = getItem,
+            openFile          = openFile,
             getProgress       = getProgress,
             saveProgress      = saveProgress,
             observeBookmarks  = observeBookmarks,

@@ -105,20 +105,6 @@ class ReaderViewModel @Inject constructor(
             }
         }
     }
-            val item = getItem(id)
-            if (item == null) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
-                return@launch
-            }
-            val progress = getProgress(id)
-            _uiState.value = _uiState.value.copy(
-                item      = item,
-                progress  = progress,
-                isLoading = false,
-            )
-            logger.i("Reader", "Opened: ${item.title}")
-        }
-    }
 
     // ── Progress ─────────────────────────────────────────────────────────────
 
