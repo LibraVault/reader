@@ -46,7 +46,7 @@ class LibraryScannerImpl @Inject constructor(
         emit(ScanProgress.Started)
         logger.i(TAG, "Scan started")
 
-        runCatching {
+        try { runCatching {
             // ── 1. Collect vault URIs ────────────────────────────────────────
             val vaults = mutableListOf<Pair<Long, Uri>>()
             vaultRepository.observeVaults().collect { list ->
@@ -168,12 +168,14 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             logger.i(TAG, "Phase 2 complete — enriched $enriched items")
-            scanInProgress.set(false)
-
         }.onFailure { e ->
             logger.e(TAG, "Scan failed", e)
             emit(ScanProgress.Error(e.message ?: "Unknown scan error"))
+        }
+        } finally {
+            // Always release the lock — covers success, failure, AND coroutine cancellation
             scanInProgress.set(false)
+            logger.d(TAG, "Scan lock released")
         }
     }
 
