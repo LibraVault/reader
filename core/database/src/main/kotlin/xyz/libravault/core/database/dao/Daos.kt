@@ -17,6 +17,9 @@ interface VaultFolderDao {
     @Query("SELECT * FROM vault_folders ORDER BY addedAt ASC")
     fun observeAll(): Flow<List<VaultFolderEntity>>
 
+    @Query("SELECT * FROM vault_folders WHERE uri = :uri LIMIT 1")
+    suspend fun findByUri(uri: String): VaultFolderEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(folder: VaultFolderEntity): Long
 

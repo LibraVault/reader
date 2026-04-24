@@ -35,6 +35,9 @@ class VaultRepositoryImpl @Inject constructor(
     override fun observeVaults(): Flow<List<VaultFolder>> =
         dao.observeAll().map { list -> list.map { it.toDomain() } }
 
+    override suspend fun findByUri(uri: String): VaultFolder? =
+        dao.findByUri(uri)?.toDomain()
+
     override suspend fun addVault(uri: String, displayName: String): VaultFolder {
         val entity = VaultFolderEntity(
             uri = uri,

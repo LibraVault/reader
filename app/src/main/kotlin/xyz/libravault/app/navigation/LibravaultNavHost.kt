@@ -2,6 +2,8 @@ package xyz.libravault.app.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import android.app.Activity
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -40,16 +42,16 @@ sealed class Screen(val route: String) {
 fun LibravaultNavHost(
     navController: NavHostController,
     startDestination: String,
-    onOnboardingFinished: () -> Unit = {},
 ) {
     NavHost(
         navController    = navController,
         startDestination = startDestination,
     ) {
         composable(Screen.Onboarding.route) {
+            val activity = LocalContext.current as? Activity
             OnboardingScreen(
                 onFinished = {
-                    onOnboardingFinished()
+                    (activity as? xyz.libravault.app.MainActivity)?.markOnboarded()
                     navController.navigate(Screen.Library.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
