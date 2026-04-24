@@ -5,7 +5,7 @@ import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
-import org.readium.r2.shared.util.Try
+import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.streamer.PublicationOpener
@@ -59,7 +59,6 @@ class ReadiumProvider @Inject constructor(
      * Callers **must** call [Publication.close] when the publication is
      * no longer needed to free native resources held by the parser.
      */
-    @Suppress("REDUNDANT_ELSE_IN_WHEN")
     suspend fun open(uri: Uri): Result<Publication> {
         // AbsoluteUrl is Readium's typed URL wrapper. Content URIs (content://)
         // and file URIs (file://) are both valid absolute URLs.
@@ -70,28 +69,23 @@ class ReadiumProvider @Inject constructor(
 
         // Step 1 — retrieve asset (detects format, wraps into Readium's Asset type)
         val asset = assetRetriever.retrieve(url)
-            .getOrElse { error ->
-                return Result.failure(
-                    Exception("Failed to retrieve asset at $uri: ${error.message}")
-                )
-            }
+            .getOrNull()
+            ?: return Result.failure(
+                Exception("Failed to retrieve asset at $uri")
+            )
 
         // Step 2 — open publication (parses OPF, builds Publication object)
         // allowUserInteraction = false because we never show DRM dialogs in v1
-        return when (
-            val result = publicationOpener.open(
-                asset = asset,
-                allowUserInteraction = false
-            )
-        ) {
-            is Try.Success -> Result.success(result.value)
-            is Try.Failure -> {
+        return publicationOpener.open(
+            asset = asset,
+            allowUserInteraction = false
+        ).fold(
+            onSuccess = { Result.success(it) },
+            onFailure = {
                 Result.failure(
-                    Exception("Failed to open publication: ${result.value.message}")
+                    Exception("Failed to open publication: ${it.message}")
                 )
             }
-            // Try is sealed, but Kotlin insists on else in cross-module when expressions
-            else -> Result.failure(Exception("Unknown Try state"))
-        }
+        )
     }
 }

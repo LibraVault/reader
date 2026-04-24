@@ -225,8 +225,8 @@ private fun EpubNavigatorView(
 
         // Commit the fragment, replacing any previous instance
         fragmentManager.fragmentFactory = factory
-        fragmentManager.commitNowAllowingStateLoss {
-            replace(containerId, EpubNavigatorFragment::class.java, null, EPUB_FRAGMENT_TAG)
+        fragmentManager.commitNow(allowStateLoss = true) {
+            replace<EpubNavigatorFragment>(containerId, tag = EPUB_FRAGMENT_TAG)
         }
 
         // Get the navigator reference synchronously (commitNow = immediate execution)
@@ -247,8 +247,8 @@ private fun EpubNavigatorView(
             // Remove the fragment on composition exit so it doesn't linger
             // if the user navigates away while a settings sheet is open etc.
             if (!fragmentManager.isStateSaved) {
-                fragmentManager.commitNowAllowingStateLoss {
-                    fragmentManager.findFragmentByTag(EPUB_FRAGMENT_TAG)?.let { remove(it) }
+                fragmentManager.commitNow(allowStateLoss = true) {
+                    nav?.let { remove(it) }
                 }
             }
             navigator = null
