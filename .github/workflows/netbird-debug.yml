@@ -1,0 +1,61 @@
+name: NetBird Debug Access
+
+# Manual trigger to attach NetBird to a runner for live SSH debugging.
+# Usage: GitHub → Actions → NetBird Debug Access → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Sleep duration (minutes) to keep runner alive'
+        required: false
+        default: '30'
+
+concurrency:
+  group: netbird-debug
+  cancel-in-progress: true
+
+jobs:
+  debug-runner:
+    name: Attach NetBird + SSH to runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: NetBird Connect
+        id: netbird
+        uses: Alemiz112/netbird-connect@v1
+        with:
+          setup-key: ${{ secrets.NETBIRD_SETUP_KEY }}
+
+      - name: Install SSH public key for remote access
+        run: |
+          mkdir -p /home/runner/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/.ssh/authorized_keys
+          chmod 700 /home/runner/.ssh
+          chmod 600 /home/runner/.ssh/authorized_keys
+          sudo systemctl start ssh || sudo service ssh start || true
+
+      - name: Show NetBird status
+        run: |
+          echo "=== NetBird Network ==="
+          sudo netbird status
+          echo ""
+          echo "=== Runner IP ==="
+          hostname -I || true
+          ip addr show wt0 || ip addr show netbird0 || true
+
+      - name: Keep alive for SSH access
+        run: |
+          DURATION=${{ github.event.inputs.duration || '30' }}
+          echo "Runner is connected to NetBird. SSH into it now:"
+          echo "  ssh -o StrictHostKeyChecking=no runner@<netbird-ip>"
+          echo ""
+          echo "Sleeping for ${DURATION} minutes..."
+          sleep "${DURATION}m"
+
+      - name: disconnect NetBird
+        if: always()
+        run: sudo netbird down
