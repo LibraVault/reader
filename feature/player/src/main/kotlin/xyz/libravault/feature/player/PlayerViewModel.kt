@@ -123,8 +123,7 @@ class PlayerViewModel @Inject constructor(
                 logger.i(TAG, "MediaController connected")
                 // Item may have loaded before the controller was ready — play now
                 _uiState.value.item?.let { item ->
-                    play(android.net.Uri.parse(item.filePath),
-                         _uiState.value.progress?.positionMs ?: 0L)
+                    play(android.net.Uri.parse(item.filePath), startPositionMs = 0L)
                 }
             }.onFailure { e ->
                 logger.e(TAG, "MediaController connection failed", e)
