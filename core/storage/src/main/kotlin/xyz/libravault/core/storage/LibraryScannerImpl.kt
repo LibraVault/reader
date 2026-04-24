@@ -1,6 +1,7 @@
 package xyz.libravault.core.storage
 
 import android.net.Uri
+import java.util.concurrent.atomic.AtomicBoolean
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -32,7 +33,16 @@ class LibraryScannerImpl @Inject constructor(
         private const val TAG = "LibraryScanner"
     }
 
+    // Prevents concurrent scans across ViewModels (e.g. OnboardingViewModel
+    // and LibraryViewModel both calling scan() within the same session).
+    private val scanInProgress = AtomicBoolean(false)
+
     override fun scan(): Flow<ScanProgress> = flow {
+        if (!scanInProgress.compareAndSet(false, true)) {
+            logger.i(TAG, "Scan already in progress — skipping duplicate trigger")
+            emit(ScanProgress.Completed(0))
+            return@flow
+        }
         emit(ScanProgress.Started)
         logger.i(TAG, "Scan started")
 
@@ -158,10 +168,12 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             logger.i(TAG, "Phase 2 complete — enriched $enriched items")
+            scanInProgress.set(false)
 
         }.onFailure { e ->
             logger.e(TAG, "Scan failed", e)
             emit(ScanProgress.Error(e.message ?: "Unknown scan error"))
+            scanInProgress.set(false)
         }
     }
 
