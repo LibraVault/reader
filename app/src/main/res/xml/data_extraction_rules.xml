@@ -2,9 +2,7 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="sharedpref" path="libravault_prefs.xml" />
-        <exclude domain="database"   path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="database" path="." />
     </device-transfer>
 </data-extraction-rules>
