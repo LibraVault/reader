@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,7 +86,7 @@ fun OnboardingScreen(
             // ── Header ──────────────────────────────────────────────────────
             Spacer(Modifier.height(40.dp))
             Text(
-                text = "LibraVault",
+                text = "LIBRAVAULT",
                 style = MaterialTheme.typography.displayMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
@@ -114,7 +113,7 @@ fun OnboardingScreen(
                     .padding(16.dp),
             ) {
                 Text(
-                    text = "🔒  Libravault only sees the folders you choose. Nothing else on your device is ever accessed.",
+                    text = "🔒  LibraVault only sees the folders you choose. Nothing else on your device is ever accessed.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -186,7 +185,7 @@ fun OnboardingScreen(
                 enabled = state.addedVaultNames.isNotEmpty(),
             ) {
                 Text(
-                    text = if (state.addedVaultNames.isEmpty()) "Add at least one folder" else "Open My Library",
+                    text = if (state.addedVaultNames.isEmpty()) "Add at least one folder" else "Open my Library",
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
