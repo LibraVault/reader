@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 LibravaultNavHost(
                     navController    = nav,
                     startDestination = start,
+                    onOnboardingFinished = { markOnboarded() },
                 )
 
                 // Handle ACTION_VIEW intent that cold-launched this activity

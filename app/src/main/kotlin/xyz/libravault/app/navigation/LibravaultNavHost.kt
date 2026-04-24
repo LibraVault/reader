@@ -40,6 +40,7 @@ sealed class Screen(val route: String) {
 fun LibravaultNavHost(
     navController: NavHostController,
     startDestination: String,
+    onOnboardingFinished: () -> Unit = {},
 ) {
     NavHost(
         navController    = navController,
@@ -48,6 +49,7 @@ fun LibravaultNavHost(
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
                 onFinished = {
+                    onOnboardingFinished()
                     navController.navigate(Screen.Library.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
