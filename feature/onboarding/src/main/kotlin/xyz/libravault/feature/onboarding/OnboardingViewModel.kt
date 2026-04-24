@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
-import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.VaultManager
 import javax.inject.Inject
@@ -24,7 +23,6 @@ data class OnboardingUiState(
 class OnboardingViewModel @Inject constructor(
     private val addVaultFolder: AddVaultFolderUseCase,
     private val vaultManager: VaultManager,
-    private val scanVault: ScanVaultUseCase,
     private val logger: LibravaultLogger,
 ) : ViewModel() {
 
@@ -45,8 +43,7 @@ class OnboardingViewModel @Inject constructor(
                     isLoading       = false,
                     addedVaultNames = _uiState.value.addedVaultNames + vault.displayName,
                 )
-                // Trigger background scan immediately after vault is added
-                triggerScan()
+                // LibraryViewModel handles the scan when it initialises
             }.onFailure { e ->
                 logger.e("Onboarding", "Failed to add vault", e)
                 _uiState.value = _uiState.value.copy(
@@ -57,13 +54,4 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
-    private fun triggerScan() {
-        viewModelScope.launch {
-            runCatching {
-                scanVault().collect { /* progress emitted to LibraryViewModel on home screen */ }
-            }.onFailure { e ->
-                logger.w("Onboarding", "Background scan failed: ${e.message}")
-            }
-        }
-    }
 }

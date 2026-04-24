@@ -22,10 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SnackbarHost
@@ -72,6 +75,27 @@ fun LibraryScreen(
     val snackbarHost = remember { SnackbarHostState() }
     var searchActive by remember { mutableStateOf(false) }
 
+    // SAF folder picker — adds a new vault from the library screen
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = result.data?.data ?: return@rememberLauncherForActivityResult
+            val displayName = uri.lastPathSegment
+                ?.substringAfterLast(':')
+                ?.substringAfterLast('/')
+                ?: "My Vault"
+            viewModel.onVaultPicked(uri, displayName)
+        }
+    }
+
+    fun launchFolderPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        folderPickerLauncher.launch(intent)
+    }
+
     // Show stale file snackbar
     LaunchedEffect(state.staleItemMessage) {
         if (state.staleItemMessage) {
@@ -85,6 +109,11 @@ fun LibraryScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHost) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { launchFolderPicker() }) {
+                Icon(Icons.Default.Add, contentDescription = "Add vault folder")
+            }
+        },
         topBar = {
             Column {
                 TopAppBar(
@@ -130,9 +159,20 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            if (state.allItems.isEmpty() && !state.isScanning) {
-                EmptyLibrary(hasVaults = state.vaults.isNotEmpty())
-            } else if (state.allItems.isNotEmpty()) {
+            when {
+                state.allItems.isEmpty() && state.isScanning -> {
+                    // Scan in progress — show spinner, items will appear shortly
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            text = "Scanning your library…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
+                        )
+                    }
+                }
+                state.allItems.isEmpty() -> EmptyLibrary(hasVaults = state.vaults.isNotEmpty())
+                else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp),

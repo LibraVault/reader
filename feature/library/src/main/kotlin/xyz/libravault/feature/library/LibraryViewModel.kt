@@ -13,7 +13,10 @@ import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.scanner.ScanProgress
+import android.net.Uri
+import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryUseCase
+import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.domain.usecase.ObserveCurrentlyReadingUseCase
 import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
 import xyz.libravault.core.domain.usecase.ScanVaultUseCase
@@ -31,6 +34,7 @@ data class LibraryUiState(
     val isScanning: Boolean               = false,
     val scanError: String?                = null,
     val staleItemMessage: Boolean         = false,  // "File not found" snackbar
+    val addVaultError: String?            = null,
 )
 
 @HiltViewModel
@@ -40,10 +44,13 @@ class LibraryViewModel @Inject constructor(
     observeCurrentlyReading: ObserveCurrentlyReadingUseCase,
     private val scanVault: ScanVaultUseCase,
     private val searchLibrary: SearchLibraryUseCase,
+    private val addVaultFolder: AddVaultFolderUseCase,
+    private val vaultManager: VaultManager,
     private val logger: LibravaultLogger,
 ) : ViewModel() {
 
     private val _scanning      = MutableStateFlow(false)
+    private val _addVaultError = MutableStateFlow<String?>(null)
     private val _scanError     = MutableStateFlow<String?>(null)
     private val _searchQuery   = MutableStateFlow("")
     private val _searchResults = MutableStateFlow<List<LibraryItem>?>(null)
@@ -54,9 +61,9 @@ class LibraryViewModel @Inject constructor(
         getLibrary(),
         observeCurrentlyReading.book(),
         observeCurrentlyReading.audiobook(),
-        combine(_scanning, _scanError, _searchQuery, _searchResults, _staleMessage)
-            { scanning, error, query, results, stale ->
-                listOf(scanning, error, query, results, stale)
+        combine(_scanning, _scanError, _searchQuery, _searchResults, _staleMessage, _addVaultError)
+            { scanning, error, query, results, stale, vaultErr ->
+                listOf(scanning, error, query, results, stale, vaultErr)
             },
     ) { vaults, items, book, audiobook, extras ->
         val scanning = extras[0] as Boolean
@@ -64,6 +71,7 @@ class LibraryViewModel @Inject constructor(
         val query    = extras[2] as String
         val results  = @Suppress("UNCHECKED_CAST") (extras[3] as? List<LibraryItem>)
         val stale    = extras[4] as Boolean
+        val vaultErr = extras[5] as? String
 
         LibraryUiState(
             vaults           = vaults,
@@ -75,12 +83,31 @@ class LibraryViewModel @Inject constructor(
             searchQuery      = query,
             searchResults    = results,
             staleItemMessage = stale,
+            addVaultError    = vaultErr,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = LibraryUiState(),
     )
+
+    // ── Vault management ─────────────────────────────────────────────────────
+
+    fun onVaultPicked(uri: Uri, displayName: String) {
+        viewModelScope.launch {
+            runCatching {
+                vaultManager.persistPermission(uri)
+                addVaultFolder(uri.toString(), displayName)
+                logger.i("LibraryVM", "Vault added: $displayName — triggering scan")
+                triggerScan()
+            }.onFailure { e ->
+                logger.e("LibraryVM", "Failed to add vault", e)
+                _addVaultError.value = e.message
+            }
+        }
+    }
+
+    fun dismissVaultError() { _addVaultError.value = null }
 
     // ── Scanning ─────────────────────────────────────────────────────────────
 
