@@ -86,7 +86,7 @@ fun OnboardingScreen(
             // ── Header ──────────────────────────────────────────────────────
             Spacer(Modifier.height(40.dp))
             Text(
-                text = "LIBRAVAULT",
+                text = "LibraVault",
                 style = MaterialTheme.typography.displayMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
