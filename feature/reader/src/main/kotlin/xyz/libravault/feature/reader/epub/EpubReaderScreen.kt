@@ -23,9 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.fragment.app.FragmentContainerView
-import androidx.fragment.app.FragmentManager
-import androidx.fragment.app.commit
+import androidx.fragment.app.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -33,7 +31,8 @@ import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
-import org.readium.r2.navigator.epub.css.Theme
+import org.readium.r2.navigator.preferences.Theme
+import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import xyz.libravault.core.domain.model.Bookmark
 import xyz.libravault.core.domain.model.Highlight
@@ -160,6 +159,7 @@ private fun EpubNavigatorView(
     )
 
     // ── Fragment setup ───────────────────────────────────────────────────────
+    @OptIn(ExperimentalReadiumApi::class)
     DisposableEffect(publication, containerId) {
 
         // Build the initial Locator from stored JSON or bare CFI.
@@ -186,14 +186,6 @@ private fun EpubNavigatorView(
         // Navigator listener — routes taps and position change callbacks
         val listener = object : EpubNavigatorFragment.Listener {
 
-            /**
-             * Called by Readium on every tap. Return true to consume the tap
-             * (Readium will NOT navigate); return false to let Readium handle it
-             * (it will go backward/forward based on tap zone).
-             *
-             * We consume only the centre third, which toggles the toolbar.
-             * Left/right thirds fall through to Readium's built-in page turn.
-             */
             override fun onTap(point: PointF): Boolean {
                 val xDp    = point.x / (publication as Any).let { 1f } // density placeholder
                 val width  = screenWidthDp.value
@@ -204,6 +196,19 @@ private fun EpubNavigatorView(
                 } else {
                     false  // let Readium navigate
                 }
+            }
+
+            /** Required by [HyperlinkNavigator.Listener]. Allow all internal links. */
+            @OptIn(ExperimentalReadiumApi::class)
+            override fun shouldFollowInternalLink(
+                link: org.readium.r2.shared.publication.Link,
+                context: org.readium.r2.navigator.HyperlinkNavigator.LinkContext?
+            ): Boolean = true
+
+            /** Required by [HyperlinkNavigator.Listener]. External links are no-op in v1. */
+            @OptIn(ExperimentalReadiumApi::class)
+            override fun onExternalLinkActivated(url: org.readium.r2.shared.util.AbsoluteUrl) {
+                // v1: no-op — Libravault is fully offline; no browser integration.
             }
         }
 
@@ -270,6 +275,7 @@ private fun EpubNavigatorView(
  * Scroll mode: Readium's scroll mode maps to `overflow = SCROLLED` (continuous)
  * vs the default paginated layout.
  */
+@OptIn(ExperimentalReadiumApi::class)
 private fun ReaderSettings.toEpubPreferences(): EpubPreferences {
     return EpubPreferences(
         theme = when (theme) {

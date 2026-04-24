@@ -5,31 +5,50 @@ import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
-import org.readium.r2.streamer.Readium
+import org.readium.r2.shared.util.Try
+import org.readium.r2.shared.util.asset.AssetRetriever
+import org.readium.r2.shared.util.http.DefaultHttpClient
+import org.readium.r2.streamer.PublicationOpener
+import org.readium.r2.streamer.parser.epub.EpubParser
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Application-scoped wrapper around the Readium entry-point class.
+ * Application-scoped wrapper around Readium's publication opening pipeline.
  *
- * [Readium] is expensive to initialise — it registers content handlers,
- * sets up asset retrievers, etc. — so a single instance is shared for
- * the lifetime of the app.
+ * In Readium 3.0.0-beta.2 the monolithic [Readium] facade was removed.
+ * Publication opening is now explicit:
+ *   - [AssetRetriever] → fetch and sniff the asset format from a URL
+ *   - [EpubParser]     → parse the EPUB OPF into a [Publication.Builder]
+ *   - [PublicationOpener] → orchestrate parsing and content protection
  *
  * This class is intentionally thin. It does not manage publication state;
  * callers (via [EpubReaderViewModel]) are responsible for closing the
  * returned [Publication] when they are done with it.
- *
- * Readium API used: 3.0.0-beta.2
- *   - [Readium.assetRetriever] → retrieve asset from URL
- *   - [Readium.streamer]       → open asset to a Publication
  */
 @Singleton
 class ReadiumProvider @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
 
-    private val readium = Readium(context)
+    /**
+     * [AssetRetriever] needs a [ContentResolver] (for content:// / file:// URIs)
+     * and an [org.readium.r2.shared.util.http.HttpClient] (for http:// URIs).
+     * We pass a basic [DefaultHttpClient] for completeness even though v1 is
+     * offline-only; it keeps the retriever future-proof.
+     */
+    private val assetRetriever = AssetRetriever(
+        contentResolver = context.contentResolver,
+        httpClient = DefaultHttpClient()
+    )
+
+    /**
+     * [PublicationOpener] constructor takes the parser that will be used for
+     * every open() call. We use [EpubParser] since Libravault v1 is EPUB-only.
+     */
+    private val publicationOpener = PublicationOpener(
+        publicationParser = EpubParser()
+    )
 
     /**
      * Opens an EPUB from a SAF content URI or file URI.
@@ -40,6 +59,7 @@ class ReadiumProvider @Inject constructor(
      * Callers **must** call [Publication.close] when the publication is
      * no longer needed to free native resources held by the parser.
      */
+    @Suppress("REDUNDANT_ELSE_IN_WHEN")
     suspend fun open(uri: Uri): Result<Publication> {
         // AbsoluteUrl is Readium's typed URL wrapper. Content URIs (content://)
         // and file URIs (file://) are both valid absolute URLs.
@@ -49,7 +69,7 @@ class ReadiumProvider @Inject constructor(
             )
 
         // Step 1 — retrieve asset (detects format, wraps into Readium's Asset type)
-        val asset = readium.assetRetriever.retrieve(url)
+        val asset = assetRetriever.retrieve(url)
             .getOrElse { error ->
                 return Result.failure(
                     Exception("Failed to retrieve asset at $uri: ${error.message}")
@@ -58,12 +78,20 @@ class ReadiumProvider @Inject constructor(
 
         // Step 2 — open publication (parses OPF, builds Publication object)
         // allowUserInteraction = false because we never show DRM dialogs in v1
-        return readium.streamer.open(asset, allowUserInteraction = false)
-            .fold(
-                onSuccess = { Result.success(it) },
-                onFailure = { error ->
-                    Result.failure(Exception("Failed to open publication: ${error.message}"))
-                },
+        return when (
+            val result = publicationOpener.open(
+                asset = asset,
+                allowUserInteraction = false
             )
+        ) {
+            is Try.Success -> Result.success(result.value)
+            is Try.Failure -> {
+                Result.failure(
+                    Exception("Failed to open publication: ${result.value.message}")
+                )
+            }
+            // Try is sealed, but Kotlin insists on else in cross-module when expressions
+            else -> Result.failure(Exception("Unknown Try state"))
+        }
     }
 }
