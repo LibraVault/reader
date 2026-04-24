@@ -132,7 +132,7 @@ fun LibraryScreen(
         ) {
             if (state.allItems.isEmpty() && !state.isScanning) {
                 EmptyLibrary(hasVaults = state.vaults.isNotEmpty())
-            } else {
+            } else if (state.allItems.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp),

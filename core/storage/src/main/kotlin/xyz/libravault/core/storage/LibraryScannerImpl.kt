@@ -49,9 +49,19 @@ class LibraryScannerImpl @Inject constructor(
                 return@runCatching
             }
 
-            // ── 2. Scan and upsert ───────────────────────────────────────────
+            // ── 2. Phase 1: insert stubs immediately ─────────────────────────
+            // For each discovered file, immediately insert a minimal LibraryItem
+            // (title = filename, no cover, no duration) so the UI can show
+            // something within milliseconds. Phase 2 enriches these stubs.
             val scannedPaths = mutableSetOf<String>()
             var count = 0
+
+            // Load existing items once so we can skip re-inserting known files
+            val existingPaths = mutableSetOf<String>()
+            libraryRepository.observeAll().collect { items ->
+                existingPaths.addAll(items.map { it.filePath })
+                return@collect
+            }
 
             fileScanner.scanAll(vaults.map { it.second }).collect { scannedFile ->
                 val vaultId = vaults
@@ -62,26 +72,25 @@ class LibraryScannerImpl @Inject constructor(
                 val path = scannedFile.uri.toString()
                 scannedPaths.add(path)
 
-                runCatching {
-                    val metadata = metadataExtractor.extract(scannedFile)
-                    val item = LibraryItem(
-                        vaultFolderId = vaultId,
-                        filePath      = path,
-                        title         = metadata.title,
-                        author        = metadata.author,
-                        narrator      = metadata.narrator,
-                        series        = metadata.series,
-                        seriesIndex   = metadata.seriesIndex,
-                        format        = scannedFile.format.toDomain(),
-                        coverArtPath  = metadata.coverArtPath,
-                        durationMs    = metadata.durationMs,
-                        pageCount     = metadata.pageCount,
-                    )
-                    libraryRepository.upsert(item)
-                    count++
-                    emit(ScanProgress.ItemFound(count))
-                }.onFailure { e ->
-                    logger.w(TAG, "Skipping ${scannedFile.displayName}: ${e.message}")
+                // Insert stub immediately if not already in DB —
+                // the UI gets a populated list right away
+                if (path !in existingPaths) {
+                    runCatching {
+                        val stub = LibraryItem(
+                            vaultFolderId = vaultId,
+                            filePath      = path,
+                            title         = scannedFile.displayName
+                                .substringBeforeLast('.'),
+                            author        = "Unknown",
+                            format        = scannedFile.format.toDomain(),
+                        )
+                        libraryRepository.upsert(stub)
+                        count++
+                        emit(ScanProgress.ItemFound(count))
+                        logger.d(TAG, "Stub inserted: ${stub.title}")
+                    }.onFailure { e ->
+                        logger.w(TAG, "Failed stub insert for ${scannedFile.displayName}: ${e.message}")
+                    }
                 }
             }
 
@@ -89,8 +98,66 @@ class LibraryScannerImpl @Inject constructor(
             val staleCount = removeStaleEntries(scannedPaths)
             if (staleCount > 0) logger.i(TAG, "Removed $staleCount stale entries")
 
+            // Signal Phase 1 complete — UI is now populated
             emit(ScanProgress.Completed(count))
-            logger.i(TAG, "Scan complete — $count items")
+            logger.i(TAG, "Phase 1 complete — $count new stubs, starting metadata enrichment")
+
+            // ── 4. Phase 2: enrich metadata in the background ────────────────
+            // Now do the slow work (MediaMetadataRetriever, ZIP parsing) without
+            // blocking the UI. Items already enriched (coverArtPath or durationMs
+            // set) are skipped to avoid redundant I/O on subsequent scans.
+            var enriched = 0
+            libraryRepository.observeAll().collect { items ->
+                // Take a snapshot — we don't want to loop as we update
+                items.toList().also { return@collect }
+            }.let { /* collect already returned snapshot above */ }
+
+            // Re-fetch current items for enrichment pass
+            val itemsToEnrich = mutableListOf<LibraryItem>()
+            libraryRepository.observeAll().collect { items ->
+                itemsToEnrich.addAll(items)
+                return@collect
+            }
+
+            for (item in itemsToEnrich) {
+                // Skip items that already have rich metadata
+                val needsEnrichment = when (item.format) {
+                    MediaFormat.MP3, MediaFormat.M4B,
+                    MediaFormat.OGG, MediaFormat.FLAC,
+                    MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
+                    MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
+                            item.author == "Unknown"
+                }
+                if (!needsEnrichment) continue
+
+                runCatching {
+                    val scannedFile = xyz.libravault.core.storage.model.ScannedFile(
+                        uri         = Uri.parse(item.filePath),
+                        displayName = item.title,
+                        mimeType    = "",   // not needed for metadata extraction
+                        format      = item.format.toStorage(),
+                        sizeBytes   = 0L,  // not needed for metadata extraction
+                    )
+                    val metadata = metadataExtractor.extract(scannedFile)
+                    val enrichedItem = item.copy(
+                        title        = metadata.title,
+                        author       = metadata.author,
+                        narrator     = metadata.narrator,
+                        series       = metadata.series,
+                        seriesIndex  = metadata.seriesIndex,
+                        coverArtPath = metadata.coverArtPath,
+                        durationMs   = metadata.durationMs,
+                        pageCount    = metadata.pageCount,
+                    )
+                    libraryRepository.upsert(enrichedItem)
+                    enriched++
+                    logger.d(TAG, "Enriched: ${item.title}")
+                }.onFailure { e ->
+                    logger.w(TAG, "Enrichment failed for ${item.title}: ${e.message}")
+                }
+            }
+
+            logger.i(TAG, "Phase 2 complete — enriched $enriched items")
 
         }.onFailure { e ->
             logger.e(TAG, "Scan failed", e)
@@ -128,6 +195,17 @@ private fun StorageFormat.toDomain() = when (this) {
     StorageFormat.FLAC  -> MediaFormat.FLAC
     StorageFormat.OPUS  -> MediaFormat.OPUS
     StorageFormat.AAC   -> MediaFormat.AAC
+}
+
+private fun MediaFormat.toStorage() = when (this) {
+    MediaFormat.EPUB  -> StorageFormat.EPUB
+    MediaFormat.PDF   -> StorageFormat.PDF
+    MediaFormat.MP3   -> StorageFormat.MP3
+    MediaFormat.M4B   -> StorageFormat.M4B
+    MediaFormat.OGG   -> StorageFormat.OGG
+    MediaFormat.FLAC  -> StorageFormat.FLAC
+    MediaFormat.OPUS  -> StorageFormat.OPUS
+    MediaFormat.AAC   -> StorageFormat.AAC
 }
 
 // ── Hilt binding ──────────────────────────────────────────────────────────────
