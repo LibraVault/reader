@@ -116,18 +116,21 @@ class LibraryViewModel @Inject constructor(
             _scanning.value  = true
             _scanError.value = null
 
-            scanVault().collect { progress ->
-                when (progress) {
-                    is ScanProgress.Error -> {
-                        _scanError.value = progress.message
-                        logger.e("LibraryVM", "Scan error: ${progress.message}")
+            try {
+                scanVault().collect { progress ->
+                    when (progress) {
+                        is ScanProgress.Error -> {
+                            _scanError.value = progress.message
+                            logger.e("LibraryVM", "Scan error: ${progress.message}")
+                        }
+                        is ScanProgress.Completed ->
+                            logger.i("LibraryVM", "Scan complete: ${progress.total} items")
+                        else -> Unit
                     }
-                    is ScanProgress.Completed ->
-                        logger.i("LibraryVM", "Scan complete: ${progress.total} items")
-                    else -> Unit
                 }
+            } finally {
+                _scanning.value = false
             }
-            _scanning.value = false
         }
     }
 

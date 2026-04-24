@@ -9,6 +9,10 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.repository.LibraryRepository
@@ -37,6 +41,9 @@ class LibraryScannerImpl @Inject constructor(
     // Prevents concurrent scans across ViewModels (e.g. OnboardingViewModel
     // and LibraryViewModel both calling scan() within the same session).
     private val scanInProgress = AtomicBoolean(false)
+
+    // Fire-and-forget scope for Phase 2 metadata enrichment — survives flow completion
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun scan(): Flow<ScanProgress> = flow {
         if (!scanInProgress.compareAndSet(false, true)) {
@@ -110,12 +117,33 @@ class LibraryScannerImpl @Inject constructor(
 
             // Signal Phase 1 complete — UI is now populated
             emit(ScanProgress.Completed(count))
-            logger.i(TAG, "Phase 1 complete — $count new stubs, starting metadata enrichment")
+            logger.i(TAG, "Phase 1 complete — $count new stubs, metadata enrichment starts in background")
 
-            // ── 4. Phase 2: enrich metadata in the background ────────────────
-            // Now do the slow work (MediaMetadataRetriever, ZIP parsing) without
-            // blocking the UI. Items already enriched (coverArtPath or durationMs
-            // set) are skipped to avoid redundant I/O on subsequent scans.
+            // ── 4. Phase 2: enrich metadata OFF the hot flow ──────────────────
+            // Run in a fire-and-forget coroutine so that the Flow collector
+            // (LibraryViewModel) sees the stream complete and clears the
+            // scanning flag.  Slow/broken files no longer block the UI.
+            backgroundScope.launch {
+                enrichMetadata()
+            }
+        }.onFailure { e ->
+            logger.e(TAG, "Scan failed", e)
+            emit(ScanProgress.Error(e.message ?: "Unknown scan error"))
+        }
+        } finally {
+            // Always release the lock — covers success, failure, AND flow cancellation
+            scanInProgress.set(false)
+            logger.d(TAG, "Scan lock released")
+        }
+    }
+
+    /**
+     * Phase 2 enrichment — runs independently of the scan flow.
+     * Items already enriched (coverArtPath or durationMs set) are skipped
+     * to avoid redundant I/O on every restart.
+     */
+    private suspend fun enrichMetadata() {
+        try {
             var enriched = 0
             val itemsToEnrich = libraryRepository.observeAll().first()
 
@@ -158,14 +186,8 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             logger.i(TAG, "Phase 2 complete — enriched $enriched items")
-        }.onFailure { e ->
-            logger.e(TAG, "Scan failed", e)
-            emit(ScanProgress.Error(e.message ?: "Unknown scan error"))
-        }
-        } finally {
-            // Always release the lock — covers success, failure, AND coroutine cancellation
-            scanInProgress.set(false)
-            logger.d(TAG, "Scan lock released")
+        } catch (e: Throwable) {
+            logger.e(TAG, "Unhandled enrichment exception", e)
         }
     }
 

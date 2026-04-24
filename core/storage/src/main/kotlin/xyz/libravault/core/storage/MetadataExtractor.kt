@@ -6,7 +6,9 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import xyz.libravault.core.logger.LibravaultLogger
@@ -63,7 +65,10 @@ class MetadataExtractor @Inject constructor(
     private suspend fun extractAudio(file: ScannedFile): ExtractedMetadata {
         val retriever = MediaMetadataRetriever()
         return try {
-            retriever.setDataSource(context, file.uri)
+            // Guard against native hangs on corrupted/unusual files — 10s hard cap
+            withTimeout(10_000L) {
+                retriever.setDataSource(context, file.uri)
+            }
 
             val title    = retriever.extract(MediaMetadataRetriever.METADATA_KEY_TITLE)
                 ?: file.displayName.substringBeforeLast('.')
@@ -86,6 +91,9 @@ class MetadataExtractor @Inject constructor(
                 durationMs  = duration,
                 coverArtPath = coverPath,
             )
+        } catch (_: TimeoutCancellationException) {
+            logger.w(TAG, "Metadata extraction timed out for ${file.displayName}")
+            fallback(file)
         } finally {
             retriever.release()
         }
