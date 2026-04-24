@@ -1,5 +1,6 @@
 package xyz.libravault.feature.library
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,15 +59,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import android.app.Activity
+import xyz.libravault.feature.library.R
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.graphics.graphicsLayer
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 
@@ -113,7 +120,17 @@ fun LibraryScreen(
         }
     }
 
-    Scaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Faint background — 6% opacity so it reads as atmosphere, not clutter
+        Image(
+            painter = rememberAsyncImagePainter(R.drawable.library_bg),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(alpha = 0.06f),
+        )
+        Scaffold(
         snackbarHost = { SnackbarHost(snackbarHost) },
         floatingActionButton = {
             FloatingActionButton(onClick = { launchFolderPicker() }) {
@@ -126,7 +143,9 @@ fun LibraryScreen(
                     title = {
                         Text(
                             text = "LibraVault",
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                letterSpacing = 0.sp,
+                            ),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -296,6 +315,7 @@ fun LibraryScreen(
                 }
                 } // else
             } // when
+        }
         }
     }
 }

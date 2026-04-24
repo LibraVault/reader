@@ -129,6 +129,9 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:logger"))
 
+    // Splash screen API (Android 12+ native + backport to API 23)
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     // Navigation host lives in app
     implementation(libs.navigation.compose)
     implementation(libs.hilt.navigation.compose)
