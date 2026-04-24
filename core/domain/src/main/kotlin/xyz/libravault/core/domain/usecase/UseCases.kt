@@ -13,8 +13,13 @@ import javax.inject.Inject
 class AddVaultFolderUseCase @Inject constructor(
     private val vaultRepository: VaultRepository,
 ) {
-    suspend operator fun invoke(uri: String, displayName: String): VaultFolder =
-        vaultRepository.addVault(uri, displayName)
+    suspend operator fun invoke(uri: String, displayName: String): VaultFolder {
+        // Silently return existing vault if this URI is already registered —
+        // no error, no duplicate, user just continues normally
+        val existing = vaultRepository.findByUri(uri)
+        if (existing != null) return existing
+        return vaultRepository.addVault(uri, displayName)
+    }
 }
 
 class RemoveVaultFolderUseCase @Inject constructor(

@@ -11,6 +11,7 @@ import xyz.libravault.core.domain.model.VaultFolder
 
 interface VaultRepository {
     fun observeVaults(): Flow<List<VaultFolder>>
+    suspend fun findByUri(uri: String): VaultFolder?
     suspend fun addVault(uri: String, displayName: String): VaultFolder
     suspend fun removeVault(id: Long)
 }
