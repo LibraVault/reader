@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,7 +55,7 @@ import xyz.libravault.feature.player.components.ChapterListSheet
 import xyz.libravault.feature.player.components.PlaybackControls
 import xyz.libravault.feature.player.components.PlayerSeekBar
 import xyz.libravault.feature.player.components.SleepTimerSheet
-import xyz.libravault.feature.player.components.SpeedPicker
+import xyz.libravault.feature.player.components.SpeedPickerSheet
 import xyz.libravault.feature.player.service.SleepTimerState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,7 +68,8 @@ fun PlayerScreen(
 ) {
     val state     by viewModel.uiState.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
-    var showChapters by remember { mutableStateOf(false) }
+    var showChapters    by remember { mutableStateOf(false) }
+    var showSpeedPicker by remember { mutableStateOf(false) }
 
     // Start playback when item is loaded
     LaunchedEffect(state.item) {
@@ -239,11 +241,17 @@ fun PlayerScreen(
                         )
                         } // end grimoire Box
 
-                        // ── Speed picker ──────────────────────────────────────
-                        SpeedPicker(
-                            currentSpeed    = state.playbackSpeed,
-                            onSpeedSelected = viewModel::setSpeed,
-                        )
+                        // ── Speed button — tap to open speed sheet ────────
+                        TextButton(onClick = { showSpeedPicker = true }) {
+                            Text(
+                                text  = if (state.playbackSpeed == state.playbackSpeed.toInt().toFloat())
+                                    "${state.playbackSpeed.toInt()}×"
+                                else
+                                    "${state.playbackSpeed.toBigDecimal().stripTrailingZeros().toPlainString()}×",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
 
                         // ── Sleep timer status ────────────────────────────────
                         if (state.sleepTimerState is SleepTimerState.Active) {
@@ -277,6 +285,14 @@ fun PlayerScreen(
                 bookmarks       = bookmarks,
                 onBookmarkClick = viewModel::seekToBookmark,
                 onDismiss       = viewModel::hideBookmarks,
+            )
+        }
+
+        if (showSpeedPicker) {
+            SpeedPickerSheet(
+                currentSpeed    = state.playbackSpeed,
+                onSpeedSelected = viewModel::setSpeed,
+                onDismiss       = { showSpeedPicker = false },
             )
         }
 

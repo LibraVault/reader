@@ -339,7 +339,10 @@ class PlayerViewModel @Inject constructor(
         stopPolling()
         progressSaveJob?.cancel()
         controller?.removeListener(playerListener)
-        MediaController.releaseFuture(controllerFuture)
+        // Do NOT release the singleton controllerFuture here — it is @Singleton scoped
+        // and shared across ViewModel instances. Releasing it cancels the future for
+        // all subsequent PlayerViewModel instances, causing "Playback service unavailable".
+        // The MediaController itself stays connected for background playback continuity.
         super.onCleared()
     }
 }

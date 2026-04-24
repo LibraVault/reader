@@ -116,21 +116,18 @@ class LibraryViewModel @Inject constructor(
             _scanning.value  = true
             _scanError.value = null
 
-            try {
-                scanVault().collect { progress ->
-                    when (progress) {
-                        is ScanProgress.Error -> {
-                            _scanError.value = progress.message
-                            logger.e("LibraryVM", "Scan error: ${progress.message}")
-                        }
-                        is ScanProgress.Completed ->
-                            logger.i("LibraryVM", "Scan complete: ${progress.total} items")
-                        else -> Unit
+            scanVault().collect { progress ->
+                when (progress) {
+                    is ScanProgress.Error -> {
+                        _scanError.value = progress.message
+                        logger.e("LibraryVM", "Scan error: ${progress.message}")
                     }
+                    is ScanProgress.Completed ->
+                        logger.i("LibraryVM", "Scan complete: ${progress.total} items")
+                    else -> Unit
                 }
-            } finally {
-                _scanning.value = false
             }
+            _scanning.value = false
         }
     }
 
@@ -167,6 +164,32 @@ class LibraryViewModel @Inject constructor(
     // ── Init ─────────────────────────────────────────────────────────────────
 
     init {
+        viewModelScope.launch {
+            // Recovery: if Room has no vaults but the OS still holds URI permissions
+            // (e.g. after user clears app cache), re-register the persisted URIs so
+            // the scanner can find the files again.
+            val vaultList = mutableListOf<xyz.libravault.core.domain.model.VaultFolder>()
+            observeVaults().collect { list ->
+                vaultList.addAll(list)
+                return@collect
+            }
+
+            if (vaultList.isEmpty()) {
+                val persistedUris = vaultManager.persistedVaultUris()
+                if (persistedUris.isNotEmpty()) {
+                    logger.i("LibraryVM", "Room empty but ${persistedUris.size} URI permission(s) found — recovering vaults")
+                    persistedUris.forEach { uri ->
+                        runCatching {
+                            addVaultFolder(
+                                uri.toString(),
+                                uri.lastPathSegment?.substringAfterLast(':')
+                                    ?.substringAfterLast('/') ?: "My Vault"
+                            )
+                        }
+                    }
+                }
+            }
+        }
         triggerScan()  // Background scan on every cold start
     }
 }

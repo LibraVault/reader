@@ -172,7 +172,7 @@ fun SettingsScreen(
             SectionHeader("About")
 
             SettingLabel(
-                title    = "Libravault",
+                title    = "LibraVault",
                 subtitle = "Version 0.1.0 · GPL-3.0 · libravault.xyz",
             )
             SettingLabel(
