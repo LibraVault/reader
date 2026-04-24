@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import xyz.libravault.core.domain.model.AppReadingTheme
+import xyz.libravault.core.domain.model.formatPlaybackSpeed
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +93,7 @@ fun SettingsScreen(
 
             SettingLabel(
                 title    = "Default speed",
-                subtitle = "${prefs.defaultPlaybackSpeed}×",
+                subtitle = formatPlaybackSpeed(prefs.defaultPlaybackSpeed),
             )
             Slider(
                 value         = prefs.defaultPlaybackSpeed,

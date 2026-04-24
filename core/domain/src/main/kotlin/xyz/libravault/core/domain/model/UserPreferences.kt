@@ -18,3 +18,18 @@ data class UserPreferences(
 )
 
 enum class AppReadingTheme { DARK, LIGHT, SEPIA }
+
+// ── Playback speed helpers ───────────────────────────────────────────────────
+
+/** Valid increments: 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0 */
+fun snapPlaybackSpeed(speed: Float): Float {
+    val quarterSteps = kotlin.math.round(speed * 4f)
+    return (quarterSteps / 4f).coerceIn(0.5f, 3.0f)
+}
+
+/** Formats snapped speed as e.g. "0.75×", "1×", "1.25×", "2.5×" */
+fun formatPlaybackSpeed(speed: Float): String {
+    val snapped = snapPlaybackSpeed(speed)
+    return if (snapped % 1f == 0f) "${snapped.toInt()}×"
+    else "${snapped}×".removeSuffix(".0") + "×"
+}
