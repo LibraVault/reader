@@ -43,6 +43,7 @@ class SleepTimer @Inject constructor() {
     val state: StateFlow<SleepTimerState> = _state.asStateFlow()
 
     private var timerJob: Job? = null
+    private var activePlayer: ExoPlayer? = null
 
     /**
      * Start the timer.
@@ -52,6 +53,7 @@ class SleepTimer @Inject constructor() {
      */
     fun start(durationMs: Long, player: ExoPlayer, scope: CoroutineScope) {
         cancel()
+        activePlayer = player
         timerJob = scope.launch {
             var remaining = durationMs
 
@@ -77,13 +79,21 @@ class SleepTimer @Inject constructor() {
             // ── Stop and restore ──────────────────────────────────────────
             player.pause()
             player.volume = 1.0f
+            activePlayer = null
             _state.value = SleepTimerState.Inactive
         }
     }
 
+    /**
+     * Cancel the timer immediately.
+     * Restores the last known player volume to 1.0 so the user isn't left
+     * with a low volume after cancelling.
+     */
     fun cancel() {
         timerJob?.cancel()
         timerJob = null
+        activePlayer?.volume = 1.0f
+        activePlayer = null
         _state.value = SleepTimerState.Inactive
     }
 

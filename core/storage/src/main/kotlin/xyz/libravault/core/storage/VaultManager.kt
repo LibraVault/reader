@@ -57,11 +57,12 @@ class VaultManager @Inject constructor(
     /**
      * Recursively scans a document tree URI and returns all supported media files.
      * Runs on IO dispatcher — safe to call from a coroutine.
+     * @param maxDepth Maximum directory depth to traverse (default 5).
      */
-    suspend fun scanFolder(treeUri: Uri): List<ScannedFile> = withContext(Dispatchers.IO) {
+    suspend fun scanFolder(treeUri: Uri, maxDepth: Int = 5): List<ScannedFile> = withContext(Dispatchers.IO) {
         val results = mutableListOf<ScannedFile>()
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-        traverseDirectory(treeUri, rootDocId, results)
+        traverseDirectory(treeUri, rootDocId, results, remainingDepth = maxDepth)
         results
     }
 
@@ -69,7 +70,10 @@ class VaultManager @Inject constructor(
         treeUri: Uri,
         parentDocId: String,
         results: MutableList<ScannedFile>,
+        remainingDepth: Int,
     ) {
+        if (remainingDepth <= 0) return
+
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
 
         context.contentResolver.query(
@@ -90,7 +94,7 @@ class VaultManager @Inject constructor(
 
                 when {
                     mime == DocumentsContract.Document.MIME_TYPE_DIR ->
-                        traverseDirectory(treeUri, docId, results)
+                        traverseDirectory(treeUri, docId, results, remainingDepth = remainingDepth - 1)
 
                     else -> {
                         val format = MediaFormat.fromMimeOrName(mime, name) ?: return@use

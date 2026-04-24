@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,7 +39,7 @@ class CoverArtCache @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 val bitmap = decode(imageBytes) ?: return@runCatching null
-                val file = File(cacheDir, "${key.hashCode()}.jpg")
+                val file = File(cacheDir, "${keyHash(key)}.jpg")
                 FileOutputStream(file).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                 }
@@ -78,6 +79,12 @@ class CoverArtCache @Inject constructor(
         var size = 1
         while (actual / (size * 2) >= target) size *= 2
         return size
+    }
+
+    private fun keyHash(key: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(key.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
     }
 
     companion object {
