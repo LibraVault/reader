@@ -17,35 +17,35 @@ enum class ReadingTheme { DARK, LIGHT, SEPIA }
 val LocalReadingTheme = staticCompositionLocalOf { ReadingTheme.DARK }
 
 private val DarkColorScheme = darkColorScheme(
-    primary             = VaultBlue,
-    onPrimary           = Neutral50,
-    primaryContainer    = VaultBlueDark,
-    onPrimaryContainer  = VaultBlueLight,
-    secondary           = VaultAmber,
-    onSecondary         = Neutral900,
+    primary             = LeatherBrown,
+    onPrimary           = WarmNeutral50,
+    primaryContainer    = LeatherDark,
+    onPrimaryContainer  = LeatherLight,
+    secondary           = VaultGold,
+    onSecondary         = WarmNeutral900,
     background          = DarkBackground,
-    onBackground        = Neutral100,
+    onBackground        = WarmNeutral100,
     surface             = DarkSurface,
-    onSurface           = Neutral100,
+    onSurface           = WarmNeutral100,
     surfaceVariant      = DarkSurfaceVar,
-    onSurfaceVariant    = Neutral500,
-    outline             = Neutral700,
+    onSurfaceVariant    = WarmNeutral500,
+    outline             = WarmNeutral700,
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary             = VaultBlue,
-    onPrimary           = Neutral50,
-    primaryContainer    = VaultBlueLight,
-    onPrimaryContainer  = VaultBlueDark,
-    secondary           = VaultAmber,
-    onSecondary         = Neutral900,
-    background          = Neutral50,
-    onBackground        = Neutral900,
-    surface             = Neutral100,
-    onSurface           = Neutral900,
-    surfaceVariant      = Neutral200,
-    onSurfaceVariant    = Neutral700,
-    outline             = Neutral200,
+    primary             = LeatherBrown,
+    onPrimary           = WarmNeutral50,
+    primaryContainer    = LeatherLight,
+    onPrimaryContainer  = LeatherDark,
+    secondary           = VaultGold,
+    onSecondary         = WarmNeutral900,
+    background          = WarmNeutral50,
+    onBackground        = WarmNeutral900,
+    surface             = WarmNeutral100,
+    onSurface           = WarmNeutral900,
+    surfaceVariant      = WarmNeutral200,
+    onSurfaceVariant    = WarmNeutral700,
+    outline             = WarmNeutral200,
 )
 
 @Composable
@@ -56,6 +56,8 @@ fun LibravaultTheme(
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
+        // Dynamic colour is nice but overrides our leather palette — only use on
+        // Android 12+ if the user has explicitly enabled it in settings
         useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
