@@ -99,7 +99,8 @@
             </intent-filter>
 
             <!-- ── OGG ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault">
+            <intent-filter android:label="Open with Libravault"
+                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/ogg" />
@@ -112,7 +113,8 @@
             </intent-filter>
 
             <!-- ── FLAC ─────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault">
+            <intent-filter android:label="Open with Libravault"
+                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/flac" />
@@ -125,7 +127,8 @@
             </intent-filter>
 
             <!-- ── OPUS ─────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault">
+            <intent-filter android:label="Open with Libravault"
+                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/opus" />
@@ -138,7 +141,8 @@
             </intent-filter>
 
             <!-- ── AAC ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault">
+            <intent-filter android:label="Open with Libravault"
+                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/aac" />
