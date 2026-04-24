@@ -7,6 +7,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
@@ -49,10 +50,10 @@ class LibraryScannerImpl @Inject constructor(
         try { runCatching {
             // ── 1. Collect vault URIs ────────────────────────────────────────
             val vaults = mutableListOf<Pair<Long, Uri>>()
-            vaultRepository.observeVaults().collect { list ->
-                vaults.addAll(list.map { it.id to Uri.parse(it.uri) })
-                return@collect
-            }
+            vaults.addAll(
+                vaultRepository.observeVaults().first()
+                    .map { it.id to Uri.parse(it.uri) }
+            )
 
             if (vaults.isEmpty()) {
                 emit(ScanProgress.Completed(0))
@@ -67,11 +68,10 @@ class LibraryScannerImpl @Inject constructor(
             var count = 0
 
             // Load existing items once so we can skip re-inserting known files
-            val existingPaths = mutableSetOf<String>()
-            libraryRepository.observeAll().collect { items ->
-                existingPaths.addAll(items.map { it.filePath })
-                return@collect
-            }
+            val existingPaths = libraryRepository.observeAll()
+                .first()
+                .map { it.filePath }
+                .toSet()
 
             fileScanner.scanAll(vaults.map { it.second }).collect { scannedFile ->
                 val vaultId = vaults
@@ -117,17 +117,7 @@ class LibraryScannerImpl @Inject constructor(
             // blocking the UI. Items already enriched (coverArtPath or durationMs
             // set) are skipped to avoid redundant I/O on subsequent scans.
             var enriched = 0
-            libraryRepository.observeAll().collect { items ->
-                // Take a snapshot — we don't want to loop as we update
-                items.toList().also { return@collect }
-            }.let { /* collect already returned snapshot above */ }
-
-            // Re-fetch current items for enrichment pass
-            val itemsToEnrich = mutableListOf<LibraryItem>()
-            libraryRepository.observeAll().collect { items ->
-                itemsToEnrich.addAll(items)
-                return@collect
-            }
+            val itemsToEnrich = libraryRepository.observeAll().first()
 
             for (item in itemsToEnrich) {
                 // Skip items that already have rich metadata
@@ -180,11 +170,7 @@ class LibraryScannerImpl @Inject constructor(
     }
 
     private suspend fun removeStaleEntries(scannedPaths: Set<String>): Int {
-        val allItems = mutableListOf<LibraryItem>()
-        libraryRepository.observeAll().collect { items ->
-            allItems.addAll(items)
-            return@collect
-        }
+        val allItems = libraryRepository.observeAll().first()
 
         var removed = 0
         allItems
