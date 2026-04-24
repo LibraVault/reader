@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import xyz.libravault.core.domain.model.snapPlaybackSpeed
 import xyz.libravault.feature.player.service.Chapter
 import xyz.libravault.feature.player.service.SleepTimerState
 
@@ -172,6 +173,7 @@ fun SpeedPicker(
     onSpeedSelected: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val snappedCurrent = snapPlaybackSpeed(currentSpeed)
     val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f)
     Row(
         modifier = modifier
@@ -181,7 +183,7 @@ fun SpeedPicker(
     ) {
         speeds.forEach { speed ->
             FilterChip(
-                selected = currentSpeed == speed,
+                selected = snappedCurrent == speed,
                 onClick  = { onSpeedSelected(speed) },
                 label    = {
                     Text(

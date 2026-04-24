@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
+import xyz.libravault.core.domain.model.snapPlaybackSpeed
 import xyz.libravault.core.storage.CoverArtCache
 import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
@@ -26,7 +27,7 @@ class SettingsViewModel @Inject constructor(
     fun onReadingThemeChanged(theme: AppReadingTheme) = update { it.copy(defaultReadingTheme = theme) }
 
     fun onPlaybackSpeedChanged(speed: Float) = update {
-        it.copy(defaultPlaybackSpeed = speed.coerceIn(0.5f, 3.0f))
+        it.copy(defaultPlaybackSpeed = snapPlaybackSpeed(speed))
     }
 
     fun onSkipDurationChanged(seconds: Int) = update {

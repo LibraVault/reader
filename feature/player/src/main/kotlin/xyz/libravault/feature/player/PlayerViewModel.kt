@@ -26,6 +26,7 @@ import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.snapPlaybackSpeed
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.Chapter
 import xyz.libravault.feature.player.service.ChapterExtractor
@@ -144,7 +145,7 @@ class PlayerViewModel @Inject constructor(
             playbackParameters: androidx.media3.common.PlaybackParameters,
         ) {
             _uiState.value = _uiState.value.copy(
-                playbackSpeed = playbackParameters.speed
+                playbackSpeed = snapPlaybackSpeed(playbackParameters.speed)
             )
         }
 
@@ -193,8 +194,8 @@ class PlayerViewModel @Inject constructor(
 
     /** Valid range 0.5× to 3.0× in 0.25 steps. */
     fun setSpeed(speed: Float) {
-        val clamped = speed.coerceIn(0.5f, 3.0f)
-        controller?.setPlaybackSpeed(clamped)
+        val snapped = snapPlaybackSpeed(speed)
+        controller?.setPlaybackSpeed(snapped)
     }
 
     // ── Chapters ──────────────────────────────────────────────────────────────
