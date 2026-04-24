@@ -288,7 +288,8 @@ fun LibraryScreen(
                         )
                     }
                 }
-            }
+                } // else
+            } // when
         }
     }
 }
