@@ -19,6 +19,7 @@ import xyz.libravault.core.domain.usecase.AddHighlightUseCase
 import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.domain.usecase.DeleteHighlightUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
+import xyz.libravault.core.storage.usecase.OpenFileUseCase
 import xyz.libravault.core.domain.usecase.GetReadingProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
@@ -42,6 +43,7 @@ data class ReaderUiState(
 class ReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getItem: GetLibraryItemUseCase,
+    private val openFile: OpenFileUseCase,
     private val getProgress: GetReadingProgressUseCase,
     private val saveProgress: SaveReadingProgressUseCase,
     private val observeBookmarks: ObserveBookmarksUseCase,
@@ -67,10 +69,42 @@ class ReaderViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val id = itemId ?: run {
-                _uiState.value = _uiState.value.copy(isLoading = false)
-                return@launch
+            if (itemId != null) {
+                // Normal library flow — load by Room ID
+                val item = getItem(itemId)
+                if (item == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
+                    return@launch
+                }
+                val progress = getProgress(itemId)
+                _uiState.value = _uiState.value.copy(
+                    item      = item,
+                    progress  = progress,
+                    isLoading = false,
+                )
+                logger.i("Reader", "Opened from library: ${item.title}")
+            } else {
+                // External intent flow — resolve URI to a transient LibraryItem
+                val rawUri = savedStateHandle.get<String>("encodedUri")
+                    ?.let { android.net.Uri.parse(android.net.Uri.decode(it)) }
+                if (rawUri == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "No file specified.")
+                    return@launch
+                }
+                val item = openFile(rawUri)
+                if (item == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Unsupported file format.")
+                    return@launch
+                }
+                _uiState.value = _uiState.value.copy(
+                    item      = item,
+                    progress  = null,
+                    isLoading = false,
+                )
+                logger.i("Reader", "Opened from external intent: ${item.title}")
             }
+        }
+    }
             val item = getItem(id)
             if (item == null) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
@@ -90,29 +124,16 @@ class ReaderViewModel @Inject constructor(
 
     /** Called by EPUB navigator on position change (CFI string). */
     fun onEpubPositionChanged(cfi: String) {
+        val id = itemId ?: return
         viewModelScope.launch {
-            val id = itemId ?: return@launch
-            saveProgress(
-                ReadingProgress(
-                    itemId      = id,
-                    positionCfi = cfi,
-                    lastReadAt  = Instant.now(),
-                )
-            )
+            saveProgress(ReadingProgress(itemId = id, positionCfi = cfi, lastReadAt = Instant.now()))
         }
     }
 
-    /** Called by PDF viewer on page change. */
     fun onPdfPageChanged(pageIndex: Int) {
+        val id = itemId ?: return
         viewModelScope.launch {
-            val id = itemId ?: return@launch
-            saveProgress(
-                ReadingProgress(
-                    itemId     = id,
-                    pageIndex  = pageIndex,
-                    lastReadAt = Instant.now(),
-                )
-            )
+            saveProgress(ReadingProgress(itemId = id, pageIndex = pageIndex, lastReadAt = Instant.now()))
         }
     }
 
@@ -160,8 +181,8 @@ class ReaderViewModel @Inject constructor(
     fun hideBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = false) }
 
     fun addBookmark(positionRef: String, label: String? = null) {
+        val id = itemId ?: return
         viewModelScope.launch {
-            val id = itemId ?: return@launch
             addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
             logger.i("Reader", "Bookmark added at $positionRef")
         }
@@ -174,10 +195,11 @@ class ReaderViewModel @Inject constructor(
     // ── Highlights ────────────────────────────────────────────────────────────
 
     fun addHighlight(positionRef: String, text: String, colorHex: String = "#FFE066") {
+        val id = itemId ?: return
         viewModelScope.launch {
             addHighlight(
                 Highlight(
-                    itemId          = itemId ?: return@launch,
+                    itemId          = id,
                     positionRef     = positionRef,
                     highlightedText = text,
                     colorHex        = colorHex,

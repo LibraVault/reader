@@ -68,6 +68,10 @@ fun PdfReaderScreen(
     settings: ReaderSettings,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
+    // Bookmark navigation: set to the target page index to trigger a scroll,
+    // null when no scroll is pending. Caller clears via [onScrollConsumed].
+    scrollToPage: Int? = null,
+    onScrollConsumed: () -> Unit = {},
 ) {
     val context       = LocalContext.current
     val scope         = rememberCoroutineScope()
@@ -108,23 +112,27 @@ fun PdfReaderScreen(
 
     when (settings.scrollMode) {
         ScrollMode.SCROLLING   -> PdfScrollingView(
-            renderer      = r,
-            pageCount     = pageCount,
-            screenWidthPx = screenWidthPx,
-            initialPage   = initialPage,
-            onPageChanged = onPageChanged,
-            onCentreTap   = onCentreTap,
+            renderer         = r,
+            pageCount        = pageCount,
+            screenWidthPx    = screenWidthPx,
+            initialPage      = initialPage,
+            scrollToPage     = scrollToPage,
+            onScrollConsumed = onScrollConsumed,
+            onPageChanged    = onPageChanged,
+            onCentreTap      = onCentreTap,
         )
         ScrollMode.PAGINATED -> PdfPaginatedView(
-            renderer      = r,
-            pageCount     = pageCount,
-            screenWidthPx = screenWidthPx,
-            initialPage   = initialPage,
-            scale         = scale,
-            offset        = offset,
-            zoomState     = zoomState,
-            onPageChanged = onPageChanged,
-            onCentreTap   = onCentreTap,
+            renderer         = r,
+            pageCount        = pageCount,
+            screenWidthPx    = screenWidthPx,
+            initialPage      = initialPage,
+            scrollToPage     = scrollToPage,
+            onScrollConsumed = onScrollConsumed,
+            scale            = scale,
+            offset           = offset,
+            zoomState        = zoomState,
+            onPageChanged    = onPageChanged,
+            onCentreTap      = onCentreTap,
         )
     }
 }
@@ -137,11 +145,22 @@ private fun PdfScrollingView(
     pageCount: Int,
     screenWidthPx: Int,
     initialPage: Int,
+    scrollToPage: Int?,
+    onScrollConsumed: () -> Unit,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
     val scope     = rememberCoroutineScope()
+
+    // Bookmark navigation: animate to the requested page then clear the request
+    LaunchedEffect(scrollToPage) {
+        if (scrollToPage != null) {
+            val target = scrollToPage.coerceIn(0, pageCount - 1)
+            listState.animateScrollToItem(target)
+            onScrollConsumed()
+        }
+    }
 
     // Report page changes as user scrolls
     val currentPage by remember {
@@ -186,6 +205,8 @@ private fun PdfPaginatedView(
     pageCount: Int,
     screenWidthPx: Int,
     initialPage: Int,
+    scrollToPage: Int?,
+    onScrollConsumed: () -> Unit,
     scale: Float,
     offset: Offset,
     zoomState: androidx.compose.foundation.gestures.TransformableState,
@@ -193,6 +214,14 @@ private fun PdfPaginatedView(
     onCentreTap: () -> Unit,
 ) {
     var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, pageCount - 1)) }
+
+    // Bookmark navigation: jump directly to the requested page
+    LaunchedEffect(scrollToPage) {
+        if (scrollToPage != null) {
+            currentPage = scrollToPage.coerceIn(0, pageCount - 1)
+            onScrollConsumed()
+        }
+    }
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp.dp
 

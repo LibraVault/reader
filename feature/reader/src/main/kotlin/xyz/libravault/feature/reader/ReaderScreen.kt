@@ -44,9 +44,15 @@ fun ReaderScreen(
     onBack: () -> Unit,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
-    val state     by viewModel.uiState.collectAsState()
-    val bookmarks by viewModel.bookmarks.collectAsState()
+    val state      by viewModel.uiState.collectAsState()
+    val bookmarks  by viewModel.bookmarks.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
+
+    // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
+    // null = no pending scroll; set by onBookmarkClick, cleared by onScrollConsumed.
+    val pendingPdfPage = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<Int?>(null)
+    }
 
     // Wrap in the reading theme chosen by the user
     LibravaultTheme(readingTheme = state.settings.theme) {
@@ -104,11 +110,13 @@ fun ReaderScreen(
 
                             MediaFormat.PDF -> {
                                 PdfReaderScreen(
-                                    fileUri       = uri,
-                                    initialPage   = state.progress?.pageIndex ?: 0,
-                                    settings      = state.settings,
-                                    onPageChanged = viewModel::onPdfPageChanged,
-                                    onCentreTap   = viewModel::onCentreTap,
+                                    fileUri          = uri,
+                                    initialPage      = state.progress?.pageIndex ?: 0,
+                                    scrollToPage     = pendingPdfPage.value,
+                                    onScrollConsumed = { pendingPdfPage.value = null },
+                                    settings         = state.settings,
+                                    onPageChanged    = viewModel::onPdfPageChanged,
+                                    onCentreTap      = viewModel::onCentreTap,
                                 )
                             }
 
@@ -137,10 +145,20 @@ fun ReaderScreen(
                     BookmarksSheet(
                         bookmarks       = bookmarks,
                         onBookmarkClick = { bookmark ->
-                            // Navigate to position — EPUB only for now
-                            // PDF page navigation wired in when PdfReader exposes a
-                            // scroll-to-page API
-                            viewModel.hideBookmarks()
+                            when {
+                                // PDF bookmark — positionRef stored as "page:N"
+                                bookmark.positionRef.startsWith("page:") -> {
+                                    bookmark.positionRef
+                                        .removePrefix("page:")
+                                        .toIntOrNull()
+                                        ?.let { pendingPdfPage.value = it }
+                                    viewModel.hideBookmarks()
+                                }
+                                // EPUB — CFI navigation via Readium navigator;
+                                // scroll-to-CFI to be wired once EpubNavigatorFragment
+                                // exposes a stable goTo(Locator) API in beta.2+
+                                else -> viewModel.hideBookmarks()
+                            }
                         },
                         onBookmarkDelete = viewModel::removeBookmark,
                         onDismiss        = viewModel::hideBookmarks,

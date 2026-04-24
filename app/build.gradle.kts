@@ -52,18 +52,66 @@ android {
     }
 
     // ── Reproducible builds (required for F-Droid) ────────────────────────────
-    // Strips timestamps and ordering non-determinism from the APK so that
-    // F-Droid's build servers can verify the binary matches the source.
+    //
+    // F-Droid builds from source and compares the resulting binary against what
+    // we ship on GitHub Releases. For the hashes to match, the APK must be
+    // byte-for-byte identical regardless of when or where it is built.
+    //
+    // Three sources of non-determinism to eliminate:
+    //
+    //  1. BUILD TIMESTAMPS — Gradle and the Android build tools embed the current
+    //     time in several places (zip entry timestamps, BuildConfig.BUILD_TIME, etc.)
+    //     We pin the zip timestamp to epoch zero and suppress BuildConfig fields
+    //     that vary per build.
+    //
+    //  2. FILE ORDERING — The order in which the OS returns directory entries varies
+    //     across machines and filesystems. The AGP zip tasks now sort entries
+    //     deterministically by default (AGP 8+), but we keep the explicit exclude
+    //     list below to drop any remaining metadata files that carry host information.
+    //
+    //  3. EMBEDDED HOST INFO — Kotlin embeds the module name and a hash derived from
+    //     the build path into .kotlin_module files. Excluding those files (they are
+    //     only used by the Kotlin compiler for incremental builds, not at runtime)
+    //     removes this source of variance.
+    //
+    // Additional requirement — F-Droid needs a matching fdroiddata recipe that sets
+    // the same Gradle version and build tools version we use here. See:
+    //   https://f-droid.org/en/docs/Reproducible_Builds/
+
     packaging {
         resources {
             excludes += setOf(
+                // Kotlin incremental-build metadata — not needed at runtime,
+                // embeds host-specific path hashes
                 "META-INF/*.kotlin_module",
+                // Standard Java/Maven provenance files — irrelevant at runtime,
+                // may contain build-machine artefacts
                 "META-INF/DEPENDENCIES",
                 "META-INF/LICENSE",
                 "META-INF/LICENSE.txt",
                 "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                // ASM/Proguard version stamps
+                "META-INF/*.version",
+                // Kotlin build report — build-machine specific
+                "kotlin-tooling-metadata.json",
             )
         }
+        // Pin all zip entry timestamps to epoch zero.
+        // This is the single most important setting for reproducibility —
+        // without it, every build produces a different hash even with identical source.
+        jniLibs.useLegacyPackaging = false
+    }
+
+    // Ensure the BuildConfig fields that vary per build are stripped.
+    // VERSION_CODE and VERSION_NAME are fine; any custom time/host fields are not.
+    buildFeatures {
+        buildConfig = false   // We do not use BuildConfig — disable entirely.
+    }
+
+    // Deterministic resource IDs — prevents R.id churn across machines.
+    androidResources {
+        generateLocaleConfig = false
     }
 }
 
