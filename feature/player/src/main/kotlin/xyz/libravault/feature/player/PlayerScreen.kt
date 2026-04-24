@@ -217,15 +217,15 @@ fun PlayerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            androidx.compose.foundation.Image(
-                                painter = coil.compose.rememberAsyncImagePainter(
+                            Image(
+                                painter = rememberAsyncImagePainter(
                                     xyz.libravault.feature.player.R.drawable.grimoire_bg
                                 ),
                                 contentDescription = null,
-                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .size(220.dp)
-                                    .androidx.compose.ui.graphics.graphicsLayer(alpha = 0.07f),
+                                    .graphicsLayer(alpha = 0.07f),
                             )
                         PlaybackControls(
                             isPlaying          = state.isPlaying,
