@@ -1,4 +1,4 @@
-Libravault is a modern, unified, privacy-first media reader for Android.
+LibraVault is a modern, unified, privacy-first media reader for Android.
 
 One secure vault for all your books and audio — read EPUBs, view PDFs, and listen to audiobooks in a single app, with zero unnecessary permissions and zero required accounts.
 
@@ -13,6 +13,6 @@ FEATURES
 • No account, no cloud sync, no telemetry, no ads
 
 PRIVACY
-Libravault never requests READ_EXTERNAL_STORAGE or MANAGE_EXTERNAL_STORAGE. File access is granted only for the folders you explicitly select via Android's Storage Access Framework. No data ever leaves your device.
+LibraVault never requests READ_EXTERNAL_STORAGE or MANAGE_EXTERNAL_STORAGE. File access is granted only for the folders you explicitly select via Android's Storage Access Framework. No data ever leaves your device.
 
 Open source under GPL-3.0.

@@ -1,8 +1,1 @@
-Initial release of Libravault.
-
-• EPUB reader powered by Readium — dark, light, and sepia themes
-• PDF viewer with paginated and scrolling modes
-• Audiobook player for MP3, M4B, OGG, FLAC, Opus, and AAC
-• Chapter navigation with sleep timer and 10-second fade-out
-• Scoped Storage — no broad file permissions ever requested
-• No account, no internet, no tracking
+Initial release of LibraVault.

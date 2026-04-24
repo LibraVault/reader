@@ -113,7 +113,7 @@ fun OnboardingScreen(
                     .padding(16.dp),
             ) {
                 Text(
-                    text = "🔒  Libravault only sees the folders you choose. Nothing else on your device is ever accessed.",
+                    text = "🔒  LibraVault only sees the folders you choose. Nothing else on your device is ever accessed.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )

@@ -20,7 +20,7 @@
 
     <application
         android:name=".LibravaultApp"
-        android:label="Libravault"
+        android:label="LibraVault"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
@@ -43,13 +43,12 @@
             </intent-filter>
 
             <!-- ── EPUB ─────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/epub+zip" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -57,13 +56,12 @@
             </intent-filter>
 
             <!-- ── PDF ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -71,13 +69,12 @@
             </intent-filter>
 
             <!-- ── MP3 ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/mpeg" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -85,13 +82,12 @@
             </intent-filter>
 
             <!-- ── M4B ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/x-m4b" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -99,13 +95,12 @@
             </intent-filter>
 
             <!-- ── OGG ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/ogg" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -113,13 +108,12 @@
             </intent-filter>
 
             <!-- ── FLAC ─────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/flac" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -127,13 +121,12 @@
             </intent-filter>
 
             <!-- ── OPUS ─────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/opus" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -141,13 +134,12 @@
             </intent-filter>
 
             <!-- ── AAC ──────────────────────────────────────────────────── -->
-            <intent-filter android:label="Open with Libravault"
-                tools:ignore="AppLinkUrlError">
+            <intent-filter android:label="Open with LibraVault">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/aac" />
             </intent-filter>
-            <intent-filter android:label="Open with Libravault"
+            <intent-filter android:label="Open with LibraVault"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
