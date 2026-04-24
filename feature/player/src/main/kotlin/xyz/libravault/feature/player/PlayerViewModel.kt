@@ -121,6 +121,11 @@ class PlayerViewModel @Inject constructor(
                 controller = controllerFuture.get()
                 controller?.addListener(playerListener)
                 logger.i(TAG, "MediaController connected")
+                // Item may have loaded before the controller was ready — play now
+                _uiState.value.item?.let { item ->
+                    play(android.net.Uri.parse(item.filePath),
+                         _uiState.value.progress?.positionMs ?: 0L)
+                }
             }.onFailure { e ->
                 logger.e(TAG, "MediaController connection failed", e)
                 _uiState.value = _uiState.value.copy(error = "Playback service unavailable.")

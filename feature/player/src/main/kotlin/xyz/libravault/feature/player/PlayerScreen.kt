@@ -18,7 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,8 +45,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.graphicsLayer
 import coil.compose.AsyncImage
-import xyz.libravault.core.ui.theme.LibravaultTheme
+import coil.compose.rememberAsyncImagePainter
 import xyz.libravault.feature.player.components.BookmarksSheet
 import xyz.libravault.feature.player.components.ChapterListSheet
 import xyz.libravault.feature.player.components.PlaybackControls
@@ -74,8 +76,7 @@ fun PlayerScreen(
         }
     }
 
-    LibravaultTheme {
-        Scaffold(
+    Scaffold(
             topBar = {
                 TopAppBar(
                     title = { },
@@ -97,13 +98,16 @@ fun PlayerScreen(
                         }
                         // Bookmarks
                         IconButton(onClick = viewModel::addBookmark) {
-                            Icon(Icons.Default.BookmarkBorder, "Add bookmark")
+                            Icon(Icons.Default.BookmarkAdd, "Add bookmark")
                         }
                         IconButton(onClick = viewModel::showBookmarks) {
                             Icon(Icons.Default.Bookmark, "Bookmarks")
                         }
-                        // Chapter list
-                        IconButton(onClick = { showChapters = true }) {
+                        // Chapter list — enabled only when chapters are loaded
+                        IconButton(
+                            onClick  = { if (state.chapters.isNotEmpty()) showChapters = true },
+                            enabled  = state.chapters.isNotEmpty(),
+                        ) {
                             Icon(Icons.Default.FormatListNumbered, "Chapters")
                         }
                     },
@@ -208,7 +212,21 @@ fun PlayerScreen(
                             onSeek     = viewModel::seekTo,
                         )
 
-                        // ── Controls ──────────────────────────────────────────
+                        // ── Controls with faint grimoire background ──────────
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = coil.compose.rememberAsyncImagePainter(
+                                    xyz.libravault.feature.player.R.drawable.grimoire_bg
+                                ),
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(220.dp)
+                                    .androidx.compose.ui.graphics.graphicsLayer(alpha = 0.07f),
+                            )
                         PlaybackControls(
                             isPlaying          = state.isPlaying,
                             hasPreviousChapter = state.currentChapterIndex > 0,
@@ -219,6 +237,7 @@ fun PlayerScreen(
                             onPreviousChapter  = viewModel::previousChapter,
                             onNextChapter      = viewModel::nextChapter,
                         )
+                        } // end grimoire Box
 
                         // ── Speed picker ──────────────────────────────────────
                         SpeedPicker(
@@ -268,6 +287,5 @@ fun PlayerScreen(
                 onChapterSelected   = viewModel::goToChapter,
                 onDismiss           = { showChapters = false },
             )
-        }
     }
 }
