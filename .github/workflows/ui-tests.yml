@@ -44,21 +44,15 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run Compose UI tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34          # Android 14 — good balance of coverage vs stability
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disk-size: 6G
-          heap-size: 512M
-          script: ./gradlew connectedDebugAndroidTest --continue
+      # Compile androidTest source to verify the test compile target builds,
+      # without spinning up an emulator (v1 has zero androidTest source files).
+      - name: Compile Android test source (no emulator)
+        run: ./gradlew compileDebugAndroidTest --continue
 
-      - name: Upload UI test results
+      - name: Upload Android test compile reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-test-results
-          path: "**/build/reports/androidTests/"
+          name: android-compile-results
+          path: "**/build/reports/"
           retention-days: 7
