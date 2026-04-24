@@ -5,6 +5,20 @@ plugins {
 
 android {
     namespace = "xyz.libravault.feature.reader"
+
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDirs("src/androidTest/assets")
+        }
+    }
 }
 
 dependencies {
@@ -27,4 +41,12 @@ dependencies {
     // Fragment interop for hosting Readium EpubNavigatorFragment inside Compose
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("androidx.fragment:fragment-compose:1.8.1")
+
+    // ── Instrumentation tests ──
+    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    androidTestImplementation("androidx.test:runner:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
