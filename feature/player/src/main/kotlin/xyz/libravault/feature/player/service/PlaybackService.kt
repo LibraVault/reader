@@ -2,27 +2,24 @@ package xyz.libravault.feature.player.service
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.os.Bundle
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.session.SessionCommand
 import com.google.common.collect.ImmutableList
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * Foreground [MediaSessionService] that keeps audio playing when the app
- * is backgrounded, the screen is locked, or the user switches to another app.
+ * Foreground [MediaSessionService] — keeps audio playing when backgrounded or screen locked.
  *
- * Lock screen / notification controls:
- *  ⏮  Seek back 30s  |  ⏯ Play/Pause  |  ⏭  Seek forward 30s
+ * Lock screen / notification compact view:
+ *   ⏪ Seek back 30s  |  ⏯ Play/Pause  |  ⏩ Seek forward 30s
  *
- * Android Auto, headphone unplug, and audio focus are all handled by Media3.
+ * In Media3 1.x the compact notification layout is controlled by setting a custom layout
+ * of [CommandButton]s built from [Player.Command] values (NOT SessionCommand — those are
+ * the deprecated androidx.media2 API).
  */
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
@@ -44,25 +41,22 @@ class PlaybackService : MediaSessionService() {
                 )
             }
 
-        // ── Custom command buttons ────────────────────────────────────────────
-        // Media3 uses CommandButton.Builder to define what appears in the
-        // compact notification view (lock screen + status bar).
-        // slots 0/1/2 = the three compact-view positions.
+        // Build the three compact-view buttons using Player.Command constants
         val seekBackButton = CommandButton.Builder()
-            .setDisplayName("Seek back 30s")
-            .setSessionCommand(SessionCommand(SessionCommand.COMMAND_CODE_PLAYER_SEEK_BACK))
+            .setDisplayName("Skip back 30s")
+            .setPlayerCommand(Player.COMMAND_SEEK_BACK)
             .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_back)
             .build()
 
         val playPauseButton = CommandButton.Builder()
             .setDisplayName("Play / Pause")
-            .setSessionCommand(SessionCommand(SessionCommand.COMMAND_CODE_PLAYER_PLAY_PAUSE))
+            .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
             .setIconResId(androidx.media3.session.R.drawable.media3_notification_play)
             .build()
 
         val seekForwardButton = CommandButton.Builder()
-            .setDisplayName("Seek forward 30s")
-            .setSessionCommand(SessionCommand(SessionCommand.COMMAND_CODE_PLAYER_SEEK_FORWARD))
+            .setDisplayName("Skip forward 30s")
+            .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
             .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_forward)
             .build()
 

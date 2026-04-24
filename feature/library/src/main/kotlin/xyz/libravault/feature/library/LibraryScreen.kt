@@ -22,10 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -90,7 +92,7 @@ fun LibraryScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "LibraVault",
+                            text = "Libravault",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -138,42 +140,32 @@ fun LibraryScreen(
                     contentPadding = PaddingValues(bottom = 32.dp),
                 ) {
 
-                    // ── Continue cards ─────────────────────────────────────────
-                    if (state.currentBook != null || state.currentAudiobook != null) {
-                        item { SectionHeader("Pick up where you left off") }
+                    // ── Continue cards — compact row, up to 3 side by side ────
+                    val continueItems = listOfNotNull(state.currentBook, state.currentAudiobook)
+                    if (continueItems.isNotEmpty()) {
                         item {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                state.currentBook?.let { book ->
+                                continueItems.forEach { item ->
                                     ContinueCard(
-                                        item = book,
-                                        icon = Icons.Default.MenuBook,
-                                        label = "Continue reading",
+                                        item    = item,
                                         onClick = {
-                                            if (viewModel.validateItem(book)) onItemClick(book)
+                                            if (viewModel.validateItem(item)) onItemClick(item)
                                             else viewModel.showStaleMessage()
                                         },
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
-                                state.currentAudiobook?.let { audio ->
-                                    ContinueCard(
-                                        item = audio,
-                                        icon = Icons.Default.Headphones,
-                                        label = "Continue listening",
-                                        onClick = {
-                                            if (viewModel.validateItem(audio)) onItemClick(audio)
-                                            else viewModel.showStaleMessage()
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                    )
+                                // Phantom weight to keep cards left-aligned when only one item
+                                if (continueItems.size == 1) {
+                                    Spacer(Modifier.weight(2f))
                                 }
                             }
-                            Spacer(Modifier.height(24.dp))
+                            Spacer(Modifier.height(20.dp))
                         }
                     }
 
@@ -281,58 +273,78 @@ private fun SectionHeader(title: String) {
 @Composable
 private fun ContinueCard(
     item: LibraryItem,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            item.coverArtPath?.let { path ->
+        Box {
+            // Cover art — portrait aspect ratio
+            if (item.coverArtPath != null) {
                 AsyncImage(
-                    model = path,
+                    model = item.coverArtPath,
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(2f / 3f)
-                        .clip(RoundedCornerShape(6.dp)),
+                        .aspectRatio(2f / 3f),
                 )
-                Spacer(Modifier.height(8.dp))
+            } else {
+                // Fallback placeholder when no cover art
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(2f / 3f)
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (item.format in listOf(
+                            xyz.libravault.core.domain.model.MediaFormat.MP3,
+                            xyz.libravault.core.domain.model.MediaFormat.M4B,
+                            xyz.libravault.core.domain.model.MediaFormat.OGG,
+                            xyz.libravault.core.domain.model.MediaFormat.FLAC,
+                            xyz.libravault.core.domain.model.MediaFormat.OPUS,
+                            xyz.libravault.core.domain.model.MediaFormat.AAC,
+                        )) Icons.Default.Headphones else Icons.Default.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
             }
+
+            // Resume icon — bottom-left overlay with dark scrim
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .background(
+                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(topEnd = 8.dp),
+                    )
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Resume",
+                    tint = androidx.compose.ui.graphics.Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+
+        // Title below the art
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(
                 text = item.title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.author,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
