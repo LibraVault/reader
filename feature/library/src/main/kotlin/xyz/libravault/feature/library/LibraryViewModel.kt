@@ -61,9 +61,9 @@ class LibraryViewModel @Inject constructor(
         getLibrary(),
         observeCurrentlyReading.book(),
         observeCurrentlyReading.audiobook(),
-        combine(_scanning, _scanError, _searchQuery, _searchResults, _staleMessage, _addVaultError)
-            { scanning, error, query, results, stale, vaultErr ->
-                listOf(scanning, error, query, results, stale, vaultErr)
+        combine(_scanning, _scanError, _searchQuery, _searchResults, _staleMessage)
+            { scanning, error, query, results, stale ->
+                listOf(scanning, error, query, results, stale)
             },
     ) { vaults, items, book, audiobook, extras ->
         val scanning = extras[0] as Boolean
@@ -71,7 +71,6 @@ class LibraryViewModel @Inject constructor(
         val query    = extras[2] as String
         val results  = @Suppress("UNCHECKED_CAST") (extras[3] as? List<LibraryItem>)
         val stale    = extras[4] as Boolean
-        val vaultErr = extras[5] as? String
 
         LibraryUiState(
             vaults           = vaults,
@@ -83,7 +82,6 @@ class LibraryViewModel @Inject constructor(
             searchQuery      = query,
             searchResults    = results,
             staleItemMessage = stale,
-            addVaultError    = vaultErr,
         )
     }.stateIn(
         scope = viewModelScope,
