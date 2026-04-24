@@ -49,10 +49,9 @@
                 <data android:mimeType="application/epub+zip" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.epub" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.epub" />
             </intent-filter>
 
             <!-- ── PDF ──────────────────────────────────────────────────── -->
@@ -62,10 +61,9 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.pdf" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.pdf" />
             </intent-filter>
 
             <!-- ── MP3 ──────────────────────────────────────────────────── -->
@@ -75,10 +73,9 @@
                 <data android:mimeType="audio/mpeg" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.mp3" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.mp3" />
             </intent-filter>
 
             <!-- ── M4B ──────────────────────────────────────────────────── -->
@@ -98,10 +95,9 @@
                 <data android:mimeType="audio/m4b" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.m4b" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.m4b" />
             </intent-filter>
 
             <!-- ── OGG ──────────────────────────────────────────────────── -->
@@ -111,10 +107,9 @@
                 <data android:mimeType="audio/ogg" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.ogg" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.ogg" />
             </intent-filter>
 
             <!-- ── FLAC ─────────────────────────────────────────────────── -->
@@ -124,10 +119,9 @@
                 <data android:mimeType="audio/flac" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.flac" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.flac" />
             </intent-filter>
 
             <!-- ── OPUS ─────────────────────────────────────────────────── -->
@@ -137,10 +131,9 @@
                 <data android:mimeType="audio/opus" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.opus" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.opus" />
             </intent-filter>
 
             <!-- ── AAC ──────────────────────────────────────────────────── -->
@@ -150,10 +143,9 @@
                 <data android:mimeType="audio/aac" />
             </intent-filter>
             <intent-filter android:label="Open with LibraVault"
-                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" android:pathPattern=".*\.aac" />
+                <data android:mimeType="application/octet-stream" android:scheme="content" android:pathPattern=".*\.aac" />
             </intent-filter>
 
         </activity>
