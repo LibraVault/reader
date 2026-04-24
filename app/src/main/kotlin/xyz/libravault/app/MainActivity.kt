@@ -1,12 +1,12 @@
 package xyz.libravault.app
 
 import android.content.Context
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installSplashScreen()
         enableEdgeToEdge()
 
         val hasOnboarded = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -73,16 +74,16 @@ class MainActivity : ComponentActivity() {
                 LibravaultNavHost(
                     navController    = nav,
                     startDestination = start,
-                    onOnboardingFinished = { markOnboarded() },
                 )
 
                 // Handle ACTION_VIEW intent that cold-launched this activity
-                LaunchedEffect(nav) {
+                remember(nav) {
                     intent?.takeIf { it.action == Intent.ACTION_VIEW }
                         ?.data
                         ?.let { uri ->
-                            intentRouter.route(uri, nav)
+                            lifecycleScope.launch { intentRouter.route(uri, nav) }
                         }
+                    true
                 }
             }
         }
