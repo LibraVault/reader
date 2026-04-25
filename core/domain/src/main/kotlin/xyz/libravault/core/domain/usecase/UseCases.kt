@@ -65,6 +65,13 @@ class SaveListeningProgressUseCase @Inject constructor(
         progressRepository.saveListeningProgress(progress)
 }
 
+class GetListeningProgressUseCase @Inject constructor(
+    private val progressRepository: ProgressRepository,
+) {
+    suspend operator fun invoke(itemId: Long): ListeningProgress? =
+        progressRepository.getListeningProgress(itemId)
+}
+
 class ObserveCurrentlyReadingUseCase @Inject constructor(
     private val progressRepository: ProgressRepository,
 ) {
