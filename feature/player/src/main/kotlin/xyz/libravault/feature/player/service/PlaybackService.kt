@@ -2,6 +2,7 @@
 
 package xyz.libravault.feature.player.service
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.Player
@@ -31,6 +32,7 @@ class PlaybackService : MediaSessionService() {
     @Inject
     lateinit var player: ExoPlayer
 
+    @SuppressLint("UnsafeOptInUsageError")
     override fun onCreate() {
         super.onCreate()
 
