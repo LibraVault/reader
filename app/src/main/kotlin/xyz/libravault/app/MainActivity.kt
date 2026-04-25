@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
@@ -77,13 +78,10 @@ class MainActivity : ComponentActivity() {
                 )
 
                 // Handle ACTION_VIEW intent that cold-launched this activity
-                remember(nav) {
+                LaunchedEffect(nav) {
                     intent?.takeIf { it.action == Intent.ACTION_VIEW }
                         ?.data
-                        ?.let { uri ->
-                            lifecycleScope.launch { intentRouter.route(uri, nav) }
-                        }
-                    true
+                        ?.let { uri -> intentRouter.route(uri, nav) }
                 }
             }
         }
