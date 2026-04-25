@@ -57,6 +57,7 @@ import xyz.libravault.feature.player.components.PlayerSeekBar
 import xyz.libravault.feature.player.components.SleepTimerSheet
 import xyz.libravault.feature.player.components.SpeedPickerSheet
 import xyz.libravault.feature.player.service.SleepTimerState
+import xyz.libravault.core.domain.model.formatPlaybackSpeed
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -244,10 +245,7 @@ fun PlayerScreen(
                         // ── Speed button — tap to open speed sheet ────────
                         TextButton(onClick = { showSpeedPicker = true }) {
                             Text(
-                                text  = if (state.playbackSpeed == state.playbackSpeed.toInt().toFloat())
-                                    "${state.playbackSpeed.toInt()}×"
-                                else
-                                    "${state.playbackSpeed.toBigDecimal().stripTrailingZeros().toPlainString()}×",
+                                text  = formatPlaybackSpeed(state.playbackSpeed),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary,
                             )
