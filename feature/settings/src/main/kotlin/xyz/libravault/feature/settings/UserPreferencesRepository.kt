@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
+import xyz.libravault.core.domain.model.snapPlaybackSpeed
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,7 +40,7 @@ class UserPreferencesRepository @Inject constructor(
         defaultReadingTheme  = AppReadingTheme.valueOf(
             prefs.getString(KEY_READING_THEME, AppReadingTheme.DARK.name) ?: AppReadingTheme.DARK.name
         ),
-        defaultPlaybackSpeed = prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f),
+        defaultPlaybackSpeed = snapPlaybackSpeed(prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f)),
         defaultSkipDurationSec = prefs.getInt(KEY_SKIP_DURATION, 30),
         loggingEnabled       = prefs.getBoolean(KEY_LOGGING_ENABLED, false),
         dynamicColorEnabled  = prefs.getBoolean(KEY_DYNAMIC_COLOR, true),
