@@ -2,7 +2,11 @@ package xyz.libravault.core.domain.model
 
 import java.time.Instant
 
-enum class MediaFormat { EPUB, PDF, MP3, M4B, OGG, FLAC, OPUS, AAC }
+enum class MediaFormat {
+    EPUB, PDF, MP3, M4B, OGG, FLAC, OPUS, AAC;
+
+    fun isAudio() = this in setOf(MP3, M4B, OGG, FLAC, OPUS, AAC)
+}
 
 data class VaultFolder(
     val id: Long = 0,

@@ -24,14 +24,11 @@ sealed class SleepTimerState {
  * When the timer fires:
  *  1. Volume drops linearly from 1.0 → 0.0 over [FADE_DURATION_MS] (10 s).
  *  2. ExoPlayer is paused and volume is restored to 1.0.
- *
- * Supports:
- *  - Custom duration in minutes
- *  - End-of-chapter (caller passes remaining chapter duration)
- *  - Cancellation at any time
  */
 @Singleton
-class SleepTimer @Inject constructor() {
+class SleepTimer @Inject constructor(
+    private val player: ExoPlayer,
+) {
 
     companion object {
         const val FADE_DURATION_MS = 10_000L        // 10 seconds
@@ -48,10 +45,9 @@ class SleepTimer @Inject constructor() {
     /**
      * Start the timer.
      * @param durationMs How long to wait before beginning the fade-out.
-     * @param player     ExoPlayer instance to fade and pause.
      * @param scope      CoroutineScope tied to the ViewModel lifecycle.
      */
-    fun start(durationMs: Long, player: ExoPlayer, scope: CoroutineScope) {
+    fun start(durationMs: Long, scope: CoroutineScope) {
         cancel()
         activePlayer = player
         timerJob = scope.launch {

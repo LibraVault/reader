@@ -9,7 +9,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.feature.library.LibraryScreen
 import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
@@ -128,7 +127,3 @@ fun LibravaultNavHost(
     }
 }
 
-fun MediaFormat.isAudio() = this in setOf(
-    MediaFormat.MP3, MediaFormat.M4B, MediaFormat.OGG,
-    MediaFormat.FLAC, MediaFormat.OPUS, MediaFormat.AAC,
-)

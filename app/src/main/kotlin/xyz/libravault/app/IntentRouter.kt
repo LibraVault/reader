@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.navigation.NavController
 import dagger.hilt.android.scopes.ActivityScoped
 import xyz.libravault.app.navigation.Screen
-import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.storage.usecase.OpenFileUseCase
 import javax.inject.Inject
 
@@ -38,8 +37,3 @@ class IntentRouter @Inject constructor(
         }
     }
 }
-
-fun MediaFormat.isAudio() = this in setOf(
-    MediaFormat.MP3, MediaFormat.M4B, MediaFormat.OGG,
-    MediaFormat.FLAC, MediaFormat.OPUS, MediaFormat.AAC,
-)

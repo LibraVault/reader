@@ -5,6 +5,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -19,24 +20,24 @@ class SleepTimerTest {
 
     @Test
     fun `initial state is inactive`() {
-        val timer = SleepTimer()
+        val timer = SleepTimer(player)
         assertEquals(SleepTimerState.Inactive, timer.state.value)
         assertFalse(timer.isActive)
     }
 
     @Test
     fun `cancel while inactive is safe`() {
-        val timer = SleepTimer()
+        val timer = SleepTimer(player)
         timer.cancel() // Should not throw
         assertEquals(SleepTimerState.Inactive, timer.state.value)
     }
 
     @Test
     fun `start transitions to active state`() = runTest {
-        val timer = SleepTimer()
+        val timer = SleepTimer(player)
         timer.state.test {
             assertEquals(SleepTimerState.Inactive, awaitItem())
-            timer.start(60_000L, player, this@runTest)
+            timer.start(60_000L, this@runTest)
             val active = awaitItem()
             assertTrue(active is SleepTimerState.Active)
             cancelAndIgnoreRemainingEvents()
@@ -45,10 +46,10 @@ class SleepTimerTest {
 
     @Test
     fun `cancel resets to inactive`() = runTest {
-        val timer = SleepTimer()
+        val timer = SleepTimer(player)
         timer.state.test {
             awaitItem() // Inactive
-            timer.start(60_000L, player, this@runTest)
+            timer.start(60_000L, this@runTest)
             awaitItem() // Active
             timer.cancel()
             val inactive = awaitItem()
@@ -59,22 +60,17 @@ class SleepTimerTest {
 
     @Test
     fun `starting new timer cancels previous`() = runTest {
-        val timer = SleepTimer()
-        timer.start(60_000L, player, this)
+        val timer = SleepTimer(player)
+        timer.start(60_000L, this)
         assertTrue(timer.isActive)
-        timer.start(30_000L, player, this)
-        // Still active — new timer running
+        timer.start(30_000L, this)
         assertTrue(timer.isActive)
     }
 
     @Test
     fun `volume is restored after fade`() = runTest {
-        // Use a very short timer so test completes quickly
-        val timer = SleepTimer()
-        // Fast-forward is handled by runTest's virtual time
-        timer.start(0L, player, this)
-        // After 0ms + fade: player.pause() and player.volume = 1.0f should be called
-        // We verify the player interactions
+        val timer = SleepTimer(player)
+        timer.start(0L, this)
         verify(atLeast = 0) { player.volume = any() }
     }
 }

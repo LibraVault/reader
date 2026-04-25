@@ -50,13 +50,13 @@ class CoverArtCache @Inject constructor(
 
     /** Returns cached cover path if it already exists — avoids re-extraction. */
     fun getCachedPath(key: String): String? {
-        val file = File(cacheDir, "${key.hashCode()}.jpg")
+        val file = File(cacheDir, "${keyHash(key)}.jpg")
         return if (file.exists()) file.absolutePath else null
     }
 
     /** Removes cover for a specific file (e.g. when file is deleted from library). */
     fun evict(key: String) {
-        File(cacheDir, "${key.hashCode()}.jpg").delete()
+        File(cacheDir, "${keyHash(key)}.jpg").delete()
     }
 
     /** Clears the entire cover cache. */
