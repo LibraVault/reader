@@ -23,6 +23,7 @@ import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
+import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
 import xyz.libravault.core.domain.model.Bookmark
@@ -45,6 +46,7 @@ data class PlayerUiState(
     val durationMs: Long            = 0L,
     val bufferedMs: Long            = 0L,
     val playbackSpeed: Float        = 1.0f,
+    val savedStartPositionMs: Long  = 0L,   // restored from DB; used once on first play
     // Chapters
     val chapters: List<Chapter>     = emptyList(),
     val currentChapterIndex: Int    = 0,
@@ -59,6 +61,7 @@ data class PlayerUiState(
 class PlayerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getItem: GetLibraryItemUseCase,
+    private val getProgress: GetListeningProgressUseCase,
     private val saveProgress: SaveListeningProgressUseCase,
     private val observeBookmarks: ObserveBookmarksUseCase,
     private val addBookmark: AddBookmarkUseCase,
@@ -102,7 +105,6 @@ class PlayerViewModel @Inject constructor(
     private fun loadItem() {
         viewModelScope.launch {
             val id = itemId ?: run {
-                // Opened via external intent — item loaded by PlayerScreen directly
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 return@launch
             }
@@ -111,8 +113,16 @@ class PlayerViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
                 return@launch
             }
-            _uiState.value = _uiState.value.copy(item = item, isLoading = false)
-            logger.i(TAG, "Loaded: ${item.title}")
+            val savedPositionMs = getProgress(id)?.positionMs ?: 0L
+            _uiState.value = _uiState.value.copy(
+                item                 = item,
+                isLoading            = false,
+                savedStartPositionMs = savedPositionMs,
+            )
+            logger.i(TAG, "Loaded: ${item.title} — resume at ${savedPositionMs}ms")
+            // If the MediaController was already connected before loadItem() finished,
+            // connectController()'s play() call was a no-op (item was null). Trigger it now.
+            controller?.let { play(android.net.Uri.parse(item.filePath), startPositionMs = savedPositionMs) }
         }
     }
 
@@ -122,9 +132,10 @@ class PlayerViewModel @Inject constructor(
                 controller = controllerFuture.get()
                 controller?.addListener(playerListener)
                 logger.i(TAG, "MediaController connected")
-                // Item may have loaded before the controller was ready — play now
+                // Item may have loaded before the controller was ready — play now.
+                // Use savedStartPositionMs so the user resumes where they left off.
                 _uiState.value.item?.let { item ->
-                    play(android.net.Uri.parse(item.filePath), startPositionMs = 0L)
+                    play(android.net.Uri.parse(item.filePath), startPositionMs = _uiState.value.savedStartPositionMs)
                 }
             }.onFailure { e ->
                 logger.e(TAG, "MediaController connection failed", e)
