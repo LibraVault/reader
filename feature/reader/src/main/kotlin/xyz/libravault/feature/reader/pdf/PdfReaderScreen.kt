@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import xyz.libravault.feature.reader.ScrollMode
 import xyz.libravault.feature.reader.ReaderSettings
@@ -68,8 +70,6 @@ fun PdfReaderScreen(
     settings: ReaderSettings,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
-    // Bookmark navigation: set to the target page index to trigger a scroll,
-    // null when no scroll is pending. Caller clears via [onScrollConsumed].
     scrollToPage: Int? = null,
     onScrollConsumed: () -> Unit = {},
 ) {
@@ -81,6 +81,7 @@ fun PdfReaderScreen(
     // ── PdfRenderer lifecycle ────────────────────────────────────────────────
     var renderer  by remember { mutableStateOf<PdfRenderer?>(null) }
     var pageCount by remember { mutableStateOf(0) }
+    val renderMutex = remember { Mutex() }
 
     DisposableEffect(fileUri) {
         val pfd = context.contentResolver.openFileDescriptor(fileUri, "r")
@@ -113,6 +114,7 @@ fun PdfReaderScreen(
     when (settings.scrollMode) {
         ScrollMode.SCROLLING   -> PdfScrollingView(
             renderer         = r,
+            renderMutex      = renderMutex,
             pageCount        = pageCount,
             screenWidthPx    = screenWidthPx,
             initialPage      = initialPage,
@@ -123,6 +125,7 @@ fun PdfReaderScreen(
         )
         ScrollMode.PAGINATED -> PdfPaginatedView(
             renderer         = r,
+            renderMutex      = renderMutex,
             pageCount        = pageCount,
             screenWidthPx    = screenWidthPx,
             initialPage      = initialPage,
@@ -142,6 +145,7 @@ fun PdfReaderScreen(
 @Composable
 private fun PdfScrollingView(
     renderer: PdfRenderer,
+    renderMutex: Mutex,
     pageCount: Int,
     screenWidthPx: Int,
     initialPage: Int,
@@ -187,6 +191,7 @@ private fun PdfScrollingView(
         items(pageCount) { pageIndex ->
             PdfPageImage(
                 renderer      = renderer,
+                renderMutex   = renderMutex,
                 pageIndex     = pageIndex,
                 screenWidthPx = screenWidthPx,
                 modifier      = Modifier
@@ -202,6 +207,7 @@ private fun PdfScrollingView(
 @Composable
 private fun PdfPaginatedView(
     renderer: PdfRenderer,
+    renderMutex: Mutex,
     pageCount: Int,
     screenWidthPx: Int,
     initialPage: Int,
@@ -250,6 +256,7 @@ private fun PdfPaginatedView(
     ) {
         PdfPageImage(
             renderer      = renderer,
+            renderMutex   = renderMutex,
             pageIndex     = currentPage,
             screenWidthPx = screenWidthPx,
             modifier      = Modifier
@@ -280,6 +287,7 @@ private fun PdfPaginatedView(
 @Composable
 private fun PdfPageImage(
     renderer: PdfRenderer,
+    renderMutex: Mutex,
     pageIndex: Int,
     screenWidthPx: Int,
     modifier: Modifier = Modifier,
@@ -288,10 +296,13 @@ private fun PdfPageImage(
     var bitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
 
     LaunchedEffect(pageIndex, screenWidthPx) {
-        val bmp = withContext(Dispatchers.IO) {
-            renderPage(renderer, pageIndex, screenWidthPx)
+        renderMutex.withLock {
+            val old = bitmap
+            bitmap = withContext(Dispatchers.IO) {
+                renderPage(renderer, pageIndex, screenWidthPx)
+            }
+            old?.recycle()
         }
-        bitmap = bmp
     }
 
     bitmap?.let {

@@ -105,6 +105,8 @@ fun ReaderScreen(
                                         onCentreTap      = viewModel::onCentreTap,
                                         onAddHighlight   = viewModel::addHighlight,
                                     )
+                                } else {
+                                    ErrorScreen("EPUB reader requires a FragmentActivity context.", onBack)
                                 }
                             }
 

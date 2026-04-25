@@ -106,34 +106,35 @@ class MetadataExtractor @Inject constructor(
             ?: return fallback(file)
 
         return inputStream.use { stream ->
-            val zip = ZipInputStream(stream)
-            val entries = mutableMapOf<String, ByteArray>()
+            ZipInputStream(stream).use { zip ->
+                val entries = mutableMapOf<String, ByteArray>()
 
-            // Read all relevant entries into memory (OPF files are small)
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val name = entry.name
-                if (name.endsWith(".opf") ||
-                    name == "META-INF/container.xml" ||
-                    name.contains("cover", ignoreCase = true) &&
-                    (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png"))
-                ) {
-                    entries[name] = zip.readBytes()
+                // Read all relevant entries into memory (OPF files are small)
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (name.endsWith(".opf") ||
+                        name == "META-INF/container.xml" ||
+                        name.contains("cover", ignoreCase = true) &&
+                        (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png"))
+                    ) {
+                        entries[name] = zip.readBytes()
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
+
+                // Find OPF path from container.xml
+                val containerXml = entries["META-INF/container.xml"]
+                val opfPath = containerXml?.let { findOpfPath(it.inputStream()) }
+
+                // Parse OPF
+                val opfBytes = opfPath?.let { entries[it] }
+                    ?: entries.entries.firstOrNull { it.key.endsWith(".opf") }?.value
+                    ?: return@use fallback(file)
+
+                parseOpf(opfBytes.inputStream(), entries, file.uri.toString())
             }
-
-            // Find OPF path from container.xml
-            val containerXml = entries["META-INF/container.xml"]
-            val opfPath = containerXml?.let { findOpfPath(it.inputStream()) }
-
-            // Parse OPF
-            val opfBytes = opfPath?.let { entries[it] }
-                ?: entries.entries.firstOrNull { it.key.endsWith(".opf") }?.value
-                ?: return@use fallback(file)
-
-            parseOpf(opfBytes.inputStream(), entries, file.uri.toString())
         }
     }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.LibraryItem
@@ -44,6 +45,8 @@ class LibraryScannerImpl @Inject constructor(
 
     // Fire-and-forget scope for Phase 2 metadata enrichment — survives flow completion
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Track current enrichment job so we can cancel it on re-scan
+    private var enrichmentJob: Job? = null
 
     override fun scan(): Flow<ScanProgress> = flow {
         if (!scanInProgress.compareAndSet(false, true)) {
@@ -123,7 +126,8 @@ class LibraryScannerImpl @Inject constructor(
             // Run in a fire-and-forget coroutine so that the Flow collector
             // (LibraryViewModel) sees the stream complete and clears the
             // scanning flag.  Slow/broken files no longer block the UI.
-            backgroundScope.launch {
+            enrichmentJob?.cancel()
+            enrichmentJob = backgroundScope.launch {
                 enrichMetadata()
             }
         }.onFailure { e ->

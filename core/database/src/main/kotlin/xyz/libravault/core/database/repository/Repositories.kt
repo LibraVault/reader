@@ -71,7 +71,10 @@ class LibraryRepositoryImpl @Inject constructor(
         dao.observeRecentlyAccessed(limit).map { it.map(LibraryItemEntity::toDomain) }
 
     override suspend fun search(query: String): List<LibraryItem> =
-        dao.search(query).map(LibraryItemEntity::toDomain)
+        dao.search(escapeLikeWildcards(query)).map(LibraryItemEntity::toDomain)
+
+    override suspend fun findByPath(path: String): LibraryItem? =
+        dao.findByPath(path)?.toDomain()
 
     override suspend fun getItemById(id: Long): LibraryItem? =
         dao.getItemById(id)?.toDomain()
@@ -147,7 +150,7 @@ private fun LibraryItemEntity.toDomain() = LibraryItem(
     narrator      = narrator,
     series        = series,
     seriesIndex   = seriesIndex,
-    format        = MediaFormat.valueOf(format),
+    format        = runCatching { MediaFormat.valueOf(format) }.getOrDefault(MediaFormat.EPUB),
     coverArtPath  = coverArtPath,
     durationMs    = durationMs,
     pageCount     = pageCount,
@@ -254,3 +257,10 @@ private fun xyz.libravault.core.domain.model.Highlight.toEntity() =
         note            = note,
         createdAt       = createdAt.toEpochMilli(),
     )
+
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Escapes SQLite LIKE wildcards so user input like "100%" or "a_b" matches literally. */
+private fun escapeLikeWildcards(query: String): String =
+    query.replace("%", "\\%").replace("_", "\\_")

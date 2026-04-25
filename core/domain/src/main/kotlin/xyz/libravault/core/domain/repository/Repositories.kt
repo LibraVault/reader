@@ -22,6 +22,7 @@ interface LibraryRepository {
     fun observeByFormat(format: MediaFormat): Flow<List<LibraryItem>>
     fun observeRecentlyAccessed(limit: Int = 10): Flow<List<LibraryItem>>
     suspend fun getItemById(id: Long): LibraryItem?
+    suspend fun findByPath(path: String): LibraryItem?
     suspend fun search(query: String): List<LibraryItem>
     suspend fun upsert(item: LibraryItem): Long
     suspend fun deleteItem(id: Long)

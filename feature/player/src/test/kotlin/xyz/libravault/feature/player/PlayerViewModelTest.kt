@@ -28,6 +28,7 @@ import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
+import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
@@ -57,6 +58,7 @@ class PlayerViewModelTest {
     )
 
     private val getItem          = mockk<GetLibraryItemUseCase>()
+    private val getProgress      = mockk<GetListeningProgressUseCase>(relaxed = true)
     private val saveProgress     = mockk<SaveListeningProgressUseCase>(relaxed = true)
     private val observeBookmarks = mockk<ObserveBookmarksUseCase>()
     private val addBookmark      = mockk<AddBookmarkUseCase>(relaxed = true)
@@ -91,6 +93,7 @@ class PlayerViewModelTest {
         return PlayerViewModel(
             savedStateHandle  = SavedStateHandle(mapOf("itemId" to itemId)),
             getItem           = getItem,
+            getProgress       = getProgress,
             saveProgress      = saveProgress,
             observeBookmarks  = observeBookmarks,
             addBookmark       = addBookmark,
@@ -122,6 +125,7 @@ class PlayerViewModelTest {
         val vm = PlayerViewModel(
             savedStateHandle = SavedStateHandle(mapOf("itemId" to 99L)),
             getItem          = getItem,
+            getProgress      = getProgress,
             saveProgress     = saveProgress,
             observeBookmarks = observeBookmarks,
             addBookmark      = addBookmark,
