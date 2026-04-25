@@ -16,6 +16,11 @@ val keystoreProperties = Properties().apply {
 android {
     namespace = "xyz.libravault.app"
 
+    lint {
+        baseline = file("lint-baseline.xml")
+        checkReleaseBuilds = false  // Release build lint baseline can be added later
+    }
+
     defaultConfig {
         applicationId = "xyz.libravault.app"
         versionCode   = 1

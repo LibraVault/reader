@@ -5,6 +5,10 @@ plugins {
 
 android {
     namespace = "xyz.libravault.feature.player"
+
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
 }
 
 dependencies {
