@@ -1,6 +1,6 @@
-package xyz.libravault.feature.player.service
-
 @file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
+package xyz.libravault.feature.player.service
 
 import android.app.PendingIntent
 import android.content.Intent
