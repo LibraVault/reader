@@ -31,5 +31,5 @@ fun snapPlaybackSpeed(speed: Float): Float {
 fun formatPlaybackSpeed(speed: Float): String {
     val snapped = snapPlaybackSpeed(speed)
     return if (snapped % 1f == 0f) "${snapped.toInt()}×"
-    else "${snapped}×".removeSuffix(".0") + "×"
+    else "${snapped}×"
 }

@@ -245,8 +245,7 @@ class PlayerViewModel @Inject constructor(
     fun hideSleepTimer()    { _uiState.value = _uiState.value.copy(showSleepTimerSheet = false) }
 
     fun startSleepTimer(durationMs: Long) {
-        val ctrl = controller ?: return
-        sleepTimer.start(durationMs, ctrl.applicationLooper.let { ctrl } as androidx.media3.exoplayer.ExoPlayer, viewModelScope)
+        sleepTimer.start(durationMs, viewModelScope)
         hideSleepTimer()
         logger.i(TAG, "Sleep timer set for ${durationMs / 60_000} min")
     }
@@ -256,11 +255,11 @@ class PlayerViewModel @Inject constructor(
         val chapters  = _uiState.value.chapters
         val currentIdx = _uiState.value.currentChapterIndex
         val remaining = if (chapters.isNotEmpty() && currentIdx in chapters.indices) {
-            chapters[currentIdx].endMs - (ctrl.currentPosition)
+            chapters[currentIdx].endMs - ctrl.currentPosition
         } else {
             (ctrl.duration - ctrl.currentPosition).coerceAtLeast(0L)
         }
-        startSleepTimer(remaining)
+        sleepTimer.start(remaining, viewModelScope)
     }
 
     fun cancelSleepTimer() = sleepTimer.cancel()
@@ -350,6 +349,22 @@ class PlayerViewModel @Inject constructor(
         stopPolling()
         progressSaveJob?.cancel()
         controller?.removeListener(playerListener)
+        // Save final progress — persist the last known position so the user
+        // doesn't lose up to 5 seconds of progress on navigation.
+        val pos = controller?.currentPosition
+        val id = itemId
+        if (pos != null && id != null) {
+            viewModelScope.launch {
+                saveProgress(
+                    ListeningProgress(
+                        itemId         = id,
+                        positionMs     = pos,
+                        chapterIndex   = _uiState.value.currentChapterIndex,
+                        lastListenedAt = Instant.now(),
+                    )
+                )
+            }
+        }
         // Do NOT release the singleton controllerFuture here — it is @Singleton scoped
         // and shared across ViewModel instances. Releasing it cancels the future for
         // all subsequent PlayerViewModel instances, causing "Playback service unavailable".

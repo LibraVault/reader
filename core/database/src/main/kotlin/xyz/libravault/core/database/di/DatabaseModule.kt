@@ -8,6 +8,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import xyz.libravault.core.database.LibravaultDatabase
+import xyz.libravault.core.database.MIGRATION_1_2
 import xyz.libravault.core.database.dao.BookmarkDao
 import xyz.libravault.core.database.dao.HighlightDao
 import xyz.libravault.core.database.dao.LibraryItemDao
@@ -27,7 +28,7 @@ object DatabaseModule {
             LibravaultDatabase::class.java,
             LibravaultDatabase.DATABASE_NAME,
         )
-            .fallbackToDestructiveMigrationFrom() // Dev only — replace with proper migrations before release
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides fun provideVaultFolderDao(db: LibravaultDatabase): VaultFolderDao = db.vaultFolderDao()

@@ -3,10 +3,13 @@ package xyz.libravault.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -55,6 +58,7 @@ class LibraryViewModel @Inject constructor(
     private val _searchQuery   = MutableStateFlow("")
     private val _searchResults = MutableStateFlow<List<LibraryItem>?>(null)
     private val _staleMessage  = MutableStateFlow(false)
+    private var searchJob: Job? = null
 
     val uiState: StateFlow<LibraryUiState> = combine(
         observeVaults(),
@@ -139,7 +143,9 @@ class LibraryViewModel @Inject constructor(
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
         if (query.isBlank()) { _searchResults.value = null; return }
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(300) // Debounce: wait 300ms after last keystroke
             _searchResults.value = searchLibrary(query)
         }
     }
@@ -168,13 +174,8 @@ class LibraryViewModel @Inject constructor(
             // Recovery: if Room has no vaults but the OS still holds URI permissions
             // (e.g. after user clears app cache), re-register the persisted URIs so
             // the scanner can find the files again.
-            val vaultList = mutableListOf<xyz.libravault.core.domain.model.VaultFolder>()
-            observeVaults().collect { list ->
-                vaultList.addAll(list)
-                return@collect
-            }
-
-            if (vaultList.isEmpty()) {
+            val vaults = observeVaults().first()
+            if (vaults.isEmpty()) {
                 val persistedUris = vaultManager.persistedVaultUris()
                 if (persistedUris.isNotEmpty()) {
                     logger.i("LibraryVM", "Room empty but ${persistedUris.size} URI permission(s) found — recovering vaults")
@@ -190,6 +191,6 @@ class LibraryViewModel @Inject constructor(
                 }
             }
         }
-        triggerScan()  // Background scan on every cold start
+        triggerScan()
     }
 }
