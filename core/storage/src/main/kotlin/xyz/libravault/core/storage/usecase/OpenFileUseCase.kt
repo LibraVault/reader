@@ -31,9 +31,9 @@ class OpenFileUseCase @Inject constructor(
     private val libraryRepository: LibraryRepository,
 ) {
     suspend operator fun invoke(uri: Uri): LibraryItem? {
-        // Check if already in library
-        val existing = libraryRepository.search(uri.toString())
-            .firstOrNull { it.filePath == uri.toString() }
+        val uriString = uri.toString()
+        // Use exact path lookup — far more efficient than a full-text search
+        val existing = libraryRepository.findByPath(uriString)
         if (existing != null) return existing
 
         // Detect format

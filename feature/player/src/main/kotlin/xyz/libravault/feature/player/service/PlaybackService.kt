@@ -73,7 +73,10 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         mediaSession?.run {
             release()
-            player.release()
+            // Do NOT release the singleton ExoPlayer here — it is @Singleton scoped
+            // and shared with SleepTimer for volume fade-out. Releasing it would
+            // cause IllegalStateException("Player is released") on any subsequent
+            // sleep timer operation or new PlayerViewModel instance.
         }
         mediaSession = null
         super.onDestroy()

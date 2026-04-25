@@ -52,10 +52,10 @@ interface LibraryItemDao {
 
     @Query("""
         SELECT * FROM library_items
-        WHERE title LIKE '%' || :query || '%'
-           OR author LIKE '%' || :query || '%'
-           OR COALESCE(narrator, '') LIKE '%' || :query || '%'
-           OR COALESCE(series, '') LIKE '%' || :query || '%'
+        WHERE title LIKE '%' || :query || '%' ESCAPE '\'
+           OR author LIKE '%' || :query || '%' ESCAPE '\'
+           OR COALESCE(narrator, '') LIKE '%' || :query || '%' ESCAPE '\'
+           OR COALESCE(series, '') LIKE '%' || :query || '%' ESCAPE '\'
         ORDER BY title ASC
     """)
     suspend fun search(query: String): List<LibraryItemEntity>

@@ -88,6 +88,7 @@ class PlayerViewModel @Inject constructor(
     private var controller: MediaController? = null
     private var positionPollingJob: Job?     = null
     private var progressSaveJob: Job?        = null
+    private var playedItemUri: String?       = null   // guards against duplicate play() calls
 
     // Observe sleep timer state
     init {
@@ -174,6 +175,11 @@ class PlayerViewModel @Inject constructor(
 
     fun play(uri: Uri, startPositionMs: Long = 0L) {
         val ctrl = controller ?: return
+        // Guard against duplicate play() — the same URI can be triggered from
+        // loadItem(), connectController(), and PlayerScreen's LaunchedEffect.
+        val uriStr = uri.toString()
+        if (uriStr == playedItemUri) return
+        playedItemUri = uriStr
         val mediaItem = MediaItem.fromUri(uri)
         ctrl.setMediaItem(mediaItem, startPositionMs)
         ctrl.prepare()

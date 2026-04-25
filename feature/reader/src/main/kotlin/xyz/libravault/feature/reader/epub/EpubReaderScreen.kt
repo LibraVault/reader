@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.*
@@ -144,6 +145,7 @@ private fun EpubNavigatorView(
     val currentOnPositionChanged = rememberUpdatedState(onPositionChanged)
     val currentOnCentreTap       = rememberUpdatedState(onCentreTap)
     val currentOnAddHighlight    = rememberUpdatedState(onAddHighlight)
+    val density = LocalDensity.current.density
 
     // Hold a reference to the navigator fragment so settings changes can be
     // pushed to it without recreating the fragment
@@ -187,10 +189,9 @@ private fun EpubNavigatorView(
         val listener = object : EpubNavigatorFragment.Listener {
 
             override fun onTap(point: PointF): Boolean {
-                val xDp    = point.x / (publication as Any).let { 1f } // density placeholder
+                val xDp    = point.x / density
                 val width  = screenWidthDp.value
-                val xRatio = point.x / width
-                return if (xRatio in 0.33f..0.67f) {
+                return if (xDp in (width * 0.33f)..(width * 0.67f)) {
                     currentOnCentreTap.value.invoke()
                     true   // consumed — do NOT turn page
                 } else {
