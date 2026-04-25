@@ -1,5 +1,7 @@
 package xyz.libravault.feature.player.service
 
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.Player
@@ -8,7 +10,6 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.collect.ImmutableList
-import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -22,7 +23,6 @@ import javax.inject.Inject
  * of [CommandButton]s built from [Player.Command] values (NOT SessionCommand — those are
  * the deprecated androidx.media2 API).
  */
-@OptIn(UnstableApi::class)
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
 
