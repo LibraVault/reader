@@ -5,6 +5,4 @@
 -->
 <full-backup-content>
     <include domain="sharedpref" path="libravault_prefs.xml" />
-    <exclude domain="database"   path="libravault.db-wal" />
-    <exclude domain="database"   path="libravault.db-shm" />
 </full-backup-content>
