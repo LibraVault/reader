@@ -136,6 +136,8 @@ dependencies {
 
     // Splash screen API (Android 12+ native + backport to API 23)
     implementation("androidx.core:core-splashscreen:1.0.1")
+    // Material3 for system-level theming (SAF picker, status/nav bars)
+    implementation("com.google.android.material:material:1.12.0")
 
     // Navigation host lives in app
     implementation(libs.navigation.compose)

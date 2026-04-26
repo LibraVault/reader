@@ -29,7 +29,7 @@ class LibravaultLogger @Inject constructor(
     companion object {
         private const val LOG_FILE_NAME    = "libravault.log"
         private const val MAX_LOG_SIZE_BYTES = 512 * 1024L  // 512 KB
-        private const val TAG              = "Libravault"
+        private const val TAG              = "LibraVault"
 
         private val TIMESTAMP_FMT = DateTimeFormatter
             .ofPattern("yyyy-MM-dd HH:mm:ss.SSS")

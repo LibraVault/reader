@@ -14,7 +14,7 @@ data class UserPreferences(
     val defaultPlaybackSpeed: Float           = 1.0f,
     val defaultSkipDurationSec: Int           = 30,
     val loggingEnabled: Boolean               = false,
-    val dynamicColorEnabled: Boolean          = true,
+    val dynamicColorEnabled: Boolean          = false,
 )
 
 enum class AppReadingTheme { DARK, LIGHT, SEPIA }
