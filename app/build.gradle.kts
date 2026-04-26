@@ -144,6 +144,8 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.bundles.lifecycle)
+    // FragmentActivity needed by the EPUB reader (Readium uses supportFragmentManager)
+    implementation("androidx.fragment:fragment-ktx:1.8.1")
 
     // Compose tooling (debug only)
     debugImplementation(libs.compose.ui.tooling)
