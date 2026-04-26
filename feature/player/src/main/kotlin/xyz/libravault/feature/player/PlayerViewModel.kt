@@ -75,6 +75,8 @@ class PlayerViewModel @Inject constructor(
         private const val TAG            = "PlayerViewModel"
         private const val SKIP_MS        = 30_000L   // 30-second skip
         private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L
+        private const val MAX_RETRIES    = 4
+        private const val RETRY_DELAY_MS = 500L
     }
 
     private val itemId: Long? = savedStateHandle.get<Long>("itemId")?.takeIf { it > 0 }
@@ -88,7 +90,8 @@ class PlayerViewModel @Inject constructor(
     private var controller: MediaController? = null
     private var positionPollingJob: Job?     = null
     private var progressSaveJob: Job?        = null
-    private var playedItemUri: String?       = null   // guards against duplicate play() calls
+    private var playedItemUri: String?       = null
+    private var retryJob: Job?               = null
 
     // Observe sleep timer state
     init {
@@ -121,28 +124,48 @@ class PlayerViewModel @Inject constructor(
                 savedStartPositionMs = savedPositionMs,
             )
             logger.i(TAG, "Loaded: ${item.title} — resume at ${savedPositionMs}ms")
-            // If the MediaController was already connected before loadItem() finished,
-            // connectController()'s play() call was a no-op (item was null). Trigger it now.
+            // If the controller was already connected before loadItem() finished,
+            // connectController's play() attempt was a no-op (item was null). Trigger it now.
             controller?.let { play(android.net.Uri.parse(item.filePath), startPositionMs = savedPositionMs) }
         }
     }
 
+    /**
+     * Connects to [PlaybackService] via [MediaController] with retry.
+     *
+     * The old approach used a one-shot ListenableFuture.addListener — if the service
+     * hadn't started yet or was killed, the failure was permanent. This version
+     * retries with exponential backoff so transient service unavailability is tolerated.
+     */
     private fun connectController() {
-        controllerFuture.addListener({
-            runCatching {
-                controller = controllerFuture.get()
-                controller?.addListener(playerListener)
-                logger.i(TAG, "MediaController connected")
-                // Item may have loaded before the controller was ready — play now.
-                // Use savedStartPositionMs so the user resumes where they left off.
-                _uiState.value.item?.let { item ->
-                    play(android.net.Uri.parse(item.filePath), startPositionMs = _uiState.value.savedStartPositionMs)
+        retryJob = viewModelScope.launch {
+            var attempt = 0
+            while (isActive) {
+                attempt++
+                runCatching {
+                    controllerFuture.get()
+                }.onSuccess { ctrl ->
+                    controller = ctrl
+                    controller?.addListener(playerListener)
+                    logger.i(TAG, "MediaController connected (attempt $attempt)")
+                    // loadItem() already handles starting playback once controller
+                    // is set — just clear any previous error state.
+                    if (_uiState.value.error != null) {
+                        _uiState.value = _uiState.value.copy(error = null)
+                    }
+                    return@launch  // Connected — done
+                }.onFailure { e ->
+                    logger.w(TAG, "MediaController connection failed (attempt $attempt): ${e.message}")
+                    if (attempt >= MAX_RETRIES) {
+                        logger.e(TAG, "MediaController connection exhausted after $MAX_RETRIES attempts", e)
+                        _uiState.value = _uiState.value.copy(error = "Playback service unavailable.")
+                        return@launch
+                    }
+                    // Exponential backoff: 500ms, 1s, 2s, 4s
+                    delay(RETRY_DELAY_MS * (1L shl (attempt - 1)))
                 }
-            }.onFailure { e ->
-                logger.e(TAG, "MediaController connection failed", e)
-                _uiState.value = _uiState.value.copy(error = "Playback service unavailable.")
             }
-        }, MoreExecutors.directExecutor())
+        }
     }
 
     // ── Player listener ───────────────────────────────────────────────────────
@@ -354,7 +377,7 @@ class PlayerViewModel @Inject constructor(
     override fun onCleared() {
         stopPolling()
         progressSaveJob?.cancel()
-        controller?.removeListener(playerListener)
+        retryJob?.cancel()
         // Save final progress — persist the last known position so the user
         // doesn't lose up to 5 seconds of progress on navigation.
         val pos = controller?.currentPosition
@@ -371,10 +394,13 @@ class PlayerViewModel @Inject constructor(
                 )
             }
         }
-        // Do NOT release the singleton controllerFuture here — it is @Singleton scoped
-        // and shared across ViewModel instances. Releasing it cancels the future for
-        // all subsequent PlayerViewModel instances, causing "Playback service unavailable".
-        // The MediaController itself stays connected for background playback continuity.
+        // Release the per-ViewModel controller to prevent leaks.
+        // The PlaybackService and its singleton ExoPlayer remain alive
+        // so background playback continues uninterrupted.
+        controller?.let { ctrl ->
+            ctrl.removeListener(playerListener)
+            MediaController.releaseFuture(controllerFuture)
+        }
         super.onCleared()
     }
 }

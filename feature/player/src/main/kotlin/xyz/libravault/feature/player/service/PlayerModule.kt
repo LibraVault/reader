@@ -42,11 +42,14 @@ object PlayerModule {
 
     /**
      * [MediaController] future — connects the UI to [PlaybackService].
-     * The ViewModel resolves this future on the main thread before issuing
+     * The ViewModel resolves this future with retry logic before issuing
      * any playback commands.
+     *
+     * Note: this is intentionally NOT @Singleton — each ViewModel gets its own
+     * connection to the service, avoiding stale/defunct controller futures that
+     * cause permanent "Playback service unavailable" errors.
      */
     @Provides
-    @Singleton
     fun provideMediaControllerFuture(
         @ApplicationContext context: Context,
     ): ListenableFuture<MediaController> {
