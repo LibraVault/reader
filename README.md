@@ -175,6 +175,17 @@ Three GitHub Actions workflows (all free for public repos):
 
 ---
 
+## Donate
+
+LibraVault is **free, open source, and has no ads, no tracking, no accounts** — it exists because the people building it believe in it. If it brings you value, consider supporting its development.
+
+| Currency | Address |
+|----------|---------|
+| **Bitcoin (BTC)** | `bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg` |
+| **Monero (XMR)** | `42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF` |
+
+Alternatively, sponsor us on [GitHub Sponsors](https://github.com/sponsors/libravault-xyz).
+
 ## Distribution
 
 - **F-Droid** — free, full feature set, reproducible builds
