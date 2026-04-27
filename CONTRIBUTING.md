@@ -51,3 +51,7 @@ Include Android version, device model, and steps to reproduce.
 ## License
 
 By contributing, you agree your changes will be licensed under GPL-3.0.
+
+## Donate
+
+If you find Libravault useful and want to support it, donation addresses are in the app (Settings > About > Support Development) and in the [README](README.md#Donate).

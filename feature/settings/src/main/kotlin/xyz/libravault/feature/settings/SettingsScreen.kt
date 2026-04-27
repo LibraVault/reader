@@ -1,5 +1,9 @@
 package xyz.libravault.feature.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -28,11 +33,14 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
 
@@ -182,6 +190,36 @@ fun SettingsScreen(
                         "It reads only folders you explicitly grant it.",
             )
 
+            Divider()
+
+            // ── Support Development ─────────────────────────────────────────────
+            SectionHeader("Support Development")
+
+            SettingLabel(
+                title    = "LibraVault is free",
+                subtitle = "No ads, no tracking, no accounts. If this app brings you " +
+                        "joy, consider supporting its development.",
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DonationButton(
+                    label = "Donate XMR",
+                    address = "42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF",
+                )
+                DonationButton(
+                    label = "Donate BTC",
+                    address = "bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg",
+                )
+            }
+
+            SettingLabel(
+                title    = "Also on GitHub Sponsors",
+                subtitle = "github.com/libravault-xyz/libravault",
+            )
+
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -234,4 +272,25 @@ private fun SwitchSetting(
 @Composable
 private fun Divider() {
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+}
+
+@Composable
+private fun DonationButton(label: String, address: String) {
+    val context  = LocalContext.current
+    val scope    = rememberCoroutineScope()
+
+    OutlinedButton(onClick = {
+        copyToClipboard(context, address)
+        scope.launch {
+            Toast.makeText(context, "$label address copied", Toast.LENGTH_SHORT).show()
+        }
+    }) {
+        Text(label)
+    }
+}
+
+private fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("crypto address", text)
+    clipboard.setPrimaryClip(clip)
 }
