@@ -124,7 +124,7 @@ fun LibraryScreen(
             }
         },
         bottomBar = {
-            if (nowPlaying.isActive) {
+            if (nowPlaying.itemId != null) {
                 MiniPlayerBar(
                     title = nowPlaying.title,
                     author = nowPlaying.author,
