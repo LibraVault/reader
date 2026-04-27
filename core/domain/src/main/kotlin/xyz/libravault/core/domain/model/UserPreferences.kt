@@ -30,6 +30,9 @@ fun snapPlaybackSpeed(speed: Float): Float {
 /** Formats snapped speed as e.g. "0.75×", "1×", "1.25×", "2.5×" */
 fun formatPlaybackSpeed(speed: Float): String {
     val snapped = snapPlaybackSpeed(speed)
-    return if (snapped % 1f == 0f) "${snapped.toInt()}×"
-    else "${snapped}×"
+    // Epsilon-based comparison to avoid floating-point precision issues
+    // where 1.0f % 1f produces 0.99999994f instead of 0f
+    val diff = snapped - snapped.toInt()
+    return if (kotlin.math.abs(diff) < 0.001f) "${snapped.toInt()}×"
+    else String.format("%.2g×", snapped).replace(",", ".")
 }

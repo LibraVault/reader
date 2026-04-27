@@ -58,15 +58,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
+import xyz.libravault.feature.player.service.PlaybackStateHolder
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     onItemClick: (LibraryItem) -> Unit,
     onSettingsClick: () -> Unit,
+    onNowPlayingClick: (Long) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val nowPlaying by viewModel.nowPlaying.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var searchActive by remember { mutableStateOf(false) }
 
@@ -117,6 +121,17 @@ fun LibraryScreen(
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                 }
+            }
+        },
+        bottomBar = {
+            if (nowPlaying.isActive) {
+                MiniPlayerBar(
+                    title = nowPlaying.title,
+                    author = nowPlaying.author,
+                    coverArtPath = nowPlaying.coverArtPath,
+                    isPlaying = nowPlaying.isPlaying,
+                    onClick = { nowPlaying.itemId?.let(onNowPlayingClick) },
+                )
             }
         },
     ) { innerPadding ->
@@ -432,6 +447,86 @@ private fun SearchResultRow(item: LibraryItem, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ── Mini-player bar ───────────────────────────────────────────────────────────
+
+@Composable
+private fun MiniPlayerBar(
+    title: String,
+    author: String,
+    coverArtPath: String?,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // Small cover art
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (coverArtPath != null) {
+                    AsyncImage(
+                        model = coverArtPath,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Headphones,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
+            // Title + author
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = author,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            // Play/Pause indicator
+            Icon(
+                imageVector = if (isPlaying) Icons.Default.Headphones else Icons.Default.PlayArrow,
+                contentDescription = if (isPlaying) "Playing" else "Resume",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
             )
         }
     }

@@ -68,6 +68,9 @@ fun LibravaultNavHost(
                     navController.navigate(route)
                 },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
+                onNowPlayingClick = { itemId ->
+                    navController.navigate(Screen.Player.createRoute(itemId))
+                },
             )
         }
 

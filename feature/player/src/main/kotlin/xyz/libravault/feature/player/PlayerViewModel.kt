@@ -31,6 +31,7 @@ import xyz.libravault.core.domain.model.snapPlaybackSpeed
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.Chapter
 import xyz.libravault.feature.player.service.ChapterExtractor
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SleepTimer
 import xyz.libravault.feature.player.service.SleepTimerState
 import java.time.Instant
@@ -69,6 +70,7 @@ class PlayerViewModel @Inject constructor(
     private val chapterExtractor: ChapterExtractor,
     private val sleepTimer: SleepTimer,
     private val logger: LibravaultLogger,
+    private val playbackStateHolder: PlaybackStateHolder,
 ) : ViewModel() {
 
     companion object {
@@ -208,7 +210,13 @@ class PlayerViewModel @Inject constructor(
         // Guard against duplicate play() — the same URI can be triggered from
         // loadItem(), connectController(), and PlayerScreen's LaunchedEffect.
         val uriStr = uri.toString()
-        if (uriStr == playedItemUri) return
+        if (uriStr == playedItemUri) {
+            // Same URI already loaded — just seek to the saved position
+            // without resetting the media pipeline (avoids audio blip and
+            // position drift from repeated setMediaItem calls).
+            if (startPositionMs > 0) ctrl.seekTo(startPositionMs)
+            return
+        }
         playedItemUri = uriStr
         val mediaItem = MediaItem.fromUri(uri)
         ctrl.setMediaItem(mediaItem, startPositionMs)
@@ -344,6 +352,17 @@ class PlayerViewModel @Inject constructor(
                     bufferedMs          = buf,
                     currentChapterIndex = chapIdx,
                 )
+                // Push state to the singleton holder for mini-player
+                val item = _uiState.value.item
+                if (item != null) {
+                    playbackStateHolder.update(
+                        itemId       = item.id,
+                        title        = item.title,
+                        author       = item.author,
+                        coverArtPath = item.coverArtPath,
+                        isPlaying    = ctrl.isPlaying,
+                    )
+                }
                 delay(200)
             }
         }

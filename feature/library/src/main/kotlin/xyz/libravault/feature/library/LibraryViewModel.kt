@@ -25,6 +25,7 @@ import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
 import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.domain.usecase.SearchLibraryUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 import javax.inject.Inject
 
 data class LibraryUiState(
@@ -38,6 +39,8 @@ data class LibraryUiState(
     val scanError: String?                = null,
     val staleItemMessage: Boolean         = false,  // "File not found" snackbar
     val addVaultError: String?            = null,
+    // Mini-player
+    val nowPlaying: PlaybackStateHolder.State = PlaybackStateHolder.State(),
 )
 
 @HiltViewModel
@@ -50,6 +53,7 @@ class LibraryViewModel @Inject constructor(
     private val addVaultFolder: AddVaultFolderUseCase,
     private val vaultManager: VaultManager,
     private val logger: LibravaultLogger,
+    private val playbackStateHolder: PlaybackStateHolder,
 ) : ViewModel() {
 
     private val _scanning      = MutableStateFlow(false)
@@ -59,6 +63,9 @@ class LibraryViewModel @Inject constructor(
     private val _searchResults = MutableStateFlow<List<LibraryItem>?>(null)
     private val _staleMessage  = MutableStateFlow(false)
     private var searchJob: Job? = null
+
+    val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
 
     val uiState: StateFlow<LibraryUiState> = combine(
         observeVaults(),
