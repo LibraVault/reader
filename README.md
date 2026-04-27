@@ -189,7 +189,7 @@ Alternatively, sponsor us on [GitHub Sponsors](https://github.com/sponsors/libra
 ## Distribution
 
 - **F-Droid** — free, full feature set, reproducible builds
-- **Google Play** — one-time purchase (~€3.99)
+- **Google Play** — one-time purchase
 - **GitHub Releases** — signed APK on every version tag
 
 ---
