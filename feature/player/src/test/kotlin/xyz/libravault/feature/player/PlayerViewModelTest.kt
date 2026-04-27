@@ -35,6 +35,7 @@ import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.Chapter
 import xyz.libravault.feature.player.service.ChapterExtractor
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SleepTimer
 import com.google.common.util.concurrent.SettableFuture
 import androidx.media3.session.MediaController
@@ -65,10 +66,11 @@ class PlayerViewModelTest {
     private val observeBookmarks = mockk<ObserveBookmarksUseCase>()
     private val addBookmark      = mockk<AddBookmarkUseCase>(relaxed = true)
     private val chapterExtractor = mockk<ChapterExtractor>()
-    private val sleepTimer       = mockk<SleepTimer>(relaxed = true)
-    private val logger           = mockk<LibravaultLogger>(relaxed = true)
+    private val sleepTimer          = mockk<SleepTimer>(relaxed = true)
+    private val logger              = mockk<LibravaultLogger>(relaxed = true)
+    private val playbackStateHolder = mockk<PlaybackStateHolder>(relaxed = true)
 
-    private val mockController   = mockk<MediaController>(relaxed = true)
+    private val mockController      = mockk<MediaController>(relaxed = true)
     private val controllerFuture = SettableFuture.create<MediaController>()
     private val sleepTimerState  = MutableStateFlow<SleepTimerState>(SleepTimerState.Inactive)
 
@@ -81,6 +83,8 @@ class PlayerViewModelTest {
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
         every { sleepTimer.state } returns sleepTimerState
+        // Stub chapterExtractor so connectWithRetry → play → updateChapters doesn't throw
+        coEvery { chapterExtractor.extract(any(), any()) } returns fakeChapters
         mockkStatic(Uri::class)
         every { Uri.parse(any()) } returns mockk(relaxed = true)
     }
@@ -95,16 +99,17 @@ class PlayerViewModelTest {
         coEvery { observeBookmarks(itemId) } returns flowOf(emptyList())
 
         return PlayerViewModel(
-            savedStateHandle  = SavedStateHandle(mapOf("itemId" to itemId)),
-            getItem           = getItem,
-            getProgress       = getProgress,
-            saveProgress      = saveProgress,
-            observeBookmarks  = observeBookmarks,
-            addBookmark       = addBookmark,
-            controllerFuture  = controllerFuture,
-            chapterExtractor  = chapterExtractor,
-            sleepTimer        = sleepTimer,
-            logger            = logger,
+            savedStateHandle   = SavedStateHandle(mapOf("itemId" to itemId)),
+            getItem            = getItem,
+            getProgress        = getProgress,
+            saveProgress       = saveProgress,
+            observeBookmarks   = observeBookmarks,
+            addBookmark        = addBookmark,
+            controllerFuture   = controllerFuture,
+            chapterExtractor   = chapterExtractor,
+            sleepTimer         = sleepTimer,
+            logger             = logger,
+            playbackStateHolder = playbackStateHolder,
         )
     }
 
@@ -137,6 +142,7 @@ class PlayerViewModelTest {
             chapterExtractor = chapterExtractor,
             sleepTimer       = sleepTimer,
             logger           = logger,
+            playbackStateHolder = playbackStateHolder,
         )
 
         // With UnconfinedTestDispatcher, loadItem() completes synchronously.

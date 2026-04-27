@@ -188,3 +188,14 @@ Three GitHub Actions workflows (all free for public repos):
 [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.txt) — see [LICENSE](LICENSE).
 
 *Libravault.xyz · Built with Kotlin + Jetpack Compose*
+
+## Donate
+
+LibraVault is free and open source. If you'd like to support its development:
+
+| Currency | Address |
+|----------|---------|
+| **XMR**  | `42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF` |
+| **BTC**  | `bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg` |
+
+See also [GitHub Sponsors](https://github.com/sponsors/libravault-xyz).
