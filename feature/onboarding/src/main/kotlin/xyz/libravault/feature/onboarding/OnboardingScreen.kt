@@ -185,7 +185,7 @@ fun OnboardingScreen(
                 enabled = state.addedVaultNames.isNotEmpty(),
             ) {
                 Text(
-                    text = if (state.addedVaultNames.isEmpty()) "Add at least one folder" else "Open my Library",
+                    text = if (state.addedVaultNames.isEmpty()) "Add at least one folder" else "Open Library",
                     style = MaterialTheme.typography.labelLarge,
                 )
             }

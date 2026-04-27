@@ -113,9 +113,10 @@ fun SpeedPickerSheet(
                 Slider(
                     value = speedToSlider(speed),
                     onValueChange = { sliderVal ->
-                        speed = sliderToSpeed(sliderVal)
+                        val newSpeed = sliderToSpeed(sliderVal)
+                        speed = newSpeed
+                        onSpeedSelected(newSpeed)
                     },
-                    onValueChangeFinished = { onSpeedSelected(speed) },
                     valueRange = 0f..SPEED_STEPS.toFloat(),
                     steps = SPEED_STEPS - 1,
                     modifier = Modifier.weight(1f),
@@ -184,10 +185,10 @@ private fun sliderToSpeed(sliderVal: Float): Float =
 /** Format speed for display: "1×", "1.25×", "0.75×" */
 private fun formatSpeed(speed: Float): String {
     val rounded = speed.roundToStep()
-    return if (rounded == rounded.toInt().toFloat()) {
+    val diff = rounded - rounded.toInt()
+    return if (kotlin.math.abs(diff) < 0.001f) {
         "${rounded.toInt()}×"
     } else {
-        // Trim unnecessary trailing zeros: 1.50 → 1.5
-        "${rounded.toBigDecimal().stripTrailingZeros().toPlainString()}×"
+        String.format("%.2g×", rounded).replace(",", ".")
     }
 }
