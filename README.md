@@ -1,4 +1,4 @@
-# Libravault
+# LibraVault
 
 > Your library, under lock and key.
 
@@ -10,9 +10,9 @@ A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listeni
 
 ---
 
-## Why Libravault?
+## Why LibraVault?
 
-| Problem | Libravault's answer |
+| Problem | LibraVault's answer |
 |---|---|
 | Apps demand full storage access | Scoped Storage only — you choose exactly which folders we see |
 | No single app handles books *and* audio | EPUB · PDF · MP3 · M4B · OGG · FLAC · Opus · AAC |
