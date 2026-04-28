@@ -67,7 +67,7 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             if (vaults.isEmpty()) {
-                emit(ScanProgress.Completed(0, null))
+                emit(ScanProgress.Completed(0))
                 return@runCatching
             }
 

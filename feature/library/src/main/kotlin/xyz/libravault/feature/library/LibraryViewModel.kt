@@ -202,10 +202,7 @@ class LibraryViewModel @Inject constructor(
                         logger.e("LibraryVM", "Scan error: ${progress.message}")
                     }
                     is ScanProgress.Completed -> {
-                        val formatMsg = progress.formatCounts?.let { fmt ->
-                            " (${fmt.epub} EPUB, ${fmt.pdf} PDF, ${fmt.audiobook} audiobooks)"
-                        } ?: ""
-                        logger.i("LibraryVM", "Scan complete: ${progress.total} items$formatMsg")
+                        logger.i("LibraryVM", "Scan complete: ${progress.total} items")
                     }
                     else -> Unit
                 }
