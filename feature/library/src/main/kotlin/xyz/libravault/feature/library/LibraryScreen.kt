@@ -323,9 +323,10 @@ fun LibraryScreen(
                         }
                     } else if (state.selectedVault != null) {
                         // Single vault view — header shows vault name, items below
+                        val selected = state.selectedVault ?: return@LazyColumn
                         val vaultItems = viewModel.vaultFilteredItems(
                             state.vaultGroupedItems,
-                            state.selectedVault.id,
+                            selected.id,
                         )
                         item {
                             SectionHeader("All items")
