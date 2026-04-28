@@ -38,7 +38,7 @@
 ---
 
 ### 5. Memory Leak Check
-**Quick win:** Run LeakCanary after recovery scenario. Room `Flow` + `withTimeout` could leak if coroutines aren’t correctly scoped.
+**Quick win:** Run LeakCanary after recovery scenario. Room `Flow` + `withTimeout` could leak if coroutines aren't correctly scoped.
 
 ---
 
@@ -103,14 +103,14 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 ---
 
 ### 13. Unit Test Coverage — Coroutines Test Infrastructure
-**Problem:** `LibraryViewModel.init` race wasn’t caught pre-LIB-174.
+**Problem:** `LibraryViewModel.init` race wasn't caught pre-LIB-174.
 
 **Proposal:** Add `coroutines-test` module with `TestDispatcher` injection for `viewModelScope`.
 
 ---
 
 ### 14. GitHub Repo Link in README
-**Opportunity:** `FUNDING.yml` mentions `libravault-xyz` but README doesn’t link the repo.
+**Opportunity:** `FUNDING.yml` mentions `libravault-xyz` but README doesn't link the repo.
 
 **Proposal:** Add GitHub star/badge + direct link to the repository in the README.
 
@@ -128,13 +128,13 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 **Proposal:**
 - Detect tablet (screen width ≥ 600 dp)
-- Offer “Two-Up” toggle in reader settings
+- Offer "Two-Up" toggle in reader settings
 - Two columns: left page (odd), right page (even)
 - Sync scroll by chapter + offset, or enable independent scrolling via scroll-aware gesture (e.g., two-finger tap → toggle sync)
 
 **UX Flow:**
 1. User opens EPUB on tablet
-2. Reader UI shows “Two-Up” checkbox in overflow menu
+2. Reader UI shows "Two-Up" checkbox in overflow menu
 3. When enabled, `PageProvider` returns pairs of pages
 4. `PDFRenderer` or `EPUBWebView` renders two-page spread
 5. Scroll sync: track `yOffset` offset per column, apply delta on tap to sync
@@ -147,7 +147,7 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 **Competitor Precedent:**
 - **Libby:** Two-up on iPad/tablet, single on phone
-- **Mantano:** “Facing Pages” toggle in settings
+- **Mantano:** "Facing Pages" toggle in settings
 - **Google Play Books:** Two-up automatically on tablets
 
 ---
@@ -156,10 +156,10 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 **Problem:** Reading EPUBs in dark rooms causes eye strain; most readers force dark UI but keep bright text.
 
 **Proposal:**
-| EPUB-specific “Night Mode” (not just app theme toggle)
-| Invert *only* the content background to dark, text to light
-| Apply via CSS injection: `body { background: #121212 !important; color: #f0f0f0 !important; }`
-| Offer fade animation to reduce jarring transition
+- EPUB-specific "Night Mode" (not just app theme toggle)
+- Invert *only* the content background to dark, text to light
+- Apply via CSS injection: `body { background: #121212 !important; color: #f0f0f0 !important; }`
+- Offer fade animation to reduce jarring transition
 
 ---
 
@@ -171,19 +171,19 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 **Proposal:**
 - Audit Readium Kotlin Toolkit 3.x LCP support
 - Identify required dependencies and custom player hooks
-- Create demo EPUB-LCP file for testing (or use O’Reilly sample)
+- Create demo EPUB-LCP file for testing (or use O'Reilly sample)
 
 ---
 
 ### 19. Search Index Rebuild Trigger
 **Problem:** Library search is powered by `LibraryItem` entities in Room — no way to rebuild search index after bulk metadata change.
 
-**Proposal:** Settings toggle “Rebuild Search Index” that truncates FT3 table and re-encodes all items.
+**Proposal:** Settings toggle "Rebuild Search Index" that truncates FT3 table and re-encodes all items.
 
 ---
 
 ### 20. Reader Zoom Presets
-**Problem:** Font scaling 0.8–2.0× is too granular; user wants “comfortable reading” presets.
+**Problem:** Font scaling 0.8–2.0× is too granular; user wants "comfortable reading" presets.
 
 **Proposal:**
 - Add `TextScalePreset` enum: `compact`, `comfortable`, `large`, `extraLarge`
@@ -202,7 +202,7 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 ### 22. Audio Chapter Marker Editing
 **Problem:** Users cannot add custom markers in MP3/M4B files without existing CHAP tags.
 
-**Proposal:** Allow user to tap a timestamp in playback progress → “Add Chapter Marker” → name it → persist to `library_items` as `custom_chapters: Json`.
+**Proposal:** Allow user to tap a timestamp in playback progress → "Add Chapter Marker" → name it → persist to `library_items` as `custom_chapters: Json`.
 
 ---
 
@@ -216,7 +216,7 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 ### 24. Export Highlights to Markdown
 **Problem:** User wants to share notes with non-Libravault readers.
 
-**Proposal:** Long-press highlight → “Copy” → “Export to Markdown” → saves to `/Downloads/Libravault/Clips/`.
+**Proposal:** Long-press highlight → "Copy" → "Export to Markdown" → saves to `/Downloads/Libravault/Clips/`.
 
 ---
 
@@ -227,4 +227,99 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 07:25 UTC* | *Current HEAD: abb0997*
+## 2026-04-28 Competition & Trend Analysis
+
+### Apple Books / Apple Books iPad UX
+**Observed Features:**
+- Two-up reading on iPad (automatic, no toggle)
+- "Current Page" navigation in portrait vs "Facing Pages" in landscape
+- Tap bottom to reveal scroll bar (opacity-based)
+- Page-turn animation (flip vs slide, customizable)
+
+**Libravault Alignment:**
+- We have two-up brainstorming (LIB-174 #16), but only for tablets
+- Consider adding "Page Scroll Indicator" during continuous scroll mode
+- Page-turn animation: EPUB-only, configurable (flip vs slide)
+
+### Mantano Free EPUB Reader
+**Observed Features:**
+- "Night Mode" (sepia) vs "Dark Theme" (full black)
+- Smart font scaling (presets: small, normal, large)
+- Night mode applies CSS injection to body background + text color
+
+**Libravault Alignment:**
+- We already plan Night Mode (#17)
+- Missing: Sepia overlay vs pure black
+- Font scaling presets (#20) align well
+
+### PocketBook / Aldiko
+**Observed Features:**
+- Text-to-Speech (TTS) integration
+- "Sync with audiobook" when both EPUB + MP3 present in same folder
+- TTS speed 0.5–4.0×, voice selection (system/default)
+
+**Libravault Alignment:**
+- v1.1 roadmap includes TTS
+- Sync EPUB+Audio feature could be unique differentiator
+- Consider "Auto-Sync" when EPUB + MP3/M4B share filename prefix
+
+### Libby (Books by OverDrive)
+**Observed Features:**
+- Highlight+Note export to Notion, Evernote, PDF
+- Bookmark folder organization
+- "Continue Reading" progress bar on cover card
+
+**Libravault Alignment:**
+- Export highlights (#24) is in brainstorming
+- Missing: Folder organization for bookmarks
+- Progress bar on cover card is already in library UI
+
+### Google Play Books Web Reader
+**Observed Features:**
+- Horizontal swipe to change pages (phone), vertical scroll (tablet)
+- "Tablet Mode" auto-enables two-up
+- Settings drawer persists across sessions
+
+**Libravault Alignment:**
+- We have tap zones and swipe detection; could add swipe threshold setting
+- Settings persistence already implemented via `EpubPreferences`
+- Tablet two-up (#16) aligns well
+
+---
+
+## 2026-04-28 Technical Debt & Refinements
+
+### 26. EPUB Table of Contents (NCX/OPF Navigation)
+**Current State:** Readium navigator supports internal navigation but TOC not surfaced in UI.
+**Proposal:** Add "TOC" icon in top bar → drawer list → tap to navigate. Reuse `Publication.tableOfContents` from Readium.
+
+---
+
+### 27. EpubPreferences Injection Pattern
+**Current State:** Settings are pushed via `navigator.submitPreferences()`.
+**Risk:** No diffing — every recomposition sends full settings.
+**Proposal:** Cache `EpubPreferences` and diff before submitting; avoid thrashing.
+
+---
+
+### 28. Scanner Background Threading
+**Current State:** `VaultScanner.scan()` runs on main dispatcher.
+**Risk:** Disk I/O on main can block UI.
+**Proposal:** Offload to `Dispatchers.IO` + withContext where needed.
+
+---
+
+### 29. Highlight Storage Schema
+**Current State:** `Highlight.entity.kt` stores `positionRef` as String (CFI or page:N).
+**Risk:** CFI can be hundreds of chars, no index on positionRef.
+**Proposal:** Add `positionRefHash: String` column + index for faster lookups.
+
+---
+
+### 30. Cover Art Placeholder Strategy
+**Current State:** No cover art fallback — blank until EPUB metadata extracted.
+**Proposal:** Generate placeholder SVG from title initials or use generic book icon.
+
+---
+
+*Last updated: 2026-04-28 07:40 UTC* | *Current HEAD: b2c96db*
