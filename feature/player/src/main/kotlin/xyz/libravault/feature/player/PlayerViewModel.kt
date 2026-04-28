@@ -253,6 +253,12 @@ class PlayerViewModel @Inject constructor(
                 isPlaying    = true,
             )
         }
+        // Optimistically set isPlaying = true so the PlayerScreen UI reflects
+        // playing state immediately, even before onIsPlayingChanged fires.
+        // This fixes LIB-190 where the player screen shows paused UI while
+        // audio is actually playing (onIsPlayingChanged not triggered because
+        // isPlaying state didn't change).
+        _uiState.value = _uiState.value.copy(isPlaying = true)
         startProgressSaving()
         updateChapters()
     }
