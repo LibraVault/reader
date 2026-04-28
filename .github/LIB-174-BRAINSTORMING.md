@@ -102,6 +102,35 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
+### 12b. Continue Cards Heuristics
+**Current State:** Only shows `currentBook + currentAudiobook` — last-opened item for each format.
+
+**Opportunity:** Expand to show more relevant "continue" items:
+- Top 3 most-recently-opened items (regardless of format)
+- "Continue reading" + "Continue listening" + "Reopen last item"
+- Persist last-opened item across app restarts (already implemented), but add "recent history" for multi-format readers
+
+**Design Questions:**
+- How to handle mixed-format users? (e.g., reading EPUB in morning, audio at night)
+- Should "reopening" count as "continue" if >24h since last session?
+
+---
+
+### 12c. Search Scope Filter
+**Problem:** Library search queries all items — no way to filter by vault before typing.
+
+**Proposal:** Add "Scope" dropdown next to search bar:
+- All Vaults
+- [ vault 1]
+- [ vault 2]
+
+**UX Flow:**
+1. User taps vault filter chip → selects vault
+2. Search bar placeholder changes to "Search My Vault"
+3. Search is scoped to selected vault only (faster, more targeted)
+
+---
+
 ### 13. Unit Test Coverage — Coroutines Test Infrastructure
 **Problem:** `LibraryViewModel.init` race wasn't caught pre-LIB-174.
 
@@ -322,4 +351,4 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 07:40 UTC* | *Current HEAD: b2c96db*
+*Last updated: 2026-04-28 07:50 UTC* | *Current HEAD: e7a0302*
