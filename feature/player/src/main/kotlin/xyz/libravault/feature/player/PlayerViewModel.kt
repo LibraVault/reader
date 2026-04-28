@@ -245,15 +245,14 @@ class PlayerViewModel @Inject constructor(
     /**
      * Retry playback after a player error.
      * Clears the error state and re-prepares the current media item.
+     * Uses the controller's current media item to avoid re-parsing URIs.
      */
     fun retryPlayback() {
         val ctrl = controller ?: return
         _uiState.value = _uiState.value.copy(error = null)
-        val item = _uiState.value.item ?: return
+        val currentItem = ctrl.currentMediaItem ?: return
         ctrl.stop()
-        val uri = playedItemUri?.let { Uri.parse(it) } ?: Uri.parse(item.filePath)
-        val mediaItem = MediaItem.fromUri(uri)
-        ctrl.setMediaItem(mediaItem)
+        ctrl.setMediaItem(currentItem)
         ctrl.prepare()
         ctrl.play()
     }

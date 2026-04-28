@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
+import xyz.libravault.core.domain.model.BookmarkWithItemInfo
 import xyz.libravault.core.domain.scanner.ScanProgress
 import android.net.Uri
 import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
@@ -26,6 +27,8 @@ import xyz.libravault.core.domain.usecase.ObserveCurrentlyReadingUseCase
 import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
 import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.domain.usecase.SearchLibraryUseCase
+import xyz.libravault.core.domain.usecase.ObserveAllBookmarksUseCase
+import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import javax.inject.Inject
@@ -61,6 +64,8 @@ class LibraryViewModel @Inject constructor(
     private val vaultManager: VaultManager,
     private val logger: LibravaultLogger,
     private val playbackStateHolder: PlaybackStateHolder,
+    private val observeAllBookmarks: ObserveAllBookmarksUseCase,
+    private val deleteBookmark: DeleteBookmarkUseCase,
 ) : ViewModel() {
 
     private val _scanning      = MutableStateFlow(false)
@@ -76,6 +81,9 @@ class LibraryViewModel @Inject constructor(
 
     val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
+
+    val allBookmarks: StateFlow<List<BookmarkWithItemInfo>> = observeAllBookmarks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _extras = combine(
         _scanning, _scanError, _searchQuery, _searchResults, _staleMessage, _selectedVaultFilter, _formatFilter,
@@ -256,6 +264,15 @@ class LibraryViewModel @Inject constructor(
 
     fun showStaleMessage() { _staleMessage.value = true }
     fun dismissStaleMessage() { _staleMessage.value = false }
+
+    // ── Bookmark management ──────────────────────────────────────────────────
+
+    fun onDeleteBookmark(bookmarkId: Long) {
+        viewModelScope.launch {
+            deleteBookmark(bookmarkId)
+            logger.i("LibraryVM", "Bookmark deleted: $bookmarkId")
+        }
+    }
 
     // ── Init ─────────────────────────────────────────────────────────────────
 

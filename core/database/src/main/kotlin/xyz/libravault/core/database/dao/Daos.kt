@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import xyz.libravault.core.database.entity.BookmarkEntity
+import xyz.libravault.core.database.entity.BookmarkWithItem
 import xyz.libravault.core.database.entity.CollectionEntity
 import xyz.libravault.core.database.entity.CollectionItemCrossRef
 import xyz.libravault.core.database.entity.LibraryItemEntity
@@ -117,6 +118,14 @@ interface ProgressDao {
 interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE itemId = :itemId ORDER BY createdAt DESC")
     fun observeBookmarks(itemId: Long): Flow<List<BookmarkEntity>>
+
+    @Query("""
+        SELECT b.*, li.title AS itemTitle, li.author AS itemAuthor, li.format AS itemFormat
+        FROM bookmarks b
+        INNER JOIN library_items li ON li.id = b.itemId
+        ORDER BY b.createdAt DESC
+    """)
+    fun observeAllBookmarks(): Flow<List<BookmarkWithItem>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(bookmark: BookmarkEntity): Long

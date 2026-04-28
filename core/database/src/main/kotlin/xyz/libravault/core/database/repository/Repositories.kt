@@ -7,11 +7,13 @@ import xyz.libravault.core.database.dao.LibraryItemDao
 import xyz.libravault.core.database.dao.ProgressDao
 import xyz.libravault.core.database.dao.VaultFolderDao
 import xyz.libravault.core.database.entity.BookmarkEntity
+import xyz.libravault.core.database.entity.BookmarkWithItem
 import xyz.libravault.core.database.entity.LibraryItemEntity
 import xyz.libravault.core.database.entity.ListeningProgressEntity
 import xyz.libravault.core.database.entity.ReadingProgressEntity
 import xyz.libravault.core.database.entity.VaultFolderEntity
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.BookmarkWithItemInfo
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
 import xyz.libravault.core.domain.model.MediaFormat
@@ -125,6 +127,11 @@ class BookmarkRepositoryImpl @Inject constructor(
     override fun observeBookmarks(itemId: Long): Flow<List<Bookmark>> =
         dao.observeBookmarks(itemId).map { it.map(BookmarkEntity::toDomain) }
 
+    override fun observeAllBookmarksWithItem(): Flow<List<BookmarkWithItemInfo>> =
+        dao.observeAllBookmarks().map { list ->
+            list.map { it.toDomainWithItem() }
+        }
+
     override suspend fun addBookmark(bookmark: Bookmark): Long =
         dao.insert(bookmark.toEntity())
 
@@ -207,6 +214,13 @@ private fun BookmarkEntity.toDomain() = Bookmark(
     positionRef = positionRef,
     label       = label,
     createdAt   = Instant.ofEpochMilli(createdAt),
+)
+
+private fun BookmarkWithItem.toDomainWithItem() = BookmarkWithItemInfo(
+    bookmark    = Bookmark(id, itemId, positionRef, label, Instant.ofEpochMilli(createdAt)),
+    itemTitle   = itemTitle,
+    itemAuthor  = itemAuthor,
+    itemFormat  = runCatching { MediaFormat.valueOf(itemFormat) }.getOrDefault(MediaFormat.EPUB),
 )
 
 private fun Bookmark.toEntity() = BookmarkEntity(
