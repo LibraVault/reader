@@ -408,4 +408,28 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 07:52 UTC* | *Current HEAD: e7a0302*
+### 41. Feature Flags Architecture — `FeatureFlags.kt` stub ✅ **NEW**
+**Current State:** Empty `FeatureFlags.kt` with enum of 5 features: `PARALLEL_SCANNING`, `SCAN_FORMAT_BREAKDOWN`, `SCAN_HEALTH_DASHBOARD`, `SCAN_PREVIEW`, `SMART_RESUMPTION`.
+
+**What's Next:**
+- DataStore integration for persistent flags (debug: toggle via Settings → Advanced → Experimental Features)
+- Production: all flags disabled by default (release notes for opt-in)
+- @Composable helper `featureFlag(Feature)` for UI conditional rendering
+
+**Implementation Plan:**
+1. Wire up `DataStore<Preferences>` for flag persistence
+2. Create Settings UI screen "Experimental Features"
+3. Add runtime check in `LibraryScanner`, `VaultManager`, etc.
+4. Add flag override for unit tests (`FeatureFlags.override()`)
+
+---
+
+### 42. LibraryScanner Progress API Improvements ✅ **NEW**
+**Fix:** `ScanProgress.Completed` now includes `processed` count (not just `total`) for more accurate completion tracking.
+**Fix:** `ScanProgress.Error` now includes optional `throwable` for debugging.
+
+**Impact:** UI can now distinguish between "0 items processed" vs "0 total" on empty vaults.
+
+---
+
+*Last updated: 2026-04-28 08:00 UTC* | *Current HEAD: 97bcc78*
