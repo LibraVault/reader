@@ -534,4 +534,24 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 08:15 UTC* | *Current HEAD: a4948bb*
+### 49. Local Highlights Export
+
+**Problem:** Highlights are stored in local DB but not exportable — users can't backup or share their notes.
+
+**Proposal:** Add “Export Highlights” to EPUB reader menu:
+- Export as **Markdown** (one file per chapter, `# Chapter Title` headers + `> Highlight text`)
+- Export as **CVI** (Collaborative Readable Format — simple JSON schema for highlights)
+- Include metadata: timestamp, author, location (CFI or chapter:page)
+
+**Use Cases:**
+- Backup highlights to Google Drive/Dropbox
+- Share highlights with study group (Markdown)
+- Import into Obsidian/Notion
+
+**Tech:** Query `HighlightRepository.getAllHighlights(bookId)`, format as Markdown/CVI, write to `Documents/Downloads/libravault-highlights-*.ext`.
+
+**Effort:** ~0.5 day (export logic), +0.25 day (UI).
+
+---
+
+*Last updated: 2026-04-28 08:20 UTC* | *Current HEAD: e86caed*
