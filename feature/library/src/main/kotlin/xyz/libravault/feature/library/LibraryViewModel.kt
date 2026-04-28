@@ -90,15 +90,15 @@ class LibraryViewModel @Inject constructor(
 
     private val _extras = combine(
         _scanning, _scanError, _searchQuery, _searchResults, _staleMessage, _selectedVaultFilter, _formatFilter,
-    ) { arr: Array<*> ->
+    ) { scanning, error, query, results, stale, vaultId, format ->
         Extras(
-            scanning = arr[0] as Boolean,
-            error = arr[1] as? String,
-            query = arr[2] as String,
-            results = @Suppress("UNCHECKED_CAST") arr[3] as? List<LibraryItem>,
-            stale = arr[4] as Boolean,
-            vaultId = arr[5] as Long?,
-            format = arr[6] as? String,
+            scanning = scanning,
+            error = error,
+            query = query,
+            results = results,
+            stale = stale,
+            vaultId = vaultId,
+            format = format,
         )
     }
 
