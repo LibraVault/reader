@@ -59,14 +59,15 @@ class LibraryScannerImpl @Inject constructor(
 
         try { runCatching {
             // ── 1. Collect vault URIs ────────────────────────────────────────
-            val vaults = mutableListOf<Pair<Long, Uri>>()
-            vaults.addAll(
-                vaultRepository.observeVaults().first()
-                    .map { it.id to Uri.parse(it.uri) }
-            )
+            val vaults = mutableListOf<Pair<Long, Uri>>().apply {
+                addAll(
+                    vaultRepository.observeVaults().first()
+                        .map { it.id to Uri.parse(it.uri) }
+                )
+            }
 
             if (vaults.isEmpty()) {
-                emit(ScanProgress.Completed(0))
+                emit(ScanProgress.Completed(0, null))
                 return@runCatching
             }
 
@@ -119,7 +120,7 @@ class LibraryScannerImpl @Inject constructor(
             if (staleCount > 0) logger.i(TAG, "Removed $staleCount stale entries")
 
             // Signal Phase 1 complete — UI is now populated
-            emit(ScanProgress.Completed(count))
+            emit(ScanProgress.Completed(count, count))
             logger.i(TAG, "Phase 1 complete — $count new stubs, metadata enrichment starts in background")
 
             // ── 4. Phase 2: enrich metadata OFF the hot flow ──────────────────
