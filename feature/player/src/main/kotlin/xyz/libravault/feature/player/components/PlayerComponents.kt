@@ -398,7 +398,7 @@ fun BookmarksSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Icon(Icons.Default.Bookmark, null,
+                            Icon(Icons.Default.Bookmark, "Bookmark",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp))
                             Column(modifier = Modifier.weight(1f)) {
