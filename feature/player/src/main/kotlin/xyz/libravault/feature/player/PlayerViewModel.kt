@@ -237,6 +237,19 @@ class PlayerViewModel @Inject constructor(
         ctrl.setMediaItem(mediaItem, startPositionMs)
         ctrl.prepare()
         ctrl.play()
+        // Update PlaybackStateHolder immediately so the mini-player shows the new
+        // item without waiting for the next polling cycle (200ms delay).
+        // The polling loop in startPolling() keeps it up to date thereafter.
+        val item = _uiState.value.item
+        if (item != null) {
+            playbackStateHolder.update(
+                itemId       = item.id,
+                title        = item.title,
+                author       = item.author,
+                coverArtPath = item.coverArtPath,
+                isPlaying    = true,
+            )
+        }
         startProgressSaving()
         updateChapters()
     }
