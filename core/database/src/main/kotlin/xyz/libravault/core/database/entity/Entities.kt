@@ -112,3 +112,14 @@ data class BookmarkEntity(
     val label: String?,
     val createdAt: Long,
 )
+
+data class BookmarkWithItem(
+    val id: Long,
+    val itemId: Long,
+    val positionRef: String,
+    val label: String?,
+    val createdAt: Long,
+    val itemTitle: String,
+    val itemAuthor: String,
+    val itemFormat: String,
+)

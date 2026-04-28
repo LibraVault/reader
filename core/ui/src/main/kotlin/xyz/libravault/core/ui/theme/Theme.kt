@@ -59,9 +59,9 @@ private val SepiaColorScheme = lightColorScheme(
     onBackground        = SepiaText,
     surface             = SepiaBackground,
     onSurface           = SepiaText,
-    surfaceVariant      = Color(0xFFE8D5B8),
-    onSurfaceVariant    = Color(0xFF6B5C44),
-    outline             = Color(0xFFD4C4A8),
+    surfaceVariant      = Color(0xFFE3D5B6),
+    onSurfaceVariant    = SepiaText.copy(alpha = 0.7f),
+    outline             = Color(0xFFC4B490),
 )
 
 @Composable

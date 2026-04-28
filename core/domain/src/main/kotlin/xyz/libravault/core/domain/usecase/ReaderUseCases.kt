@@ -2,6 +2,7 @@ package xyz.libravault.core.domain.usecase
 
 import kotlinx.coroutines.flow.Flow
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.BookmarkWithItemInfo
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ReadingProgress
@@ -44,6 +45,13 @@ class DeleteBookmarkUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(id: Long) =
         bookmarkRepository.deleteBookmark(id)
+}
+
+class ObserveAllBookmarksUseCase @Inject constructor(
+    private val bookmarkRepository: BookmarkRepository,
+) {
+    operator fun invoke(): Flow<List<BookmarkWithItemInfo>> =
+        bookmarkRepository.observeAllBookmarksWithItem()
 }
 
 class ObserveHighlightsUseCase @Inject constructor(

@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Headphones
@@ -40,10 +41,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
@@ -55,6 +58,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -76,6 +80,7 @@ import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
+import xyz.libravault.core.domain.model.BookmarkWithItemInfo
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import kotlin.math.abs
 
@@ -89,8 +94,10 @@ fun LibraryScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val nowPlaying by viewModel.nowPlaying.collectAsState()
+    val allBookmarks by viewModel.allBookmarks.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var isSearchOpen by remember { mutableStateOf(false) }
+    var showAllBookmarks by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // ── Vault management state ────────────────────────────────────────────────
@@ -194,6 +201,12 @@ fun LibraryScreen(
                             IconButton(onClick = { showAddVaultSheet = !showAddVaultSheet }) {
                                 Icon(Icons.Default.Add, contentDescription = "Add vault")
                             }
+                        }
+                        IconButton(onClick = { showAllBookmarks = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Bookmark,
+                                contentDescription = "Bookmarks",
+                            )
                         }
                         IconButton(onClick = onSettingsClick) {
                             Icon(
@@ -379,48 +392,76 @@ fun LibraryScreen(
             }
         }
 
-        // ── Search overlay ─────────────────────────────────────────────────────
-        if (isSearchOpen) {
-            SearchBar(
-                query = state.searchQuery,
-                onQueryChange = viewModel::onSearchQueryChanged,
-                onSearch = { },
-                active = true,
-                onActiveChange = { active ->
-                    if (!active) { isSearchOpen = false; viewModel.clearSearch() }
-                },
-                placeholder = { Text("Search title, author, narrator, series…") },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+    // ── Search overlay ─────────────────────────────────────────────────────
+    if (isSearchOpen) {
+        SearchBar(
+            query = state.searchQuery,
+            onQueryChange = viewModel::onSearchQueryChanged,
+            onSearch = { },
+            active = true,
+            onActiveChange = { active ->
+                if (!active) { isSearchOpen = false; viewModel.clearSearch() }
+            },
+            placeholder = { Text("Search title, author, narrator, series…") },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+                // Format filter chips
+                item {
+                    FormatFilterRow(
+                        currentFilter = state.formatFilter,
+                        onFilterChanged = viewModel::onFormatFilterChanged,
+                    )
+                }
                 val results = state.searchResults
-                if (!results.isNullOrEmpty()) {
-                    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                        items(results, key = { it.id }) { item ->
-                            SearchResultRow(
-                                item = item,
-                                onClick = {
-                                    isSearchOpen = false
-                                    viewModel.clearSearch()
-                                    if (viewModel.validateItem(item)) onItemClick(item)
-                                    else viewModel.showStaleMessage()
-                                },
-                            )
-                        }
+                val format = state.formatFilter
+                val filteredResults = if (results != null && format != null) {
+                    results.filter { it.format.name == format }
+                } else results
+                if (!filteredResults.isNullOrEmpty()) {
+                    items(filteredResults, key = { it.id }) { item ->
+                        SearchResultRow(
+                            item = item,
+                            onClick = {
+                                isSearchOpen = false
+                                viewModel.clearSearch()
+                                if (viewModel.validateItem(item)) onItemClick(item)
+                                else viewModel.showStaleMessage()
+                            },
+                        )
                     }
                 } else if (state.searchQuery.isNotBlank()) {
-                    Box(
-                        Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "No results for \"${state.searchQuery}\"",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    item {
+                        Box(
+                            Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "No results for \"${state.searchQuery}\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+    }
+
+    // ── All bookmarks sheet ─────────────────────────────────────────────────
+    if (showAllBookmarks) {
+        AllBookmarksSheet(
+            bookmarks = allBookmarks,
+            onBookmarkClick = { bookmark ->
+                showAllBookmarks = false
+                // Navigate to the item — the itemId is in bookmark.itemId
+                val item = state.allItems.firstOrNull { it.id == bookmark.bookmark.itemId }
+                if (item != null && viewModel.validateItem(item)) onItemClick(item)
+            },
+            onDeleteBookmark = viewModel::onDeleteBookmark,
+            onDismiss = { showAllBookmarks = false },
+        )
     }
 }
 
@@ -453,7 +494,7 @@ private fun VaultManagementSheet(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Folder,
-                        contentDescription = null,
+                        contentDescription = vault.displayName,
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Text(
@@ -625,7 +666,7 @@ private fun ContinueCard(
                             MediaFormat.OPUS,
                             MediaFormat.AAC,
                         )) Icons.Default.Headphones else Icons.Default.MenuBook,
-                        contentDescription = null,
+                        contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                         modifier = Modifier.size(32.dp),
                     )
@@ -697,7 +738,7 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
                                 MediaFormat.OPUS, MediaFormat.AAC,
                             )
                         ) Icons.Default.Headphones else Icons.Default.MenuBook,
-                        contentDescription = null,
+                        contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(32.dp),
                     )
@@ -709,6 +750,48 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ── Format filter chips for search ────────────────────────────────────────────
+
+@Composable
+private fun FormatFilterRow(
+    currentFilter: String?,
+    onFilterChanged: (String?) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            FilterChip(
+                selected = currentFilter == null,
+                onClick = { onFilterChanged(null) },
+                label = { Text("All") },
+            )
+        }
+        item {
+            FilterChip(
+                selected = currentFilter == MediaFormat.EPUB.name,
+                onClick = { onFilterChanged(MediaFormat.EPUB.name) },
+                label = { Text("EPUB") },
+            )
+        }
+        item {
+            FilterChip(
+                selected = currentFilter == MediaFormat.PDF.name,
+                onClick = { onFilterChanged(MediaFormat.PDF.name) },
+                label = { Text("PDF") },
+            )
+        }
+        item {
+            FilterChip(
+                selected = currentFilter != null && currentFilter !in setOf(MediaFormat.EPUB.name, MediaFormat.PDF.name),
+                onClick = { onFilterChanged(MediaFormat.MP3.name) },
+                label = { Text("Audio") },
             )
         }
     }
@@ -731,7 +814,7 @@ private fun SearchResultRow(item: LibraryItem, onClick: () -> Unit) {
                     MediaFormat.OPUS, MediaFormat.AAC,
                 )
             ) Icons.Default.Headphones else Icons.Default.MenuBook,
-            contentDescription = null,
+            contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp),
         )
@@ -750,6 +833,85 @@ private fun SearchResultRow(item: LibraryItem, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+// ── All bookmarks sheet ───────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AllBookmarksSheet(
+    bookmarks: List<BookmarkWithItemInfo>,
+    onBookmarkClick: (BookmarkWithItemInfo) -> Unit,
+    onDeleteBookmark: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Bookmarks",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            if (bookmarks.isEmpty()) {
+                Text(
+                    text = "No bookmarks yet.\nAdd bookmarks from the player or reader.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(24.dp),
+                )
+            } else {
+                LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                    items(bookmarks, key = { it.bookmark.id }) { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onBookmarkClick(entry) }
+                                .padding(horizontal = 24.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bookmark,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.bookmark.label ?: "Bookmark",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "${entry.itemTitle} — ${entry.itemAuthor}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(onClick = { onDeleteBookmark(entry.bookmark.id) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete bookmark",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -791,14 +953,14 @@ private fun MiniPlayerBar(
                 if (coverArtPath != null) {
                     AsyncImage(
                         model = coverArtPath,
-                        contentDescription = null,
+                        contentDescription = title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.Headphones,
-                        contentDescription = null,
+                        contentDescription = "Cover art",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )

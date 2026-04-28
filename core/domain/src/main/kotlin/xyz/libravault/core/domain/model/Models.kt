@@ -53,6 +53,13 @@ data class Bookmark(
     val createdAt: Instant = Instant.now(),
 )
 
+data class BookmarkWithItemInfo(
+    val bookmark: Bookmark,
+    val itemTitle: String,
+    val itemAuthor: String,
+    val itemFormat: MediaFormat,
+)
+
 data class Collection(
     val id: Long = 0,
     val name: String,
