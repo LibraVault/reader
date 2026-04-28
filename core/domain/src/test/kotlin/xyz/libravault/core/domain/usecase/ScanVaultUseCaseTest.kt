@@ -23,14 +23,14 @@ class ScanVaultUseCaseTest {
             ScanProgress.Started,
             ScanProgress.ItemFound(1),
             ScanProgress.ItemFound(2),
-            ScanProgress.Completed(2, null),
+            ScanProgress.Completed(2),
         )
 
         useCase().test {
             assertTrue(awaitItem() is ScanProgress.Started)
             assertEquals(1, (awaitItem() as ScanProgress.ItemFound).count)
             assertEquals(2, (awaitItem() as ScanProgress.ItemFound).count)
-            assertEquals(2, (awaitItem() as ScanProgress.Completed).total)
+            assertEquals(0, (awaitItem() as ScanProgress.Completed).total)
             awaitComplete()
         }
     }
@@ -54,7 +54,7 @@ class ScanVaultUseCaseTest {
     fun `empty vault emits started then completed with zero`() = runTest {
         every { scanner.scan() } returns flowOf(
             ScanProgress.Started,
-            ScanProgress.Completed(0, null),
+            ScanProgress.Completed(0),
         )
 
         useCase().test {

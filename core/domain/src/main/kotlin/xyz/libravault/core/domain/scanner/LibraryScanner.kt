@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 sealed class ScanProgress {
     data object Started : ScanProgress()
     data class ItemFound(val count: Int) : ScanProgress()
-    data class Completed(val processed: Int, val total: Int) : ScanProgress()
+    data class Completed(val processed: Int, val total: Int = 0) : ScanProgress()
     data class Error(val message: String, val throwable: Throwable? = null) : ScanProgress()
 }
 
