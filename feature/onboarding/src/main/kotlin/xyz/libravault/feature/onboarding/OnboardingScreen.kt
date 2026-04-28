@@ -144,7 +144,10 @@ fun OnboardingScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.addedVaultNames) { name ->
+                    items(
+                        items = state.addedVaultNames,
+                        key = { name -> name },
+                    ) { name ->
                         AddedVaultRow(name)
                     }
                 }
