@@ -186,7 +186,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `scan progress is reflected in vault state`() = runTest {
+    fun `scan progress is reflected in vault state`() = runTest(mainDispatcher) {
         every { scanVaultsUseCase() } returns flowOf(
             ScanProgress.Started,
             ScanProgress.ItemFound(3),
@@ -204,19 +204,21 @@ class SettingsViewModelTest {
             assertEquals(0, initial.vaults.size)
 
             // skip intermediate: isScanning=true with no scanMessage yet
-            awaitItem()
+            val mutation = awaitItem()
+            assertTrue(mutation.isScanning)
+            assertEquals(null, mutation.scanMessage)
 
             val started = awaitItem()
             assertTrue(started.isScanning)
-            assertEquals("Scanning vaults\u2026", started.scanMessage)
+            assertEquals("Scanning vaults…", started.scanMessage)
 
             val found = awaitItem()
             assertTrue(found.isScanning)
-            assertEquals("Found 3 items\u2026", found.scanMessage)
+            assertEquals("Found 3 items…", found.scanMessage)
 
             val completed = awaitItem()
             assertFalse(completed.isScanning)
-            assertEquals("Scan complete \u2013 3 new items added", completed.scanMessage)
+            assertEquals("Scan complete – 3 new items added", completed.scanMessage)
 
             cancelAndConsumeRemainingEvents()
         }
