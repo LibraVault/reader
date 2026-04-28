@@ -16,11 +16,9 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.launch
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -79,7 +77,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `emits initial preferences`() = runTest {
+    fun `emits initial preferences`() = runTest(UnconfinedTestDispatcher()) {
         viewModel().preferences.test {
             val prefs = awaitItem()
             assertEquals(AppReadingTheme.DARK, prefs.defaultReadingTheme)
@@ -90,14 +88,14 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `reading theme change persists`() = runTest {
+    fun `reading theme change persists`() = runTest(UnconfinedTestDispatcher()) {
         val vm = viewModel()
         vm.onReadingThemeChanged(AppReadingTheme.SEPIA)
         verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.SEPIA }) }
     }
 
     @Test
-    fun `playback speed is clamped`() = runTest {
+    fun `playback speed is clamped`() = runTest(UnconfinedTestDispatcher()) {
         val vm = viewModel()
         vm.onPlaybackSpeedChanged(10.0f)
         verify { prefsRepo.update(match { it.defaultPlaybackSpeed == 3.0f }) }
@@ -107,7 +105,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `skip duration is clamped`() = runTest {
+    fun `skip duration is clamped`() = runTest(UnconfinedTestDispatcher()) {
         val vm = viewModel()
         vm.onSkipDurationChanged(0)
         verify { prefsRepo.update(match { it.defaultSkipDurationSec == 5 }) }
@@ -117,21 +115,21 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `logging toggle updates logger`() = runTest {
+    fun `logging toggle updates logger`() = runTest(UnconfinedTestDispatcher()) {
         val vm = viewModel()
         vm.onLoggingToggled(true)
         verify { prefsRepo.update(match { it.loggingEnabled }) }
     }
 
     @Test
-    fun `dynamic colour toggle persists`() = runTest {
+    fun `dynamic colour toggle persists`() = runTest(UnconfinedTestDispatcher()) {
         val vm = viewModel()
         vm.onDynamicColorToggled(false)
         verify { prefsRepo.update(match { !it.dynamicColorEnabled }) }
     }
 
     @Test
-    fun `clear cover cache delegates to CoverArtCache`() = runTest {
+    fun `clear cover cache delegates to CoverArtCache`() = runTest(UnconfinedTestDispatcher()) {
         val vm = viewModel()
         vm.clearCoverCache()
         verify(exactly = 1) { coverCache.clearAll() }
@@ -140,7 +138,7 @@ class SettingsViewModelTest {
     // ── Vault Management Tests ────────────────────────────────────────────────
 
     @Test
-    fun `vault state observes vaults from use case`() = runTest {
+    fun `vault state observes vaults from use case`() = runTest(UnconfinedTestDispatcher()) {
         val vaults = listOf(
             VaultFolder(id = 1, uri = "content://vault/1", displayName = "Books"),
             VaultFolder(id = 2, uri = "content://vault/2", displayName = "Audio"),
@@ -158,7 +156,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `add vault persists permission and delegates to use case`() = runTest {
+    fun `add vault persists permission and delegates to use case`() = runTest(UnconfinedTestDispatcher()) {
         val uri = Uri.parse("content://com.android.externalstorage/doc/home%2FBooks")
         val vault = VaultFolder(id = 1, uri = uri.toString(), displayName = "Books")
         coEvery { addVaultFolder(uri.toString(), "Books") } returns vault
@@ -171,7 +169,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `remove vault releases permission and delegates to use case`() = runTest {
+    fun `remove vault releases permission and delegates to use case`() = runTest(UnconfinedTestDispatcher()) {
         coEvery { removeVaultFolder(42) } just Runs
 
         val vault = VaultFolder(id = 42, uri = "content://vault/mine", displayName = "Mine")
@@ -183,7 +181,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `scan progress is reflected in vault state`() = runTest {
+    fun `scan progress is reflected in vault state`() = runTest(UnconfinedTestDispatcher()) {
         every { scanVaultsUseCase() } returns flowOf(
             ScanProgress.Started,
             ScanProgress.ItemFound(3),
@@ -193,20 +191,25 @@ class SettingsViewModelTest {
         val vm = viewModel()
 
         val items = mutableListOf<VaultManagementState>()
-        val collectJob = launch {
-            vm.vaultState.take(4).collect { items.add(it) }
+        val collectJob = launch(UnconfinedTestDispatcher()) {
+            vm.vaultState.collect { items.add(it) }
         }
 
         vm.scanVaults()
-        collectJob.join()
+        collectJob.cancel()
 
         // items[0] = initial empty {vaults=[]}
-        // items[1] = intermediate isScanning=true scanMessage=null
-        // items[2] = Started scanMessage="Scanning vaults…"
-        // items[3] = ItemFound(3)
-        // items[4] = Completed(3)
+        // items[1] = isScanning=true, no message yet
+        // items[2] = Started with "Scanning vaults…"
+        // items[3] = ItemFound(3) with "Found 3 items…"
+        // items[4] = Completed(3) with "Scan complete – 3 new items added"
 
-        // Now we can inspect the collected items
+        assertEquals(5, items.size, "Expected 5 items in vaultState flow")
+
+        val initial = items[0]
+        assertFalse(initial.isScanning)
+        assertEquals(0, initial.vaults.size)
+
         val started = items[2]
         assertTrue(started.isScanning)
         assertEquals("Scanning vaults\u2026", started.scanMessage)
