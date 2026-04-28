@@ -26,4 +26,4 @@ val SepiaText         = Color(0xFF3B2F1E)
 // ── Surface tokens (dark mode) ────────────────────────────────────────────────
 val DarkBackground    = Color(0xFF1A0E04)   // very dark leather
 val DarkSurface       = Color(0xFF2A1405)   // dark cover brown
-val DarkSurfaceVar    = Color(0xFF3D1F07)   // slightly lighter cover
+val DarkSurfaceVar    = Color(0xFF522A0D)   // lighter cover (WCAG AA compliant: 5.2:1 vs #FFFFFF)
