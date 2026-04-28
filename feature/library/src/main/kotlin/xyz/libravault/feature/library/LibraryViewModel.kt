@@ -281,8 +281,8 @@ class LibraryViewModel @Inject constructor(
             // Recovery: if Room has no vaults but the OS still holds URI permissions
             // (e.g. after user clears app cache), re-register the persisted URIs so
             // the scanner can find the files again.
-            val vaults = observeVaults().first()
-            if (vaults.isEmpty()) {
+            val initialVaults = observeVaults().first()
+            if (initialVaults.isEmpty()) {
                 val persistedUris = vaultManager.persistedVaultUris()
                 if (persistedUris.isNotEmpty()) {
                     logger.i("LibraryVM", "Room empty but ${persistedUris.size} URI permission(s) found — recovering vaults")
@@ -295,9 +295,18 @@ class LibraryViewModel @Inject constructor(
                             )
                         }
                     }
+                    // Wait for recovered vaults to propagate through Room's
+                    // InvalidationTracker before scanning.  A plain .first()
+                    // may return the stale cached empty list because Room's
+                    // Flow only re-queries on the next emission cycle after
+                    // the DAO insert completes.
+                    observeVaults().first { it.isNotEmpty() }
                 }
             }
+            // Scan after recovery so the scanner always sees existing vaults.
+            // This avoids a race where triggerScan() runs concurrently with
+            // the recovery coroutine and finds 0 vaults.
+            triggerScan()
         }
-        triggerScan()
     }
 }
