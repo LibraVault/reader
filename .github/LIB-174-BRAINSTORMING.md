@@ -1,5 +1,11 @@
 # LIB-174: Brainstorming — Follow-ups & Improvements
 
+> **Quick Start for Contributors**
+> - Read this doc before working on library/reader/vault features
+> - Completed fixes are marked ✅ with commit hash
+> - New ideas are numbered #1-#48 (highest priority first)
+> - Draft issue for EPUB Two-Up: `.github/LIB-175-EPUB-TWO-UP-DRAFT.md`
+
 ## Completed Robustness Improvements (commit 5a6f80e)
 
 ### What Changed
