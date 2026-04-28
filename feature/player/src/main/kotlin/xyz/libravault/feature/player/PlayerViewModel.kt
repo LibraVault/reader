@@ -167,6 +167,9 @@ class PlayerViewModel @Inject constructor(
                     // Same item already loaded — seek to saved position and resume
                     ctrl.seekTo(savedPos)
                     ctrl.play()
+                    // Optimistically update isPlaying state; onIsPlayingChanged may not fire
+                    // if isPlaying didn't change (player already playing).
+                    _uiState.value = _uiState.value.copy(isPlaying = true)
                 } else {
                     play(uri, startPositionMs = savedPos)
                 }
@@ -277,6 +280,9 @@ class PlayerViewModel @Inject constructor(
         ctrl.setMediaItem(currentItem)
         ctrl.prepare()
         ctrl.play()
+        // Optimistically set isPlaying = true; onIsPlayingChanged may not fire
+        // if isPlaying didn't change (player already playing before error).
+        _uiState.value = _uiState.value.copy(isPlaying = true)
     }
 
     fun skipBack() {

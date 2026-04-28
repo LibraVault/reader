@@ -1,26 +1,15 @@
 package xyz.libravault.core.domain
 
-import android.content.Context
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStore
-import xyz.libravault.core.BuildConfig
-
 /**
  * Feature flags for LibraVault.
  *
  * All flags are **disabled by default** in production.
  * In debug builds, flags can be toggled via Settings → Advanced → Experimental Features.
+ *
+ * This is a pure Kotlin class with no Android dependencies.
+ * Compose/DataStore integration lives in the UI/data layers.
  */
 object FeatureFlags {
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Feature Definitions
-    // ──────────────────────────────────────────────────────────────────────────
 
     enum class Feature {
         /** Parallel vault scanning (batched, multi-threaded) */
@@ -39,111 +28,25 @@ object FeatureFlags {
         SMART_RESUMPTION,
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // State
-    // ──────────────────────────────────────────────────────────────────────────
-
-    private val Context.dataStore by preferencesDataStore(name = "feature_flags")
-
-    private val SharedPreferences.allFlags: Map<String, Boolean>
-        get() = all
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ──────────────────────────────────────────────────────────────────────────
+    private val overrides = mutableMapOf<Feature, Boolean>()
 
     /**
      * Check if a feature is enabled.
-     *
-     * - In **production**: Always returns `false` (all features opt-in via release notes).
-     * - In **debug builds**: Returns stored preference + fallback.
+     * Defaults to false. Override in debug/test builds.
      */
-    fun isEnabled(feature: Feature): Boolean {
-        return if (BuildConfig.DEBUG) {
-            // TODO: Replace with dataStore-based read when DataStore is integrated
-            false // Placeholder — actual implementation needs SharedPreferences/DataStore
-        } else {
-            false // Production: all features disabled by default
-        }
-    }
+    fun isEnabled(feature: Feature): Boolean = overrides[feature] ?: false
 
     /**
-     * Set a feature flag. Only affects debug builds.
-     *
-     * WARNING: This should only be called from Settings UI in debug builds.
+     * Set a feature flag override. Primarily for debug/test use.
      */
     fun setEnabled(feature: Feature, enabled: Boolean) {
-        if (BuildConfig.DEBUG) {
-            // TODO: Replace with dataStore.writePreference when DataStore is integrated
-        }
+        overrides[feature] = enabled
     }
 
     /**
      * Reset all feature flags to defaults (disabled).
      */
     fun resetAll() {
-        // TODO: Clear SharedPreferences or DataStore
+        overrides.clear()
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Compose Integration
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Compose helper to observe feature flag changes.
- *
- * Usage:
- * ```kotlin
- * @Composable
- * fun MyScreen() {
- *     val parallelScanningEnabled = featureFlag(FeatureFlags.Feature.PARALLEL_SCANNING)
- *
- *     if (parallelScanningEnabled) {
- *         ParallelScanUI()
- *     } else {
- *         SequentialScanUI()
- *     }
- * }
- * ```
- */
-@Composable
-fun featureFlag(feature: FeatureFlags.Feature): Boolean {
-    // TODO: Implement with DataStore flow subscription
-    return FeatureFlags.isEnabled(feature)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ViewModel Helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * ViewModel helper for testability — inject FeatureFlags into ViewModels.
- */
-class FeatureFlagProvider {
-    fun isEnabled(feature: FeatureFlags.Feature): Boolean = FeatureFlags.isEnabled(feature)
-
-    fun setEnabled(feature: FeatureFlags.Feature, enabled: Boolean) {
-        FeatureFlags.setEnabled(feature, enabled)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Testing Utilities
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Temporary override for unit tests.
- *
- * WARNING: Must be cleaned up in `tearDown()` or `@After`!
- */
-fun FeatureFlags.override(feature: FeatureFlags.Feature, enabled: Boolean) {
-    // TODO: Implement test override
-}
-
-/**
- * Reset all test overrides.
- */
-fun FeatureFlags.resetOverrides() {
-    // TODO: Clear test overrides
 }
