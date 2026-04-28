@@ -466,4 +466,66 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 08:10 UTC* | *Current HEAD: a4948bb*
+*Last updated: 2026-04-28 08:15 UTC* | *Current HEAD: a4948bb*
+
+## New Ideas (2026-04-28) — Not Yet Added to Main List
+
+### 44. Vault Health Dashboard
+**Problem:** No visibility into vault health — missing permissions, stale paths, I/O errors.
+
+**Proposal:** Add Settings → Advanced → Scan Health Dashboard showing:
+- `healthy` vaults (valid URIs + readable)
+- `permission_missing` (URI revoked by user)
+- `io_error` (readable URI but file access fails)
+
+**Tech:** Background worker checks `contentResolver.openFile(uri, "r")` weekly, stores metrics in `EpubPreferences`.
+
+**Effort:** ~1 day MVP, +1 day dashboard UI.
+
+---
+
+### 45. EPUB Text Scaling (Accessibility)
+**Problem:** No font size adjustment in EPUB reader — hard for low-vision users.
+
+**Proposal:** Add `reader.textScale: Float` preference (default `1.0f`). Inject via `navigator.submitPreferences()`.
+
+**Competitor precedent:** Mantano has 80%-200% scaling; Libby has 3-step slider.
+
+**Effort:** ~0.5 day (preference + CSS injection).
+
+---
+
+### 46. Scan Performance Profiler
+**Problem:** No data on scan times per vault — could optimize hot paths.
+
+**Proposal:** Instrument `VaultScanner.scanFolder()` timings. Log `duration_ms` per vault. Add graph in Settings.
+
+**Tech:** Wrap `scanFolder()` in `measureTimeMillis()`, emit `ScanProgress.Timing(vaultId, duration)`.
+
+**Effort:** ~0.5 day (profiling), +0.5 day (Settings UI).
+
+---
+
+### 47. Library Search Debounce Tuning
+**Problem:** Current debounce is 300ms — too slow for fast typists, too fast for slow typists.
+
+**Proposal:** Make debounce configurable via Settings → Search → Debounce (200/300/400ms).
+
+**Tech:** Add `searchDebounceMs: Int` to `EpubPreferences`, pass to `delay()` in `onSearchQueryChanged()`.
+
+**Effort:** ~0.25 day.
+
+---
+
+### 48. Swipe Threshold Customization
+**Problem:** Swipe dismissal in player is fixed — no way to adjust sensitivity.
+
+**Proposal:** Add `player.swipeDismissThreshold: Dp` preference (default `120.dp`). Increase threshold to reduce accidental swipes.
+
+**Tech:** Read `swipeDismissThreshold` in `PlayerViewModel`, apply to `SwipeToDismissBox` swipeable state.
+
+**Effort:** ~0.25 day.
+
+---
+
+*Last updated: 2026-04-28 08:15 UTC* | *Current HEAD: a4948bb*
