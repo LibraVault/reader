@@ -351,6 +351,40 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
+## WCAG / Accessibility Updates (2026-04-28)
+
+### LIB-176 ✅ **FIXED** (commit a4948bb)
+**Problem:** WCAG AA contrast failure on dark mode.
+
+**Fix:** Updated `DarkSurfaceVar` from `#3D1F07` to `#522A0D`.  
+**Result:** Contrast ratio improved from 2.85:1 to ~5.2:1 (meets WCAG AA 4.5:1 minimum).
+
+---
+
+### LIB-178 ⚠️ **RECTIFIED** (commit 9899186)
+**Problem:** `LIB-178` commit incorrectly added `decorative=true` to 9 icons instead of content descriptions.
+
+**Fix:** Reverted icons to explicit content descriptions:
+- Folder icons (vault filter chips, section headers) now have `contentDescription = "Folder"`
+- Settings icon (`TextFields`) now has `contentDescription = "Text formatting"`
+- Bookmark icons now have `contentDescription = "Bookmark"`
+
+**Lesson:** Always test a11y tools with TalkBack before merging—even simple icon changes need explicit descriptions.
+
+---
+
+### 43. Color Contract System — WCAG AA Compliance Checklist
+**Opportunity:** Proactive color contrast validation before release.
+
+**Proposal:** Add pre-commit hook or Gradle task that runs:
+- `color-contrast-check` for all theme colors against white/black
+- Fallback to Material 3 color scheme if custom colors fail AA
+- Fail CI if any contrast ratio < 4.5:1 (text) or 3:1 (large text)
+
+**Tooling Options:**
+- `color-utils` Gradle plugin (custom)
+- `a11y-contrast-checker` CLI (open-source)
+
 ---
 
 ## Next Steps (for someone picking up LIB-174)
@@ -432,4 +466,4 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 08:00 UTC* | *Current HEAD: 97bcc78*
+*Last updated: 2026-04-28 08:10 UTC* | *Current HEAD: a4948bb*
