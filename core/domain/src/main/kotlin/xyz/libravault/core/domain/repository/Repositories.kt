@@ -51,3 +51,12 @@ interface HighlightRepository {
     suspend fun deleteHighlight(id: Long)
     suspend fun updateHighlightNote(id: Long, note: String?)
 }
+
+interface CollectionRepository {
+    fun observeAll(): Flow<List<Collection>>
+    suspend fun getById(id: Long): Collection?
+    suspend fun create(name: String, itemIds: Set<Long> = emptySet()): Collection
+    suspend fun addItems(collectionId: Long, itemIds: Set<Long>)
+    suspend fun removeItems(collectionId: Long, itemIds: Set<Long>)
+    suspend fun delete(id: Long)
+}

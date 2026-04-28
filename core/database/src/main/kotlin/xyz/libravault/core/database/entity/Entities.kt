@@ -13,6 +13,41 @@ data class VaultFolderEntity(
     val addedAt: Long,          // epoch millis
 )
 
+@Entity(tableName = "collections")
+data class CollectionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+@Entity(
+    tableName = "collection_items",
+    primaryKeys = ["collectionId", "itemId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = CollectionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["collectionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = LibraryItemEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["itemId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("collectionId"),
+        Index("itemId"),
+    ],
+)
+data class CollectionItemCrossRef(
+    val collectionId: Long,
+    val itemId: Long,
+)
+
 @Entity(
     tableName = "library_items",
     foreignKeys = [ForeignKey(

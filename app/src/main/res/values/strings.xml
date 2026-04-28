@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App -->
+    <string name="app_name">LibraVault</string>
+
+    <!-- Navigation -->
+    <string name="back">Back</string>
+    <string name="settings">Settings</string>
+
+    <!-- Library screen -->
+    <string name="search_placeholder">Search title, author, narrator, series…</string>
+    <string name="all_items">All items</string>
+    <string name="view_all">View all</string>
+    <string name="all_vaults_filter">All</string>
+    <string name="results_for">Results for &quot;%s&quot;</string>
+    <string name="stale_file_message">File not found — it may have been moved or deleted. It will be removed on the next scan.</string>
+    <string name="continue_reading">Continue reading</string>
+    <string name="continue_listening">Continue listening</string>
+    <string name="empty_library_no_vaults">Tap + to select folders where your books and audiobooks are stored.</string>
+    <string name="empty_library_with_vaults">No items found in your vaults. Pull down to scan for new files.</string>
+
+    <!-- Search -->
+    <string name="search">Search</string>
+    <string name="clear_search">Clear search</string>
+
+    <!-- Reader screen -->
+    <string name="reading_settings">Reading settings</string>
+    <string name="reader_theme">Theme</string>
+    <string name="reader_font">Font</string>
+    <string name="reader_font_size">Font size</string>
+    <string name="reader_mode">Mode</string>
+    <string name="reader_mode_paginated">Paginated</string>
+    <string name="reader_mode_scrolling">Scrolling</string>
+    <string name="reader_error_opening">Could not open EPUB: %s</string>
+    <string name="reader_error_activity">EPUB reader requires a FragmentActivity context.</string>
+    <string name="reader_opens_in_player">This format opens in the player.</string>
+    <string name="reader_no_bookmarks">No bookmarks yet. Tap the bookmark icon while reading to add one.</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="add_bookmark">Add bookmark</string>
+    <string name="page_indicator">%1$d / %2$d</string>
+
+    <!-- Player screen -->
+    <string name="sleep_timer">Sleep timer</string>
+    <string name="sleep_in">Sleep in %1$d:%2$02d</string>
+    <string name="sleep_fading_out">Fading out…</string>
+    <string name="sleep_stopping">Stopping in %1$d:%2$02d — fades out over 10 s</string>
+    <string name="chapters">Chapters</string>
+    <string name="no_chapters">No chapters available</string>
+    <string name="playback_speed">Playback speed</string>
+    <string name="decrease_speed">Decrease speed</string>
+    <string name="increase_speed">Increase speed</string>
+
+    <!-- Settings screen -->
+    <string name="settings_vaults">Vaults</string>
+    <string name="settings_no_vaults">No vaults configured. Tap Add vault to get started.</string>
+    <string name="settings_add_vault">Add vault</string>
+    <string name="settings_remove_vault">Remove vault?</string>
+    <string name="settings_remove_vault_msg">This will remove &quot;%s&quot; and all its items from the library.</string>
+    <string name="settings_reading">Reading</string>
+    <string name="settings_default_theme">Default theme</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_default_speed">Default speed</string>
+    <string name="settings_skip_duration">Skip duration</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_dynamic_color">Material You dynamic colour</string>
+    <string name="settings_privacy">Privacy and Diagnostics</string>
+    <string name="settings_crash_logging">Local crash logging</string>
+    <string name="settings_view_logs">View logs</string>
+    <string name="settings_clear_logs">Clear logs</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_cover_cache">Cover art cache</string>
+    <string name="settings_clear_cover_cache">Clear cover cache</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s · GPL-3.0 · libravault.xyz</string>
+    <string name="settings_permissions">Permissions</string>
+    <string name="settings_support">Support Development</string>
+    <string name="settings_free_message">LibraVault is free and open source.</string>
+    <string name="settings_donate_xmr">Donate XMR</string>
+    <string name="settings_donate_btc">Donate BTC</string>
+    <string name="settings_github_sponsors">Also on GitHub Sponsors</string>
+    <string name="address_copied">%s address copied</string>
+    <string name="adding_vault">Adding vault…</string>
+    <string name="premium">Premium</string>
+    <string name="premium_get">Get Premium</string>
+    <string name="premium_feature">Premium feature</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome">Your library, under lock and key.</string>
+    <string name="onboarding_privacy">🔒 No internet permission · No accounts · No tracking</string>
+    <string name="onboarding_setup">Set up your Vault</string>
+    <string name="onboarding_instructions">Select folders where your books and audiobooks are stored.</string>
+    <string name="onboarding_add_folder">Add folder</string>
+    <string name="onboarding_add_more">Add more folders or tap Open Library when ready.</string>
+    <string name="onboarding_open_library">Open Library</string>
+    <string name="onboarding_add_at_least_one">Add at least one folder to get started</string>
+    <string name="vault_folder">Vault folder</string>
+    <string name="remove_vault">Remove vault</string>
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="ok">OK</string>
+</resources>

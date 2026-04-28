@@ -9,7 +9,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import xyz.libravault.core.database.LibravaultDatabase
 import xyz.libravault.core.database.MIGRATION_1_2
+import xyz.libravault.core.database.MIGRATION_2_3
 import xyz.libravault.core.database.dao.BookmarkDao
+import xyz.libravault.core.database.dao.CollectionDao
 import xyz.libravault.core.database.dao.HighlightDao
 import xyz.libravault.core.database.dao.LibraryItemDao
 import xyz.libravault.core.database.dao.ProgressDao
@@ -28,7 +30,7 @@ object DatabaseModule {
             LibravaultDatabase::class.java,
             LibravaultDatabase.DATABASE_NAME,
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
     @Provides fun provideVaultFolderDao(db: LibravaultDatabase): VaultFolderDao = db.vaultFolderDao()
@@ -36,4 +38,5 @@ object DatabaseModule {
     @Provides fun provideProgressDao(db: LibravaultDatabase): ProgressDao = db.progressDao()
     @Provides fun provideBookmarkDao(db: LibravaultDatabase): BookmarkDao = db.bookmarkDao()
     @Provides fun provideHighlightDao(db: LibravaultDatabase): HighlightDao = db.highlightDao()
+    @Provides fun provideCollectionDao(db: LibravaultDatabase): CollectionDao = db.collectionDao()
 }

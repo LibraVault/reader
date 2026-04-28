@@ -201,6 +201,12 @@ class PlayerViewModel @Inject constructor(
             logger.e(TAG, "Player error: ${error.message}")
             _uiState.value = _uiState.value.copy(error = "Playback error: ${error.message}")
         }
+
+        override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
+            if (error == null) {
+                _uiState.value = _uiState.value.copy(error = null)
+            }
+        }
     }
 
     // ── Playback controls ─────────────────────────────────────────────────────
@@ -234,6 +240,22 @@ class PlayerViewModel @Inject constructor(
     fun skipForward() {
         val ctrl = controller ?: return
         ctrl.seekTo((ctrl.currentPosition + SKIP_MS).coerceAtMost(ctrl.duration))
+    }
+
+    /**
+     * Retry playback after a player error.
+     * Clears the error state and re-prepares the current media item.
+     */
+    fun retryPlayback() {
+        val ctrl = controller ?: return
+        _uiState.value = _uiState.value.copy(error = null)
+        val item = _uiState.value.item ?: return
+        ctrl.stop()
+        val uri = playedItemUri?.let { Uri.parse(it) } ?: Uri.parse(item.filePath)
+        val mediaItem = MediaItem.fromUri(uri)
+        ctrl.setMediaItem(mediaItem)
+        ctrl.prepare()
+        ctrl.play()
     }
 
     fun skipBack() {

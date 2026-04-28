@@ -189,6 +189,6 @@ private fun formatSpeed(speed: Float): String {
     return if (kotlin.math.abs(diff) < 0.001f) {
         "${rounded.toInt()}×"
     } else {
-        String.format("%.2g×", rounded).replace(",", ".")
+        String.format(java.util.Locale.ROOT, "%.2g×", rounded).replace(",", ".")
     }
 }

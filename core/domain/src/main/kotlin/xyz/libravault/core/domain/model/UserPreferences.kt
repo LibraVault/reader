@@ -34,5 +34,5 @@ fun formatPlaybackSpeed(speed: Float): String {
     // where 1.0f % 1f produces 0.99999994f instead of 0f
     val diff = snapped - snapped.toInt()
     return if (kotlin.math.abs(diff) < 0.001f) "${snapped.toInt()}×"
-    else String.format("%.2g×", snapped).replace(",", ".")
+    else String.format(java.util.Locale.ROOT, "%.2g×", snapped).replace(",", ".")
 }

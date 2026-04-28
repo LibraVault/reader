@@ -5,9 +5,7 @@ import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.junit5.MockKExtension
 import io.mockk.mockk
-import io.mockk.mockkStatic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -24,7 +22,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
@@ -39,9 +36,7 @@ import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SleepTimer
 import com.google.common.util.concurrent.SettableFuture
 import androidx.media3.session.MediaController
-import android.net.Uri
 
-@ExtendWith(MockKExtension::class)
 class PlayerViewModelTest {
 
     private val fakeItem = LibraryItem(
@@ -85,8 +80,6 @@ class PlayerViewModelTest {
         every { sleepTimer.state } returns sleepTimerState
         // Stub chapterExtractor so connectWithRetry → play → updateChapters doesn't throw
         coEvery { chapterExtractor.extract(any(), any()) } returns fakeChapters
-        mockkStatic(Uri::class)
-        every { Uri.parse(any()) } returns mockk(relaxed = true)
     }
 
     @AfterEach
