@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
@@ -286,6 +288,7 @@ class LibraryViewModel @Inject constructor(
                 val persistedUris = vaultManager.persistedVaultUris()
                 if (persistedUris.isNotEmpty()) {
                     logger.i("LibraryVM", "Room empty but ${persistedUris.size} URI permission(s) found — recovering vaults")
+                    var recoveredCount = 0
                     persistedUris.forEach { uri ->
                         runCatching {
                             addVaultFolder(
@@ -293,14 +296,23 @@ class LibraryViewModel @Inject constructor(
                                 uri.lastPathSegment?.substringAfterLast(':')
                                     ?.substringAfterLast('/') ?: "My Vault"
                             )
+                            recoveredCount++
+                        }.onFailure { e ->
+                            logger.w("LibraryVM", "Failed to recover vault URI: $uri", e)
                         }
                     }
-                    // Wait for recovered vaults to propagate through Room's
-                    // InvalidationTracker before scanning.  A plain .first()
-                    // may return the stale cached empty list because Room's
-                    // Flow only re-queries on the next emission cycle after
-                    // the DAO insert completes.
-                    observeVaults().first { it.isNotEmpty() }
+                    logger.i("LibraryVM", "Recovery completed: $recoveredCount vault(s) inserted")
+
+                    // Wait briefly for Room to propagate the new vaults,
+                    // but don’t block indefinitely — if we timeout, scan anyway.
+                    try {
+                        withTimeout(2000) {
+                            observeVaults().first { it.isNotEmpty() }
+                        }
+                        logger.i("LibraryVM", "Vaults visible — proceeding to scan")
+                    } catch (_: TimeoutCancellationException) {
+                        logger.w("LibraryVM", "Timeout waiting for vaults — proceeding to scan anyway")
+                    }
                 }
             }
             // Scan after recovery so the scanner always sees existing vaults.
