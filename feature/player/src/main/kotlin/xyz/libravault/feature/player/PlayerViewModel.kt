@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
@@ -155,11 +157,18 @@ class PlayerViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(error = null)
                 }
                 // Item may have loaded before the controller was ready — play now.
-                _uiState.value.item?.let { item ->
-                    play(
-                        android.net.Uri.parse(item.filePath),
-                        startPositionMs = _uiState.value.savedStartPositionMs,
-                    )
+                // Check if the controller already has this item loaded (same URI) to avoid
+                // reinitializing ExoPlayer's media pipeline, which causes audio stutter.
+                val item = _uiState.value.item ?: return@addListener
+                val uri = android.net.Uri.parse(item.filePath)
+                val savedPos = _uiState.value.savedStartPositionMs
+                val currentMedia = ctrl.currentMediaItem
+                if (currentMedia?.localConfiguration?.uri == uri) {
+                    // Same item already loaded — seek to saved position and resume
+                    ctrl.seekTo(savedPos)
+                    ctrl.play()
+                } else {
+                    play(uri, startPositionMs = savedPos)
                 }
             }.onFailure { e ->
                 if (attempt >= MAX_RETRIES) {
@@ -427,18 +436,22 @@ class PlayerViewModel @Inject constructor(
         retryJob?.cancel()
         // Save final progress — persist the last known position so the user
         // doesn't lose up to 5 seconds of progress on navigation.
+        // Use NonCancellable because viewModelScope is cancelled at super.onCleared()
+        // and we must guarantee this write completes before the process dies.
         val pos = controller?.currentPosition
         val id = itemId
         if (pos != null && id != null) {
             viewModelScope.launch {
-                saveProgress(
-                    ListeningProgress(
-                        itemId         = id,
-                        positionMs     = pos,
-                        chapterIndex   = _uiState.value.currentChapterIndex,
-                        lastListenedAt = Instant.now(),
+                withContext(NonCancellable) {
+                    saveProgress(
+                        ListeningProgress(
+                            itemId         = id,
+                            positionMs     = pos,
+                            chapterIndex   = _uiState.value.currentChapterIndex,
+                            lastListenedAt = Instant.now(),
+                        )
                     )
-                )
+                }
             }
         }
         controller?.removeListener(playerListener)
