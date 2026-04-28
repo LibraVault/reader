@@ -28,6 +28,15 @@ import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import javax.inject.Inject
 
+private data class ControlState(
+    val scanning: Boolean = false,
+    val error: String? = null,
+    val query: String = "",
+    val results: List<LibraryItem>? = null,
+    val stale: Boolean = false,
+    val selectedId: Long? = null,
+)
+
 data class LibraryUiState(
     val vaults: List<VaultFolder>         = emptyList(),
     val currentBook: LibraryItem?         = null,
@@ -35,6 +44,8 @@ data class LibraryUiState(
     val allItems: List<LibraryItem>       = emptyList(),
     val searchResults: List<LibraryItem>? = null,   // null = not in search mode
     val searchQuery: String               = "",
+    val selectedVaultId: Long?            = null,   // null = showing all vaults
+    val groupedItems: Map<Long, List<LibraryItem>> = emptyMap(),
     val isScanning: Boolean               = false,
     val scanError: String?                = null,
     val staleItemMessage: Boolean         = false,  // "File not found" snackbar
@@ -59,7 +70,8 @@ class LibraryViewModel @Inject constructor(
     private val _scanning      = MutableStateFlow(false)
     private val _addVaultError = MutableStateFlow<String?>(null)
     private val _scanError     = MutableStateFlow<String?>(null)
-    private val _searchQuery   = MutableStateFlow("")
+    private val _selectedVaultId = MutableStateFlow<Long?>(null)
+    private val _searchQuery     = MutableStateFlow("")
     private val _searchResults = MutableStateFlow<List<LibraryItem>?>(null)
     private val _staleMessage  = MutableStateFlow(false)
     private var searchJob: Job? = null
@@ -72,27 +84,31 @@ class LibraryViewModel @Inject constructor(
         getLibrary(),
         observeCurrentlyReading.book(),
         observeCurrentlyReading.audiobook(),
-        combine(_scanning, _scanError, _searchQuery, _searchResults, _staleMessage)
-            { scanning, error, query, results, stale ->
-                listOf(scanning, error, query, results, stale)
-            },
-    ) { vaults, items, book, audiobook, extras ->
-        val scanning = extras[0] as Boolean
-        val error    = extras[1] as? String
-        val query    = extras[2] as String
-        val results  = @Suppress("UNCHECKED_CAST") (extras[3] as? List<LibraryItem>)
-        val stale    = extras[4] as Boolean
+        combine(listOf(_scanning, _scanError, _searchQuery, _searchResults, _staleMessage, _selectedVaultId)) { arr ->
+            ControlState(
+                scanning = arr[0] as Boolean,
+                error = arr[1] as? String,
+                query = arr[2] as String,
+                results = @Suppress("UNCHECKED_CAST") arr[3] as? List<LibraryItem>,
+                stale = arr[4] as Boolean,
+                selectedId = arr[5] as Long?,
+            )
+        },
+    ) { vaults, items, book, audiobook, control ->
+        val grouped = items.groupBy { it.vaultFolderId }
 
         LibraryUiState(
             vaults           = vaults,
             allItems         = items,
             currentBook      = book,
             currentAudiobook = audiobook,
-            isScanning       = scanning,
-            scanError        = error,
-            searchQuery      = query,
-            searchResults    = results,
-            staleItemMessage = stale,
+            isScanning       = control.scanning,
+            scanError        = control.error,
+            searchQuery      = control.query,
+            searchResults    = control.results,
+            selectedVaultId  = control.selectedId,
+            groupedItems     = grouped,
+            staleItemMessage = control.stale,
         )
     }.stateIn(
         scope = viewModelScope,

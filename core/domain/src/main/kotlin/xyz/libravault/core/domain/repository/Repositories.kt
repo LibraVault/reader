@@ -2,6 +2,7 @@ package xyz.libravault.core.domain.repository
 
 import kotlinx.coroutines.flow.Flow
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.Collection
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress

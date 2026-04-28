@@ -1,6 +1,7 @@
 import com.android.build.gradle.LibraryExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.tasks.testing.Test
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 import org.gradle.kotlin.dsl.getByType
@@ -39,6 +40,14 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
             add("testImplementation", "io.mockk:mockk:1.13.11")
             add("testImplementation", "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
             add("testImplementation", "app.cash.turbine:turbine:1.1.0")
+        }
+
+        // Configure test worker JVM heap to prevent OutOfMemoryError in Gradle Test Executor
+        // The default forked JVM heap (~512m-1g) is insufficient with Hilt/MockK/Coroutines test setup
+        // Note: using Java class reference (::class.java) because withType<T>() reified generics
+        // don't work in compiled convention plugins — only in .gradle.kts scripts
+        tasks.withType(Test::class.java).configureEach {
+            maxHeapSize = "2048m"
         }
     }
 }
