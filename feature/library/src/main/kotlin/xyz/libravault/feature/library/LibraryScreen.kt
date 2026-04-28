@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
@@ -394,6 +395,7 @@ fun LibraryScreen(
 
     // ── Search overlay ─────────────────────────────────────────────────────
     if (isSearchOpen) {
+        @Suppress("DEPRECATION")
         SearchBar(
             query = state.searchQuery,
             onQueryChange = viewModel::onSearchQueryChanged,
@@ -552,12 +554,7 @@ private fun VaultFilterChips(
                 onClick = { onSelectVault(vault.id) },
                 label = { Text(vault.displayName) },
                 leadingIcon = {
-                    Icon(
-                        Icons.Default.Folder,
-                        contentDescription = null,
-                        decorative = true,
-                        modifier = Modifier.size(16.dp),
-                    )
+                    Icon(Icons.Default.Folder, contentDescription = "Folder", modifier = Modifier.size(16.dp))
                 },
             )
         }
@@ -581,13 +578,7 @@ private fun VaultSectionHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                imageVector = Icons.Default.Folder,
-                contentDescription = null,
-                decorative = true,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
-            )
+            Icon(imageVector = Icons.Default.Folder, contentDescription = "Folder", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Text(
                 text = vault.displayName,
                 style = MaterialTheme.typography.titleLarge,
@@ -667,7 +658,7 @@ private fun ContinueCard(
                             MediaFormat.FLAC,
                             MediaFormat.OPUS,
                             MediaFormat.AAC,
-                        )) Icons.Default.Headphones else Icons.Default.MenuBook,
+                        )) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook,
                         contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                         modifier = Modifier.size(32.dp),
@@ -739,7 +730,7 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
                                 MediaFormat.OGG, MediaFormat.FLAC,
                                 MediaFormat.OPUS, MediaFormat.AAC,
                             )
-                        ) Icons.Default.Headphones else Icons.Default.MenuBook,
+                        ) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook,
                         contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(32.dp),
@@ -815,7 +806,7 @@ private fun SearchResultRow(item: LibraryItem, onClick: () -> Unit) {
                     MediaFormat.OGG, MediaFormat.FLAC,
                     MediaFormat.OPUS, MediaFormat.AAC,
                 )
-            ) Icons.Default.Headphones else Icons.Default.MenuBook,
+            ) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook,
             contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp),

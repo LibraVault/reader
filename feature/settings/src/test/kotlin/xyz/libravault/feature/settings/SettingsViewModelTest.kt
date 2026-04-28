@@ -52,9 +52,12 @@ class SettingsViewModelTest {
     private val scanVaultsUseCase = mockk<ScanVaultUseCase>()
     private val logger     = mockk<LibravaultLogger>(relaxed = true)
 
+    /** Single shared dispatcher so runTest and Dispatchers.Main use the same queue. */
+    private val mainDispatcher = UnconfinedTestDispatcher()
+
     @BeforeEach
     fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        Dispatchers.setMain(mainDispatcher)
         mockkStatic(Uri::class)
         every { Uri.parse(any()) } returns mockk()
         every { prefsRepo.observe() }       returns flowOf(defaultPrefs)
@@ -77,7 +80,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `emits initial preferences`() = runTest(UnconfinedTestDispatcher()) {
+    fun `emits initial preferences`() = runTest(mainDispatcher) {
         viewModel().preferences.test {
             val prefs = awaitItem()
             assertEquals(AppReadingTheme.DARK, prefs.defaultReadingTheme)
@@ -88,14 +91,14 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `reading theme change persists`() = runTest(UnconfinedTestDispatcher()) {
+    fun `reading theme change persists`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onReadingThemeChanged(AppReadingTheme.SEPIA)
         verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.SEPIA }) }
     }
 
     @Test
-    fun `playback speed is clamped`() = runTest(UnconfinedTestDispatcher()) {
+    fun `playback speed is clamped`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onPlaybackSpeedChanged(10.0f)
         verify { prefsRepo.update(match { it.defaultPlaybackSpeed == 3.0f }) }
@@ -105,7 +108,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `skip duration is clamped`() = runTest(UnconfinedTestDispatcher()) {
+    fun `skip duration is clamped`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onSkipDurationChanged(0)
         verify { prefsRepo.update(match { it.defaultSkipDurationSec == 5 }) }
@@ -115,30 +118,28 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `logging toggle updates logger`() = runTest(UnconfinedTestDispatcher()) {
+    fun `logging toggle updates logger`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onLoggingToggled(true)
         verify { prefsRepo.update(match { it.loggingEnabled }) }
     }
 
     @Test
-    fun `dynamic colour toggle persists`() = runTest(UnconfinedTestDispatcher()) {
+    fun `dynamic colour toggle persists`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onDynamicColorToggled(false)
         verify { prefsRepo.update(match { !it.dynamicColorEnabled }) }
     }
 
     @Test
-    fun `clear cover cache delegates to CoverArtCache`() = runTest(UnconfinedTestDispatcher()) {
+    fun `clear cover cache delegates to CoverArtCache`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.clearCoverCache()
         verify(exactly = 1) { coverCache.clearAll() }
     }
 
-    // ── Vault Management Tests ────────────────────────────────────────────────
-
     @Test
-    fun `vault state observes vaults from use case`() = runTest(UnconfinedTestDispatcher()) {
+    fun `vault state observes vaults from use case`() = runTest(mainDispatcher) {
         val vaults = listOf(
             VaultFolder(id = 1, uri = "content://vault/1", displayName = "Books"),
             VaultFolder(id = 2, uri = "content://vault/2", displayName = "Audio"),
@@ -156,7 +157,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `add vault persists permission and delegates to use case`() = runTest(UnconfinedTestDispatcher()) {
+    fun `add vault persists permission and delegates to use case`() = runTest(mainDispatcher) {
         val uri = Uri.parse("content://com.android.externalstorage/doc/home%2FBooks")
         val vault = VaultFolder(id = 1, uri = uri.toString(), displayName = "Books")
         coEvery { addVaultFolder(uri.toString(), "Books") } returns vault
@@ -169,7 +170,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `remove vault releases permission and delegates to use case`() = runTest(UnconfinedTestDispatcher()) {
+    fun `remove vault releases permission and delegates to use case`() = runTest(mainDispatcher) {
         coEvery { removeVaultFolder(42) } just Runs
 
         val vault = VaultFolder(id = 42, uri = "content://vault/mine", displayName = "Mine")
@@ -181,7 +182,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `scan progress is reflected in vault state`() = runTest(UnconfinedTestDispatcher()) {
+    fun `scan progress is reflected in vault state`() = runTest {
         every { scanVaultsUseCase() } returns flowOf(
             ScanProgress.Started,
             ScanProgress.ItemFound(3),
@@ -190,36 +191,30 @@ class SettingsViewModelTest {
 
         val vm = viewModel()
 
-        val items = mutableListOf<VaultManagementState>()
-        val collectJob = launch(UnconfinedTestDispatcher()) {
-            vm.vaultState.collect { items.add(it) }
+        vm.vaultState.test {
+            vm.scanVaults()
+
+            // sequence: initial(empty) -> isScanning(true,null) -> Started -> ItemFound(3) -> Completed(3)
+            val initial = awaitItem()
+            assertFalse(initial.isScanning)
+            assertEquals(0, initial.vaults.size)
+
+            // skip intermediate: isScanning=true with no scanMessage yet
+            awaitItem()
+
+            val started = awaitItem()
+            assertTrue(started.isScanning)
+            assertEquals("Scanning vaults\u2026", started.scanMessage)
+
+            val found = awaitItem()
+            assertTrue(found.isScanning)
+            assertEquals("Found 3 items\u2026", found.scanMessage)
+
+            val completed = awaitItem()
+            assertFalse(completed.isScanning)
+            assertEquals("Scan complete \u2013 3 new items added", completed.scanMessage)
+
+            cancelAndConsumeRemainingEvents()
         }
-
-        vm.scanVaults()
-        collectJob.cancel()
-
-        // items[0] = initial empty {vaults=[]}
-        // items[1] = isScanning=true, no message yet
-        // items[2] = Started with "Scanning vaults…"
-        // items[3] = ItemFound(3) with "Found 3 items…"
-        // items[4] = Completed(3) with "Scan complete – 3 new items added"
-
-        assertEquals(5, items.size, "Expected 5 items in vaultState flow")
-
-        val initial = items[0]
-        assertFalse(initial.isScanning)
-        assertEquals(0, initial.vaults.size)
-
-        val started = items[2]
-        assertTrue(started.isScanning)
-        assertEquals("Scanning vaults\u2026", started.scanMessage)
-
-        val found = items[3]
-        assertTrue(found.isScanning)
-        assertEquals("Found 3 items\u2026", found.scanMessage)
-
-        val completed = items[4]
-        assertFalse(completed.isScanning)
-        assertEquals("Scan complete \u2013 3 new items added", completed.scanMessage)
     }
 }
