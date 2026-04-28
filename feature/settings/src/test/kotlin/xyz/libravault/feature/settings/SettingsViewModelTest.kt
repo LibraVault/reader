@@ -12,9 +12,11 @@ import io.mockk.Runs
 import io.mockk.verify
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -69,6 +71,10 @@ class SettingsViewModelTest {
 
     @AfterEach
     fun tearDown() {
+        // Cancel all coroutines in the test dispatcher before resetting.
+        // The init block in SettingsViewModel launches an unbounded collect{},
+        // which would otherwise leak as UncompletedCoroutinesError.
+        mainDispatcher.cancel()
         Dispatchers.resetMain()
     }
 
