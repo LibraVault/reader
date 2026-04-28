@@ -67,7 +67,7 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             if (vaults.isEmpty()) {
-                emit(ScanProgress.Completed(0, formatCounts = null))
+                emit(ScanProgress.Completed(0, 0))
                 return@runCatching
             }
 
@@ -120,7 +120,7 @@ class LibraryScannerImpl @Inject constructor(
             if (staleCount > 0) logger.i(TAG, "Removed $staleCount stale entries")
 
             // Signal Phase 1 complete — UI is now populated
-            emit(ScanProgress.Completed(count, count, formatCounts = null))
+            emit(ScanProgress.Completed(count, count))
             logger.i(TAG, "Phase 1 complete — $count new stubs, metadata enrichment starts in background")
 
             // ── 4. Phase 2: enrich metadata OFF the hot flow ──────────────────
