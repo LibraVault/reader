@@ -108,7 +108,7 @@ object FeatureFlags {
  * ```
  */
 @Composable
-fun featureFlag(feature: FeatureFlags.Feature): Boolean {
+fun featureFlag(feature: Feature): Boolean {
     // TODO: Implement with DataStore flow subscription
     return FeatureFlags.isEnabled(feature)
 }
@@ -121,9 +121,9 @@ fun featureFlag(feature: FeatureFlags.Feature): Boolean {
  * ViewModel helper for testability — inject FeatureFlags into ViewModels.
  */
 class FeatureFlagProvider {
-    fun isEnabled(feature: FeatureFlags.Feature): Boolean = FeatureFlags.isEnabled(feature)
+    fun isEnabled(feature: Feature): Boolean = FeatureFlags.isEnabled(feature)
 
-    fun setEnabled(feature: FeatureFlags.Feature, enabled: Boolean) {
+    fun setEnabled(feature: Feature, enabled: Boolean) {
         FeatureFlags.setEnabled(feature, enabled)
     }
 }
@@ -137,7 +137,7 @@ class FeatureFlagProvider {
  *
  * WARNING: Must be cleaned up in `tearDown()` or `@After`!
  */
-fun FeatureFlags.override(feature: FeatureFlags.Feature, enabled: Boolean) {
+fun FeatureFlags.override(feature: Feature, enabled: Boolean) {
     // TODO: Implement test override
 }
 
