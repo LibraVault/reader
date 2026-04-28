@@ -126,7 +126,7 @@ fun ReaderSettingsSheet(
 
             // ── Font size ──────────────────────────────────────────────────
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.TextFields, contentDescription = null,
+                Icon(Icons.Default.TextFields, contentDescription = null, decorative = true,
                     modifier = Modifier.size(16.dp))
                 Spacer(Modifier.weight(1f))
                 Text("${(settings.fontSize * 100).toInt()}%",
@@ -215,6 +215,7 @@ fun BookmarksSheet(
                             Icon(
                                 Icons.Default.Bookmark,
                                 contentDescription = null,
+                                decorative = true,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp),
                             )

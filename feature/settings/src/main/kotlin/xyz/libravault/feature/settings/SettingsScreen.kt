@@ -173,7 +173,7 @@ fun SettingsScreen(
                 if (vaultState.isScanning) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.Add, contentDescription = null)
+                    Icon(Icons.Default.Add, contentDescription = null, decorative = true)
                 }
                 Spacer(Modifier.size(8.dp))
                 Text("Add vault")
@@ -362,6 +362,7 @@ private fun VaultRow(
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = null,
+                decorative = true,
                 tint = MaterialTheme.colorScheme.primary,
             )
             Column(modifier = Modifier.weight(1f)) {

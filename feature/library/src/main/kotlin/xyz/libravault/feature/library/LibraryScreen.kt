@@ -519,7 +519,7 @@ private fun VaultManagementSheet(
             onClick = onAddVault,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Icon(Icons.Default.Add, contentDescription = null)
+            Icon(Icons.Default.Add, contentDescription = "Add vault")
             Spacer(Modifier.size(8.dp))
             Text("Add vault")
         }
@@ -555,6 +555,7 @@ private fun VaultFilterChips(
                     Icon(
                         Icons.Default.Folder,
                         contentDescription = null,
+                        decorative = true,
                         modifier = Modifier.size(16.dp),
                     )
                 },
@@ -583,6 +584,7 @@ private fun VaultSectionHeader(
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = null,
+                decorative = true,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
