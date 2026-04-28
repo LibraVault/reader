@@ -152,7 +152,7 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-### 16. EPUB Two-Up Reading Mode (Tablet Optimized)
+### 16. EPUB Two-Up Reading Mode (Tablet Optimized) — **LIB-175**
 **Problem:** Single-column EPUB rendering wastes screen real estate on tablets. No side-by-side reference mode.
 
 **Proposal:**
@@ -351,4 +351,4 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 07:50 UTC* | *Current HEAD: e7a0302*
+*Last updated: 2026-04-28 07:55 UTC* | *Current HEAD: 9899186*
