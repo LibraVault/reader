@@ -52,3 +52,17 @@ data class Bookmark(
     val label: String? = null,
     val createdAt: Instant = Instant.now(),
 )
+
+data class Collection(
+    val id: Long = 0,
+    val name: String,
+    val createdAt: Instant = Instant.now(),
+    val updatedAt: Instant = Instant.now(),
+)
+
+data class CollectionItem(
+    val collectionId: Long,
+    val itemId: Long,
+    val addedAt: Instant = Instant.now(),
+    val orderIndex: Int = 0,
+)
