@@ -351,4 +351,61 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 
 ---
 
-*Last updated: 2026-04-28 07:55 UTC* | *Current HEAD: 9899186*
+---
+
+## Next Steps (for someone picking up LIB-174)
+
+### 🚀 High Priority
+
+1. **LIB-175: EPUB Two-Up Reading Mode**
+   - Draft issue: `.github/LIB-175-EPUB-TWO-UP-DRAFT.md`
+   - ~2–3 days MVP (tablet layout + toggle + scroll sync)
+   - Aligns with Libby/Mantano/Google Play Books UX
+
+2. **LIB-174 #7 Scan Cancellation** ✅ **DONE** (commit e7a0302)
+   - Cancel old scan job on re-trigger
+   - No more job leaks on repeated Refresh taps
+
+---
+
+### 🔍 Medium Priority
+
+| # | Idea | Status | Notes |
+|---|------|--------|-------|
+| 16 | EPUB Night-Mode | Ready to build | CSS injection, ~1 hour |
+| 26 | EPUB TOC Drawer | Low effort | Reuse Readium `Publication.tableOfContents` |
+| 30 | Cover Placeholder | Quick win | SVG from title initials |
+
+---
+
+### 📦 Low Priority / Long-Term
+
+| # | Idea | Effort |
+|---|------|--------|
+| 28 | Scanner Background Threading | Medium (thread safety review) |
+| 29 | Highlight DB Index | Medium (migration + query update) |
+| 27 | EpubPreferences Diffing | Low (state caching) |
+| 24 | LibraryItem Caching | Medium (redesign) |
+
+---
+
+### 🧪 Testing Improvements
+
+| # | Idea | Notes |
+|---|------|-------|
+| 1 | Coroutine Test Infrastructure | Add `TestDispatcher` injection for ViewModel |
+| 2 | Vault Recovery Race Test | Verify `triggerScan()` only runs post-recovery |
+
+---
+
+### 📊 Quick-Start Guide for New Contributors
+
+1. Read `.github/LIB-174-BRAINSTORMING.md` (this doc)
+2. Pick an idea from **High Priority** or **Medium Priority**
+3. Check for existing PRs/issues before starting
+4. See `.github/LIB-175-EPUB-TWO-UP-DRAFT.md` for an example issue spec
+5. Open a draft PR labeled `WIP: LIB-17X: <your feature>`
+
+---
+
+*Last updated: 2026-04-28 07:52 UTC* | *Current HEAD: e7a0302*
