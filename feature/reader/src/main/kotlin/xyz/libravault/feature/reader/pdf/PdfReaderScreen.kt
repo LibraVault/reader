@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,7 +81,7 @@ fun PdfReaderScreen(
 
     // ── PdfRenderer lifecycle ────────────────────────────────────────────────
     var renderer  by remember { mutableStateOf<PdfRenderer?>(null) }
-    var pageCount by remember { mutableStateOf(0) }
+    var pageCount by remember { mutableIntStateOf(0) }
     val renderMutex = remember { Mutex() }
 
     DisposableEffect(fileUri) {
@@ -294,6 +295,16 @@ private fun PdfPageImage(
 ) {
     val scope = rememberCoroutineScope()
     var bitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
+
+    // Recycle the bitmap when this composable is disposed (item scrolls out of
+    // view in scrolling mode, or page changes in paginated mode). Without this,
+    // every page that was ever viewed retains its ~4MB bitmap in native memory.
+    DisposableEffect(pageIndex) {
+        onDispose {
+            bitmap?.recycle()
+            bitmap = null
+        }
+    }
 
     LaunchedEffect(pageIndex, screenWidthPx) {
         renderMutex.withLock {

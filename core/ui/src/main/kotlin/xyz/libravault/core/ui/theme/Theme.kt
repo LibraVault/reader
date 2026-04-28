@@ -1,6 +1,5 @@
 package xyz.libravault.core.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -10,6 +9,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 enum class ReadingTheme { DARK, LIGHT, SEPIA }
@@ -48,6 +48,22 @@ private val LightColorScheme = lightColorScheme(
     outline             = WarmNeutral200,
 )
 
+private val SepiaColorScheme = lightColorScheme(
+    primary             = LeatherBrown,
+    onPrimary           = WarmNeutral50,
+    primaryContainer    = LeatherLight,
+    onPrimaryContainer  = LeatherDark,
+    secondary           = VaultGold,
+    onSecondary         = WarmNeutral900,
+    background          = SepiaBackground,
+    onBackground        = SepiaText,
+    surface             = SepiaBackground,
+    onSurface           = SepiaText,
+    surfaceVariant      = Color(0xFFE8D5B8),
+    onSurfaceVariant    = Color(0xFF6B5C44),
+    outline             = Color(0xFFD4C4A8),
+)
+
 @Composable
 fun LibravaultTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -58,10 +74,11 @@ fun LibravaultTheme(
     val colorScheme = when {
         // Dynamic colour is nice but overrides our leather palette — only use on
         // Android 12+ if the user has explicitly enabled it in settings
-        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        useDynamicColor -> {
             val ctx = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         }
+        readingTheme == ReadingTheme.SEPIA -> SepiaColorScheme
         darkTheme -> DarkColorScheme
         else      -> LightColorScheme
     }

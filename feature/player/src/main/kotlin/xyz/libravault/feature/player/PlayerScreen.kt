@@ -127,11 +127,21 @@ fun PlayerScreen(
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
 
-                state.error != null -> Box(
+                state.error != null -> Column(
                     Modifier.fillMaxSize().padding(innerPadding),
-                    contentAlignment = Alignment.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(state.error!!, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        state.error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = 32.dp),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = viewModel::retryPlayback) {
+                        Text("Retry")
+                    }
                 }
 
                 state.item != null -> {

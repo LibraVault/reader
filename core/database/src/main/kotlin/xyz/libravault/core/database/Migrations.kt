@@ -30,3 +30,36 @@ val MIGRATION_1_2 = Migration(1, 2) { db ->
     )
     db.execSQL("CREATE INDEX IF NOT EXISTS `index_highlights_itemId` ON `highlights`(`itemId`)")
 }
+
+/**
+ * Migration from v2→v3: adds collections + collection_items tables.
+ *
+ * v3 schema (M1 — collections/shelves):
+ *  - adds `collections` table
+ *  - adds `collection_items` junction table with FK to collections and library_items
+ */
+val MIGRATION_2_3 = Migration(2, 3) { db ->
+    db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `collections` (
+            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            `name` TEXT NOT NULL,
+            `createdAt` INTEGER NOT NULL,
+            `updatedAt` INTEGER NOT NULL
+        )
+        """.trimIndent()
+    )
+    db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `collection_items` (
+            `collectionId` INTEGER NOT NULL,
+            `itemId` INTEGER NOT NULL,
+            PRIMARY KEY(`collectionId`, `itemId`),
+            FOREIGN KEY (`collectionId`) REFERENCES `collections`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`itemId`) REFERENCES `library_items`(`id`) ON DELETE CASCADE
+        )
+        """.trimIndent()
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_items_collectionId` ON `collection_items`(`collectionId`)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_items_itemId` ON `collection_items`(`itemId`)")
+}

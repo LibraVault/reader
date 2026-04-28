@@ -7,6 +7,8 @@ import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import xyz.libravault.core.database.entity.BookmarkEntity
+import xyz.libravault.core.database.entity.CollectionEntity
+import xyz.libravault.core.database.entity.CollectionItemCrossRef
 import xyz.libravault.core.database.entity.LibraryItemEntity
 import xyz.libravault.core.database.entity.ListeningProgressEntity
 import xyz.libravault.core.database.entity.ReadingProgressEntity
@@ -121,4 +123,31 @@ interface BookmarkDao {
 
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun deleteById(id: Long)
+}
+
+@Dao
+interface CollectionDao {
+    @Query("SELECT * FROM collections ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<CollectionEntity>>
+
+    @Query("SELECT * FROM collections WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): CollectionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(collection: CollectionEntity): Long
+
+    @Query("SELECT itemId FROM collection_items WHERE collectionId = :collectionId")
+    suspend fun getItemIds(collectionId: Long): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addItems(items: List<CollectionItemCrossRef>)
+
+    @Query("DELETE FROM collection_items WHERE collectionId = :collectionId AND itemId IN (:itemIds)")
+    suspend fun removeItems(collectionId: Long, itemIds: List<Long>)
+
+    @Query("DELETE FROM collections WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("UPDATE collections SET name = :name, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateName(id: Long, name: String, updatedAt: Long)
 }

@@ -259,6 +259,81 @@ private fun xyz.libravault.core.domain.model.Highlight.toEntity() =
     )
 
 
+// ── CollectionRepository ─────────────────────────────────────────────────────
+
+@Singleton
+class CollectionRepositoryImpl @Inject constructor(
+    private val dao: xyz.libravault.core.database.dao.CollectionDao,
+) : xyz.libravault.core.domain.repository.CollectionRepository {
+
+    override fun observeAll(): kotlinx.coroutines.flow.Flow<List<xyz.libravault.core.domain.model.Collection>> =
+        dao.observeAll().map { list -> list.map { it.toDomain(dao) } }
+
+    override suspend fun getById(id: Long): xyz.libravault.core.domain.model.Collection? {
+        val entity = dao.getById(id) ?: return null
+        return entity.toDomain(dao)
+    }
+
+    override suspend fun create(
+        name: String,
+        itemIds: kotlin.collections.Set<Long>,
+    ): xyz.libravault.core.domain.model.Collection {
+        val now = System.currentTimeMillis()
+        val id = dao.insert(
+            xyz.libravault.core.database.entity.CollectionEntity(
+                name = name,
+                createdAt = now,
+                updatedAt = now,
+            )
+        )
+        if (itemIds.isNotEmpty()) {
+            dao.addItems(itemIds.map { cid ->
+                xyz.libravault.core.database.entity.CollectionItemCrossRef(
+                    collectionId = id,
+                    itemId = cid,
+                )
+            })
+        }
+        return xyz.libravault.core.domain.model.Collection(
+            id = id,
+            name = name,
+            createdAt = java.time.Instant.ofEpochMilli(now),
+            updatedAt = java.time.Instant.ofEpochMilli(now),
+        )
+    }
+
+    override suspend fun addItems(collectionId: Long, itemIds: kotlin.collections.Set<Long>) {
+        dao.addItems(itemIds.map { cid ->
+            xyz.libravault.core.database.entity.CollectionItemCrossRef(
+                collectionId = collectionId,
+                itemId = cid,
+            )
+        })
+    }
+
+    override suspend fun removeItems(collectionId: Long, itemIds: kotlin.collections.Set<Long>) {
+        dao.removeItems(collectionId, itemIds.toList())
+    }
+
+    override suspend fun delete(id: Long) = dao.deleteById(id)
+}
+
+
+// ── Mappers (Collection) ─────────────────────────────────────────────────────
+
+private suspend fun xyz.libravault.core.database.entity.CollectionEntity.toDomain(
+    dao: xyz.libravault.core.database.dao.CollectionDao,
+): xyz.libravault.core.domain.model.Collection {
+    val itemIds = dao.getItemIds(id)
+    return xyz.libravault.core.domain.model.Collection(
+        id = id,
+        name = name,
+        createdAt = java.time.Instant.ofEpochMilli(createdAt),
+        updatedAt = java.time.Instant.ofEpochMilli(updatedAt),
+    )
+}
+
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Escapes SQLite LIKE wildcards so user input like "100%" or "a_b" matches literally. */
