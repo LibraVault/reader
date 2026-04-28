@@ -80,6 +80,7 @@ class LibraryViewModel @Inject constructor(
     private val _selectedVaultFilter = MutableStateFlow<Long?>(null)
     private val _formatFilter = MutableStateFlow<String?>(null)
     private var searchJob: Job? = null
+    private var scanJob: Job? = null
 
     val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
@@ -183,8 +184,14 @@ class LibraryViewModel @Inject constructor(
 
     /** Triggered on cold start and on vault addition. */
     fun triggerScan() {
-        if (_scanning.value) return
-        viewModelScope.launch {
+        // Cancel any ongoing scan before starting a new one.
+        // This prevents job leaks when user taps Refresh repeatedly.
+        scanJob?.cancel()
+        // Clear scanning flag immediately — old scan (if any) will finish early
+        // due to job cancellation, and we want fresh state for this new scan.
+        _scanning.value = false
+        
+        scanJob = viewModelScope.launch {
             _scanning.value  = true
             _scanError.value = null
 
