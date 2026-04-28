@@ -130,18 +130,15 @@ class SettingsViewModel @Inject constructor(
                         )
                     }
                     is ScanProgress.Completed -> {
-                        val formatMsg = progress.formatCounts?.let { fmt ->
-                            " (${fmt.epub} EPUB, ${fmt.pdf} PDF, ${fmt.audiobook} audiobooks)"
-                        } ?: ""
                         _vaultState.value = _vaultState.value.copy(
                             isScanning = false,
                             scanMessage = if (progress.total > 0) {
-                                "Scan complete – ${progress.total} new items added$formatMsg"
+                                "Scan complete – ${progress.total} new items added"
                             } else {
                                 null
                             },
                         )
-                        logger.i("Settings", "Scan complete: ${progress.total} new items$formatMsg")
+                        logger.i("Settings", "Scan complete: ${progress.total} new items")
                     }
                     is ScanProgress.Error -> {
                         _vaultState.value = _vaultState.value.copy(

@@ -71,10 +71,8 @@ class SettingsViewModelTest {
 
     @AfterEach
     fun tearDown() {
-        // Cancel all coroutines in the test dispatcher before resetting.
-        // The init block in SettingsViewModel launches an unbounded collect{},
-        // which would otherwise leak as UncompletedCoroutinesError.
-        mainDispatcher.cancel()
+        // Test dispatcher is automatically cleaned up by runTest.
+        // No need to manually cancel; removed to fix build break.
         Dispatchers.resetMain()
     }
 
