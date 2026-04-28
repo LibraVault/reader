@@ -156,11 +156,75 @@ Uses `observeCurrentlyReading.book()` + timestamps to compute.
 **Problem:** Reading EPUBs in dark rooms causes eye strain; most readers force dark UI but keep bright text.
 
 **Proposal:**
-- EPUB-specific “Night Mode” (not just app theme toggle)
-- Invert *only* the content background to dark, text to light
-- Apply via CSS injection: `body { background: #121212 !important; color: #f0f0f0 !important; }`
-- Offer fade animation to reduce jarring transition
+| EPUB-specific “Night Mode” (not just app theme toggle)
+| Invert *only* the content background to dark, text to light
+| Apply via CSS injection: `body { background: #121212 !important; color: #f0f0f0 !important; }`
+| Offer fade animation to reduce jarring transition
 
 ---
 
-*Last updated: 2026-04-28 07:20 UTC* | *Current HEAD: 5a6f80e*
+## 2026-04-28 Additional Ideas
+
+### 18. Readium Kotlin Toolkit LCP Support
+**Problem:** v2 roadmap mentions DRM (Readium LCP), but current version uses vanilla Readium Kotlin Toolkit without LCP.
+
+**Proposal:**
+- Audit Readium Kotlin Toolkit 3.x LCP support
+- Identify required dependencies and custom player hooks
+- Create demo EPUB-LCP file for testing (or use O’Reilly sample)
+
+---
+
+### 19. Search Index Rebuild Trigger
+**Problem:** Library search is powered by `LibraryItem` entities in Room — no way to rebuild search index after bulk metadata change.
+
+**Proposal:** Settings toggle “Rebuild Search Index” that truncates FT3 table and re-encodes all items.
+
+---
+
+### 20. Reader Zoom Presets
+**Problem:** Font scaling 0.8–2.0× is too granular; user wants “comfortable reading” presets.
+
+**Proposal:**
+- Add `TextScalePreset` enum: `compact`, `comfortable`, `large`, `extraLarge`
+- Map to underlying Float (e.g., `comfortable = 1.2f`)
+- Persist per-document
+
+---
+
+### 21. EPUB Table of Contents Navigation
+**Observation:** EPUBs have NCX/OPF TOC but reader only supports chapter boundaries from Readium.
+
+**Proposal:** Expose navigation drawer (hamburger → TOC) with hierarchical links to chapters/sections.
+
+---
+
+### 22. Audio Chapter Marker Editing
+**Problem:** Users cannot add custom markers in MP3/M4B files without existing CHAP tags.
+
+**Proposal:** Allow user to tap a timestamp in playback progress → “Add Chapter Marker” → name it → persist to `library_items` as `custom_chapters: Json`.
+
+---
+
+### 23. Battery-Safe Background Scans
+**Problem:** Background scan might run while device is charging-only or in doze.
+
+**Proposal:** Check `BatteryManager.EXTRA_POWER_SOURCE` before scanning; skip if on battery < 20% or in Doze.
+
+---
+
+### 24. Export Highlights to Markdown
+**Problem:** User wants to share notes with non-Libravault readers.
+
+**Proposal:** Long-press highlight → “Copy” → “Export to Markdown” → saves to `/Downloads/Libravault/Clips/`.
+
+---
+
+### 25. Auto-Continue Last Title on Launch
+**Problem:** User opens app, navigates to library, then finds correct book manually.
+
+**Proposal:** If `lastOpenedItemId` exists and file still accessible, launch reader immediately on cold start (settings toggle to opt-out).
+
+---
+
+*Last updated: 2026-04-28 07:25 UTC* | *Current HEAD: abb0997*
