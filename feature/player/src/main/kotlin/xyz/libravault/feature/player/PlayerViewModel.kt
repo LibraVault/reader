@@ -170,7 +170,6 @@ class PlayerViewModel @Inject constructor(
                     // Optimistically update isPlaying state; onIsPlayingChanged may not fire
                     // if isPlaying didn't change (player already playing).
                     _uiState.value = _uiState.value.copy(isPlaying = true)
-                    startPolling() // Ensure position updates start even if listener doesn't fire
                 } else {
                     play(uri, startPositionMs = savedPos)
                 }
@@ -229,26 +228,13 @@ class PlayerViewModel @Inject constructor(
         // Guard against duplicate play() — the same URI can be triggered from
         // loadItem(), connectController(), and PlayerScreen's LaunchedEffect.
         val uriStr = uri.toString()
-            if (uriStr == playedItemUri) {
-                // Same URI already loaded — just seek to the saved position
-                // without resetting the media pipeline (avoids audio blip and
-                // position drift from repeated setMediaItem calls).
-                if (startPositionMs > 0) ctrl.seekTo(startPositionMs)
-                // Ensure PlaybackStateHolder is updated for mini-player
-                val item = _uiState.value.item
-                if (item != null) {
-                    playbackStateHolder.update(
-                        itemId       = item.id,
-                        title        = item.title,
-                        author       = item.author,
-                        coverArtPath = item.coverArtPath,
-                        isPlaying    = true,
-                    )
-                }
-                // Ensure polling starts if not already (library-to-player transition)
-                startPolling()
-                return
-            }
+        if (uriStr == playedItemUri) {
+            // Same URI already loaded — just seek to the saved position
+            // without resetting the media pipeline (avoids audio blip and
+            // position drift from repeated setMediaItem calls).
+            if (startPositionMs > 0) ctrl.seekTo(startPositionMs)
+            return
+        }
         playedItemUri = uriStr
         val mediaItem = MediaItem.fromUri(uri)
         ctrl.setMediaItem(mediaItem, startPositionMs)

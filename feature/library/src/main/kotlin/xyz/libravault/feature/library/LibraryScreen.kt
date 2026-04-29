@@ -78,7 +78,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import androidx.compose.foundation.layout.*
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
@@ -922,7 +921,7 @@ private fun MiniPlayerBar(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().windowInsetsBottomHeight(WindowInsets.navigationBars),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
