@@ -107,7 +107,7 @@ interface ProgressDao {
     @Query("""
         SELECT li.* FROM library_items li
         INNER JOIN listening_progress lp ON li.id = lp.itemId
-        WHERE li.format IN ('MP3', 'M4B')
+        WHERE li.format IN ('MP3', 'M4B', 'OGG', 'FLAC', 'OPUS', 'AAC')
         ORDER BY lp.lastListenedAt DESC
         LIMIT 1
     """)
