@@ -31,6 +31,7 @@ object DatabaseModule {
             LibravaultDatabase.DATABASE_NAME,
         )
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .fallbackToDestructiveMigration()
             .build()
 
     @Provides fun provideVaultFolderDao(db: LibravaultDatabase): VaultFolderDao = db.vaultFolderDao()
