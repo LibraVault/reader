@@ -43,6 +43,7 @@ data class ListeningProgress(
     val positionMs: Long,
     val chapterIndex: Int = 0,
     val lastListenedAt: Instant = Instant.now(),
+    val playbackSpeed: Float = 1.0f,
 )
 
 data class Bookmark(

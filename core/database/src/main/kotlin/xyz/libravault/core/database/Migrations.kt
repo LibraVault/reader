@@ -63,3 +63,15 @@ val MIGRATION_2_3 = Migration(2, 3) { db ->
     db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_items_collectionId` ON `collection_items`(`collectionId`)")
     db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_items_itemId` ON `collection_items`(`itemId`)")
 }
+
+/**
+ * Migration from v3→v4: adds playbackSpeed to listening_progress.
+ *
+ * v4 schema (LIB-326 — per-book speed persistence):
+ *  - adds `playbackSpeed` REAL column to `listening_progress` (default 1.0)
+ */
+val MIGRATION_3_4 = Migration(3, 4) { db ->
+    db.execSQL(
+        "ALTER TABLE `listening_progress` ADD COLUMN `playbackSpeed` REAL NOT NULL DEFAULT 1.0"
+    )
+}

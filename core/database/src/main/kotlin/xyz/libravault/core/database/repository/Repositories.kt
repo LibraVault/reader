@@ -199,6 +199,7 @@ private fun ListeningProgressEntity.toDomain() = ListeningProgress(
     positionMs       = positionMs,
     chapterIndex     = chapterIndex,
     lastListenedAt   = Instant.ofEpochMilli(lastListenedAt),
+    playbackSpeed    = playbackSpeed,
 )
 
 private fun ListeningProgress.toEntity() = ListeningProgressEntity(
@@ -206,6 +207,7 @@ private fun ListeningProgress.toEntity() = ListeningProgressEntity(
     positionMs     = positionMs,
     chapterIndex   = chapterIndex,
     lastListenedAt = lastListenedAt.toEpochMilli(),
+    playbackSpeed  = playbackSpeed,
 )
 
 private fun BookmarkEntity.toDomain() = Bookmark(
