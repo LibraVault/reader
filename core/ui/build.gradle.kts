@@ -10,4 +10,7 @@ android {
 dependencies {
     api(platform(libs.compose.bom))
     api(libs.bundles.compose)
+
+    testImplementation(libs.bundles.testing.jvm)
+    testRuntimeOnly(libs.junit5.engine)
 }

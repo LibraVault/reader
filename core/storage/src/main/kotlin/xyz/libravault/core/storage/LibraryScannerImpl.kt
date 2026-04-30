@@ -18,6 +18,7 @@ import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.domain.repository.VaultRepository
+import xyz.libravault.core.domain.scanner.FormatCounts
 import xyz.libravault.core.domain.scanner.LibraryScanner
 import xyz.libravault.core.domain.scanner.ScanProgress
 import xyz.libravault.core.logger.LibravaultLogger
@@ -77,6 +78,7 @@ class LibraryScannerImpl @Inject constructor(
             // something within milliseconds. Phase 2 enriches these stubs.
             val scannedPaths = mutableSetOf<String>()
             var count = 0
+            val formatCounts = mutableMapOf<String, Int>().withDefault { 0 }
 
             // Load existing items once so we can skip re-inserting known files
             val existingPaths = libraryRepository.observeAll()
@@ -97,16 +99,18 @@ class LibraryScannerImpl @Inject constructor(
                 // the UI gets a populated list right away
                 if (path !in existingPaths) {
                     runCatching {
+                        val domainFormat = scannedFile.format.toDomain()
                         val stub = LibraryItem(
                             vaultFolderId = vaultId,
                             filePath      = path,
                             title         = scannedFile.displayName
                                 .substringBeforeLast('.'),
                             author        = "Unknown",
-                            format        = scannedFile.format.toDomain(),
+                            format        = domainFormat,
                         )
                         libraryRepository.upsert(stub)
                         count++
+                        formatCounts[domainFormat.name] = formatCounts.getValue(domainFormat.name) + 1
                         emit(ScanProgress.ItemFound(count))
                         logger.d(TAG, "Stub inserted: ${stub.title}")
                     }.onFailure { e ->
@@ -120,7 +124,20 @@ class LibraryScannerImpl @Inject constructor(
             if (staleCount > 0) logger.i(TAG, "Removed $staleCount stale entries")
 
             // Signal Phase 1 complete — UI is now populated
-            emit(ScanProgress.Completed(count, count))
+            val epubCount = formatCounts["EPUB"] ?: 0
+            val pdfCount = formatCounts["PDF"] ?: 0
+            val audiobookCount = formatCounts.values.sum() - epubCount - pdfCount // all remaining are audio
+            emit(
+                ScanProgress.Completed(
+                    processed = count,
+                    total = count,
+                    formatCounts = FormatCounts(
+                        epub = epubCount,
+                        pdf = pdfCount,
+                        audiobook = audiobookCount,
+                    ),
+                )
+            )
             logger.i(TAG, "Phase 1 complete — $count new stubs, metadata enrichment starts in background")
 
             // ── 4. Phase 2: enrich metadata OFF the hot flow ──────────────────

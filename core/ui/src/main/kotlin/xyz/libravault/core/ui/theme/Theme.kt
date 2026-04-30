@@ -16,7 +16,8 @@ enum class ReadingTheme { DARK, LIGHT, SEPIA }
 
 val LocalReadingTheme = staticCompositionLocalOf { ReadingTheme.DARK }
 
-private val DarkColorScheme = darkColorScheme(
+@PublishedApi
+internal val DarkColorScheme = darkColorScheme(
     primary             = LeatherBrown,
     onPrimary           = WarmNeutral50,
     primaryContainer    = LeatherDark,
@@ -32,7 +33,8 @@ private val DarkColorScheme = darkColorScheme(
     outline             = WarmNeutral700,
 )
 
-private val LightColorScheme = lightColorScheme(
+@PublishedApi
+internal val LightColorScheme = lightColorScheme(
     primary             = LeatherBrown,
     onPrimary           = WarmNeutral50,
     primaryContainer    = LeatherLight,
@@ -48,7 +50,8 @@ private val LightColorScheme = lightColorScheme(
     outline             = WarmNeutral200,
 )
 
-private val SepiaColorScheme = lightColorScheme(
+@PublishedApi
+internal val SepiaColorScheme = lightColorScheme(
     primary             = LeatherBrown,
     onPrimary           = WarmNeutral50,
     primaryContainer    = LeatherLight,
