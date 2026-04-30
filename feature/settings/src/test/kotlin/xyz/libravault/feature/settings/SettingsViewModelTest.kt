@@ -13,12 +13,16 @@ import io.mockk.verify
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
@@ -31,6 +35,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
+import xyz.libravault.core.domain.scanner.FormatCounts
 import xyz.libravault.core.domain.scanner.ScanProgress
 import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
@@ -54,8 +59,8 @@ class SettingsViewModelTest {
     private val scanVaultsUseCase = mockk<ScanVaultUseCase>()
     private val logger     = mockk<LibravaultLogger>(relaxed = true)
 
-    /** Single shared dispatcher so runTest and Dispatchers.Main use the same queue. */
     private val mainDispatcher = UnconfinedTestDispatcher()
+    private val vaultsFlow = MutableStateFlow(emptyList<VaultFolder>())
 
     @BeforeEach
     fun setUp() {
@@ -65,7 +70,7 @@ class SettingsViewModelTest {
         every { prefsRepo.observe() }       returns flowOf(defaultPrefs)
         every { prefsRepo.read() }          returns defaultPrefs
         every { prefsRepo.update(any()) }   just Runs
-        every { observeVaults() }           returns flowOf(emptyList())
+        every { observeVaults() }           returns vaultsFlow
         every { scanVaultsUseCase() }        returns flowOf(ScanProgress.Completed(0))
     }
 
@@ -186,24 +191,27 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `scan progress is reflected in vault state`() = runTest(mainDispatcher) {
-        every { scanVaultsUseCase() } returns flowOf(
-            ScanProgress.Started,
-            ScanProgress.ItemFound(3),
-            ScanProgress.Completed(3),
-        )
+    fun `scan progress is reflected in vault state`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val scanFlow = MutableStateFlow<ScanProgress?>(null)
+        every { scanVaultsUseCase() } returns scanFlow.filterNotNull()
 
         val vm = viewModel()
 
         vm.vaultState.test {
             vm.scanVaults()
+            runCurrent()
+
+            scanFlow.value = ScanProgress.Started
+            runCurrent()
 
             // sequence: initial(empty) -> isScanning(true,null) -> Started -> ItemFound(3) -> Completed(3)
             val initial = awaitItem()
             assertFalse(initial.isScanning)
             assertEquals(0, initial.vaults.size)
 
-            // skip intermediate: isScanning=true with no scanMessage yet
             val mutation = awaitItem()
             assertTrue(mutation.isScanning)
             assertEquals(null, mutation.scanMessage)
@@ -212,15 +220,75 @@ class SettingsViewModelTest {
             assertTrue(started.isScanning)
             assertEquals("Scanning vaults…", started.scanMessage)
 
+            scanFlow.value = ScanProgress.ItemFound(3)
+            runCurrent()
+
             val found = awaitItem()
             assertTrue(found.isScanning)
             assertEquals("Found 3 items…", found.scanMessage)
+
+            scanFlow.value = ScanProgress.Completed(processed = 3, total = 3)
+            runCurrent()
 
             val completed = awaitItem()
             assertFalse(completed.isScanning)
             assertEquals("Scan complete – 3 new items added", completed.scanMessage)
 
-            cancelAndConsumeRemainingEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `scan complete message includes format breakdown when formatCounts is present`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val scanFlow = MutableStateFlow<ScanProgress?>(null)
+        every { scanVaultsUseCase() } returns scanFlow.filterNotNull()
+
+        val vm = viewModel()
+
+        vm.vaultState.test {
+            vm.scanVaults()
+            runCurrent()
+
+            scanFlow.value = ScanProgress.Started
+            runCurrent()
+
+            val initial = awaitItem()
+            assertFalse(initial.isScanning)
+            assertEquals(0, initial.vaults.size)
+
+            val mutation = awaitItem()
+            assertTrue(mutation.isScanning)
+            assertEquals(null, mutation.scanMessage)
+
+            val started = awaitItem()
+            assertTrue(started.isScanning)
+            assertEquals("Scanning vaults…", started.scanMessage)
+
+            scanFlow.value = ScanProgress.ItemFound(5)
+            runCurrent()
+
+            val found = awaitItem()
+            assertTrue(found.isScanning)
+            assertEquals("Found 5 items…", found.scanMessage)
+
+            scanFlow.value = ScanProgress.Completed(
+                processed = 5,
+                total = 5,
+                formatCounts = FormatCounts(epub = 2, pdf = 1, audiobook = 2),
+            )
+            runCurrent()
+
+            val completed = awaitItem()
+            assertFalse(completed.isScanning)
+            assertEquals(
+                "Scan complete – 5 new items added (2 EPUB, 1 PDF, 2 audiobooks)",
+                completed.scanMessage,
+            )
+
+            cancelAndIgnoreRemainingEvents()
         }
     }
 }
