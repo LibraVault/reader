@@ -26,10 +26,15 @@ class PlaybackStateHolder @Inject constructor() {
         val coverArtPath: String? = null,
         val isPlaying: Boolean = false,
         val isActive: Boolean = false,       // true if any item has been loaded
+        val lastKnownPositionMs: Long? = null,
     )
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
+
+    fun updatePosition(positionMs: Long) {
+        _state.value = _state.value.copy(lastKnownPositionMs = positionMs)
+    }
 
     fun update(
         itemId: Long?,
