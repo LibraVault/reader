@@ -155,7 +155,20 @@ class PlayerViewModel @Inject constructor(
                     if (!ctrl.isPlaying) ctrl.play()
                     playedItemUri = uri.toString()
                     playGeneration++
-                    _uiState.value = _uiState.value.copy(isPlaying = true)
+                    _uiState.value = _uiState.value.copy(
+                        isPlaying  = true,
+                        positionMs = ctrl.currentPosition,
+                    )
+                    playbackStateHolder.update(
+                        itemId       = item.id,
+                        title        = item.title,
+                        author       = item.author,
+                        coverArtPath = item.coverArtPath,
+                        isPlaying    = true,
+                    )
+                    startPolling()
+                    startProgressSaving()
+                    updateChapters()
                 } else {
                     play(uri, startPositionMs = savedPositionMs, startSpeed = savedSpeed)
                 }
@@ -208,11 +221,26 @@ class PlayerViewModel @Inject constructor(
                     val savedSpeed = _uiState.value.playbackSpeed
                     ctrl.setPlaybackSpeed(savedSpeed)
                     if (!ctrl.isPlaying) ctrl.play()
-                    // Optimistically update isPlaying state; onIsPlayingChanged may not fire
-                    // if isPlaying didn't change (player already playing).
+                    // onIsPlayingChanged won't fire if already playing — start polling manually.
                     playedItemUri = uri.toString()
                     playGeneration++
-                    _uiState.value = _uiState.value.copy(isPlaying = true)
+                    _uiState.value = _uiState.value.copy(
+                        isPlaying  = true,
+                        positionMs = ctrl.currentPosition,
+                    )
+                    val stateItem = _uiState.value.item
+                    if (stateItem != null) {
+                        playbackStateHolder.update(
+                            itemId       = stateItem.id,
+                            title        = stateItem.title,
+                            author       = stateItem.author,
+                            coverArtPath = stateItem.coverArtPath,
+                            isPlaying    = true,
+                        )
+                    }
+                    startPolling()
+                    startProgressSaving()
+                    updateChapters()
                 } else {
                     play(uri, startPositionMs = savedPos, startSpeed = _uiState.value.playbackSpeed)
                 }
