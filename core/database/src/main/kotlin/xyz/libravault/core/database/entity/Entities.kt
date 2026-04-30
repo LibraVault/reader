@@ -93,6 +93,7 @@ data class ListeningProgressEntity(
     val positionMs: Long,
     val chapterIndex: Int,
     val lastListenedAt: Long,
+    val playbackSpeed: Float,
 )
 
 @Entity(

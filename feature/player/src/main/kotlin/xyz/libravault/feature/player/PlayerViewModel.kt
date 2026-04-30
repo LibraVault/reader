@@ -121,16 +121,19 @@ class PlayerViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
                 return@launch
             }
-            val savedPositionMs = getProgress(id)?.positionMs ?: 0L
+            val progress = getProgress(id)
+            val savedPositionMs = progress?.positionMs ?: 0L
+            val savedSpeed = progress?.playbackSpeed ?: 1.0f
             _uiState.value = _uiState.value.copy(
                 item                 = item,
                 isLoading            = false,
                 savedStartPositionMs = savedPositionMs,
+                playbackSpeed        = savedSpeed,
             )
-            logger.i(TAG, "Loaded: ${item.title} — resume at ${savedPositionMs}ms")
+            logger.i(TAG, "Loaded: ${item.title} — resume at ${savedPositionMs}ms, speed ${savedSpeed}x")
             // If the controller was already connected before loadItem() finished,
             // connectController's play() attempt was a no-op (item was null). Trigger it now.
-            controller?.let { play(android.net.Uri.parse(item.filePath), startPositionMs = savedPositionMs) }
+            controller?.let { play(android.net.Uri.parse(item.filePath), startPositionMs = savedPositionMs, startSpeed = savedSpeed) }
         }
     }
 
@@ -166,12 +169,15 @@ class PlayerViewModel @Inject constructor(
                 if (currentMedia?.localConfiguration?.uri == uri) {
                     // Same item already loaded — seek to saved position and resume
                     ctrl.seekTo(savedPos)
+                    // Restore saved speed for this book
+                    val savedSpeed = _uiState.value.playbackSpeed
+                    ctrl.setPlaybackSpeed(savedSpeed)
                     ctrl.play()
                     // Optimistically update isPlaying state; onIsPlayingChanged may not fire
                     // if isPlaying didn't change (player already playing).
                     _uiState.value = _uiState.value.copy(isPlaying = true)
                 } else {
-                    play(uri, startPositionMs = savedPos)
+                    play(uri, startPositionMs = savedPos, startSpeed = _uiState.value.playbackSpeed)
                 }
             }.onFailure { e ->
                 if (attempt >= MAX_RETRIES) {
@@ -223,7 +229,7 @@ class PlayerViewModel @Inject constructor(
 
     // ── Playback controls ─────────────────────────────────────────────────────
 
-    fun play(uri: Uri, startPositionMs: Long = 0L) {
+    fun play(uri: Uri, startPositionMs: Long = 0L, startSpeed: Float = 1.0f) {
         val ctrl = controller ?: return
         // Guard against duplicate play() — the same URI can be triggered from
         // loadItem(), connectController(), and PlayerScreen's LaunchedEffect.
@@ -238,6 +244,8 @@ class PlayerViewModel @Inject constructor(
         playedItemUri = uriStr
         val mediaItem = MediaItem.fromUri(uri)
         ctrl.setMediaItem(mediaItem, startPositionMs)
+        // Apply saved speed before prepare so playback starts at the correct speed
+        ctrl.setPlaybackSpeed(startSpeed)
         ctrl.prepare()
         ctrl.play()
         // Update PlaybackStateHolder immediately so the mini-player shows the new
@@ -302,10 +310,27 @@ class PlayerViewModel @Inject constructor(
 
     // ── Speed ─────────────────────────────────────────────────────────────────
 
-    /** Valid range 0.5× to 3.0× in 0.25 steps. */
+    /** Valid range 0.5× to 3.0× in 0.25 steps. Persists speed to DB immediately. */
     fun setSpeed(speed: Float) {
         val snapped = snapPlaybackSpeed(speed)
         controller?.setPlaybackSpeed(snapped)
+        // Persist speed immediately so the per-book preference survives
+        // process death. Also update the UI state so the SpeedPickerSheet
+        // and speed display reflect the new value right away.
+        _uiState.value = _uiState.value.copy(playbackSpeed = snapped)
+        val id = itemId ?: return
+        viewModelScope.launch {
+            val current = getProgress(id)
+            saveProgress(
+                ListeningProgress(
+                    itemId         = id,
+                    positionMs     = current?.positionMs ?: 0L,
+                    chapterIndex   = current?.chapterIndex ?: 0,
+                    lastListenedAt = Instant.now(),
+                    playbackSpeed  = snapped,
+                )
+            )
+        }
     }
 
     // ── Chapters ──────────────────────────────────────────────────────────────
@@ -432,6 +457,7 @@ class PlayerViewModel @Inject constructor(
                 delay(PROGRESS_SAVE_INTERVAL_MS)
                 val pos     = controller?.currentPosition ?: continue
                 val chapIdx = _uiState.value.currentChapterIndex
+                val speed   = _uiState.value.playbackSpeed
                 val id      = itemId ?: continue
                 saveProgress(
                     ListeningProgress(
@@ -439,6 +465,7 @@ class PlayerViewModel @Inject constructor(
                         positionMs     = pos,
                         chapterIndex   = chapIdx,
                         lastListenedAt = Instant.now(),
+                        playbackSpeed  = speed,
                     )
                 )
             }
@@ -474,6 +501,7 @@ class PlayerViewModel @Inject constructor(
                             positionMs     = pos,
                             chapterIndex   = _uiState.value.currentChapterIndex,
                             lastListenedAt = Instant.now(),
+                            playbackSpeed  = _uiState.value.playbackSpeed,
                         )
                     )
                 }
