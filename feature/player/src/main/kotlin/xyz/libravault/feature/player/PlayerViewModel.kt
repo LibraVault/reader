@@ -141,7 +141,25 @@ class PlayerViewModel @Inject constructor(
             logger.i(TAG, "Loaded: ${item.title} — resume at ${savedPositionMs}ms, speed ${savedSpeed}x")
             // If the controller was already connected before loadItem() finished,
             // connectController's play() attempt was a no-op (item was null). Trigger it now.
-            controller?.let { play(android.net.Uri.parse(item.filePath), startPositionMs = savedPositionMs, startSpeed = savedSpeed) }
+            // If the controller already has this URI loaded (re-open case), reattach without
+            // calling setMediaItem() — that resets ExoPlayer's decode buffer and causes stutter.
+            controller?.let { ctrl ->
+                val uri = android.net.Uri.parse(item.filePath)
+                if (ctrl.currentMediaItem?.localConfiguration?.uri == uri) {
+                    val livePos = playbackStateHolder.state.value.lastKnownPositionMs
+                    val resumePos = livePos ?: savedPositionMs
+                    if (ctrl.currentPosition < resumePos) {
+                        ctrl.seekTo(resumePos)
+                    }
+                    ctrl.setPlaybackSpeed(savedSpeed)
+                    if (!ctrl.isPlaying) ctrl.play()
+                    playedItemUri = uri.toString()
+                    playGeneration++
+                    _uiState.value = _uiState.value.copy(isPlaying = true)
+                } else {
+                    play(uri, startPositionMs = savedPositionMs, startSpeed = savedSpeed)
+                }
+            }
         }
     }
 
@@ -192,6 +210,7 @@ class PlayerViewModel @Inject constructor(
                     if (!ctrl.isPlaying) ctrl.play()
                     // Optimistically update isPlaying state; onIsPlayingChanged may not fire
                     // if isPlaying didn't change (player already playing).
+                    playedItemUri = uri.toString()
                     playGeneration++
                     _uiState.value = _uiState.value.copy(isPlaying = true)
                 } else {
