@@ -1,6 +1,5 @@
 package xyz.libravault.feature.player
 
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +30,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,13 +69,6 @@ fun PlayerScreen(
     val bookmarks by viewModel.bookmarks.collectAsState()
     var showChapters    by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
-
-    // Start playback when item is loaded
-    LaunchedEffect(state.item) {
-        state.item?.let { item ->
-            viewModel.play(Uri.parse(item.filePath))
-        }
-    }
 
     Scaffold(
             topBar = {

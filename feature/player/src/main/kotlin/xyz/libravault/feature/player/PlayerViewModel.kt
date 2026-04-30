@@ -97,6 +97,14 @@ class PlayerViewModel @Inject constructor(
     private var playedItemUri: String?       = null
     private var retryJob: Job?               = null
 
+    /**
+     * Monotonically-increasing generation counter incremented on every [play] call.
+     * [onIsPlayingChanged] ignores stale `false` events whose generation doesn't
+     * match, so a `false` from ExoPlayer's internal state machine during a media
+     * transition can't overwrite the optimistic `isPlaying = true` set by [play].
+     */
+    private var playGeneration: Long = 0
+
     // Observe sleep timer state
     init {
         viewModelScope.launch {
@@ -167,14 +175,24 @@ class PlayerViewModel @Inject constructor(
                 val savedPos = _uiState.value.savedStartPositionMs
                 val currentMedia = ctrl.currentMediaItem
                 if (currentMedia?.localConfiguration?.uri == uri) {
-                    // Same item already loaded — seek to saved position and resume
-                    ctrl.seekTo(savedPos)
+                    // Same item already loaded — reattach without resetting the pipeline.
+                    // Bug-2 fix: prefer the live position snapshotted synchronously by the
+                    // previous VM's onCleared() over the DB-loaded savedPos, which can lag
+                    // up to PROGRESS_SAVE_INTERVAL_MS (5 s) behind the real position.
+                    val livePos = playbackStateHolder.state.value.lastKnownPositionMs
+                    val resumePos = livePos ?: savedPos
+                    // Bug-1 fix: only seek when the player is behind the resume point.
+                    // seekTo() on a live ExoPlayer flushes its decode buffer = stutter.
+                    if (ctrl.currentPosition < resumePos) {
+                        ctrl.seekTo(resumePos)
+                    }
                     // Restore saved speed for this book
                     val savedSpeed = _uiState.value.playbackSpeed
                     ctrl.setPlaybackSpeed(savedSpeed)
-                    ctrl.play()
+                    if (!ctrl.isPlaying) ctrl.play()
                     // Optimistically update isPlaying state; onIsPlayingChanged may not fire
                     // if isPlaying didn't change (player already playing).
+                    playGeneration++
                     _uiState.value = _uiState.value.copy(isPlaying = true)
                 } else {
                     play(uri, startPositionMs = savedPos, startSpeed = _uiState.value.playbackSpeed)
@@ -198,7 +216,19 @@ class PlayerViewModel @Inject constructor(
     // ── Player listener ───────────────────────────────────────────────────────
 
     private val playerListener = object : Player.Listener {
+        private var myGeneration: Long = 0L
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // Only accept false events that match the current play generation.
+            // During media transitions, ExoPlayer fires onIsPlayingChanged(false)
+            // after setMediaItem(), which would overwrite the optimistic
+            // isPlaying=true set by play(). The generation counter ensures
+            // stale false events are ignored.
+            if (!isPlaying && myGeneration < playGeneration) {
+                myGeneration = playGeneration
+                logger.d(TAG, "Ignoring stale onIsPlayingChanged(false) — gen $myGeneration < current $playGeneration")
+                return
+            }
             _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
             if (isPlaying) startPolling() else stopPolling()
         }
@@ -242,6 +272,10 @@ class PlayerViewModel @Inject constructor(
             return
         }
         playedItemUri = uriStr
+        // Bump the generation counter BEFORE setting the media item so the
+        // listener's myGeneration guard catches any stale false events that
+        // ExoPlayer fires during the internal state machine transition.
+        playGeneration++
         val mediaItem = MediaItem.fromUri(uri)
         ctrl.setMediaItem(mediaItem, startPositionMs)
         // Apply saved speed before prepare so playback starts at the correct speed
@@ -492,6 +526,10 @@ class PlayerViewModel @Inject constructor(
         // and we must guarantee this write completes before the process dies.
         val pos = controller?.currentPosition
         val id = itemId
+        // Synchronous StateFlow assignment — completes before any coroutine can run,
+        // so the new PlayerViewModel reads the live position in connectWithRetry()
+        // without racing the Room write below.
+        if (pos != null) playbackStateHolder.updatePosition(pos)
         if (pos != null && id != null) {
             viewModelScope.launch {
                 withContext(NonCancellable) {
