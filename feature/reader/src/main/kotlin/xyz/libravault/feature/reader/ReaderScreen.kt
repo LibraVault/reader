@@ -14,20 +14,28 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.MediaFormat
+import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.reader.components.BookmarksSheet
 import xyz.libravault.feature.reader.components.ReaderSettingsSheet
 import xyz.libravault.feature.reader.components.ReaderTopBar
+import xyz.libravault.feature.reader.components.TtsBottomBar
+import xyz.libravault.feature.reader.components.TtsSettingsSheet
 import xyz.libravault.feature.reader.epub.EpubReaderScreen
+import xyz.libravault.feature.reader.epub.EpubReaderViewModel
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
+import xyz.libravault.feature.reader.tts.TtsViewModel
 
 /**
  * Entry point for the reader feature.
@@ -43,10 +51,14 @@ fun ReaderScreen(
     fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
     viewModel: ReaderViewModel = hiltViewModel(),
+    ttsViewModel: TtsViewModel = hiltViewModel(),
 ) {
     val state      by viewModel.uiState.collectAsState()
     val bookmarks  by viewModel.bookmarks.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
+    val ttsState   by ttsViewModel.state.collectAsState()
+
+    val scope = rememberCoroutineScope()
 
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     // null = no pending scroll; set by onBookmarkClick, cleared by onScrollConsumed.
@@ -63,6 +75,11 @@ fun ReaderScreen(
                 val item = state.item!!
                 val uri  = Uri.parse(item.filePath)
 
+                // EpubReaderViewModel is scoped to this BackStackEntry — obtain it here so
+                // we can call getChapterText() from TTS controls without threading through
+                // multiple composable layers.
+                val epubViewModel: EpubReaderViewModel = hiltViewModel()
+
                 Scaffold(
                     topBar = {
                         AnimatedVisibility(
@@ -71,19 +88,52 @@ fun ReaderScreen(
                             exit    = fadeOut() + slideOutVertically { -it },
                         ) {
                             ReaderTopBar(
-                                title       = item.title,
+                                title        = item.title,
                                 isBookmarked = bookmarks.any {
                                     it.positionRef == state.progress?.positionCfi
                                         || it.positionRef == "page:${state.progress?.pageIndex}"
                                 },
-                                onBack      = onBack,
-                                onBookmark  = {
+                                isTtsActive  = state.showTtsBar,
+                                onBack       = onBack,
+                                onBookmark   = {
                                     val ref = state.progress?.positionCfi
                                         ?: state.progress?.pageIndex?.let { "page:$it" }
                                         ?: return@ReaderTopBar
                                     viewModel.addBookmark(ref)
                                 },
-                                onSettings  = viewModel::showSettings,
+                                onSettings   = viewModel::showSettings,
+                                onTts        = {
+                                    viewModel.toggleTtsBar()
+                                    ttsViewModel.initializeIfNeeded()
+                                },
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        AnimatedVisibility(
+                            visible = state.showTtsBar,
+                            enter   = fadeIn() + slideInVertically { it },
+                            exit    = fadeOut() + slideOutVertically { it },
+                        ) {
+                            TtsBottomBar(
+                                state          = ttsState,
+                                onPlay         = {
+                                    // Load chapter text on first play or after stop
+                                    if (ttsState.status != TtsStatus.PAUSED) {
+                                        scope.launch {
+                                            val text = if (item.format == MediaFormat.EPUB) {
+                                                epubViewModel.getChapterText()
+                                            } else null
+                                            if (text != null) ttsViewModel.setContent(text)
+                                            ttsViewModel.play()
+                                        }
+                                    } else {
+                                        ttsViewModel.play()
+                                    }
+                                },
+                                onPause        = ttsViewModel::pause,
+                                onStop         = ttsViewModel::stop,
+                                onOpenSettings = viewModel::showTtsSheet,
                             )
                         }
                     },
@@ -95,15 +145,16 @@ fun ReaderScreen(
                                 val activity = LocalContext.current as? FragmentActivity
                                 if (activity != null) {
                                     EpubReaderScreen(
-                                        fileUri          = uri,
-                                        initialCfi       = state.progress?.positionCfi,
-                                        settings         = state.settings,
-                                        bookmarks        = bookmarks,
-                                        highlights       = highlights,
-                                        fragmentManager  = activity.supportFragmentManager,
+                                        fileUri           = uri,
+                                        initialCfi        = state.progress?.positionCfi,
+                                        settings          = state.settings,
+                                        bookmarks         = bookmarks,
+                                        highlights        = highlights,
+                                        fragmentManager   = activity.supportFragmentManager,
                                         onPositionChanged = viewModel::onEpubPositionChanged,
-                                        onCentreTap      = viewModel::onCentreTap,
-                                        onAddHighlight   = viewModel::addHighlight,
+                                        onCentreTap       = viewModel::onCentreTap,
+                                        onAddHighlight    = viewModel::addHighlight,
+                                        viewModel         = epubViewModel,
                                     )
                                 } else {
                                     ErrorScreen("EPUB reader requires a FragmentActivity context.", onBack)
@@ -133,12 +184,12 @@ fun ReaderScreen(
                 // ── Settings sheet ────────────────────────────────────────────
                 if (state.showSettingsSheet) {
                     ReaderSettingsSheet(
-                        settings           = state.settings,
-                        onThemeChanged     = viewModel::onThemeChanged,
-                        onFontSizeChanged  = viewModel::onFontSizeChanged,
+                        settings            = state.settings,
+                        onThemeChanged      = viewModel::onThemeChanged,
+                        onFontSizeChanged   = viewModel::onFontSizeChanged,
                         onFontFamilyChanged = viewModel::onFontFamilyChanged,
                         onScrollModeChanged = viewModel::onScrollModeChanged,
-                        onDismiss          = viewModel::hideSettings,
+                        onDismiss           = viewModel::hideSettings,
                     )
                 }
 
@@ -164,6 +215,16 @@ fun ReaderScreen(
                         },
                         onBookmarkDelete = viewModel::removeBookmark,
                         onDismiss        = viewModel::hideBookmarks,
+                    )
+                }
+
+                // ── TTS settings sheet ────────────────────────────────────────
+                if (state.showTtsSheet) {
+                    TtsSettingsSheet(
+                        state               = ttsState,
+                        onVoiceSelected     = ttsViewModel::setVoice,
+                        onSpeechRateChanged = ttsViewModel::setSpeechRate,
+                        onDismiss           = viewModel::hideTtsSheet,
                     )
                 }
             }
