@@ -10,7 +10,10 @@ import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,8 +22,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
@@ -96,6 +97,7 @@ class PlayerViewModel @Inject constructor(
     private var progressSaveJob: Job?        = null
     private var playedItemUri: String?       = null
     private var retryJob: Job?               = null
+    private var lastPolledPositionMs: Long   = 0L
 
     /**
      * Monotonically-increasing generation counter incremented on every [play] call.
@@ -146,7 +148,8 @@ class PlayerViewModel @Inject constructor(
             controller?.let { ctrl ->
                 val uri = android.net.Uri.parse(item.filePath)
                 if (ctrl.currentMediaItem?.localConfiguration?.uri == uri) {
-                    val livePos = playbackStateHolder.state.value.lastKnownPositionMs
+                    val holder = playbackStateHolder.state.value
+                    val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
                     val resumePos = livePos ?: savedPositionMs
                     if (ctrl.currentPosition < resumePos) {
                         ctrl.seekTo(resumePos)
@@ -207,10 +210,10 @@ class PlayerViewModel @Inject constructor(
                 val currentMedia = ctrl.currentMediaItem
                 if (currentMedia?.localConfiguration?.uri == uri) {
                     // Same item already loaded — reattach without resetting the pipeline.
-                    // Bug-2 fix: prefer the live position snapshotted synchronously by the
-                    // previous VM's onCleared() over the DB-loaded savedPos, which can lag
-                    // up to PROGRESS_SAVE_INTERVAL_MS (5 s) behind the real position.
-                    val livePos = playbackStateHolder.state.value.lastKnownPositionMs
+                    // Only use livePos if it belongs to THIS item; a cross-book navigation
+                    // leaves lastKnownPositionMs from the previous book in the holder.
+                    val holder = playbackStateHolder.state.value
+                    val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
                     val resumePos = livePos ?: savedPos
                     // Bug-1 fix: only seek when the player is behind the resume point.
                     // seekTo() on a live ExoPlayer flushes its decode buffer = stutter.
@@ -503,6 +506,7 @@ class PlayerViewModel @Inject constructor(
             while (isActive) {
                 val ctrl = controller ?: break
                 val pos  = ctrl.currentPosition
+                lastPolledPositionMs = pos
                 val dur  = ctrl.duration.takeIf { it > 0 } ?: _uiState.value.durationMs
                 val buf  = ctrl.bufferedPosition
                 val chapIdx = currentChapterIndex(pos, _uiState.value.chapters)
@@ -567,29 +571,29 @@ class PlayerViewModel @Inject constructor(
         stopPolling()
         progressSaveJob?.cancel()
         retryJob?.cancel()
-        // Save final progress — persist the last known position so the user
-        // doesn't lose up to 5 seconds of progress on navigation.
-        // Use NonCancellable because viewModelScope is cancelled at super.onCleared()
-        // and we must guarantee this write completes before the process dies.
-        val pos = controller?.currentPosition
+        // lastPolledPositionMs is updated every 200 ms by the polling loop and is more
+        // reliable than controller?.currentPosition, which can be 0 if the controller
+        // is mid-transition when onCleared() fires.
+        val pos = lastPolledPositionMs.takeIf { it > 0L } ?: controller?.currentPosition
         val id = itemId
-        // Synchronous StateFlow assignment — completes before any coroutine can run,
-        // so the new PlayerViewModel reads the live position in connectWithRetry()
-        // without racing the Room write below.
+        // Synchronous StateFlow write — new VM reads this in connectWithRetry() before
+        // the Room write below has committed.
         if (pos != null) playbackStateHolder.updatePosition(pos)
         if (pos != null && id != null) {
-            viewModelScope.launch {
-                withContext(NonCancellable) {
-                    saveProgress(
-                        ListeningProgress(
-                            itemId         = id,
-                            positionMs     = pos,
-                            chapterIndex   = _uiState.value.currentChapterIndex,
-                            lastListenedAt = Instant.now(),
-                            playbackSpeed  = _uiState.value.playbackSpeed,
-                        )
+            val chapterIndex = _uiState.value.currentChapterIndex
+            val speed        = _uiState.value.playbackSpeed
+            // viewModelScope is cancelled before onCleared() runs in AndroidX lifecycle 2.x,
+            // so we use a fresh scope that is not tied to the ViewModel.
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                saveProgress(
+                    ListeningProgress(
+                        itemId         = id,
+                        positionMs     = pos,
+                        chapterIndex   = chapterIndex,
+                        lastListenedAt = Instant.now(),
+                        playbackSpeed  = speed,
                     )
-                }
+                )
             }
         }
         controller?.removeListener(playerListener)
