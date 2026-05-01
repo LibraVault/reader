@@ -242,6 +242,46 @@ class ReaderViewModelTest {
         coVerify { deleteBookmark(42L) }
     }
 
+    // ── TTS state ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun `toggleTtsBar shows bar when hidden`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.showTtsBar)
+        vm.toggleTtsBar()
+        assertTrue(vm.uiState.value.showTtsBar)
+    }
+
+    @Test
+    fun `toggleTtsBar hides bar when visible`() = runTest {
+        val vm = viewModel()
+        vm.toggleTtsBar()
+        assertTrue(vm.uiState.value.showTtsBar)
+        vm.toggleTtsBar()
+        assertFalse(vm.uiState.value.showTtsBar)
+    }
+
+    @Test
+    fun `toggleTtsBar also closes tts sheet`() = runTest {
+        val vm = viewModel()
+        vm.toggleTtsBar()  // open bar
+        vm.showTtsSheet()
+        assertTrue(vm.uiState.value.showTtsSheet)
+        vm.toggleTtsBar()  // close bar — sheet should close too
+        assertFalse(vm.uiState.value.showTtsSheet)
+        assertFalse(vm.uiState.value.showTtsBar)
+    }
+
+    @Test
+    fun `tts sheet shows and hides independently`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.showTtsSheet)
+        vm.showTtsSheet()
+        assertTrue(vm.uiState.value.showTtsSheet)
+        vm.hideTtsSheet()
+        assertFalse(vm.uiState.value.showTtsSheet)
+    }
+
     // ── Highlights ────────────────────────────────────────────────────────────
 
     @Test

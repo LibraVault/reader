@@ -4,10 +4,13 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
@@ -33,6 +36,14 @@ class EpubReaderViewModel @Inject constructor(
 
     private val _state = MutableStateFlow<EpubPublicationState>(EpubPublicationState.Idle)
     val state: StateFlow<EpubPublicationState> = _state.asStateFlow()
+
+    // Tracks the navigator's current locator so TTS can determine which spine item to read.
+    private val _currentLocator = MutableStateFlow<Locator?>(null)
+    val currentLocator: StateFlow<Locator?> = _currentLocator.asStateFlow()
+
+    fun onLocatorChanged(locator: Locator) {
+        _currentLocator.value = locator
+    }
 
     /**
      * Opens the EPUB at [uri]. Idempotent — if a publication is already open
@@ -65,6 +76,30 @@ class EpubReaderViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Reads the HTML for the current spine item and strips tags to produce plain text for TTS.
+     * Returns null if no publication is open or no locator is known.
+     */
+    suspend fun getChapterText(): String? = withContext(Dispatchers.IO) {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return@withContext null
+        val locator = _currentLocator.value ?: run {
+            // No locator yet — fall back to the first spine item.
+            val first = pub.readingOrder.firstOrNull() ?: return@withContext null
+            Locator(href = first.url(), mediaType = first.mediaType ?: org.readium.r2.shared.util.mediatype.MediaType.XHTML)
+        }
+        val link = pub.readingOrder.find { it.url() == locator.href }
+            ?: pub.readingOrder.firstOrNull()
+            ?: return@withContext null
+
+        val resource = pub.get(link) ?: return@withContext null
+        val bytes = resource.read().getOrNull()
+        resource.close()
+        bytes
+            ?.let { String(it, Charsets.UTF_8) }
+            ?.let { stripHtml(it) }
+            ?.takeIf { it.isNotBlank() }
+    }
+
     override fun onCleared() {
         super.onCleared()
         // Free native parser resources when the user navigates away
@@ -77,6 +112,25 @@ class EpubReaderViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "EpubReaderViewModel"
+
+        // Strips HTML tags and collapses whitespace. Good enough for TTS; avoids
+        // a full HTML parser dependency in the reader module.
+        fun stripHtml(html: String): String =
+            html
+                .replace(Regex("<style[^>]*>.*?</style>", RegexOption.DOT_MATCHES_ALL), " ")
+                .replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), " ")
+                .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+                .replace(Regex("<p[^>]*>", RegexOption.IGNORE_CASE), "\n")
+                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("&nbsp;"), " ")
+                .replace(Regex("&amp;"), "&")
+                .replace(Regex("&lt;"), "<")
+                .replace(Regex("&gt;"), ">")
+                .replace(Regex("&quot;"), "\"")
+                .replace(Regex("&#?\\w+;"), " ")
+                .replace(Regex("[ \\t]+"), " ")
+                .replace(Regex("\\n{3,}"), "\n\n")
+                .trim()
     }
 }
 
