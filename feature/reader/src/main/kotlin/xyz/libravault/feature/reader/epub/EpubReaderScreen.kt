@@ -188,17 +188,30 @@ private fun EpubNavigatorView(
             }
         }
 
+        // Mutable reference filled after the fragment is committed below.
+        // The listener accesses it via closure — by the time onTap fires the
+        // user has interacted with the screen, so nav will already be set.
+        var navRef: EpubNavigatorFragment? = null
+
         // Navigator listener — routes taps and position change callbacks
         val listener = object : EpubNavigatorFragment.Listener {
 
             override fun onTap(point: PointF): Boolean {
-                val xDp    = point.x / density
-                val width  = screenWidthDp.value
-                return if (xDp in (width * 0.33f)..(width * 0.67f)) {
-                    currentOnCentreTap.value.invoke()
-                    true   // consumed — do NOT turn page
-                } else {
-                    false  // let Readium navigate
+                val xDp   = point.x / density
+                val width = screenWidthDp.value
+                return when {
+                    xDp < width * 0.33f -> {
+                        navRef?.goBackward(animated = true)
+                        true
+                    }
+                    xDp > width * 0.67f -> {
+                        navRef?.goForward(animated = true)
+                        true
+                    }
+                    else -> {
+                        currentOnCentreTap.value.invoke()
+                        true
+                    }
                 }
             }
 
@@ -235,6 +248,7 @@ private fun EpubNavigatorView(
 
         // Get the navigator reference synchronously (commitNow = immediate execution)
         val nav = fragmentManager.findFragmentByTag(EPUB_FRAGMENT_TAG) as? EpubNavigatorFragment
+        navRef    = nav   // wire tap-navigation now that the fragment exists
         navigator = nav
 
         // Collect position changes from the navigator's StateFlow
@@ -257,6 +271,7 @@ private fun EpubNavigatorView(
                     nav?.let { remove(it) }
                 }
             }
+            navRef    = null
             navigator = null
         }
     }
