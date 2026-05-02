@@ -52,8 +52,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.hilt.navigation.compose.hiltViewModel
-import xyz.libravault.feature.settings.activation.ActivationViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
+import xyz.libravault.feature.settings.activation.ActivationViewModel
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
