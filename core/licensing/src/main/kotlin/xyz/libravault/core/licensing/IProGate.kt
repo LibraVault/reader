@@ -1,5 +1,8 @@
 package xyz.libravault.core.licensing
 
+import android.app.Activity
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -31,4 +34,19 @@ interface IProGate {
 
     /** Whether this gate accepts in-app key entry (false for play billing). */
     val supportsKeyEntry: Boolean
+
+    /**
+     * Opens a flavour-appropriate purchase flow.
+     * KeyProGate: no-op (activation is via key entry, not a purchase flow).
+     * PlayBillingProGate: launches the Google Play purchase sheet.
+     */
+    suspend fun launchPurchaseFlow(activity: Activity) { }
+
+    /**
+     * Emits non-success outcomes from [launchPurchaseFlow].
+     * KeyProGate: never emits.
+     * PlayBillingProGate: emits [PurchaseOutcome.UserCancelled] or [PurchaseOutcome.Error].
+     */
+    val purchaseOutcomes: SharedFlow<PurchaseOutcome>
+        get() = MutableSharedFlow()
 }
