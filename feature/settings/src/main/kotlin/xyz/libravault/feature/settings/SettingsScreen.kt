@@ -361,11 +361,6 @@ fun SettingsScreen(
                 )
             }
 
-            SettingLabel(
-                title    = "Also on GitHub Sponsors",
-                subtitle = "github.com/libravault-xyz/libravault",
-            )
-
             Spacer(Modifier.height(32.dp))
         }
     }
