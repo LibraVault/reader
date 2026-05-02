@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import java.util.Properties
 
 plugins {
@@ -137,6 +138,26 @@ android {
     // Deterministic resource IDs — prevents R.id churn across machines.
     androidResources {
         generateLocaleConfig = false
+    }
+
+    // ── APK output naming ─────────────────────────────────────────────────────
+    // Embed the current git branch in the APK filename so builds from different
+    // branches don't overwrite each other.
+    // e.g. feature/pro-upgrade + fdroidDebug → libravault-feature-pro-upgrade-fdroid-debug.apk
+    val gitBranch = providers.exec {
+        commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
+    }.standardOutput.asText.get().trim()
+        .replace("/", "-")   // feature/foo → feature-foo
+        .replace("_", "-")   // snake_case → kebab-case
+
+    applicationVariants.all {
+        val kebabName = name
+            .replace(Regex("(?<=[a-z])(?=[A-Z])"), "-")
+            .lowercase()   // fdroidDebug → fdroid-debug
+        outputs.all {
+            (this as BaseVariantOutputImpl).outputFileName =
+                "libravault-$gitBranch-$kebabName.apk"
+        }
     }
 }
 
