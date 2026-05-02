@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -20,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,6 +38,11 @@ import xyz.libravault.feature.reader.epub.EpubReaderScreen
 import xyz.libravault.feature.reader.epub.EpubReaderViewModel
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
 import xyz.libravault.feature.reader.tts.TtsViewModel
+
+// Fixed height of the TTS bar. Pre-reserved in the reader content Box so the native
+// WebView / PdfRenderer (AndroidView) never occupies that region — native Views are
+// always drawn on top of the Compose canvas and would otherwise cover the bar.
+private val TTS_BAR_HEIGHT = 64.dp
 
 /**
  * Entry point for the reader feature.
@@ -109,16 +116,80 @@ fun ReaderScreen(
                             )
                         }
                     },
-                    bottomBar = {
+                    // TTS bar is NOT placed in Scaffold.bottomBar. Reason: AndroidView (the
+                    // Readium WebView / PDF renderer) is a native Android View and is always
+                    // drawn on top of the Compose canvas in the same screen region. If the bar
+                    // lives in bottomBar, Scaffold reserves space but the native View still
+                    // covers the Compose-drawn bar during the layout-update delay.
+                    //
+                    // Fix: put the bar as a Box overlay INSIDE the content area, and push the
+                    // reader content up with explicit bottom padding so the native View never
+                    // occupies the TTS bar region.
+                ) { innerPadding ->
+
+                    Box(Modifier.fillMaxSize().padding(innerPadding)) {
+
+                        // Reader content — padded away from the TTS bar so the native View
+                        // (WebView / PdfRenderer) never overlaps the Compose bar layer.
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(bottom = if (state.showTtsBar) TTS_BAR_HEIGHT else 0.dp)
+                        ) {
+                            when (item.format) {
+                                MediaFormat.EPUB -> {
+                                    val activity = LocalContext.current as? FragmentActivity
+                                    if (activity != null) {
+                                        EpubReaderScreen(
+                                            fileUri           = uri,
+                                            initialCfi        = state.progress?.positionCfi,
+                                            settings          = state.settings,
+                                            bookmarks         = bookmarks,
+                                            highlights        = highlights,
+                                            fragmentManager   = activity.supportFragmentManager,
+                                            onPositionChanged = viewModel::onEpubPositionChanged,
+                                            onCentreTap       = viewModel::onCentreTap,
+                                            onAddHighlight    = viewModel::addHighlight,
+                                            viewModel         = epubViewModel,
+                                        )
+                                    } else {
+                                        ErrorScreen("EPUB reader requires a FragmentActivity context.", onBack)
+                                    }
+                                }
+
+                                MediaFormat.PDF -> {
+                                    PdfReaderScreen(
+                                        fileUri          = uri,
+                                        initialPage      = state.progress?.pageIndex ?: 0,
+                                        scrollToPage     = pendingPdfPage.value,
+                                        onScrollConsumed = { pendingPdfPage.value = null },
+                                        settings         = state.settings,
+                                        onPageChanged    = viewModel::onPdfPageChanged,
+                                        onCentreTap      = viewModel::onCentreTap,
+                                    )
+                                }
+
+                                else -> {
+                                    // Audio formats — navigation handled in PlayerScreen (M3)
+                                    ErrorScreen("This format opens in the player.", onBack)
+                                }
+                            }
+                        }
+
+                        // TTS bar — overlaid in the space left by the content padding above.
+                        // Slide-in starts from the bottom edge of the content area and moves up,
+                        // entirely within the native-View-free zone.
                         AnimatedVisibility(
-                            visible = state.showTtsBar,
-                            enter   = fadeIn() + slideInVertically { it },
-                            exit    = fadeOut() + slideOutVertically { it },
+                            visible  = state.showTtsBar,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth(),
+                            enter = fadeIn() + slideInVertically { it },
+                            exit  = fadeOut() + slideOutVertically { it },
                         ) {
                             TtsBottomBar(
                                 state          = ttsState,
                                 onPlay         = {
-                                    // Load chapter text on first play or after stop
                                     if (ttsState.status != TtsStatus.PAUSED) {
                                         scope.launch {
                                             val text = if (item.format == MediaFormat.EPUB) {
@@ -135,48 +206,6 @@ fun ReaderScreen(
                                 onStop         = ttsViewModel::stop,
                                 onOpenSettings = viewModel::showTtsSheet,
                             )
-                        }
-                    },
-                ) { innerPadding ->
-
-                    Box(Modifier.fillMaxSize().padding(innerPadding)) {
-                        when (item.format) {
-                            MediaFormat.EPUB -> {
-                                val activity = LocalContext.current as? FragmentActivity
-                                if (activity != null) {
-                                    EpubReaderScreen(
-                                        fileUri           = uri,
-                                        initialCfi        = state.progress?.positionCfi,
-                                        settings          = state.settings,
-                                        bookmarks         = bookmarks,
-                                        highlights        = highlights,
-                                        fragmentManager   = activity.supportFragmentManager,
-                                        onPositionChanged = viewModel::onEpubPositionChanged,
-                                        onCentreTap       = viewModel::onCentreTap,
-                                        onAddHighlight    = viewModel::addHighlight,
-                                        viewModel         = epubViewModel,
-                                    )
-                                } else {
-                                    ErrorScreen("EPUB reader requires a FragmentActivity context.", onBack)
-                                }
-                            }
-
-                            MediaFormat.PDF -> {
-                                PdfReaderScreen(
-                                    fileUri          = uri,
-                                    initialPage      = state.progress?.pageIndex ?: 0,
-                                    scrollToPage     = pendingPdfPage.value,
-                                    onScrollConsumed = { pendingPdfPage.value = null },
-                                    settings         = state.settings,
-                                    onPageChanged    = viewModel::onPdfPageChanged,
-                                    onCentreTap      = viewModel::onCentreTap,
-                                )
-                            }
-
-                            else -> {
-                                // Audio formats — navigation handled in PlayerScreen (M3)
-                                ErrorScreen("This format opens in the player.", onBack)
-                            }
                         }
                     }
                 }
