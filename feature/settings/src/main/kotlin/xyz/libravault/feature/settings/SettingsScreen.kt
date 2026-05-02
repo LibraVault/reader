@@ -35,6 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -51,6 +52,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.hilt.navigation.compose.hiltViewModel
+import xyz.libravault.feature.settings.activation.ActivationViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -67,10 +70,13 @@ import xyz.libravault.core.domain.model.formatPlaybackSpeed
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onUpgradeToPro: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
+    activationViewModel: ActivationViewModel = hiltViewModel(),
 ) {
     val prefs by viewModel.preferences.collectAsState()
     val vaultState by viewModel.vaultState.collectAsState()
+    val isPro by activationViewModel.isPro.collectAsState()
     val context = LocalContext.current
 
     // SAF folder picker launcher
@@ -304,6 +310,31 @@ fun SettingsScreen(
                         "location, contacts, camera, or broad file access. " +
                         "It reads only folders you explicitly grant it.",
             )
+
+            Divider()
+
+            // ── LibraVault Pro ────────────────────────────────────────────────
+            SectionHeader("LibraVault Pro")
+
+            if (isPro) {
+                SettingLabel(
+                    title    = "Pro is active",
+                    subtitle = "All Pro features are unlocked on this device.",
+                )
+            } else {
+                SettingLabel(
+                    title    = "Upgrade to Pro",
+                    subtitle = "Unlock upcoming Pro features with a one-time license key. " +
+                               "Verification is fully offline — no account required.",
+                )
+                Spacer(Modifier.height(4.dp))
+                FilledTonalButton(
+                    onClick  = onUpgradeToPro,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Get Pro / Enter license key")
+                }
+            }
 
             Divider()
 
