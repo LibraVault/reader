@@ -14,11 +14,15 @@ import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
 import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
+import xyz.libravault.feature.settings.activation.ActivationScreen
+import xyz.libravault.feature.settings.activation.RecoveryScreen
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Library    : Screen("library")
     data object Settings   : Screen("settings")
+    data object Activation : Screen("activation")
+    data object Recovery   : Screen("recovery")
 
     /** Open a library item by its Room ID (normal flow). */
     data object Reader : Screen("reader/{itemId}") {
@@ -75,7 +79,21 @@ fun LibravaultNavHost(
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen(
+                onBack          = { navController.popBackStack() },
+                onUpgradeToPro  = { navController.navigate(Screen.Activation.route) },
+            )
+        }
+
+        composable(Screen.Activation.route) {
+            ActivationScreen(
+                onBack               = { navController.popBackStack() },
+                onNavigateToRecovery = { navController.navigate(Screen.Recovery.route) },
+            )
+        }
+
+        composable(Screen.Recovery.route) {
+            RecoveryScreen(onBack = { navController.popBackStack() })
         }
 
         // ── Library-item routes (by Room ID) ──────────────────────────────
