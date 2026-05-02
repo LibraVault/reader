@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -184,14 +185,13 @@ class LibraryViewModel @Inject constructor(
 
     /** Triggered on cold start and on vault addition. */
     fun triggerScan() {
-        // Cancel any ongoing scan before starting a new one.
-        // This prevents job leaks when user taps Refresh repeatedly.
-        scanJob?.cancel()
-        // Clear scanning flag immediately — old scan (if any) will finish early
-        // due to job cancellation, and we want fresh state for this new scan.
-        _scanning.value = false
-        
+        // Capture the old job before overwriting scanJob. cancelAndJoin() waits
+        // for the old flow's finally-block to run, which releases the AtomicBoolean
+        // lock inside LibraryScannerImpl. Starting the new scan only after that
+        // guarantees the scanner isn't skipped due to a stale "in progress" flag.
+        val previousJob = scanJob
         scanJob = viewModelScope.launch {
+            previousJob?.cancelAndJoin()
             _scanning.value  = true
             _scanError.value = null
 
