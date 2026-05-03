@@ -45,6 +45,14 @@ class EpubReaderViewModel @Inject constructor(
         _currentLocator.value = locator
     }
 
+    // Independent cursor for TTS chapter advancement — decoupled from the visual navigator
+    // position so continuous reading doesn't fight with locator updates from the navigator.
+    // -1 means "not yet set"; getChapterText() initialises it from the visual locator.
+    private var ttsSpineIndex: Int = -1
+
+    /** Reset the TTS cursor, e.g. when the user stops playback. */
+    fun resetTtsPosition() { ttsSpineIndex = -1 }
+
     /**
      * Opens the EPUB at [uri]. Idempotent — if a publication is already open
      * for the same URI, does nothing. If a different URI is passed (e.g. on
@@ -78,25 +86,48 @@ class EpubReaderViewModel @Inject constructor(
 
     /**
      * Reads the HTML for the current spine item and strips tags to produce plain text for TTS.
+     * Also initialises the TTS spine cursor so [getNextChapterText] advances from here.
      * Returns null if no publication is open or no locator is known.
      */
-    suspend fun getChapterText(): String? = withContext(Dispatchers.IO) {
-        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return@withContext null
+    suspend fun getChapterText(): String? {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return null
         val locator = _currentLocator.value ?: run {
-            // No locator yet — fall back to the first spine item.
-            val first = pub.readingOrder.firstOrNull() ?: return@withContext null
+            val first = pub.readingOrder.firstOrNull() ?: return null
             Locator(href = first.url(), mediaType = first.mediaType ?: org.readium.r2.shared.util.mediatype.MediaType.XHTML)
         }
         val link = pub.readingOrder.find { it.url() == locator.href }
             ?: pub.readingOrder.firstOrNull()
-            ?: return@withContext null
+            ?: return null
 
-        val resource = pub.get(link) ?: return@withContext null
+        // Anchor the TTS cursor to the chapter the user is currently reading.
+        ttsSpineIndex = pub.readingOrder.indexOf(link)
+
+        return withContext(Dispatchers.IO) { fetchAndClean(pub, link) }
+    }
+
+    /**
+     * Advances the TTS cursor to the next spine item and returns its plain text.
+     * Returns null at the end of the book so the caller knows to stop.
+     */
+    suspend fun getNextChapterText(): String? {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return null
+        val nextIndex = ttsSpineIndex + 1
+        val link = pub.readingOrder.getOrNull(nextIndex) ?: return null
+        ttsSpineIndex = nextIndex
+        return withContext(Dispatchers.IO) { fetchAndClean(pub, link) }
+    }
+
+    private suspend fun fetchAndClean(
+        pub: org.readium.r2.shared.publication.Publication,
+        link: org.readium.r2.shared.publication.Link,
+    ): String? {
+        val resource = pub.get(link) ?: return null
         val bytes = resource.read().getOrNull()
         resource.close()
-        bytes
+        return bytes
             ?.let { String(it, Charsets.UTF_8) }
             ?.let { stripHtml(it) }
+            ?.let { EpubTextPreprocessor.clean(it) }
             ?.takeIf { it.isNotBlank() }
     }
 
