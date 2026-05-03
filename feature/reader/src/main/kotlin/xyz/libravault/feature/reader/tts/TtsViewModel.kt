@@ -3,6 +3,7 @@ package xyz.libravault.feature.reader.tts
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import xyz.libravault.core.tts.TtsEngine
@@ -16,6 +17,7 @@ class TtsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val state: StateFlow<TtsState> = engine.state
+    val completionEvent: SharedFlow<Unit> = engine.completionEvent
 
     // Text staged for playback — set by the reader when the chapter content is ready.
     private var stagedText: String = ""

@@ -87,6 +87,17 @@ fun ReaderScreen(
                 // multiple composable layers.
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
 
+                // Auto-advance TTS to the next chapter when the current one finishes.
+                // Runs only while the TTS bar is visible; restarts if the item changes.
+                LaunchedEffect(state.showTtsBar, item.id) {
+                    if (!state.showTtsBar || item.format != MediaFormat.EPUB) return@LaunchedEffect
+                    ttsViewModel.completionEvent.collect {
+                        val nextText = epubViewModel.getNextChapterText() ?: return@collect
+                        ttsViewModel.setContent(nextText)
+                        ttsViewModel.play()
+                    }
+                }
+
                 Scaffold(
                     topBar = {
                         AnimatedVisibility(
@@ -203,7 +214,10 @@ fun ReaderScreen(
                                     }
                                 },
                                 onPause        = ttsViewModel::pause,
-                                onStop         = ttsViewModel::stop,
+                                onStop         = {
+                                    ttsViewModel.stop()
+                                    epubViewModel.resetTtsPosition()
+                                },
                                 onOpenSettings = viewModel::showTtsSheet,
                             )
                         }

@@ -5,8 +5,11 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 import java.util.UUID
@@ -27,6 +30,9 @@ class AndroidTtsEngine @Inject constructor(
 
     private val _state = MutableStateFlow(TtsState())
     override val state: StateFlow<TtsState> = _state.asStateFlow()
+
+    private val _completionEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    override val completionEvent: SharedFlow<Unit> = _completionEvent.asSharedFlow()
 
     // Full text split into speakable chunks.
     private var utterances: List<String> = emptyList()
@@ -110,6 +116,7 @@ class AndroidTtsEngine @Inject constructor(
     private fun speakNext(engine: TextToSpeech) {
         val chunk = utterances.getOrNull(currentUtteranceIndex) ?: run {
             _state.value = _state.value.copy(status = TtsStatus.IDLE)
+            _completionEvent.tryEmit(Unit)
             return
         }
         engine.speak(chunk, TextToSpeech.QUEUE_FLUSH, null, currentUtteranceIndex.toString())
