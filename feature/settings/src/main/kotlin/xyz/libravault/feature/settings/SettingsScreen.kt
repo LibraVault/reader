@@ -331,7 +331,7 @@ fun SettingsScreen(
                     onClick  = onUpgradeToPro,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Get Pro / Enter license key")
+                    Text("Get Pro")
                 }
             }
 
