@@ -243,7 +243,7 @@ private fun PdfPaginatedView(
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
 ) {
-    var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, pageCount - 1)) }
+    var currentPage by remember { mutableIntStateOf(initialPage.coerceIn(0, pageCount - 1)) }
 
     // Bookmark navigation: jump directly to the requested page
     LaunchedEffect(scrollToPage) {
