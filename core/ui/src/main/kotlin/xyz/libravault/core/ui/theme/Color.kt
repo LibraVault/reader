@@ -9,7 +9,6 @@ val LeatherLight      = Color(0xFFF5E6D3)   // onPrimaryContainer — pale parch
 
 // ── Accent — antique gold ─────────────────────────────────────────────────────
 val VaultGold         = Color(0xFFE8A830)   // secondary — glowing monogram gold
-val VaultGoldLight    = Color(0xFFFDF3DC)   // light gold tint
 
 // ── Neutrals — warm, not cool grey ───────────────────────────────────────────
 val WarmNeutral900    = Color(0xFF1A0E04)   // near-black leather

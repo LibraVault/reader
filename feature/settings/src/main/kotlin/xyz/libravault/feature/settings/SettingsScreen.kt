@@ -35,6 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
+import xyz.libravault.feature.settings.activation.ActivationViewModel
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
@@ -67,10 +69,13 @@ import xyz.libravault.core.domain.model.formatPlaybackSpeed
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onUpgradeToPro: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
+    activationViewModel: ActivationViewModel = hiltViewModel(),
 ) {
     val prefs by viewModel.preferences.collectAsState()
     val vaultState by viewModel.vaultState.collectAsState()
+    val isPro by activationViewModel.isPro.collectAsState()
     val context = LocalContext.current
 
     // SAF folder picker launcher
@@ -307,6 +312,31 @@ fun SettingsScreen(
 
             Divider()
 
+            // ── LibraVault Pro ────────────────────────────────────────────────
+            SectionHeader("LibraVault Pro")
+
+            if (isPro) {
+                SettingLabel(
+                    title    = "Pro is active",
+                    subtitle = "All Pro features are unlocked on this device.",
+                )
+            } else {
+                SettingLabel(
+                    title    = "Upgrade to Pro",
+                    subtitle = "Unlock upcoming Pro features with a one-time license key. " +
+                               "Verification is fully offline — no account required.",
+                )
+                Spacer(Modifier.height(4.dp))
+                FilledTonalButton(
+                    onClick  = onUpgradeToPro,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Get Pro")
+                }
+            }
+
+            Divider()
+
             // ── Support Development ─────────────────────────────────────────────
             SectionHeader("Support Development")
 
@@ -329,11 +359,6 @@ fun SettingsScreen(
                     address = "bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg",
                 )
             }
-
-            SettingLabel(
-                title    = "Also on GitHub Sponsors",
-                subtitle = "github.com/libravault-xyz/libravault",
-            )
 
             Spacer(Modifier.height(32.dp))
         }

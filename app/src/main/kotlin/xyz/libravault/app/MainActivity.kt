@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import xyz.libravault.app.navigation.LibravaultNavHost
 import xyz.libravault.app.navigation.Screen
 import xyz.libravault.core.ui.theme.LibravaultTheme
+import xyz.libravault.core.licensing.IProGate
 import xyz.libravault.feature.settings.UserPreferencesRepository
 import javax.inject.Inject
 
@@ -28,11 +29,9 @@ private const val KEY_ONBOARDED = "onboarded"
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
-    @Inject
-    lateinit var prefsRepository: UserPreferencesRepository
-
-    @Inject
-    lateinit var intentRouter: IntentRouter
+    @Inject lateinit var prefsRepository: UserPreferencesRepository
+    @Inject lateinit var intentRouter: IntentRouter
+    @Inject lateinit var proGate: IProGate
 
     /**
      * Set once inside [setContent] via [remember]. Guaranteed to be non-null
@@ -44,6 +43,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         installSplashScreen()
         enableEdgeToEdge()
+        // Query Play for any existing Pro purchase (restores on reinstall / new device).
+        lifecycleScope.launch { proGate.refresh() }
 
         val hasOnboarded = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_ONBOARDED, false)

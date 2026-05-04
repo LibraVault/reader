@@ -1,5 +1,6 @@
 package xyz.libravault.core.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -75,9 +76,8 @@ fun LibravaultTheme(
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
-        // Dynamic colour is nice but overrides our leather palette — only use on
-        // Android 12+ if the user has explicitly enabled it in settings
-        useDynamicColor -> {
+        // Dynamic color requires Android 12+ (API 31); fall through to leather palette on older devices
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         }

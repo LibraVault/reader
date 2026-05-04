@@ -80,21 +80,44 @@ fun PdfReaderScreen(
     val screenWidthPx = context.resources.displayMetrics.widthPixels
 
     // ── PdfRenderer lifecycle ────────────────────────────────────────────────
-    var renderer  by remember { mutableStateOf<PdfRenderer?>(null) }
-    var pageCount by remember { mutableIntStateOf(0) }
+    var renderer    by remember { mutableStateOf<PdfRenderer?>(null) }
+    var pageCount   by remember { mutableIntStateOf(0) }
+    var openError   by remember { mutableStateOf<String?>(null) }
     val renderMutex = remember { Mutex() }
 
     DisposableEffect(fileUri) {
-        val pfd = context.contentResolver.openFileDescriptor(fileUri, "r")
-        if (pfd != null) {
-            val r = PdfRenderer(pfd)
-            renderer  = r
-            pageCount = r.pageCount
+        var pfd: android.os.ParcelFileDescriptor? = null
+        try {
+            pfd       = context.contentResolver.openFileDescriptor(fileUri, "r")
+            if (pfd != null) {
+                val r = PdfRenderer(pfd)
+                renderer  = r
+                pageCount = r.pageCount
+            } else {
+                openError = "Could not open the PDF — file may be inaccessible."
+            }
+        } catch (e: SecurityException) {
+            openError = "Permission denied — the file cannot be read from this source."
+        } catch (e: Exception) {
+            openError = "Could not open the PDF: ${e.message}"
         }
         onDispose {
             renderer?.close()
             pfd?.close()
         }
+    }
+
+    // Show error if the file couldn't be opened
+    openError?.let { msg ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text  = msg,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(32.dp),
+            )
+        }
+        return
     }
 
     // ── Zoom state ────────────────────────────────────────────────────────────
@@ -220,7 +243,7 @@ private fun PdfPaginatedView(
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
 ) {
-    var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, pageCount - 1)) }
+    var currentPage by remember { mutableIntStateOf(initialPage.coerceIn(0, pageCount - 1)) }
 
     // Bookmark navigation: jump directly to the requested page
     LaunchedEffect(scrollToPage) {

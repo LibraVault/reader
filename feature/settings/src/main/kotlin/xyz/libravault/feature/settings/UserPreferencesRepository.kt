@@ -43,7 +43,7 @@ class UserPreferencesRepository @Inject constructor(
         defaultPlaybackSpeed = snapPlaybackSpeed(prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f)),
         defaultSkipDurationSec = prefs.getInt(KEY_SKIP_DURATION, 30),
         loggingEnabled       = prefs.getBoolean(KEY_LOGGING_ENABLED, false),
-        dynamicColorEnabled  = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
+        dynamicColorEnabled  = prefs.getBoolean(KEY_DYNAMIC_COLOR, true),
     )
 
     fun update(prefs: UserPreferences) {

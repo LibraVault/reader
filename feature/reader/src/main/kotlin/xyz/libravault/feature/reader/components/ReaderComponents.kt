@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import xyz.libravault.core.domain.model.Bookmark
 import xyz.libravault.core.ui.theme.ReadingTheme
@@ -49,9 +51,11 @@ import xyz.libravault.feature.reader.ScrollMode
 fun ReaderTopBar(
     title: String,
     isBookmarked: Boolean,
+    isTtsActive: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
     onSettings: () -> Unit,
+    onTts: () -> Unit,
 ) {
     TopAppBar(
         title = {
@@ -60,6 +64,7 @@ fun ReaderTopBar(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         },
         navigationIcon = {
@@ -75,6 +80,14 @@ fun ReaderTopBar(
                     contentDescription = "Bookmark",
                     tint = if (isBookmarked) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            IconButton(onClick = onTts) {
+                Icon(
+                    Icons.Default.RecordVoiceOver,
+                    contentDescription = "Read aloud",
+                    tint = if (isTtsActive) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurface,
                 )
             }
             IconButton(onClick = onSettings) {

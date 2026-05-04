@@ -4,10 +4,13 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
@@ -33,6 +36,22 @@ class EpubReaderViewModel @Inject constructor(
 
     private val _state = MutableStateFlow<EpubPublicationState>(EpubPublicationState.Idle)
     val state: StateFlow<EpubPublicationState> = _state.asStateFlow()
+
+    // Tracks the navigator's current locator so TTS can determine which spine item to read.
+    private val _currentLocator = MutableStateFlow<Locator?>(null)
+    val currentLocator: StateFlow<Locator?> = _currentLocator.asStateFlow()
+
+    fun onLocatorChanged(locator: Locator) {
+        _currentLocator.value = locator
+    }
+
+    // Independent cursor for TTS chapter advancement — decoupled from the visual navigator
+    // position so continuous reading doesn't fight with locator updates from the navigator.
+    // -1 means "not yet set"; getChapterText() initialises it from the visual locator.
+    private var ttsSpineIndex: Int = -1
+
+    /** Reset the TTS cursor, e.g. when the user stops playback. */
+    fun resetTtsPosition() { ttsSpineIndex = -1 }
 
     /**
      * Opens the EPUB at [uri]. Idempotent — if a publication is already open
@@ -65,6 +84,53 @@ class EpubReaderViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Reads the HTML for the current spine item and strips tags to produce plain text for TTS.
+     * Also initialises the TTS spine cursor so [getNextChapterText] advances from here.
+     * Returns null if no publication is open or no locator is known.
+     */
+    suspend fun getChapterText(): String? {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return null
+        val locator = _currentLocator.value ?: run {
+            val first = pub.readingOrder.firstOrNull() ?: return null
+            Locator(href = first.url(), mediaType = first.mediaType ?: org.readium.r2.shared.util.mediatype.MediaType.XHTML)
+        }
+        val link = pub.readingOrder.find { it.url() == locator.href }
+            ?: pub.readingOrder.firstOrNull()
+            ?: return null
+
+        // Anchor the TTS cursor to the chapter the user is currently reading.
+        ttsSpineIndex = pub.readingOrder.indexOf(link)
+
+        return withContext(Dispatchers.IO) { fetchAndClean(pub, link) }
+    }
+
+    /**
+     * Advances the TTS cursor to the next spine item and returns its plain text.
+     * Returns null at the end of the book so the caller knows to stop.
+     */
+    suspend fun getNextChapterText(): String? {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return null
+        val nextIndex = ttsSpineIndex + 1
+        val link = pub.readingOrder.getOrNull(nextIndex) ?: return null
+        ttsSpineIndex = nextIndex
+        return withContext(Dispatchers.IO) { fetchAndClean(pub, link) }
+    }
+
+    private suspend fun fetchAndClean(
+        pub: org.readium.r2.shared.publication.Publication,
+        link: org.readium.r2.shared.publication.Link,
+    ): String? {
+        val resource = pub.get(link) ?: return null
+        val bytes = resource.read().getOrNull()
+        resource.close()
+        return bytes
+            ?.let { String(it, Charsets.UTF_8) }
+            ?.let { stripHtml(it) }
+            ?.let { EpubTextPreprocessor.clean(it) }
+            ?.takeIf { it.isNotBlank() }
+    }
+
     override fun onCleared() {
         super.onCleared()
         // Free native parser resources when the user navigates away
@@ -77,6 +143,25 @@ class EpubReaderViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "EpubReaderViewModel"
+
+        // Strips HTML tags and collapses whitespace. Good enough for TTS; avoids
+        // a full HTML parser dependency in the reader module.
+        fun stripHtml(html: String): String =
+            html
+                .replace(Regex("<style[^>]*>.*?</style>", RegexOption.DOT_MATCHES_ALL), " ")
+                .replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), " ")
+                .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+                .replace(Regex("<p[^>]*>", RegexOption.IGNORE_CASE), "\n")
+                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("&nbsp;"), " ")
+                .replace(Regex("&amp;"), "&")
+                .replace(Regex("&lt;"), "<")
+                .replace(Regex("&gt;"), ">")
+                .replace(Regex("&quot;"), "\"")
+                .replace(Regex("&#?\\w+;"), " ")
+                .replace(Regex("[ \\t]+"), " ")
+                .replace(Regex("\\n{3,}"), "\n\n")
+                .trim()
     }
 }
 
