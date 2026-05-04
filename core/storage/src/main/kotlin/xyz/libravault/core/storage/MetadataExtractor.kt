@@ -1,6 +1,9 @@
 package xyz.libravault.core.storage
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -14,6 +17,7 @@ import org.xmlpull.v1.XmlPullParserFactory
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.model.MediaFormat
 import xyz.libravault.core.storage.model.ScannedFile
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.zip.ZipInputStream
 import javax.inject.Inject
@@ -226,22 +230,44 @@ class MetadataExtractor @Inject constructor(
 
     // ── PDF (PdfRenderer) ────────────────────────────────────────────────────
 
-    private fun extractPdf(file: ScannedFile): ExtractedMetadata {
+    private suspend fun extractPdf(file: ScannedFile): ExtractedMetadata {
         val pfd = context.contentResolver.openFileDescriptor(file.uri, "r")
             ?: return fallback(file)
 
         return pfd.use { descriptor ->
-            val renderer = PdfRenderer(descriptor)
+            val renderer  = PdfRenderer(descriptor)
             val pageCount = renderer.pageCount
+            val title     = file.displayName.substringBeforeLast('.')
+            val cacheKey  = file.uri.toString()
+
+            val coverPath = if (pageCount > 0) {
+                coverArtCache.getCachedPath(cacheKey) ?: run {
+                    val page   = renderer.openPage(0)
+                    // Render at a fixed thumbnail width; maintain aspect ratio
+                    val width  = 256
+                    val height = (page.height.toFloat() / page.width * width).toInt()
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    // Fill white background (PDF pages are transparent by default)
+                    Canvas(bitmap).drawColor(Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.close()
+
+                    val bytes = ByteArrayOutputStream().use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                        bitmap.recycle()
+                        out.toByteArray()
+                    }
+                    coverArtCache.save(cacheKey, bytes)
+                }
+            } else null
+
             renderer.close()
 
-            // PdfRenderer doesn't expose title metadata — use filename
-            val title = file.displayName.substringBeforeLast('.')
-
             ExtractedMetadata(
-                title     = title,
-                author    = UNKNOWN,
-                pageCount = pageCount,
+                title        = title,
+                author       = UNKNOWN,
+                pageCount    = pageCount,
+                coverArtPath = coverPath,
             )
         }
     }

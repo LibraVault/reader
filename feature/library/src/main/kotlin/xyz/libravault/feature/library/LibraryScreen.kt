@@ -116,6 +116,7 @@ fun LibraryScreen(
                 ?.substringAfterLast('/')
                 ?: "My Vault"
             viewModel.onVaultPicked(uri, displayName)
+            showAddVaultSheet = false  // Close sheet after adding
         }
     }
 
@@ -199,7 +200,7 @@ fun LibraryScreen(
                             IconButton(onClick = { isSearchOpen = true }) {
                                 Icon(Icons.Default.Search, contentDescription = "Search")
                             }
-                            IconButton(onClick = { showAddVaultSheet = !showAddVaultSheet }) {
+                            IconButton(onClick = { showAddVaultSheet = true }) {
                                 Icon(Icons.Default.Add, contentDescription = "Add vault")
                             }
                         }
@@ -258,18 +259,6 @@ fun LibraryScreen(
                     contentPadding = PaddingValues(bottom = 32.dp),
                 ) {
 
-                    // ── Vault management sheet (add/remove) ──────────────────────
-                    if (showAddVaultSheet) {
-                        item {
-                            VaultManagementSheet(
-                                vaults = state.vaults,
-                                onAddVault = { launchFolderPicker() },
-                                onRemoveVault = { vaultToRemove = it },
-                            )
-                            Spacer(Modifier.height(8.dp))
-                        }
-                    }
-
                     // ── Continue cards — compact row, up to 3 side by side ────
                     val continueItems = listOfNotNull(state.currentBook, state.currentAudiobook)
                     if (continueItems.isNotEmpty()) {
@@ -308,7 +297,17 @@ fun LibraryScreen(
                                 onSelectVault = viewModel::selectVault,
                                 onShowAll = viewModel::clearVaultFilter,
                             )
-                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+
+                    // ── Format filter chips (always visible outside search) ────
+                    if (state.searchResults == null) {
+                        item {
+                            FormatFilterRow(
+                                currentFilter   = state.formatFilter,
+                                onFilterChanged = viewModel::onFormatFilterChanged,
+                            )
+                            Spacer(Modifier.height(4.dp))
                         }
                     }
 
@@ -336,15 +335,13 @@ fun LibraryScreen(
                             }
                         }
                     } else if (state.selectedVault != null) {
-                        // Single vault view — header shows vault name, items below
+                        // Single vault view
                         val selected = state.selectedVault ?: return@LazyColumn
                         val vaultItems = viewModel.vaultFilteredItems(
                             state.vaultGroupedItems,
                             selected.id,
-                        )
-                        item {
-                            SectionHeader("All items")
-                        }
+                        ).applyFormatFilter(state.formatFilter)
+                        item { SectionHeader("All items") }
                         item {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -364,6 +361,8 @@ fun LibraryScreen(
                     } else {
                         // All vaults view — grouped by vault folder
                         state.vaultGroupedItems.forEach { (vault, vaultItems) ->
+                            val filtered = vaultItems.applyFormatFilter(state.formatFilter)
+                            if (filtered.isEmpty()) return@forEach
                             item {
                                 VaultSectionHeader(
                                     vault = vault,
@@ -375,7 +374,7 @@ fun LibraryScreen(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    items(vaultItems, key = { it.id }) { item ->
+                                    items(filtered, key = { it.id }) { item ->
                                         LibraryItemCard(
                                             item = item,
                                             onClick = {
@@ -415,11 +414,7 @@ fun LibraryScreen(
                         onFilterChanged = viewModel::onFormatFilterChanged,
                     )
                 }
-                val results = state.searchResults
-                val format = state.formatFilter
-                val filteredResults = if (results != null && format != null) {
-                    results.filter { it.format.name == format }
-                } else results
+                val filteredResults = state.searchResults?.applyFormatFilter(state.formatFilter)
                 if (!filteredResults.isNullOrEmpty()) {
                     items(filteredResults, key = { it.id }) { item ->
                         SearchResultRow(
@@ -449,6 +444,21 @@ fun LibraryScreen(
             }
         }
     }
+    }
+
+    // ── Add vault sheet ─────────────────────────────────────────────────────
+    if (showAddVaultSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddVaultSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            VaultManagementSheet(
+                vaults = state.vaults,
+                onAddVault = { launchFolderPicker() },
+                onRemoveVault = { vaultToRemove = it },
+            )
+            Spacer(Modifier.height(32.dp))
+        }
     }
 
     // ── All bookmarks sheet ─────────────────────────────────────────────────
@@ -748,6 +758,14 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
     }
 }
 
+// ── Format filter helper ──────────────────────────────────────────────────────
+
+private fun List<LibraryItem>.applyFormatFilter(filter: String?): List<LibraryItem> = when (filter) {
+    null   -> this
+    "AUDIO" -> filter { it.format.isAudio() }
+    else   -> filter { it.format.name == filter }
+}
+
 // ── Format filter chips for search ────────────────────────────────────────────
 
 @Composable
@@ -782,8 +800,8 @@ private fun FormatFilterRow(
         }
         item {
             FilterChip(
-                selected = currentFilter != null && currentFilter !in setOf(MediaFormat.EPUB.name, MediaFormat.PDF.name),
-                onClick = { onFilterChanged(MediaFormat.MP3.name) },
+                selected = currentFilter == "AUDIO",
+                onClick = { onFilterChanged("AUDIO") },
                 label = { Text("Audio") },
             )
         }

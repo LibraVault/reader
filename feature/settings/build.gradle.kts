@@ -9,6 +9,7 @@ android {
 
 dependencies {
     api(project(":core:storage"))
+    implementation(project(":core:licensing"))
     api(project(":core:logger"))
     implementation("com.google.dagger:hilt-android:2.52")
     ksp("com.google.dagger:hilt-android-compiler:2.52")

@@ -30,11 +30,13 @@ rootProject.name = "libravault"
 include(":app")
 
 // Core modules
+include(":core:licensing")
 include(":core:database")
 include(":core:storage")
 include(":core:domain")
 include(":core:ui")
 include(":core:logger")
+include(":core:tts")
 
 // Feature modules
 include(":feature:onboarding")

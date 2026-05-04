@@ -80,7 +80,7 @@ fun EpubReaderScreen(
     onPositionChanged: (String) -> Unit,
     onCentreTap: () -> Unit,
     onAddHighlight: (positionRef: String, selectedText: String) -> Unit,
-    viewModel: EpubReaderViewModel = hiltViewModel(),
+    viewModel: EpubReaderViewModel = hiltViewModel(),  // caller may pass its own instance
 ) {
     val publicationState by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -110,14 +110,15 @@ fun EpubReaderScreen(
 
             is EpubPublicationState.Ready -> {
                 EpubNavigatorView(
-                    publication     = ps.publication,
-                    initialCfi      = initialCfi,
-                    settings        = settings,
-                    fragmentManager = fragmentManager,
-                    screenWidthDp   = screenWidthDp,
+                    publication       = ps.publication,
+                    initialCfi        = initialCfi,
+                    settings          = settings,
+                    fragmentManager   = fragmentManager,
+                    screenWidthDp     = screenWidthDp,
                     onPositionChanged = onPositionChanged,
-                    onCentreTap     = onCentreTap,
-                    onAddHighlight  = onAddHighlight,
+                    onLocatorChanged  = viewModel::onLocatorChanged,
+                    onCentreTap       = onCentreTap,
+                    onAddHighlight    = onAddHighlight,
                 )
             }
         }
@@ -134,6 +135,7 @@ private fun EpubNavigatorView(
     fragmentManager: FragmentManager,
     screenWidthDp: androidx.compose.ui.unit.Dp,
     onPositionChanged: (String) -> Unit,
+    onLocatorChanged: (Locator) -> Unit,
     onCentreTap: () -> Unit,
     onAddHighlight: (positionRef: String, selectedText: String) -> Unit,
 ) {
@@ -143,6 +145,7 @@ private fun EpubNavigatorView(
     // Keep callbacks stable across recompositions so the listener closure
     // always invokes the latest lambda without recreating the fragment
     val currentOnPositionChanged = rememberUpdatedState(onPositionChanged)
+    val currentOnLocatorChanged  = rememberUpdatedState(onLocatorChanged)
     val currentOnCentreTap       = rememberUpdatedState(onCentreTap)
     val currentOnAddHighlight    = rememberUpdatedState(onAddHighlight)
     val density = LocalDensity.current.density
@@ -185,17 +188,30 @@ private fun EpubNavigatorView(
             }
         }
 
+        // Mutable reference filled after the fragment is committed below.
+        // The listener accesses it via closure — by the time onTap fires the
+        // user has interacted with the screen, so nav will already be set.
+        var navRef: EpubNavigatorFragment? = null
+
         // Navigator listener — routes taps and position change callbacks
         val listener = object : EpubNavigatorFragment.Listener {
 
             override fun onTap(point: PointF): Boolean {
-                val xDp    = point.x / density
-                val width  = screenWidthDp.value
-                return if (xDp in (width * 0.33f)..(width * 0.67f)) {
-                    currentOnCentreTap.value.invoke()
-                    true   // consumed — do NOT turn page
-                } else {
-                    false  // let Readium navigate
+                val xDp   = point.x / density
+                val width = screenWidthDp.value
+                return when {
+                    xDp < width * 0.33f -> {
+                        navRef?.goBackward(animated = true)
+                        true
+                    }
+                    xDp > width * 0.67f -> {
+                        navRef?.goForward(animated = true)
+                        true
+                    }
+                    else -> {
+                        currentOnCentreTap.value.invoke()
+                        true
+                    }
                 }
             }
 
@@ -232,6 +248,7 @@ private fun EpubNavigatorView(
 
         // Get the navigator reference synchronously (commitNow = immediate execution)
         val nav = fragmentManager.findFragmentByTag(EPUB_FRAGMENT_TAG) as? EpubNavigatorFragment
+        navRef    = nav   // wire tap-navigation now that the fragment exists
         navigator = nav
 
         // Collect position changes from the navigator's StateFlow
@@ -241,6 +258,8 @@ private fun EpubNavigatorView(
                 // This preserves href, position, progression, and CFI so we can
                 // restore exactly to the right spine item and position.
                 currentOnPositionChanged.value.invoke(locator.toJSON().toString())
+                // Mirror the raw Locator so the ViewModel can use it for TTS chapter lookup.
+                currentOnLocatorChanged.value.invoke(locator)
             }
             ?.launchIn(scope)
 
@@ -252,6 +271,7 @@ private fun EpubNavigatorView(
                     nav?.let { remove(it) }
                 }
             }
+            navRef    = null
             navigator = null
         }
     }

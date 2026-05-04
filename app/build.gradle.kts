@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import java.util.Properties
 
 plugins {
@@ -15,6 +16,23 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "xyz.libravault.app"
+
+    // ── Distribution flavours ─────────────────────────────────────────────────
+    //
+    //   ./gradlew assembleFdroidDebug    → F-Droid / direct-download build
+    //   ./gradlew assemblePlayDebug      → Play Store build (Play Billing, v2)
+    //
+    // F-Droid flavour: activation via Ed25519 license key, no in-app payment links.
+    // Play flavour:    Google Play one-tap purchase (Play Billing, to be wired in v2).
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("fdroid") {
+            dimension = "distribution"
+        }
+        create("play") {
+            dimension = "distribution"
+        }
+    }
 
     lint {
         baseline = file("lint-baseline.xml")
@@ -86,6 +104,9 @@ android {
     packaging {
         resources {
             excludes += setOf(
+                // BouncyCastle META-INF entries that collide during APK packaging
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/INDEX.LIST",
                 // Kotlin incremental-build metadata — not needed at runtime,
                 // embeds host-specific path hashes
                 "META-INF/*.kotlin_module",
@@ -118,9 +139,32 @@ android {
     androidResources {
         generateLocaleConfig = false
     }
+
+    // ── APK output naming ─────────────────────────────────────────────────────
+    // Embed the current git branch in the APK filename so builds from different
+    // branches don't overwrite each other.
+    // e.g. feature/pro-upgrade + fdroidDebug → libravault-feature-pro-upgrade-fdroid-debug.apk
+    val gitBranch = providers.exec {
+        commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
+    }.standardOutput.asText.get().trim()
+        .replace("/", "-")   // feature/foo → feature-foo
+        .replace("_", "-")   // snake_case → kebab-case
+
+    applicationVariants.all {
+        val kebabName = name
+            .replace(Regex("(?<=[a-z])(?=[A-Z])"), "-")
+            .lowercase()   // fdroidDebug → fdroid-debug
+        outputs.all {
+            (this as BaseVariantOutputImpl).outputFileName =
+                "libravault-$gitBranch-$kebabName.apk"
+        }
+    }
 }
 
 dependencies {
+    // Core modules (licensing must come before feature:settings which depends on it)
+    implementation(project(":core:licensing"))
+
     // Feature modules
     implementation(project(":feature:onboarding"))
     implementation(project(":feature:library"))
