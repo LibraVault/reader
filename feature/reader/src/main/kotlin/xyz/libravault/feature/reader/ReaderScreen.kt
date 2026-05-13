@@ -195,22 +195,20 @@ fun ReaderScreen(
                     }
                 }
 
-                Scaffold { innerPadding ->
+                // Outer full-screen Box lives OUTSIDE Scaffold so overlay bars
+                // receive real window insets (Scaffold consumes them for its
+                // content lambda, which would zero out navigationBarsPadding).
+                Box(Modifier.fillMaxSize()) {
 
-                    // Outer full-screen Box — bars are overlaid here so they sit
-                    // at the true screen bottom regardless of toolbar visibility.
-                    Box(Modifier.fillMaxSize()) {
-
-                        val showBar = state.showTtsBar || showMiniPlayer
-
-                        // Inset content box: top/side padding from Scaffold, plus
-                        // BOTTOM_BAR_HEIGHT reserved below so native views don't hide
-                        // under the overlaid bottom bar.
+                    Scaffold { innerPadding ->
+                        // BOTTOM_BAR_HEIGHT is reserved unconditionally so the
+                        // EPUB WebView / PDF renderer never resizes when a bar
+                        // appears or disappears — preventing the content jump.
                         Box(
                             Modifier
                                 .fillMaxSize()
                                 .padding(innerPadding)
-                                .padding(bottom = if (showBar) BOTTOM_BAR_HEIGHT else 0.dp)
+                                .padding(bottom = BOTTOM_BAR_HEIGHT)
                         ) {
                             when (item.format) {
                                 MediaFormat.EPUB -> {
@@ -250,97 +248,96 @@ fun ReaderScreen(
                                 }
                             }
                         }
+                    }
 
-                        // Bottom bars — overlaid in outer Box at screen bottom.
-                        // navigationBarsPadding() inside each bar's Surface keeps
-                        // the row content above the system nav bar, matching the
-                        // Library mini-player position exactly.
-                        if (state.showTtsBar) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                            ) {
-                                TtsBottomBar(
-                                    state          = ttsState,
-                                    onPlay         = {
-                                        if (ttsState.status != TtsStatus.PAUSED) {
-                                            scope.launch {
-                                                val text = if (item.format == MediaFormat.EPUB) {
-                                                    epubViewModel.getChapterText()
-                                                } else null
-                                                if (text != null) ttsViewModel.setContent(text)
-                                                ttsViewModel.play()
-                                            }
-                                        } else {
+                    // Bottom bars — outside Scaffold so navigationBarsPadding()
+                    // sees the real system nav bar height.
+                    if (state.showTtsBar) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                        ) {
+                            TtsBottomBar(
+                                state          = ttsState,
+                                onPlay         = {
+                                    if (ttsState.status != TtsStatus.PAUSED) {
+                                        scope.launch {
+                                            val text = if (item.format == MediaFormat.EPUB) {
+                                                epubViewModel.getChapterText()
+                                            } else null
+                                            if (text != null) ttsViewModel.setContent(text)
                                             ttsViewModel.play()
                                         }
-                                    },
-                                    onPause        = ttsViewModel::pause,
-                                    onStop         = {
-                                        ttsViewModel.stop()
-                                        epubViewModel.resetTtsPosition()
-                                    },
-                                    onOpenSettings = viewModel::showTtsSheet,
-                                )
-                            }
-                        } else if (showMiniPlayer) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                            ) {
-                                ReaderMiniPlayerBar(
-                                    nowPlaying    = nowPlaying,
-                                    onPrevious    = viewModel::skipPreviousAudiobook,
-                                    onSeekBack    = viewModel::seekBackAudiobook,
-                                    onPlayPause   = viewModel::playPauseAudiobook,
-                                    onSeekForward = viewModel::seekForwardAudiobook,
-                                    onNext        = viewModel::skipNextAudiobook,
-                                )
-                            }
-                        }
-
-                        // TopBar overlay — hides on centre-tap independent of bottom bars
-                        AnimatedVisibility(
-                            visible  = state.showToolbar,
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .fillMaxWidth(),
-                            enter = fadeIn() + slideInVertically { -it },
-                            exit  = fadeOut() + slideOutVertically { -it },
-                        ) {
-                            ReaderTopBar(
-                                title          = item.title,
-                                isBookmarked   = bookmarks.any {
-                                    it.positionRef == state.progress?.positionCfi
-                                        || it.positionRef == "page:${state.progress?.pageIndex}"
-                                },
-                                isTtsActive    = state.showTtsBar,
-                                showTtsButton  = item.format == MediaFormat.EPUB,
-                                onBack         = onBack,
-                                onBookmark     = {
-                                    val ref = when (item.format) {
-                                        MediaFormat.PDF ->
-                                            // Default to page 0 if progress hasn't been
-                                            // written yet (PDF opened for the first time).
-                                            "page:${state.progress?.pageIndex ?: 0}"
-                                        else ->
-                                            state.progress?.positionCfi
-                                                ?: state.progress?.pageIndex?.let { "page:$it" }
-                                                ?: return@ReaderTopBar
+                                    } else {
+                                        ttsViewModel.play()
                                     }
-                                    viewModel.addBookmark(ref)
                                 },
-                                onSettings     = viewModel::showSettings,
-                                onTts          = {
-                                    viewModel.toggleTtsBar()
-                                    ttsViewModel.initializeIfNeeded()
+                                onPause        = ttsViewModel::pause,
+                                onStop         = {
+                                    ttsViewModel.stop()
+                                    epubViewModel.resetTtsPosition()
                                 },
+                                onOpenSettings = viewModel::showTtsSheet,
                             )
                         }
-                    } // end outer full-screen Box
-                }
+                    } else if (showMiniPlayer) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                        ) {
+                            ReaderMiniPlayerBar(
+                                nowPlaying    = nowPlaying,
+                                onPrevious    = viewModel::skipPreviousAudiobook,
+                                onSeekBack    = viewModel::seekBackAudiobook,
+                                onPlayPause   = viewModel::playPauseAudiobook,
+                                onSeekForward = viewModel::seekForwardAudiobook,
+                                onNext        = viewModel::skipNextAudiobook,
+                            )
+                        }
+                    }
+
+                    // TopBar overlay — hides on centre-tap, independent of bottom bars.
+                    // TopAppBar uses TopAppBarDefaults.windowInsets for its own status-bar padding.
+                    AnimatedVisibility(
+                        visible  = state.showToolbar,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth(),
+                        enter = fadeIn() + slideInVertically { -it },
+                        exit  = fadeOut() + slideOutVertically { -it },
+                    ) {
+                        ReaderTopBar(
+                            title          = item.title,
+                            isBookmarked   = bookmarks.any {
+                                it.positionRef == state.progress?.positionCfi
+                                    || it.positionRef == "page:${state.progress?.pageIndex}"
+                            },
+                            isTtsActive    = state.showTtsBar,
+                            showTtsButton  = item.format == MediaFormat.EPUB,
+                            onBack         = onBack,
+                            onBookmark     = {
+                                val ref = when (item.format) {
+                                    MediaFormat.PDF ->
+                                        // Default to page 0 if progress hasn't been
+                                        // written yet (PDF opened for the first time).
+                                        "page:${state.progress?.pageIndex ?: 0}"
+                                    else ->
+                                        state.progress?.positionCfi
+                                            ?: state.progress?.pageIndex?.let { "page:$it" }
+                                            ?: return@ReaderTopBar
+                                }
+                                viewModel.addBookmark(ref)
+                            },
+                            onSettings     = viewModel::showSettings,
+                            onTts          = {
+                                viewModel.toggleTtsBar()
+                                ttsViewModel.initializeIfNeeded()
+                            },
+                        )
+                    }
+                } // end outer full-screen Box
 
                 // ── Settings sheet ────────────────────────────────────────────
                 if (state.showSettingsSheet) {
