@@ -48,7 +48,9 @@ internal class LibravaultNotificationProvider(context: Context) :
         for (button in base) {
             val forceEnable = !button.isEnabled &&
                 (button.playerCommand == Player.COMMAND_SEEK_BACK ||
-                 button.playerCommand == Player.COMMAND_SEEK_FORWARD)
+                 button.playerCommand == Player.COMMAND_SEEK_FORWARD ||
+                 button.playerCommand == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ||
+                 button.playerCommand == Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
             out.add(
                 if (forceEnable)
                     CommandButton.Builder()
