@@ -116,14 +116,14 @@ interface ProgressDao {
 
 @Dao
 interface BookmarkDao {
-    @Query("SELECT * FROM bookmarks WHERE itemId = :itemId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM bookmarks WHERE itemId = :itemId ORDER BY createdAt ASC")
     fun observeBookmarks(itemId: Long): Flow<List<BookmarkEntity>>
 
     @Query("""
         SELECT b.*, li.title AS itemTitle, li.author AS itemAuthor, li.format AS itemFormat
         FROM bookmarks b
         INNER JOIN library_items li ON li.id = b.itemId
-        ORDER BY b.createdAt DESC
+        ORDER BY b.createdAt ASC
     """)
     fun observeAllBookmarks(): Flow<List<BookmarkWithItem>>
 

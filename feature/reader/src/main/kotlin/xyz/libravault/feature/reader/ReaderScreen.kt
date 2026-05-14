@@ -201,6 +201,7 @@ fun ReaderScreen(
                 val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
                 Scaffold(
+                    modifier = Modifier.fillMaxSize(),
                     bottomBar = {
                         if (state.showTtsBar) {
                             TtsBottomBar(
