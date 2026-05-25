@@ -2,6 +2,9 @@ package xyz.libravault.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -33,6 +36,7 @@ import xyz.libravault.core.domain.usecase.SearchLibraryUseCase
 import xyz.libravault.core.domain.usecase.ObserveAllBookmarksUseCase
 import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import com.google.common.util.concurrent.MoreExecutors
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import javax.inject.Inject
 
@@ -69,7 +73,10 @@ class LibraryViewModel @Inject constructor(
     private val playbackStateHolder: PlaybackStateHolder,
     private val observeAllBookmarks: ObserveAllBookmarksUseCase,
     private val deleteBookmark: DeleteBookmarkUseCase,
+    private val controllerFuture: ListenableFuture<MediaController>,
 ) : ViewModel() {
+
+    private var controller: MediaController? = null
 
     private val _scanning      = MutableStateFlow(false)
     private val _addVaultError = MutableStateFlow<String?>(null)
@@ -288,9 +295,42 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // ── Mini-player playback controls ────────────────────────────────────────
+
+    fun playPause() {
+        val ctrl = controller ?: return
+        val wasPlaying = ctrl.isPlaying
+        if (wasPlaying) ctrl.pause() else ctrl.play()
+        // Update PlaybackStateHolder immediately so the mini-player icon flips
+        // without waiting for PlayerViewModel's 200ms polling tick.
+        val current = playbackStateHolder.state.value
+        if (current.itemId != null) {
+            playbackStateHolder.update(
+                itemId       = current.itemId,
+                title        = current.title,
+                author       = current.author,
+                coverArtPath = current.coverArtPath,
+                isPlaying    = !wasPlaying,
+            )
+        }
+    }
+
+    fun seekBack()    { controller?.seekBack() }
+    fun seekForward() { controller?.seekForward() }
+    fun skipPrevious() { controller?.seekToPreviousMediaItem() }
+    fun skipNext()     { controller?.seekToNextMediaItem() }
+
     // ── Init ─────────────────────────────────────────────────────────────────
 
     init {
+        // Resolve MediaController for mini-player controls (non-blocking)
+        controllerFuture.addListener(
+            {
+                runCatching { controller = controllerFuture.get() }
+                    .onFailure { logger.w("LibraryVM", "MediaController not available for mini-player: ${it.message}") }
+            },
+            MoreExecutors.directExecutor(),
+        )
         viewModelScope.launch {
             // Recovery: if Room has no vaults but the OS still holds URI permissions
             // (e.g. after user clears app cache), re-register the persisted URIs so

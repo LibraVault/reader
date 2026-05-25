@@ -44,10 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.graphicsLayer
 import coil.compose.AsyncImage
-import coil.compose.rememberAsyncImagePainter
 import xyz.libravault.feature.player.components.BookmarksSheet
 import xyz.libravault.feature.player.components.ChapterListSheet
 import xyz.libravault.feature.player.components.PlaybackControls
@@ -221,16 +218,6 @@ fun PlayerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Image(
-                                painter = rememberAsyncImagePainter(
-                                    xyz.libravault.feature.player.R.drawable.grimoire_bg
-                                ),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .size(220.dp)
-                                    .graphicsLayer(alpha = 0.07f),
-                            )
                         PlaybackControls(
                             isPlaying          = state.isPlaying,
                             hasPreviousChapter = state.currentChapterIndex > 0,
@@ -281,9 +268,10 @@ fun PlayerScreen(
 
         if (state.showBookmarksSheet) {
             BookmarksSheet(
-                bookmarks       = bookmarks,
-                onBookmarkClick = viewModel::seekToBookmark,
-                onDismiss       = viewModel::hideBookmarks,
+                bookmarks        = bookmarks,
+                onBookmarkClick  = viewModel::seekToBookmark,
+                onBookmarkDelete = viewModel::removeBookmark,
+                onDismiss        = viewModel::hideBookmarks,
             )
         }
 

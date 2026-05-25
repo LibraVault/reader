@@ -3,6 +3,9 @@ package xyz.libravault.feature.reader
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.session.MediaController
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,6 +28,7 @@ import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 import java.time.Instant
 import javax.inject.Inject
 
@@ -55,10 +59,18 @@ class ReaderViewModel @Inject constructor(
     private val addHighlight: AddHighlightUseCase,
     private val deleteHighlight: DeleteHighlightUseCase,
     private val logger: LibravaultLogger,
+    private val playbackStateHolder: PlaybackStateHolder,
+    private val controllerFuture: ListenableFuture<MediaController>,
 ) : ViewModel() {
+
+    private var controller: MediaController? = null
 
     // itemId comes from navigation back-stack
     private val itemId: Long? = savedStateHandle.get<Long>("itemId")?.takeIf { it > 0 }
+
+    /** Audiobook playback state — drives the mini-player overlay in the reader. */
+    val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
 
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -70,6 +82,10 @@ class ReaderViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
+        controllerFuture.addListener(
+            { runCatching { controller = controllerFuture.get() } },
+            MoreExecutors.directExecutor(),
+        )
         viewModelScope.launch {
             if (itemId != null) {
                 // Normal library flow — load by Room ID
@@ -113,15 +129,19 @@ class ReaderViewModel @Inject constructor(
     /** Called by EPUB navigator on position change (CFI string). */
     fun onEpubPositionChanged(cfi: String) {
         val id = itemId ?: return
+        val newProgress = ReadingProgress(itemId = id, positionCfi = cfi, lastReadAt = Instant.now())
+        _uiState.value = _uiState.value.copy(progress = newProgress)
         viewModelScope.launch {
-            saveProgress(ReadingProgress(itemId = id, positionCfi = cfi, lastReadAt = Instant.now()))
+            saveProgress(newProgress)
         }
     }
 
     fun onPdfPageChanged(pageIndex: Int) {
         val id = itemId ?: return
+        val newProgress = ReadingProgress(itemId = id, pageIndex = pageIndex, lastReadAt = Instant.now())
+        _uiState.value = _uiState.value.copy(progress = newProgress)
         viewModelScope.launch {
-            saveProgress(ReadingProgress(itemId = id, pageIndex = pageIndex, lastReadAt = Instant.now()))
+            saveProgress(newProgress)
         }
     }
 
@@ -209,4 +229,45 @@ class ReaderViewModel @Inject constructor(
     fun removeHighlight(id: Long) {
         viewModelScope.launch { deleteHighlight(id) }
     }
+
+    // ── Audiobook mini-player controls ────────────────────────────────────────
+
+    fun pauseAudiobook() {
+        // Pause the controller if it's still playing. If Android's audio focus system
+        // already auto-paused ExoPlayer (because TTS requested focus), ctrl.isPlaying
+        // is already false — but we still need to update PlaybackStateHolder so the
+        // Library mini-player icon reflects the paused state immediately.
+        controller?.let { if (it.isPlaying) it.pause() }
+        val current = playbackStateHolder.state.value
+        if (current.itemId != null) {
+            playbackStateHolder.update(
+                itemId       = current.itemId,
+                title        = current.title,
+                author       = current.author,
+                coverArtPath = current.coverArtPath,
+                isPlaying    = false,
+            )
+        }
+    }
+
+    fun playPauseAudiobook() {
+        val ctrl = controller ?: return
+        val wasPlaying = ctrl.isPlaying
+        if (wasPlaying) ctrl.pause() else ctrl.play()
+        val current = playbackStateHolder.state.value
+        if (current.itemId != null) {
+            playbackStateHolder.update(
+                itemId       = current.itemId,
+                title        = current.title,
+                author       = current.author,
+                coverArtPath = current.coverArtPath,
+                isPlaying    = !wasPlaying,
+            )
+        }
+    }
+
+    fun seekBackAudiobook()    { controller?.seekBack() }
+    fun seekForwardAudiobook() { controller?.seekForward() }
+    fun skipPreviousAudiobook() { controller?.seekToPreviousMediaItem() }
+    fun skipNextAudiobook()     { controller?.seekToNextMediaItem() }
 }

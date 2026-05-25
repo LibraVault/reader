@@ -1,6 +1,5 @@
 package xyz.libravault.feature.reader.epub
 
-import android.graphics.PointF
 import android.net.Uri
 import android.view.View
 import androidx.compose.foundation.layout.Box
@@ -20,9 +19,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.*
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -32,6 +28,11 @@ import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.input.DragEvent as ReadiumDragEvent
+import org.readium.r2.navigator.input.InputListener as ReadiumInputListener
+import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
+import org.readium.r2.navigator.input.TapEvent
+import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
@@ -83,9 +84,6 @@ fun EpubReaderScreen(
     viewModel: EpubReaderViewModel = hiltViewModel(),  // caller may pass its own instance
 ) {
     val publicationState by viewModel.state.collectAsState()
-    val scope = rememberCoroutineScope()
-    val configuration = LocalConfiguration.current
-    val screenWidthDp = configuration.screenWidthDp.dp
 
     // Open the publication when this composable first enters the composition
     LaunchedEffect(fileUri) {
@@ -114,7 +112,6 @@ fun EpubReaderScreen(
                     initialCfi        = initialCfi,
                     settings          = settings,
                     fragmentManager   = fragmentManager,
-                    screenWidthDp     = screenWidthDp,
                     onPositionChanged = onPositionChanged,
                     onLocatorChanged  = viewModel::onLocatorChanged,
                     onCentreTap       = onCentreTap,
@@ -133,7 +130,6 @@ private fun EpubNavigatorView(
     initialCfi: String?,
     settings: ReaderSettings,
     fragmentManager: FragmentManager,
-    screenWidthDp: androidx.compose.ui.unit.Dp,
     onPositionChanged: (String) -> Unit,
     onLocatorChanged: (Locator) -> Unit,
     onCentreTap: () -> Unit,
@@ -148,7 +144,6 @@ private fun EpubNavigatorView(
     val currentOnLocatorChanged  = rememberUpdatedState(onLocatorChanged)
     val currentOnCentreTap       = rememberUpdatedState(onCentreTap)
     val currentOnAddHighlight    = rememberUpdatedState(onAddHighlight)
-    val density = LocalDensity.current.density
 
     // Hold a reference to the navigator fragment so settings changes can be
     // pushed to it without recreating the fragment
@@ -188,32 +183,10 @@ private fun EpubNavigatorView(
             }
         }
 
-        // Mutable reference filled after the fragment is committed below.
-        // The listener accesses it via closure — by the time onTap fires the
-        // user has interacted with the screen, so nav will already be set.
-        var navRef: EpubNavigatorFragment? = null
-
-        // Navigator listener — routes taps and position change callbacks
+        // Navigator listener — only handles hyperlink routing in beta.2.
+        // Tap events are routed exclusively through InputListener (see below),
+        // NOT through Listener.onTap(PointF) — that path was removed in beta.2.
         val listener = object : EpubNavigatorFragment.Listener {
-
-            override fun onTap(point: PointF): Boolean {
-                val xDp   = point.x / density
-                val width = screenWidthDp.value
-                return when {
-                    xDp < width * 0.33f -> {
-                        navRef?.goBackward(animated = true)
-                        true
-                    }
-                    xDp > width * 0.67f -> {
-                        navRef?.goForward(animated = true)
-                        true
-                    }
-                    else -> {
-                        currentOnCentreTap.value.invoke()
-                        true
-                    }
-                }
-            }
 
             /** Required by [HyperlinkNavigator.Listener]. Allow all internal links. */
             @OptIn(ExperimentalReadiumApi::class)
@@ -248,8 +221,27 @@ private fun EpubNavigatorView(
 
         // Get the navigator reference synchronously (commitNow = immediate execution)
         val nav = fragmentManager.findFragmentByTag(EPUB_FRAGMENT_TAG) as? EpubNavigatorFragment
-        navRef    = nav   // wire tap-navigation now that the fragment exists
         navigator = nav
+
+        // Use Readium's own DirectionalNavigationAdapter for left/right page turns.
+        // It uses the same coordinate space as TapEvent and handles RTL reading
+        // progression correctly. We add it first so it claims edge taps (returns
+        // true) and lets center taps fall through to the next listener.
+        val dirNavAdapter = nav?.let { n ->
+            DirectionalNavigationAdapter(navigator = n).also { n.addInputListener(it) }
+        }
+
+        // Center-tap listener: only fires when dirNavAdapter returned false (i.e.,
+        // the tap was NOT in the left/right edge zone). Toggles the UI overlay.
+        val centerTapListener = object : ReadiumInputListener {
+            override fun onTap(event: TapEvent): Boolean {
+                currentOnCentreTap.value.invoke()
+                return true
+            }
+            override fun onDrag(event: ReadiumDragEvent): Boolean = false
+            override fun onKey(event: ReadiumKeyEvent): Boolean = false
+        }
+        nav?.addInputListener(centerTapListener)
 
         // Collect position changes from the navigator's StateFlow
         nav?.currentLocator
@@ -264,14 +256,13 @@ private fun EpubNavigatorView(
             ?.launchIn(scope)
 
         onDispose {
-            // Remove the fragment on composition exit so it doesn't linger
-            // if the user navigates away while a settings sheet is open etc.
+            dirNavAdapter?.let { nav?.removeInputListener(it) }
+            nav?.removeInputListener(centerTapListener)
             if (!fragmentManager.isStateSaved) {
                 fragmentManager.commitNow(allowStateLoss = true) {
                     nav?.let { remove(it) }
                 }
             }
-            navRef    = null
             navigator = null
         }
     }

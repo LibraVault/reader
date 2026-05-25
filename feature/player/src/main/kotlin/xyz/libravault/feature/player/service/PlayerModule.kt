@@ -38,6 +38,8 @@ object PlayerModule {
                 /* handleAudioFocus = */ true,
             )
             .setHandleAudioBecomingNoisy(true)
+            .setSeekBackIncrementMs(30_000)
+            .setSeekForwardIncrementMs(30_000)
             .build()
 
     /**

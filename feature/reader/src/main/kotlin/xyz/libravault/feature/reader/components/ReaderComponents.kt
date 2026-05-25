@@ -2,6 +2,8 @@ package xyz.libravault.feature.reader.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +21,9 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +57,7 @@ fun ReaderTopBar(
     title: String,
     isBookmarked: Boolean,
     isTtsActive: Boolean,
+    showTtsButton: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
     onSettings: () -> Unit,
@@ -82,13 +88,15 @@ fun ReaderTopBar(
                     else MaterialTheme.colorScheme.onSurface,
                 )
             }
-            IconButton(onClick = onTts) {
-                Icon(
-                    Icons.Default.RecordVoiceOver,
-                    contentDescription = "Read aloud",
-                    tint = if (isTtsActive) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurface,
-                )
+            if (showTtsButton) {
+                IconButton(onClick = onTts) {
+                    Icon(
+                        Icons.Default.RecordVoiceOver,
+                        contentDescription = "Read aloud",
+                        tint = if (isTtsActive) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Reader settings")
@@ -217,37 +225,57 @@ fun BookmarksSheet(
             } else {
                 LazyColumn {
                     items(bookmarks, key = { it.id }) { bookmark ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onBookmarkClick(bookmark) }
-                                .padding(horizontal = 24.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Default.Bookmark, contentDescription = "Bookmark", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 12.dp),
-                            ) {
-                                Text(
-                                    text = bookmark.label ?: bookmark.positionRef,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Text(
-                                    text = bookmark.positionRef,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value == SwipeToDismissBoxValue.EndToStart) {
+                                    onBookmarkDelete(bookmark.id)
+                                    true
+                                } else false
                             }
-                            IconButton(onClick = { onBookmarkDelete(bookmark.id) }) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Delete bookmark",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp),
-                                )
+                        )
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            backgroundContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.errorContainer)
+                                        .padding(end = 20.dp),
+                                    contentAlignment = Alignment.CenterEnd,
+                                ) {
+                                    Icon(Icons.Default.Delete, "Delete",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer)
+                                }
+                            },
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .clickable { onBookmarkClick(bookmark) }
+                                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.Bookmark, contentDescription = "Bookmark",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 12.dp),
+                                ) {
+                                    Text(
+                                        text = bookmark.label ?: bookmark.positionRef,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        text = bookmark.positionRef,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
