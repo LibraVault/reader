@@ -46,7 +46,7 @@ Builds:
     scanignore:
       - gradle/wrapper/gradle-wrapper.jar
 
-AllowedAPKSigningKeys: TO_BE_FILLED_AFTER_FIRST_SIGNED_RELEASE
+AllowedAPKSigningKeys: 581050c87af0031ee426db330b3f9e4b4a19877ade3350c960f54182a5367c7a
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
