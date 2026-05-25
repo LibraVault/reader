@@ -1,6 +1,8 @@
 package xyz.libravault.core.tts
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -12,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,9 +35,18 @@ class AndroidTtsEngine @Inject constructor(
     private val _completionEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     override val completionEvent: SharedFlow<Unit> = _completionEvent.asSharedFlow()
 
+    // All state mutations run on the main thread (via mainHandler or direct call from UI).
+    // TTS progress callbacks post to mainHandler so reads and writes are never concurrent.
+    // This eliminates the race where onDone fires mid-speak() and queues a chunk from the
+    // OLD utterances list with the NEW generation, which Samsung fires onError for.
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     // Full text split into speakable chunks.
     private var utterances: List<String> = emptyList()
     private var currentUtteranceIndex: Int = 0
+    // Incremented on every speak() / stop() / pause() call so that onDone
+    // callbacks from a previous utterance run are silently ignored.
+    private var utteranceGeneration: Int = 0
 
     override fun initialize() {
         if (_state.value.status != TtsStatus.UNINITIALIZED) return
@@ -65,8 +75,13 @@ class AndroidTtsEngine @Inject constructor(
 
     override fun speak(text: String) {
         val engine = tts ?: return
-        if (_state.value.status == TtsStatus.ERROR) return
+        // Only block if engine isn't ready yet; allow recovery from transient errors.
+        val status = _state.value.status
+        if (status == TtsStatus.UNINITIALIZED || status == TtsStatus.INITIALIZING) return
 
+        // Bump generation BEFORE engine.stop() so any onDone/onError that fires
+        // for the stopped utterance carries the old gen and is rejected.
+        utteranceGeneration++
         engine.stop()
         utterances = splitIntoUtterances(text)
         currentUtteranceIndex = 0
@@ -75,6 +90,7 @@ class AndroidTtsEngine @Inject constructor(
     }
 
     override fun pause() {
+        utteranceGeneration++
         tts?.stop()
         _state.value = _state.value.copy(status = TtsStatus.PAUSED)
     }
@@ -87,6 +103,7 @@ class AndroidTtsEngine @Inject constructor(
     }
 
     override fun stop() {
+        utteranceGeneration++
         tts?.stop()
         utterances = emptyList()
         currentUtteranceIndex = 0
@@ -101,8 +118,16 @@ class AndroidTtsEngine @Inject constructor(
     }
 
     override fun setSpeechRate(rate: Float) {
-        tts?.setSpeechRate(rate)
+        val engine = tts ?: return
+        engine.setSpeechRate(rate)
         _state.value = _state.value.copy(speechRate = rate)
+        // TextToSpeech.setSpeechRate only affects future utterances, not the one currently
+        // playing. Bump the generation, stop, and re-speak the current chunk immediately.
+        if (_state.value.status == TtsStatus.PLAYING) {
+            utteranceGeneration++
+            engine.stop()
+            speakNext(engine)
+        }
     }
 
     override fun shutdown() {
@@ -119,23 +144,45 @@ class AndroidTtsEngine @Inject constructor(
             _completionEvent.tryEmit(Unit)
             return
         }
-        engine.speak(chunk, TextToSpeech.QUEUE_FLUSH, null, currentUtteranceIndex.toString())
+        // Encode generation into utteranceId so onDone can reject stale callbacks.
+        val id = "${utteranceGeneration}_${currentUtteranceIndex}"
+        engine.speak(chunk, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
+    // Callbacks arrive on the TTS engine's internal thread. We post every
+    // state mutation back to the main thread so it serialises with speak(),
+    // stop(), and pause() calls — eliminating all race conditions on shared state.
     private val progressListener = object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) {}
 
         override fun onDone(utteranceId: String?) {
-            if (_state.value.status != TtsStatus.PLAYING) return
-            currentUtteranceIndex++
-            val engine = tts ?: return
-            speakNext(engine)
+            mainHandler.post {
+                val gen = utteranceId?.substringBefore('_')?.toIntOrNull() ?: return@post
+                if (gen != utteranceGeneration) return@post
+                if (_state.value.status != TtsStatus.PLAYING) return@post
+                currentUtteranceIndex++
+                val engine = tts ?: return@post
+                speakNext(engine)
+            }
         }
 
         @Deprecated("Deprecated in API 21", ReplaceWith("onError(utteranceId, errorCode)"))
         override fun onError(utteranceId: String?) {
-            Log.e(TAG, "TTS error on utterance $utteranceId")
-            _state.value = _state.value.copy(status = TtsStatus.ERROR, error = "Playback error")
+            mainHandler.post {
+                val gen = utteranceId?.substringBefore('_')?.toIntOrNull() ?: return@post
+                if (gen != utteranceGeneration) return@post
+                Log.e(TAG, "TTS error on utterance $utteranceId")
+                _state.value = _state.value.copy(status = TtsStatus.ERROR, error = "Playback error")
+            }
+        }
+
+        override fun onError(utteranceId: String?, errorCode: Int) {
+            mainHandler.post {
+                val gen = utteranceId?.substringBefore('_')?.toIntOrNull() ?: return@post
+                if (gen != utteranceGeneration) return@post
+                Log.e(TAG, "TTS error on utterance $utteranceId (code $errorCode)")
+                _state.value = _state.value.copy(status = TtsStatus.ERROR, error = "Playback error ($errorCode)")
+            }
         }
     }
 
@@ -145,25 +192,25 @@ class AndroidTtsEngine @Inject constructor(
     companion object {
         // Visible for testing.
         internal fun splitIntoUtterances(text: String): List<String> {
-        if (text.length <= MAX_UTTERANCE_CHARS) return listOf(text)
+            if (text.length <= MAX_UTTERANCE_CHARS) return listOf(text)
 
-        val chunks = mutableListOf<String>()
-        var remaining = text.trim()
+            val chunks = mutableListOf<String>()
+            var remaining = text.trim()
 
-        while (remaining.isNotEmpty()) {
-            if (remaining.length <= MAX_UTTERANCE_CHARS) {
-                chunks += remaining
-                break
+            while (remaining.isNotEmpty()) {
+                if (remaining.length <= MAX_UTTERANCE_CHARS) {
+                    chunks += remaining
+                    break
+                }
+                // Find last sentence boundary within the limit
+                val window = remaining.substring(0, MAX_UTTERANCE_CHARS)
+                val cut = window.indexOfLast { it == '.' || it == '!' || it == '?' }
+                val splitAt = if (cut > 0) cut + 1 else MAX_UTTERANCE_CHARS
+                chunks += remaining.substring(0, splitAt).trim()
+                remaining = remaining.substring(splitAt).trim()
             }
-            // Find last sentence boundary within the limit
-            val window = remaining.substring(0, MAX_UTTERANCE_CHARS)
-            val cut = window.indexOfLast { it == '.' || it == '!' || it == '?' }
-            val splitAt = if (cut > 0) cut + 1 else MAX_UTTERANCE_CHARS
-            chunks += remaining.substring(0, splitAt).trim()
-            remaining = remaining.substring(splitAt).trim()
-        }
 
-        return chunks
+            return chunks
         }
     }
 

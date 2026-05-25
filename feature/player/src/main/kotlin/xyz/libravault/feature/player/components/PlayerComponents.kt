@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,9 +21,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -38,9 +45,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +72,18 @@ fun PlayerSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Track drag state locally so the thumb follows the finger without calling
+    // ExoPlayer seekTo on every pixel of movement (which causes stutter and lag).
+    var isDragging by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+
+    val sliderValue = when {
+        isDragging        -> dragFraction
+        durationMs > 0    -> positionMs.toFloat() / durationMs
+        else              -> 0f
+    }
+    val displayMs = if (isDragging) (dragFraction * durationMs).toLong() else positionMs
+
     Column(modifier = modifier.fillMaxWidth()) {
         Box(modifier = Modifier.fillMaxWidth()) {
             // Buffered progress (behind)
@@ -72,10 +94,18 @@ fun PlayerSeekBar(
                     modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.Center),
                 )
             }
-            // Playback slider
+            // Playback slider — updates local drag state on every move,
+            // only seeks ExoPlayer once the finger lifts.
             Slider(
-                value         = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f,
-                onValueChange = { fraction -> onSeek((fraction * durationMs).toLong()) },
+                value         = sliderValue,
+                onValueChange = { fraction ->
+                    isDragging   = true
+                    dragFraction = fraction
+                },
+                onValueChangeFinished = {
+                    if (durationMs > 0) onSeek((dragFraction * durationMs).toLong())
+                    isDragging = false
+                },
                 modifier      = Modifier.fillMaxWidth(),
                 colors        = SliderDefaults.colors(
                     thumbColor            = MaterialTheme.colorScheme.primary,
@@ -88,7 +118,7 @@ fun PlayerSeekBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(formatMs(positionMs), style = MaterialTheme.typography.labelSmall,
+            Text(formatMs(displayMs), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(formatMs(durationMs), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -365,6 +395,7 @@ private fun formatMs(ms: Long): String {
 fun BookmarksSheet(
     bookmarks: List<xyz.libravault.core.domain.model.Bookmark>,
     onBookmarkClick: (xyz.libravault.core.domain.model.Bookmark) -> Unit,
+    onBookmarkDelete: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -390,25 +421,51 @@ fun BookmarksSheet(
                         items = bookmarks,
                         key   = { it.id },
                     ) { bookmark ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onBookmarkClick(bookmark) }
-                                .padding(horizontal = 24.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value == SwipeToDismissBoxValue.EndToStart) {
+                                    onBookmarkDelete(bookmark.id)
+                                    true
+                                } else false
+                            }
+                        )
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            backgroundContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.errorContainer)
+                                        .padding(end = 20.dp),
+                                    contentAlignment = Alignment.CenterEnd,
+                                ) {
+                                    Icon(Icons.Default.Delete, "Delete",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer)
+                                }
+                            },
                         ) {
-                            Icon(Icons.Default.Bookmark, "Bookmark",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text  = bookmark.label ?: bookmark.positionRef,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .clickable { onBookmarkClick(bookmark) }
+                                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Icon(Icons.Default.Bookmark, "Bookmark",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text  = bookmark.label ?: bookmark.positionRef,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))

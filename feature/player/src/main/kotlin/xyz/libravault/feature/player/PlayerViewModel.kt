@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
+import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
 import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
@@ -69,6 +70,7 @@ class PlayerViewModel @Inject constructor(
     private val saveProgress: SaveListeningProgressUseCase,
     private val observeBookmarks: ObserveBookmarksUseCase,
     private val addBookmark: AddBookmarkUseCase,
+    private val deleteBookmark: DeleteBookmarkUseCase,
     private val controllerFuture: ListenableFuture<MediaController>,
     private val chapterExtractor: ChapterExtractor,
     private val sleepTimer: SleepTimer,
@@ -280,6 +282,18 @@ class PlayerViewModel @Inject constructor(
                 return
             }
             _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
+            // Mirror to PlaybackStateHolder so the mini-player icon updates immediately
+            // even when the polling loop is stopped (e.g. after pause).
+            val item = _uiState.value.item
+            if (item != null) {
+                playbackStateHolder.update(
+                    itemId       = item.id,
+                    title        = item.title,
+                    author       = item.author,
+                    coverArtPath = item.coverArtPath,
+                    isPlaying    = isPlaying,
+                )
+            }
             if (isPlaying) startPolling() else stopPolling()
         }
 
@@ -390,6 +404,9 @@ class PlayerViewModel @Inject constructor(
 
     fun seekTo(positionMs: Long) {
         controller?.seekTo(positionMs)
+        // Immediately reflect the new position so the seek bar doesn't snap back
+        // while paused (the polling loop is stopped when not playing).
+        _uiState.value = _uiState.value.copy(positionMs = positionMs)
     }
 
     // ── Speed ─────────────────────────────────────────────────────────────────
@@ -495,7 +512,14 @@ class PlayerViewModel @Inject constructor(
     fun seekToBookmark(bookmark: Bookmark) {
         val ms = bookmark.positionRef.removePrefix("ms:").toLongOrNull() ?: return
         controller?.seekTo(ms)
+        controller?.play()
+        _uiState.value = _uiState.value.copy(positionMs = ms, isPlaying = true)
+        startPolling()
         hideBookmarks()
+    }
+
+    fun removeBookmark(id: Long) {
+        viewModelScope.launch { deleteBookmark(id) }
     }
 
     // ── Position polling & progress saving ────────────────────────────────────

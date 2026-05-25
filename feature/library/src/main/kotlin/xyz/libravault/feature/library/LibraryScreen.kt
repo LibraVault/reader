@@ -32,11 +32,16 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -75,6 +80,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -234,11 +240,16 @@ fun LibraryScreen(
         bottomBar = {
             if (nowPlaying.itemId != null) {
                 MiniPlayerBar(
-                    title = nowPlaying.title,
-                    author = nowPlaying.author,
+                    title        = nowPlaying.title,
+                    author       = nowPlaying.author,
                     coverArtPath = nowPlaying.coverArtPath,
-                    isPlaying = nowPlaying.isPlaying,
-                    onClick = { nowPlaying.itemId?.let(onNowPlayingClick) },
+                    isPlaying    = nowPlaying.isPlaying,
+                    onArtClick   = { nowPlaying.itemId?.let(onNowPlayingClick) },
+                    onPrevious   = viewModel::skipPrevious,
+                    onSeekBack   = viewModel::seekBack,
+                    onPlayPause  = viewModel::playPause,
+                    onSeekForward= viewModel::seekForward,
+                    onNext       = viewModel::skipNext,
                 )
             }
         },
@@ -935,30 +946,34 @@ private fun MiniPlayerBar(
     author: String,
     coverArtPath: String?,
     isPlaying: Boolean,
-    onClick: () -> Unit,
+    onArtClick: () -> Unit,
+    onPrevious: () -> Unit,
+    onSeekBack: () -> Unit,
+    onPlayPause: () -> Unit,
+    onSeekForward: () -> Unit,
+    onNext: () -> Unit,
 ) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = 8.dp,
         shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Small cover art
+            // Cover art — tapping navigates to the full player
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable(onClick = onArtClick),
                 contentAlignment = Alignment.Center,
             ) {
                 if (coverArtPath != null) {
@@ -971,15 +986,21 @@ private fun MiniPlayerBar(
                 } else {
                     Icon(
                         imageVector = Icons.Default.Headphones,
-                        contentDescription = "Cover art",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )
                 }
             }
 
-            // Title + author
-            Column(modifier = Modifier.weight(1f)) {
+            Spacer(Modifier.width(10.dp))
+
+            // Title + author — tapping also navigates to the full player
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onArtClick),
+            ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelLarge,
@@ -996,13 +1017,31 @@ private fun MiniPlayerBar(
                 )
             }
 
-            // Play/Pause indicator
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Headphones else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "Playing" else "Resume",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
+            // Playback controls
+            IconButton(onClick = onPrevious, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "Previous",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+            IconButton(onClick = onSeekBack, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.FastRewind, contentDescription = "Skip back",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+            IconButton(onClick = onPlayPause, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            IconButton(onClick = onSeekForward, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.FastForward, contentDescription = "Skip forward",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+            IconButton(onClick = onNext, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Next",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }

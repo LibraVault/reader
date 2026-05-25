@@ -85,6 +85,29 @@ class EpubReaderViewModel @Inject constructor(
     }
 
     /**
+     * Returns chapter text starting from approximately the current visual position,
+     * using [Locator.Locations.progression] to estimate the character offset.
+     * Falls back to full chapter text when progression is near 0 or unavailable.
+     * Also anchors the TTS spine cursor so [getNextChapterText] advances from here.
+     */
+    suspend fun getChapterTextFromProgression(): String? {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return null
+        val locator = _currentLocator.value ?: return getChapterText()
+        val link = pub.readingOrder.find { it.url() == locator.href }
+            ?: pub.readingOrder.firstOrNull()
+            ?: return null
+        ttsSpineIndex = pub.readingOrder.indexOf(link)
+        val fullText = withContext(Dispatchers.IO) { fetchAndClean(pub, link) } ?: return null
+        val progression = locator.locations.progression ?: return fullText
+        if (progression < 0.02) return fullText
+        val approxOffset = (fullText.length * progression).toInt().coerceIn(0, fullText.length - 1)
+        val tail = fullText.drop(approxOffset)
+        val boundary = tail.indexOfFirst { it == '.' || it == '!' || it == '?' || it == '\n' }
+        val trimFrom = if (boundary >= 0) boundary + 1 else 0
+        return tail.drop(trimFrom).trimStart().takeIf { it.isNotBlank() } ?: fullText
+    }
+
+    /**
      * Reads the HTML for the current spine item and strips tags to produce plain text for TTS.
      * Also initialises the TTS spine cursor so [getNextChapterText] advances from here.
      * Returns null if no publication is open or no locator is known.
@@ -150,6 +173,10 @@ class EpubReaderViewModel @Inject constructor(
             html
                 .replace(Regex("<style[^>]*>.*?</style>", RegexOption.DOT_MATCHES_ALL), " ")
                 .replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), " ")
+                // Only strip <nav epub:type="..."> elements — those are machine-readable TOC/
+                // landmarks hidden via CSS and must not be read aloud. Plain <nav> elements
+                // without an epub:type attribute may contain legitimate chapter content.
+                .replace(Regex("<nav[^>]+epub:type=['\"][^'\"]*['\"][^>]*>.*?</nav>", RegexOption.DOT_MATCHES_ALL), " ")
                 .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
                 .replace(Regex("<p[^>]*>", RegexOption.IGNORE_CASE), "\n")
                 .replace(Regex("<[^>]+>"), " ")

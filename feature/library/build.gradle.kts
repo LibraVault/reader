@@ -17,4 +17,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.media3:media3-session:1.3.1")
+    implementation("com.google.guava:guava:33.2.1-android")
 }

@@ -1,11 +1,9 @@
 package xyz.libravault.feature.reader.tts
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 import xyz.libravault.core.tts.TtsEngine
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
@@ -37,9 +35,18 @@ class TtsViewModel @Inject constructor(
             TtsStatus.PAUSED -> engine.resume()
             TtsStatus.PLAYING -> { /* already playing */ }
             else -> {
-                if (stagedText.isNotBlank()) engine.speak(stagedText)
+                if (stagedText.isNotBlank()) {
+                    engine.speak(stagedText)
+                }
             }
         }
+    }
+
+    /** Atomically replaces current content and starts speaking from the beginning.
+     *  Use this when the user flips to a new chapter while TTS is already playing. */
+    fun restart(text: String) {
+        stagedText = text
+        engine.speak(text)
     }
 
     fun pause() = engine.pause()
@@ -51,8 +58,6 @@ class TtsViewModel @Inject constructor(
     fun setSpeechRate(rate: Float) = engine.setSpeechRate(rate.coerceIn(0.5f, 3.0f))
 
     override fun onCleared() {
-        // Stop playback but do NOT shut down — the engine is a singleton and may be
-        // reused if the user re-enters the reader. Shutdown is handled by the app lifecycle.
         engine.stop()
     }
 }
