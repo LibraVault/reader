@@ -19,13 +19,12 @@ RepoType: git
 Repo: https://github.com/libravault-xyz/libravault
 
 Builds:
-  - versionName: 0.1.0
+  - versionName: 0.1.0-alpha
     versionCode: 1
-    commit: v0.1.0
+    commit: v0.1.0-alpha
     subdir: app
     gradle:
-      - release
-    prebuild: ./gradlew :app:generateReleaseBuildConfig
+      - fdroid
     scanignore:
       - gradle/wrapper/gradle-wrapper.jar
 
@@ -33,5 +32,5 @@ AllowedAPKSigningKeys: TO_BE_FILLED_AFTER_FIRST_SIGNED_RELEASE
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.1.0
+CurrentVersion: 0.1.0-alpha
 CurrentVersionCode: 1
