@@ -167,8 +167,8 @@ Three GitHub Actions workflows (all free for public repos):
 
 | Version | Focus |
 |---|---|
-| **v1 (current)** | Android app — EPUB, PDF, audio, privacy-first |
-| v1.1 | TTS, clip bookmarks, home screen widget |
+| **v1 (current)** | Android app — EPUB, PDF, audio, TTS, privacy-first |
+| v1.1 | Clip bookmarks, home screen widget |
 | v2 | DRM (Readium LCP), OPDS browsing, Comic/CBZ |
 | v3 | iOS (Compose Multiplatform) |
 | v4 | Desktop — Windows, macOS, Linux (KMP + SQLDelight) |
@@ -200,13 +200,3 @@ Alternatively, sponsor us on [GitHub Sponsors](https://github.com/sponsors/libra
 
 *Libravault.xyz · Built with Kotlin + Jetpack Compose*
 
-## Donate
-
-LibraVault is free and open source. If you'd like to support its development:
-
-| Currency | Address |
-|----------|---------|
-| **XMR**  | `42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF` |
-| **BTC**  | `bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg` |
-
-See also [GitHub Sponsors](https://github.com/sponsors/libravault-xyz).
