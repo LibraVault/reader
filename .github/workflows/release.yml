@@ -1,6 +1,6 @@
 name: Release Build
 
-# Triggers when a version tag is pushed: git tag v0.1.0 && git push --tags
+# Triggers when a version tag is pushed: git tag v0.1.0-alpha && git push --tags
 on:
   push:
     tags:
@@ -28,35 +28,31 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # Decode the base64-encoded keystore stored as a GitHub secret.
-      # To set up: base64 -i libravault.keystore | pbcopy → paste into
-      # GitHub → Settings → Secrets → RELEASE_KEYSTORE
-      - name: Decode keystore
+      # Decode the base64-encoded keystore and write keystore.properties so the
+      # existing signing config in app/build.gradle.kts picks them up directly.
+      # To encode: base64 -w0 libravault-release.keystore → paste into RELEASE_KEYSTORE secret
+      - name: Set up signing
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 --decode \
             > app/libravault-release.keystore
+          printf 'storeFile=libravault-release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${{ secrets.KEYSTORE_PASSWORD }}" \
+            "${{ secrets.KEY_ALIAS }}" \
+            "${{ secrets.KEY_PASSWORD }}" \
+            > keystore.properties
 
       - name: Build release APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
-        run: |
-          ./gradlew assembleFdroidRelease \
-            -Pandroid.injected.signing.store.file=libravault-release.keystore \
-            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+        run: ./gradlew assembleFdroidRelease
 
       - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/fdroid/release/*.apk
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Clean up keystore — never leave signing keys on the runner
-      - name: Clean up keystore
+      # Clean up signing material — never leave keys on the runner
+      - name: Clean up signing
         if: always()
-        run: rm -f app/libravault-release.keystore
+        run: |
+          rm -f app/libravault-release.keystore
+          rm -f keystore.properties
