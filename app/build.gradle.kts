@@ -144,11 +144,25 @@ android {
     // Embed the current git branch in the APK filename so builds from different
     // branches don't overwrite each other.
     // e.g. feature/pro-upgrade + fdroidDebug → libravault-feature-pro-upgrade-fdroid-debug.apk
-    val gitBranch = providers.exec {
-        commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
-    }.standardOutput.asText.get().trim()
-        .replace("/", "-")   // feature/foo → feature-foo
-        .replace("_", "-")   // snake_case → kebab-case
+    val gitBranch = run {
+        val abbrev = providers.exec {
+            commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
+        }.standardOutput.asText.get().trim()
+        if (abbrev != "HEAD") {
+            abbrev
+        } else {
+            // Detached HEAD (CI tag build) — use the tag name, fall back to short SHA
+            runCatching {
+                providers.exec {
+                    commandLine("git", "describe", "--tags", "--exact-match", "HEAD")
+                }.standardOutput.asText.get().trim()
+            }.getOrElse {
+                providers.exec {
+                    commandLine("git", "rev-parse", "--short", "HEAD")
+                }.standardOutput.asText.get().trim()
+            }
+        }
+    }.replace("/", "-").replace("_", "-")
 
     applicationVariants.all {
         val kebabName = name
