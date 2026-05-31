@@ -189,8 +189,9 @@ Alternatively, sponsor us on [GitHub Sponsors](https://github.com/sponsors/libra
 ## Distribution
 
 - **F-Droid** — free, full feature set, reproducible builds
-- **Google Play** — one-time purchase
 - **GitHub Releases** — signed APK on every version tag
+- **Obtanium - tbd
+- **Google Play** — one-time purchase, tbd
 
 ---
 
