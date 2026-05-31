@@ -21,7 +21,7 @@ object LicensingModule {
     @Provides
     @Singleton
     fun provideProGate(@ApplicationContext context: Context): IProGate =
-        PlayBillingProGate(context)
+        KeyProGate(context)
 
     @Provides
     @Singleton

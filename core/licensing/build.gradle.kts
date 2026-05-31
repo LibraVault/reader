@@ -6,6 +6,12 @@ plugins {
 android {
     namespace = "xyz.libravault.core.licensing"
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("fdroid") { dimension = "distribution" }
+        create("play")   { dimension = "distribution" }
+    }
+
     packaging {
         resources {
             // BouncyCastle ships its own META-INF entries that conflict during
@@ -25,8 +31,9 @@ dependencies {
     // Ed25519 signature verification (offline, no network)
     implementation("org.bouncycastle:bcprov-jdk18on:1.78")
 
-    // Google Play Billing (one-time in-app product, v1 purchase path)
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    // Google Play Billing — play flavor only; excluded from F-Droid to prevent
+    // google.android.datatransport (Google's telemetry layer) from entering the APK
+    "playImplementation"("com.android.billingclient:billing-ktx:7.1.1")
 
     // Recovery endpoint client — the only network component in the app
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
