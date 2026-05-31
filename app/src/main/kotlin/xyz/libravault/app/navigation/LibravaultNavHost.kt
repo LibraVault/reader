@@ -24,8 +24,9 @@ sealed class Screen(val route: String) {
     data object Reader : Screen("reader/{itemId}") {
         fun createRoute(itemId: Long) = "reader/$itemId"
     }
-    data object Player : Screen("player/{itemId}") {
+    data object Player : Screen("player/{itemId}?seekMs={seekMs}") {
         fun createRoute(itemId: Long) = "player/$itemId"
+        fun createRouteWithSeek(itemId: Long, seekMs: Long) = "player/$itemId?seekMs=$seekMs"
     }
 
     /** Open an external file URI directly (ACTION_VIEW flow). */
@@ -71,6 +72,9 @@ fun LibravaultNavHost(
                 onNowPlayingClick = { itemId ->
                     navController.navigate(Screen.Player.createRoute(itemId))
                 },
+                onBookmarkItemClick = { item, seekMs ->
+                    navController.navigate(Screen.Player.createRouteWithSeek(item.id, seekMs))
+                },
             )
         }
 
@@ -94,7 +98,10 @@ fun LibravaultNavHost(
 
         composable(
             route     = Screen.Player.route,
-            arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
+            arguments = listOf(
+                navArgument("itemId") { type = NavType.LongType },
+                navArgument("seekMs") { type = NavType.LongType; defaultValue = -1L },
+            ),
         ) { backStackEntry ->
             PlayerScreen(
                 itemId = backStackEntry.arguments!!.getLong("itemId"),

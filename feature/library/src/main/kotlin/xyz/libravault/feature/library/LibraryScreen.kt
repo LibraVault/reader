@@ -97,6 +97,7 @@ fun LibraryScreen(
     onItemClick: (LibraryItem) -> Unit,
     onSettingsClick: () -> Unit,
     onNowPlayingClick: (Long) -> Unit,
+    onBookmarkItemClick: (LibraryItem, Long) -> Unit = { item, _ -> onItemClick(item) },
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -521,9 +522,15 @@ fun LibraryScreen(
             bookmarks = allBookmarks,
             onBookmarkClick = { bookmark ->
                 showAllBookmarks = false
-                // Navigate to the item — the itemId is in bookmark.itemId
                 val item = state.allItems.firstOrNull { it.id == bookmark.bookmark.itemId }
-                if (item != null && viewModel.validateItem(item)) onItemClick(item)
+                if (item != null && viewModel.validateItem(item)) {
+                    val seekMs = bookmark.bookmark.positionRef.removePrefix("ms:").toLongOrNull()
+                    if (seekMs != null && item.format.isAudio()) {
+                        onBookmarkItemClick(item, seekMs)
+                    } else {
+                        onItemClick(item)
+                    }
+                }
             },
             onDeleteBookmark = viewModel::onDeleteBookmark,
             onDismiss = { showAllBookmarks = false },

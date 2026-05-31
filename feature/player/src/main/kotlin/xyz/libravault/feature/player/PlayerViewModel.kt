@@ -89,6 +89,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private val itemId: Long? = savedStateHandle.get<Long>("itemId")?.takeIf { it > 0 }
+    private val initialSeekMs: Long? = savedStateHandle.get<Long>("seekMs")?.takeIf { it >= 0 }
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -136,15 +137,15 @@ class PlayerViewModel @Inject constructor(
                 return@launch
             }
             val progress = getProgress(id)
-            val savedPositionMs = progress?.positionMs ?: 0L
+            val startPositionMs = initialSeekMs ?: progress?.positionMs ?: 0L
             val savedSpeed = progress?.playbackSpeed ?: 1.0f
             _uiState.value = _uiState.value.copy(
                 item                 = item,
                 isLoading            = false,
-                savedStartPositionMs = savedPositionMs,
+                savedStartPositionMs = startPositionMs,
                 playbackSpeed        = savedSpeed,
             )
-            logger.i(TAG, "Loaded: ${item.title} — resume at ${savedPositionMs}ms, speed ${savedSpeed}x")
+            logger.i(TAG, "Loaded: ${item.title} — resume at ${startPositionMs}ms, speed ${savedSpeed}x")
             // If the controller was already connected before loadItem() finished,
             // connectController's play() attempt was a no-op (item was null). Trigger it now.
             // If the controller already has this URI loaded (re-open case), reattach without
@@ -154,7 +155,7 @@ class PlayerViewModel @Inject constructor(
                 if (ctrl.currentMediaItem?.localConfiguration?.uri == uri) {
                     val holder = playbackStateHolder.state.value
                     val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
-                    val resumePos = livePos ?: savedPositionMs
+                    val resumePos = initialSeekMs ?: livePos ?: startPositionMs
                     if (ctrl.currentPosition < resumePos) {
                         ctrl.seekTo(resumePos)
                     }
@@ -177,7 +178,7 @@ class PlayerViewModel @Inject constructor(
                     startProgressSaving()
                     updateChapters()
                 } else {
-                    play(uri, startPositionMs = savedPositionMs, startSpeed = savedSpeed)
+                    play(uri, startPositionMs = startPositionMs, startSpeed = savedSpeed)
                 }
             }
         }
