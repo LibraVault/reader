@@ -42,8 +42,6 @@ data class ReaderUiState(
     val showToolbar: Boolean        = true,
     val showSettingsSheet: Boolean  = false,
     val showBookmarksSheet: Boolean = false,
-    val showTtsBar: Boolean         = false,
-    val showTtsSheet: Boolean       = false,
 )
 
 @HiltViewModel
@@ -211,16 +209,6 @@ class ReaderViewModel @Inject constructor(
     fun updateBookmarkNote(id: Long, note: String?) {
         viewModelScope.launch { updateBookmarkNote(id, note) }
     }
-
-    // ── TTS ───────────────────────────────────────────────────────────────────
-
-    fun toggleTtsBar() {
-        val show = !_uiState.value.showTtsBar
-        _uiState.value = _uiState.value.copy(showTtsBar = show, showTtsSheet = false)
-    }
-
-    fun showTtsSheet() { _uiState.value = _uiState.value.copy(showTtsSheet = true) }
-    fun hideTtsSheet() { _uiState.value = _uiState.value.copy(showTtsSheet = false) }
 
     // ── Highlights ────────────────────────────────────────────────────────────
 

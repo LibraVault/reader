@@ -176,9 +176,6 @@ android {
 }
 
 dependencies {
-    // Core modules (licensing must come before feature:settings which depends on it)
-    implementation(project(":core:licensing"))
-
     // Feature modules
     implementation(project(":feature:onboarding"))
     implementation(project(":feature:library"))

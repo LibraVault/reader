@@ -25,7 +25,6 @@ dependencies {
     implementation(project(":core:storage"))
     implementation(project(":core:logger"))
     implementation(project(":core:database"))
-    implementation(project(":core:tts"))
     implementation(project(":feature:player"))
     implementation("androidx.media3:media3-session:1.3.1")
     implementation("com.google.guava:guava:33.2.1-android")

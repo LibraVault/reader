@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -67,12 +66,9 @@ import xyz.libravault.feature.reader.ScrollMode
 fun ReaderTopBar(
     title: String,
     isBookmarked: Boolean,
-    isTtsActive: Boolean,
-    showTtsButton: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
     onSettings: () -> Unit,
-    onTts: () -> Unit,
 ) {
     TopAppBar(
         title = {
@@ -98,16 +94,6 @@ fun ReaderTopBar(
                     tint = if (isBookmarked) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface,
                 )
-            }
-            if (showTtsButton) {
-                IconButton(onClick = onTts) {
-                    Icon(
-                        Icons.Default.RecordVoiceOver,
-                        contentDescription = "Read aloud",
-                        tint = if (isTtsActive) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Reader settings")

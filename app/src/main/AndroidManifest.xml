@@ -16,13 +16,6 @@
     <!-- Playback notification (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!--
-      INTERNET permission is required ONLY for the optional license recovery flow
-      (RecoveryScreen → RecoveryService). The reader and player never use the
-      network. Users are warned on screen before any network call is made.
-    -->
-    <uses-permission android:name="android.permission.INTERNET" />
-
     <application
         android:name=".LibravaultApp"
         android:label="LibraVault"
