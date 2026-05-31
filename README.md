@@ -167,7 +167,7 @@ Three GitHub Actions workflows (all free for public repos):
 
 | Version | Focus |
 |---|---|
-| **v1 (current)** | Android app — EPUB, PDF, audio, TTS, privacy-first |
+| **v1 (current)** | Android app — EPUB, PDF, audio, privacy-first |
 | v1.1 | Clip bookmarks, home screen widget |
 | v2 | DRM (Readium LCP), OPDS browsing, Comic/CBZ |
 | v3 | iOS (Compose Multiplatform) |
