@@ -45,6 +45,7 @@ interface BookmarkRepository {
     fun observeAllBookmarksWithItem(): Flow<List<BookmarkWithItemInfo>>
     suspend fun addBookmark(bookmark: Bookmark): Long
     suspend fun deleteBookmark(id: Long)
+    suspend fun updateBookmarkNote(id: Long, note: String?)
 }
 
 interface HighlightRepository {

@@ -137,6 +137,9 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun deleteBookmark(id: Long) =
         dao.deleteById(id)
+
+    override suspend fun updateBookmarkNote(id: Long, note: String?) =
+        dao.updateNote(id, note)
 }
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
@@ -215,11 +218,12 @@ private fun BookmarkEntity.toDomain() = Bookmark(
     itemId      = itemId,
     positionRef = positionRef,
     label       = label,
+    note        = note,
     createdAt   = Instant.ofEpochMilli(createdAt),
 )
 
 private fun BookmarkWithItem.toDomainWithItem() = BookmarkWithItemInfo(
-    bookmark    = Bookmark(id, itemId, positionRef, label, Instant.ofEpochMilli(createdAt)),
+    bookmark    = Bookmark(id, itemId, positionRef, label, note, Instant.ofEpochMilli(createdAt)),
     itemTitle   = itemTitle,
     itemAuthor  = itemAuthor,
     itemFormat  = runCatching { MediaFormat.valueOf(itemFormat) }.getOrDefault(MediaFormat.EPUB),
@@ -230,6 +234,7 @@ private fun Bookmark.toEntity() = BookmarkEntity(
     itemId      = itemId,
     positionRef = positionRef,
     label       = label,
+    note        = note,
     createdAt   = createdAt.toEpochMilli(),
 )
 

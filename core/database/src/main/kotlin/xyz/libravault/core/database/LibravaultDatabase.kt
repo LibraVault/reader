@@ -28,7 +28,7 @@ import xyz.libravault.core.database.entity.VaultFolderEntity
         CollectionEntity::class,
         CollectionItemCrossRef::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class LibravaultDatabase : RoomDatabase() {

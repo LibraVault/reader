@@ -75,3 +75,29 @@ val MIGRATION_3_4 = Migration(3, 4) { db ->
         "ALTER TABLE `listening_progress` ADD COLUMN `playbackSpeed` REAL NOT NULL DEFAULT 1.0"
     )
 }
+
+/**
+ * Migration from v4→v5: adds note field to bookmarks.
+ *
+ * v5 schema:
+ *  - adds nullable `note` TEXT column to `bookmarks`
+ *
+ * Idempotent: if a previous working-tree build deployed the updated BookmarkEntity
+ * (with `note`) at schema version 4, Room's fallbackToDestructiveMigration would
+ * have left the column already present. The PRAGMA check avoids the SQLiteException
+ * "duplicate column name: note" that would otherwise cause a persistent crash loop.
+ */
+val MIGRATION_4_5 = Migration(4, 5) { db ->
+    val cursor = db.query("PRAGMA table_info(`bookmarks`)")
+    val alreadyHasNote = cursor.use { c ->
+        val nameIdx = c.getColumnIndex("name")
+        var found = false
+        while (c.moveToNext()) {
+            if (c.getString(nameIdx) == "note") { found = true; break }
+        }
+        found
+    }
+    if (!alreadyHasNote) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `note` TEXT")
+    }
+}

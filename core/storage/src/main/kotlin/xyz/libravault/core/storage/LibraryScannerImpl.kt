@@ -120,8 +120,16 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             // ── 3. Remove stale entries ──────────────────────────────────────
-            val staleCount = removeStaleEntries(scannedPaths)
-            if (staleCount > 0) logger.i(TAG, "Removed $staleCount stale entries")
+            // Guard: if the scan returned 0 files despite active vaults, something
+            // went wrong (SAF permission temporarily unavailable, I/O error, etc.).
+            // Skipping stale removal prevents mass data-loss when the scanner finds
+            // nothing due to a transient permission issue rather than actual deletion.
+            if (scannedPaths.isEmpty()) {
+                logger.w(TAG, "Scan found 0 files across ${vaults.size} vault(s) — skipping stale removal to prevent data loss")
+            } else {
+                val staleCount = removeStaleEntries(scannedPaths)
+                if (staleCount > 0) logger.i(TAG, "Removed $staleCount stale entries")
+            }
 
             // Signal Phase 1 complete — UI is now populated
             val epubCount = formatCounts["EPUB"] ?: 0

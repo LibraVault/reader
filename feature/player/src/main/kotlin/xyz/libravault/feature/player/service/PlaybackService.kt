@@ -30,7 +30,12 @@ class PlaybackService : MediaSessionService() {
     @SuppressLint("UnsafeOptInUsageError")
     override fun onCreate() {
         super.onCreate()
-        setMediaNotificationProvider(LibravaultNotificationProvider(this))
+        try {
+            setMediaNotificationProvider(LibravaultNotificationProvider(this))
+        } catch (_: Exception) {
+            // Fall back to Media3's default notification layout. This is non-fatal —
+            // playback works correctly without the custom compact-strip configuration.
+        }
 
         val sessionActivity = packageManager
             .getLaunchIntentForPackage(packageName)

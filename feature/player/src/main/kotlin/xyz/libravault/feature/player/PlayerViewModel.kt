@@ -26,6 +26,7 @@ import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
 import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
+import xyz.libravault.core.domain.usecase.UpdateBookmarkNoteUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
 import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
@@ -71,6 +72,7 @@ class PlayerViewModel @Inject constructor(
     private val observeBookmarks: ObserveBookmarksUseCase,
     private val addBookmark: AddBookmarkUseCase,
     private val deleteBookmark: DeleteBookmarkUseCase,
+    private val updateBookmarkNote: UpdateBookmarkNoteUseCase,
     private val controllerFuture: ListenableFuture<MediaController>,
     private val chapterExtractor: ChapterExtractor,
     private val sleepTimer: SleepTimer,
@@ -371,7 +373,21 @@ class PlayerViewModel @Inject constructor(
 
     fun togglePlayPause() {
         val ctrl = controller ?: return
-        if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
+        val wasPlaying = ctrl.isPlaying
+        if (wasPlaying) ctrl.pause() else ctrl.play()
+        // Optimistic update: reflect the new state immediately instead of waiting for
+        // onIsPlayingChanged, which can be dropped by the generation guard on first use.
+        _uiState.value = _uiState.value.copy(isPlaying = !wasPlaying)
+        val item = _uiState.value.item
+        if (item != null) {
+            playbackStateHolder.update(
+                itemId       = item.id,
+                title        = item.title,
+                author       = item.author,
+                coverArtPath = item.coverArtPath,
+                isPlaying    = !wasPlaying,
+            )
+        }
     }
 
     fun skipForward() {
@@ -520,6 +536,10 @@ class PlayerViewModel @Inject constructor(
 
     fun removeBookmark(id: Long) {
         viewModelScope.launch { deleteBookmark(id) }
+    }
+
+    fun updateBookmarkNote(id: Long, note: String?) {
+        viewModelScope.launch { updateBookmarkNote(id, note) }
     }
 
     // ── Position polling & progress saving ────────────────────────────────────

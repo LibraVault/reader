@@ -271,6 +271,7 @@ fun PlayerScreen(
                 bookmarks        = bookmarks,
                 onBookmarkClick  = viewModel::seekToBookmark,
                 onBookmarkDelete = viewModel::removeBookmark,
+                onEditNote       = viewModel::updateBookmarkNote,
                 onDismiss        = viewModel::hideBookmarks,
             )
         }

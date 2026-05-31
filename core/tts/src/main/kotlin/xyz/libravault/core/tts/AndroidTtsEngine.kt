@@ -49,8 +49,13 @@ class AndroidTtsEngine @Inject constructor(
     private var utteranceGeneration: Int = 0
 
     override fun initialize() {
-        if (_state.value.status != TtsStatus.UNINITIALIZED) return
-        _state.value = _state.value.copy(status = TtsStatus.INITIALIZING)
+        val status = _state.value.status
+        if (status != TtsStatus.UNINITIALIZED && status != TtsStatus.ERROR) return
+        if (status == TtsStatus.ERROR) {
+            tts?.shutdown()
+            tts = null
+        }
+        _state.value = _state.value.copy(status = TtsStatus.INITIALIZING, error = null)
 
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
