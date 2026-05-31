@@ -105,7 +105,7 @@ libravault/
 |---|---|
 | `FOREGROUND_SERVICE` | Background audio playback |
 | `POST_NOTIFICATIONS` | Media playback controls (Android 13+) |
-| SAF URI access | Read user-selected vault folders only |
+| `SAF URI access` | Read user-selected vault folders only |
 
 **Never requested:** `READ_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `CAMERA`, `CONTACTS`, `LOCATION`.
 
