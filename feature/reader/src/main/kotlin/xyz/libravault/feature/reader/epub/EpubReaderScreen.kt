@@ -1,6 +1,7 @@
 package xyz.libravault.feature.reader.epub
 
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.view.ActionMode
 import android.view.Menu
@@ -230,8 +231,14 @@ private fun EpubNavigatorView(
 
         val selectionCallback = object : ActionMode.Callback {
             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                HIGHLIGHT_COLORS.forEachIndexed { i, (_, label) ->
-                    menu.add(Menu.NONE, HIGHLIGHT_ITEM_BASE + i, i, label)
+                HIGHLIGHT_COLORS.forEachIndexed { i, (colorHex, label) ->
+                    val menuItem = menu.add(Menu.NONE, HIGHLIGHT_ITEM_BASE + i, i, label)
+                    menuItem.setIcon(GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor(colorHex))
+                        setSize(64, 64)
+                    })
+                    menuItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
                 }
                 return true
             }

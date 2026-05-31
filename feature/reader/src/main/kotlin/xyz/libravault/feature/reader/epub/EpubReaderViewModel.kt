@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import xyz.libravault.core.logger.LibravaultLogger
@@ -41,8 +42,14 @@ class EpubReaderViewModel @Inject constructor(
     private val _currentLocator = MutableStateFlow<Locator?>(null)
     val currentLocator: StateFlow<Locator?> = _currentLocator.asStateFlow()
 
+    // Serialised JSON form of the current locator — used by ReaderScreen for bookmark fallback.
+    private val _currentLocatorJson = MutableStateFlow<String?>(null)
+    val currentLocatorJson: StateFlow<String?> = _currentLocatorJson.asStateFlow()
+
+    @OptIn(ExperimentalReadiumApi::class)
     fun onLocatorChanged(locator: Locator) {
         _currentLocator.value = locator
+        _currentLocatorJson.value = locator.toJSON().toString()
     }
 
     // Pending navigation target set when the user taps a bookmark.

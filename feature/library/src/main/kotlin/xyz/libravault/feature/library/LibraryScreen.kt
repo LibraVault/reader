@@ -369,8 +369,52 @@ fun LibraryScreen(
                                 }
                             }
                         }
+                    } else if (state.formatFilter == null) {
+                        // All formats: separate Books and Audio sections so neither is hidden
+                        val allBooks = state.allItems.filter { !it.format.isAudio() }
+                        val allAudio = state.allItems.filter { it.format.isAudio() }
+                        if (allBooks.isNotEmpty()) {
+                            item(key = "section_books_header") { SectionHeader("Books") }
+                            item(key = "section_books_row") {
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(allBooks, key = { it.id }) { item ->
+                                        LibraryItemCard(
+                                            item = item,
+                                            onClick = {
+                                                if (viewModel.validateItem(item)) onItemClick(item)
+                                                else viewModel.showStaleMessage()
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                            item(key = "section_books_spacer") { Spacer(Modifier.height(8.dp)) }
+                        }
+                        if (allAudio.isNotEmpty()) {
+                            item(key = "section_audio_header") { SectionHeader("Audio") }
+                            item(key = "section_audio_row") {
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(allAudio, key = { it.id }) { item ->
+                                        LibraryItemCard(
+                                            item = item,
+                                            onClick = {
+                                                if (viewModel.validateItem(item)) onItemClick(item)
+                                                else viewModel.showStaleMessage()
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                            item(key = "section_audio_spacer") { Spacer(Modifier.height(8.dp)) }
+                        }
                     } else {
-                        // All vaults view — vaultGroupedItems is already format-filtered by ViewModel
+                        // Format filter active: per-vault rows (already filtered by ViewModel)
                         state.vaultGroupedItems.forEach { (vault, vaultItems) ->
                             if (vaultItems.isEmpty()) return@forEach
                             item(key = "${vault.id}_header") {

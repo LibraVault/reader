@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,10 +35,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,26 +48,18 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import kotlin.math.abs
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.MediaFormat
-import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.components.BookmarksSheet
 import xyz.libravault.feature.reader.components.ReaderSettingsSheet
 import xyz.libravault.feature.reader.components.ReaderTopBar
-import xyz.libravault.feature.reader.components.TtsBottomBar
-import xyz.libravault.feature.reader.components.TtsSettingsSheet
 import xyz.libravault.feature.reader.epub.EpubReaderScreen
 import xyz.libravault.feature.reader.epub.EpubReaderViewModel
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
-import xyz.libravault.feature.reader.tts.TtsViewModel
 
 // Height reserved at the bottom of the reader content for the bottom bars.
-// Both the TTS bar and the audiobook mini-player use this constant so the
+// The audiobook mini-player uses this constant so the
 // native EPUB WebView / PDF renderer never occupies that region.
 private val BOTTOM_BAR_HEIGHT = 64.dp
 
@@ -79,8 +68,8 @@ private val BOTTOM_BAR_HEIGHT = 64.dp
  * Routes to [EpubReaderScreen] or [PdfReaderScreen] based on the item's format,
  * and wraps both in a shared [Scaffold] with an animated toolbar.
  *
- * The toolbar auto-hides on centre-tap; bottom bars (TTS / mini-player) are
- * independent overlays — they stay pinned at the exact screen-bottom position
+ * The toolbar auto-hides on centre-tap; the mini-player bottom bar is an
+ * independent overlay — it stays pinned at the exact screen-bottom position
  * used by the Library mini-player, regardless of toolbar visibility.
  */
 @Composable
@@ -89,25 +78,21 @@ fun ReaderScreen(
     fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
     viewModel: ReaderViewModel = hiltViewModel(),
-    ttsViewModel: TtsViewModel = hiltViewModel(),
 ) {
     val state      by viewModel.uiState.collectAsState()
     val bookmarks  by viewModel.bookmarks.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
-    val ttsState   by ttsViewModel.state.collectAsState()
     val nowPlaying by viewModel.nowPlaying.collectAsState()
-
-    val scope = rememberCoroutineScope()
 
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     val pendingPdfPage = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
     }
 
-    // Show audiobook mini player whenever an audiobook is loaded and TTS is not active.
+    // Show audiobook mini player whenever an audiobook is loaded.
     // Independent of toolbar visibility — stays pinned at the bottom even when the
     // toolbar hides on centre-tap (same behaviour as the Library screen mini-player).
-    val showMiniPlayer = nowPlaying.itemId != null && !state.showTtsBar
+    val showMiniPlayer = nowPlaying.itemId != null
 
     // Wrap in the reading theme chosen by the user
     LibravaultTheme(readingTheme = state.settings.theme) {
@@ -119,116 +104,14 @@ fun ReaderScreen(
                 val uri  = Uri.parse(item.filePath)
 
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
-
-                // Auto-advance TTS to the next chapter when the current one finishes.
-                LaunchedEffect(state.showTtsBar, item.id) {
-                    if (!state.showTtsBar || item.format != MediaFormat.EPUB) return@LaunchedEffect
-                    ttsViewModel.completionEvent.collect {
-                        val nextText = epubViewModel.getNextChapterText() ?: return@collect
-                        ttsViewModel.setContent(nextText)
-                        ttsViewModel.play()
-                    }
-                }
-
-                // Follow the reader's visual position: when the user flips pages or chapters
-                // while TTS is playing, restart TTS from the new position.
-                LaunchedEffect(state.showTtsBar, item.id) {
-                    if (!state.showTtsBar || item.format != MediaFormat.EPUB) return@LaunchedEffect
-                    var lastHref: String? = null
-                    var lastProgression: Double? = null
-                    var lastPosition: Int? = null
-                    epubViewModel.currentLocator.debounce(350).collect { locator ->
-                        val href = locator?.href?.toString() ?: return@collect
-                        val progression = locator.locations.progression
-                        val position = locator.locations.position
-                        val status = ttsViewModel.state.value.status
-                        if ((status == TtsStatus.PLAYING || status == TtsStatus.PAUSED) &&
-                            lastHref != null
-                        ) {
-                            val hrefChanged = href != lastHref
-                            // Use Readium's exact page position for flip detection;
-                            // fall back to a small progression delta when position is unavailable.
-                            val pageFlipped = !hrefChanged && (
-                                if (position != null && lastPosition != null) position != lastPosition
-                                else progression != null && lastProgression != null &&
-                                    abs(progression - lastProgression!!) > 0.01
-                            )
-                            if (hrefChanged || pageFlipped) {
-                                val text = if (hrefChanged) {
-                                    epubViewModel.getChapterText()
-                                } else {
-                                    epubViewModel.getChapterTextFromProgression()
-                                }
-                                if (text != null) {
-                                    if (status == TtsStatus.PLAYING) {
-                                        ttsViewModel.restart(text)
-                                    } else {
-                                        ttsViewModel.setContent(text)
-                                    }
-                                }
-                            }
-                        }
-                        lastHref = href
-                        lastProgression = progression
-                        lastPosition = position
-                    }
-                }
-
-                // Auto-start TTS when the bar is first opened.
-                LaunchedEffect(state.showTtsBar, item.id) {
-                    if (!state.showTtsBar || item.format != MediaFormat.EPUB) return@LaunchedEffect
-                    ttsViewModel.state.first { s ->
-                        s.status != TtsStatus.UNINITIALIZED && s.status != TtsStatus.INITIALIZING
-                    }
-                    if (ttsViewModel.state.value.status != TtsStatus.ERROR) {
-                        val text = epubViewModel.getChapterText()
-                        if (text != null && ttsViewModel.state.value.status != TtsStatus.PLAYING) {
-                            ttsViewModel.setContent(text)
-                            ttsViewModel.play()
-                        }
-                    }
-                }
-
-                // Pause the audiobook whenever TTS starts speaking, so they don't overlap.
-                LaunchedEffect(item.id) {
-                    ttsViewModel.state.collect { s ->
-                        if (s.status == TtsStatus.PLAYING) {
-                            viewModel.pauseAudiobook()
-                        }
-                    }
-                }
+                val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
 
                 val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     bottomBar = {
-                        if (state.showTtsBar) {
-                            TtsBottomBar(
-                                state          = ttsState,
-                                onPlay         = {
-                                    if (ttsState.status != TtsStatus.PAUSED) {
-                                        scope.launch {
-                                            val text = if (item.format == MediaFormat.EPUB) {
-                                                epubViewModel.getChapterText()
-                                            } else null
-                                            if (text != null) {
-                                                ttsViewModel.setContent(text)
-                                                ttsViewModel.play()
-                                            }
-                                        }
-                                    } else {
-                                        ttsViewModel.play()
-                                    }
-                                },
-                                onPause        = ttsViewModel::pause,
-                                onStop         = {
-                                    ttsViewModel.stop()
-                                    epubViewModel.resetTtsPosition()
-                                },
-                                onOpenSettings = viewModel::showTtsSheet,
-                            )
-                        } else if (showMiniPlayer) {
+                        if (showMiniPlayer) {
                             ReaderMiniPlayerBar(
                                 nowPlaying    = nowPlaying,
                                 onPrevious    = viewModel::skipPreviousAudiobook,
@@ -302,11 +185,10 @@ fun ReaderScreen(
                             ReaderTopBar(
                                 title          = item.title,
                                 isBookmarked   = bookmarks.any {
-                                    it.positionRef == state.progress?.positionCfi
+                                    val epubRef = state.progress?.positionCfi ?: currentLocatorJson
+                                    it.positionRef == epubRef
                                         || it.positionRef == "page:${state.progress?.pageIndex ?: 0}"
                                 },
-                                isTtsActive    = state.showTtsBar,
-                                showTtsButton  = item.format == MediaFormat.EPUB,
                                 onBack         = onBack,
                                 onBookmark     = {
                                     val ref = when (item.format) {
@@ -314,16 +196,12 @@ fun ReaderScreen(
                                             "page:${state.progress?.pageIndex ?: 0}"
                                         else ->
                                             state.progress?.positionCfi
-                                                ?: state.progress?.pageIndex?.let { "page:$it" }
+                                                ?: currentLocatorJson
                                                 ?: return@ReaderTopBar
                                     }
                                     viewModel.addBookmark(ref)
                                 },
                                 onSettings     = viewModel::showSettings,
-                                onTts          = {
-                                    viewModel.toggleTtsBar()
-                                    ttsViewModel.initializeIfNeeded()
-                                },
                             )
                         }
                     }
@@ -364,16 +242,6 @@ fun ReaderScreen(
                         onBookmarkDelete = viewModel::removeBookmark,
                         onEditNote       = viewModel::updateBookmarkNote,
                         onDismiss        = viewModel::hideBookmarks,
-                    )
-                }
-
-                // ── TTS settings sheet ────────────────────────────────────────
-                if (state.showTtsSheet) {
-                    TtsSettingsSheet(
-                        state               = ttsState,
-                        onVoiceSelected     = ttsViewModel::setVoice,
-                        onSpeechRateChanged = ttsViewModel::setSpeechRate,
-                        onDismiss           = viewModel::hideTtsSheet,
                     )
                 }
             }
