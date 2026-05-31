@@ -20,6 +20,7 @@ import xyz.libravault.core.domain.model.ReadingProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
 import xyz.libravault.core.domain.usecase.AddHighlightUseCase
 import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
+import xyz.libravault.core.domain.usecase.UpdateBookmarkNoteUseCase
 import xyz.libravault.core.domain.usecase.DeleteHighlightUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
 import xyz.libravault.core.storage.usecase.OpenFileUseCase
@@ -55,6 +56,7 @@ class ReaderViewModel @Inject constructor(
     private val observeBookmarks: ObserveBookmarksUseCase,
     private val addBookmark: AddBookmarkUseCase,
     private val deleteBookmark: DeleteBookmarkUseCase,
+    private val updateBookmarkNote: UpdateBookmarkNoteUseCase,
     private val observeHighlights: ObserveHighlightsUseCase,
     private val addHighlight: AddHighlightUseCase,
     private val deleteHighlight: DeleteHighlightUseCase,
@@ -183,6 +185,12 @@ class ReaderViewModel @Inject constructor(
         )
     }
 
+    fun onLineSpacingChanged(spacing: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f))
+        )
+    }
+
     // ── Bookmarks ─────────────────────────────────────────────────────────────
 
     fun showBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = true) }
@@ -198,6 +206,10 @@ class ReaderViewModel @Inject constructor(
 
     fun removeBookmark(id: Long) {
         viewModelScope.launch { deleteBookmark(id) }
+    }
+
+    fun updateBookmarkNote(id: Long, note: String?) {
+        viewModelScope.launch { updateBookmarkNote(id, note) }
     }
 
     // ── TTS ───────────────────────────────────────────────────────────────────

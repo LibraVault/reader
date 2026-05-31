@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,7 +51,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -352,10 +352,12 @@ fun SettingsScreen(
             ) {
                 DonationButton(
                     label = "Donate XMR",
+                    coinName = "XMR",
                     address = "42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF",
                 )
                 DonationButton(
                     label = "Donate BTC",
+                    coinName = "BTC",
                     address = "bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg",
                 )
             }
@@ -462,14 +464,14 @@ private fun Divider() {
 }
 
 @Composable
-private fun DonationButton(label: String, address: String) {
-    val context  = LocalContext.current
-    val scope    = rememberCoroutineScope()
+private fun DonationButton(label: String, coinName: String, address: String) {
+    val context = LocalContext.current
 
     OutlinedButton(onClick = {
         copyToClipboard(context, address)
-        scope.launch {
-            Toast.makeText(context, "$label address copied", Toast.LENGTH_SHORT).show()
+        // Android 13+ shows its own "Copied to clipboard" system notification automatically
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            Toast.makeText(context, "$coinName address copied", Toast.LENGTH_SHORT).show()
         }
     }) {
         Text(label)

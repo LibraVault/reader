@@ -1,6 +1,10 @@
 package xyz.libravault.feature.reader.epub
 
+import android.graphics.Color
 import android.net.Uri
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,15 +28,19 @@ import androidx.fragment.app.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.html.HtmlDecorationTemplates
 import org.readium.r2.navigator.input.DragEvent as ReadiumDragEvent
 import org.readium.r2.navigator.input.InputListener as ReadiumInputListener
 import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
+import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
@@ -44,6 +52,14 @@ import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.ScrollMode
 
 private const val EPUB_FRAGMENT_TAG = "epub_navigator"
+private const val DECORATION_GROUP_HIGHLIGHTS = "highlights"
+private val HIGHLIGHT_COLORS = listOf(
+    "#FFE066" to "Yellow",
+    "#90EE90" to "Green",
+    "#87CEEB" to "Blue",
+    "#FFB6C1" to "Pink",
+)
+private const val HIGHLIGHT_ITEM_BASE = 0x1000
 
 /**
  * EPUB reader screen — full Readium 3.0.0-beta.2 integration.
@@ -80,10 +96,11 @@ fun EpubReaderScreen(
     fragmentManager: FragmentManager,
     onPositionChanged: (String) -> Unit,
     onCentreTap: () -> Unit,
-    onAddHighlight: (positionRef: String, selectedText: String) -> Unit,
+    onAddHighlight: (positionRef: String, selectedText: String, colorHex: String) -> Unit,
     viewModel: EpubReaderViewModel = hiltViewModel(),  // caller may pass its own instance
 ) {
     val publicationState by viewModel.state.collectAsState()
+    val pendingLocator   by viewModel.pendingLocator.collectAsState()
 
     // Open the publication when this composable first enters the composition
     LaunchedEffect(fileUri) {
@@ -108,14 +125,17 @@ fun EpubReaderScreen(
 
             is EpubPublicationState.Ready -> {
                 EpubNavigatorView(
-                    publication       = ps.publication,
-                    initialCfi        = initialCfi,
-                    settings          = settings,
-                    fragmentManager   = fragmentManager,
-                    onPositionChanged = onPositionChanged,
-                    onLocatorChanged  = viewModel::onLocatorChanged,
-                    onCentreTap       = onCentreTap,
-                    onAddHighlight    = onAddHighlight,
+                    publication              = ps.publication,
+                    initialCfi               = initialCfi,
+                    settings                 = settings,
+                    highlights               = highlights,
+                    pendingLocator           = pendingLocator,
+                    onPendingLocatorConsumed = viewModel::clearPendingLocator,
+                    fragmentManager          = fragmentManager,
+                    onPositionChanged        = onPositionChanged,
+                    onLocatorChanged         = viewModel::onLocatorChanged,
+                    onCentreTap              = onCentreTap,
+                    onAddHighlight           = onAddHighlight,
                 )
             }
         }
@@ -129,11 +149,14 @@ private fun EpubNavigatorView(
     publication: org.readium.r2.shared.publication.Publication,
     initialCfi: String?,
     settings: ReaderSettings,
+    highlights: List<Highlight>,
+    pendingLocator: Locator?,
+    onPendingLocatorConsumed: () -> Unit,
     fragmentManager: FragmentManager,
     onPositionChanged: (String) -> Unit,
     onLocatorChanged: (Locator) -> Unit,
     onCentreTap: () -> Unit,
-    onAddHighlight: (positionRef: String, selectedText: String) -> Unit,
+    onAddHighlight: (positionRef: String, selectedText: String, colorHex: String) -> Unit,
 ) {
     // Stable ID for the FragmentContainerView so we can look up the fragment later
     val containerId = remember { View.generateViewId() }
@@ -205,12 +228,43 @@ private fun EpubNavigatorView(
         // Preferences derived from current ReaderSettings
         val preferences = settings.toEpubPreferences()
 
+        val selectionCallback = object : ActionMode.Callback {
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                HIGHLIGHT_COLORS.forEachIndexed { i, (_, label) ->
+                    menu.add(Menu.NONE, HIGHLIGHT_ITEM_BASE + i, i, label)
+                }
+                return true
+            }
+            override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                val idx = item.itemId - HIGHLIGHT_ITEM_BASE
+                val (color, _) = HIGHLIGHT_COLORS.getOrNull(idx) ?: return false
+                scope.launch {
+                    val sel = navigator?.currentSelection() ?: return@launch
+                    val locatorJson = sel.locator.toJSON().toString()
+                    val text = sel.locator.text?.highlight ?: ""
+                    currentOnAddHighlight.value.invoke(locatorJson, text, color)
+                    navigator?.clearSelection()
+                }
+                mode.finish()
+                return true
+            }
+            override fun onDestroyActionMode(mode: ActionMode) {}
+        }
+
+        val config = EpubNavigatorFragment.Configuration().apply {
+            selectionActionModeCallback = selectionCallback
+            decorationTemplates = HtmlDecorationTemplates.defaultTemplates()
+            useReadiumCssFontSize = true
+        }
+
         // Create the navigator fragment factory
         val factory = EpubNavigatorFactory(publication)
             .createFragmentFactory(
                 initialLocator      = initialLocator,
                 initialPreferences  = preferences,
                 listener            = listener,
+                configuration       = config,
             )
 
         // Commit the fragment, replacing any previous instance
@@ -267,11 +321,39 @@ private fun EpubNavigatorView(
         }
     }
 
+    // ── Bookmark navigation ──────────────────────────────────────────────────
+    // Navigate to a locator set by the user tapping a bookmark in the sheet.
+    LaunchedEffect(pendingLocator) {
+        val locator = pendingLocator ?: return@LaunchedEffect
+        navigator?.go(locator, animated = false)
+        onPendingLocatorConsumed()
+    }
+
     // ── Settings hot-reload ──────────────────────────────────────────────────
     // Push updated preferences to the navigator whenever settings change,
     // without recreating the fragment (avoids position loss and re-parse cost).
     LaunchedEffect(settings) {
         navigator?.submitPreferences(settings.toEpubPreferences())
+    }
+
+    // ── Highlight decorations ────────────────────────────────────────────────
+    // Re-apply all stored highlights whenever the highlight list or navigator changes.
+    LaunchedEffect(navigator, highlights) {
+        val nav = navigator ?: return@LaunchedEffect
+        val decorations = highlights.mapNotNull { h ->
+            runCatching {
+                val locator = Locator.fromJSON(JSONObject(h.positionRef))
+                    ?: return@mapNotNull null
+                Decoration(
+                    id      = "h_${h.id}",
+                    locator = locator,
+                    style   = Decoration.Style.Highlight(
+                        tint = Color.parseColor(h.colorHex),
+                    ),
+                )
+            }.getOrNull()
+        }
+        nav.applyDecorations(decorations, DECORATION_GROUP_HIGHLIGHTS)
     }
 }
 
@@ -295,10 +377,16 @@ private fun ReaderSettings.toEpubPreferences(): EpubPreferences {
             ReadingTheme.LIGHT -> Theme.LIGHT
             ReadingTheme.SEPIA -> Theme.SEPIA
         },
-        fontSize = fontSize.toDouble() * 100.0,  // multiplier → percentage
-        // TODO: map fontFamily → EpubPreferences.fontFamily once the mapping
-        //       of system/serif/sans-serif/mono to Readium's FontFamily is confirmed
-        //       for beta.2 (the enum names differ between alpha and beta releases).
+        // Disable publisher CSS so our font/size/spacing overrides take effect.
+        publisherStyles = false,
+        fontSize   = fontSize.toDouble() * 100.0,  // multiplier → percentage
+        lineHeight = lineSpacing.toDouble(),
+        fontFamily = when (fontFamily) {
+            FontFamily.SERIF      -> ReadiumFontFamily.SERIF
+            FontFamily.SANS_SERIF -> ReadiumFontFamily.SANS_SERIF
+            FontFamily.MONOSPACE  -> ReadiumFontFamily.MONOSPACE
+            FontFamily.SYSTEM     -> null
+        },
         scroll = scrollMode == ScrollMode.SCROLLING,
     )
 }

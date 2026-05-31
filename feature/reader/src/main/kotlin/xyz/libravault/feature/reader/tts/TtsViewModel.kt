@@ -21,7 +21,8 @@ class TtsViewModel @Inject constructor(
     private var stagedText: String = ""
 
     fun initializeIfNeeded() {
-        if (engine.state.value.status == TtsStatus.UNINITIALIZED) {
+        val status = engine.state.value.status
+        if (status == TtsStatus.UNINITIALIZED || status == TtsStatus.ERROR) {
             engine.initialize()
         }
     }

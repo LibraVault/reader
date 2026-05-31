@@ -127,9 +127,17 @@ class LibraryViewModel @Inject constructor(
         observeCurrentlyReading.audiobook(),
         _extras,
     ) { vaults, items, book, audiobook, extras ->
-        // Group items by their vault folder
         val vaultById = vaults.associateBy { it.id }
-        val grouped = items.groupBy { item ->
+
+        // Apply format filter at the ViewModel level so the UI always receives
+        // pre-filtered state and never needs to call applyFormatFilter itself.
+        val filteredItems: List<LibraryItem> = when (val fmt = extras.format) {
+            null   -> items
+            "AUDIO" -> items.filter { it.format.isAudio() }
+            else   -> items.filter { it.format.name == fmt }
+        }
+
+        val grouped = filteredItems.groupBy { item ->
             vaultById[item.vaultFolderId] ?: VaultFolder(
                 id = item.vaultFolderId,
                 uri = "",
@@ -139,7 +147,7 @@ class LibraryViewModel @Inject constructor(
 
         LibraryUiState(
             vaults            = vaults,
-            allItems          = items,
+            allItems          = items,          // intentionally unfiltered (used for bookmark lookup)
             currentBook       = book,
             currentAudiobook  = audiobook,
             isScanning        = extras.scanning,

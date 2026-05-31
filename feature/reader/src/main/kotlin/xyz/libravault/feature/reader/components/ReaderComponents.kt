@@ -2,7 +2,9 @@ package xyz.libravault.feature.reader.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,14 +22,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +46,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -115,6 +126,7 @@ fun ReaderSettingsSheet(
     onThemeChanged: (ReadingTheme) -> Unit,
     onFontSizeChanged: (Float) -> Unit,
     onFontFamilyChanged: (FontFamily) -> Unit,
+    onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (ScrollMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -161,10 +173,30 @@ fun ReaderSettingsSheet(
 
             HorizontalDivider()
 
+            // ── Line spacing ───────────────────────────────────────────────
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Line spacing", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Text("%.1f×".format(settings.lineSpacing),
+                    style = MaterialTheme.typography.labelLarge)
+            }
+            Slider(
+                value = settings.lineSpacing,
+                onValueChange = onLineSpacingChanged,
+                valueRange = 1.0f..2.5f,
+                steps = 14,
+            )
+
+            HorizontalDivider()
+
             // ── Font family ────────────────────────────────────────────────
             Text("Font", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
                 FontFamily.entries.forEach { family ->
                     FilterChip(
                         selected = settings.fontFamily == family,
@@ -202,8 +234,38 @@ fun BookmarksSheet(
     bookmarks: List<Bookmark>,
     onBookmarkClick: (Bookmark) -> Unit,
     onBookmarkDelete: (Long) -> Unit,
+    onEditNote: (Long, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var editingBookmark by remember { mutableStateOf<Bookmark?>(null) }
+    var noteText by remember { mutableStateOf("") }
+
+    editingBookmark?.let { bm ->
+        AlertDialog(
+            onDismissRequest = { editingBookmark = null },
+            title = { Text("Edit note") },
+            text = {
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("Note") },
+                    singleLine = false,
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onEditNote(bm.id, noteText.takeIf { it.isNotBlank() })
+                    editingBookmark = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingBookmark = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
@@ -270,11 +332,26 @@ fun BookmarksSheet(
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
                                     )
-                                    Text(
-                                        text = bookmark.positionRef,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    bookmark.note?.takeIf { it.isNotBlank() }?.let { note ->
+                                        Text(
+                                            text = note,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        noteText = bookmark.note ?: ""
+                                        editingBookmark = bookmark
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit note",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }

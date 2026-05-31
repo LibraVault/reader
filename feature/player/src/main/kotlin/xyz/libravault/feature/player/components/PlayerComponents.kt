@@ -30,14 +30,18 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -396,8 +400,38 @@ fun BookmarksSheet(
     bookmarks: List<xyz.libravault.core.domain.model.Bookmark>,
     onBookmarkClick: (xyz.libravault.core.domain.model.Bookmark) -> Unit,
     onBookmarkDelete: (Long) -> Unit,
+    onEditNote: (Long, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var editingBookmark by remember { mutableStateOf<xyz.libravault.core.domain.model.Bookmark?>(null) }
+    var noteText by remember { mutableStateOf("") }
+
+    editingBookmark?.let { bm ->
+        AlertDialog(
+            onDismissRequest = { editingBookmark = null },
+            title = { Text("Edit note") },
+            text = {
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("Note") },
+                    singleLine = false,
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onEditNote(bm.id, noteText.takeIf { it.isNotBlank() })
+                    editingBookmark = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingBookmark = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
@@ -465,6 +499,26 @@ fun BookmarksSheet(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
+                                    bookmark.note?.takeIf { it.isNotBlank() }?.let { note ->
+                                        Text(
+                                            text  = note,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        noteText = bookmark.note ?: ""
+                                        editingBookmark = bookmark
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit note",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }

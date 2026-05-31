@@ -51,6 +51,7 @@ data class Bookmark(
     val itemId: Long,
     val positionRef: String,            // CFI for EPUB, "page:N" for PDF, "ms:N" for audio
     val label: String? = null,
+    val note: String? = null,
     val createdAt: Instant = Instant.now(),
 )
 

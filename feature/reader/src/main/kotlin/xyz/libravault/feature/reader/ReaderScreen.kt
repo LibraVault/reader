@@ -212,8 +212,10 @@ fun ReaderScreen(
                                             val text = if (item.format == MediaFormat.EPUB) {
                                                 epubViewModel.getChapterText()
                                             } else null
-                                            if (text != null) ttsViewModel.setContent(text)
-                                            ttsViewModel.play()
+                                            if (text != null) {
+                                                ttsViewModel.setContent(text)
+                                                ttsViewModel.play()
+                                            }
                                         }
                                     } else {
                                         ttsViewModel.play()
@@ -301,7 +303,7 @@ fun ReaderScreen(
                                 title          = item.title,
                                 isBookmarked   = bookmarks.any {
                                     it.positionRef == state.progress?.positionCfi
-                                        || it.positionRef == "page:${state.progress?.pageIndex}"
+                                        || it.positionRef == "page:${state.progress?.pageIndex ?: 0}"
                                 },
                                 isTtsActive    = state.showTtsBar,
                                 showTtsButton  = item.format == MediaFormat.EPUB,
@@ -330,12 +332,13 @@ fun ReaderScreen(
                 // ── Settings sheet ────────────────────────────────────────────
                 if (state.showSettingsSheet) {
                     ReaderSettingsSheet(
-                        settings            = state.settings,
-                        onThemeChanged      = viewModel::onThemeChanged,
-                        onFontSizeChanged   = viewModel::onFontSizeChanged,
-                        onFontFamilyChanged = viewModel::onFontFamilyChanged,
-                        onScrollModeChanged = viewModel::onScrollModeChanged,
-                        onDismiss           = viewModel::hideSettings,
+                        settings             = state.settings,
+                        onThemeChanged       = viewModel::onThemeChanged,
+                        onFontSizeChanged    = viewModel::onFontSizeChanged,
+                        onFontFamilyChanged  = viewModel::onFontFamilyChanged,
+                        onLineSpacingChanged = viewModel::onLineSpacingChanged,
+                        onScrollModeChanged  = viewModel::onScrollModeChanged,
+                        onDismiss            = viewModel::hideSettings,
                     )
                 }
 
@@ -352,10 +355,14 @@ fun ReaderScreen(
                                         ?.let { pendingPdfPage.value = it }
                                     viewModel.hideBookmarks()
                                 }
-                                else -> viewModel.hideBookmarks()
+                                else -> {
+                                    epubViewModel.goToLocatorJson(bookmark.positionRef)
+                                    viewModel.hideBookmarks()
+                                }
                             }
                         },
                         onBookmarkDelete = viewModel::removeBookmark,
+                        onEditNote       = viewModel::updateBookmarkNote,
                         onDismiss        = viewModel::hideBookmarks,
                     )
                 }

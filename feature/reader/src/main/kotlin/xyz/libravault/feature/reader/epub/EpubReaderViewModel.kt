@@ -45,6 +45,19 @@ class EpubReaderViewModel @Inject constructor(
         _currentLocator.value = locator
     }
 
+    // Pending navigation target set when the user taps a bookmark.
+    private val _pendingLocator = MutableStateFlow<Locator?>(null)
+    val pendingLocator: StateFlow<Locator?> = _pendingLocator.asStateFlow()
+
+    fun goToLocatorJson(json: String) {
+        val locator = runCatching {
+            Locator.fromJSON(org.json.JSONObject(json))
+        }.getOrNull() ?: return
+        _pendingLocator.value = locator
+    }
+
+    fun clearPendingLocator() { _pendingLocator.value = null }
+
     // Independent cursor for TTS chapter advancement — decoupled from the visual navigator
     // position so continuous reading doesn't fight with locator updates from the navigator.
     // -1 means "not yet set"; getChapterText() initialises it from the visual locator.

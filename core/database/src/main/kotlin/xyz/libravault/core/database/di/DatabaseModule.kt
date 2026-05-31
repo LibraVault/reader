@@ -11,6 +11,7 @@ import xyz.libravault.core.database.LibravaultDatabase
 import xyz.libravault.core.database.MIGRATION_1_2
 import xyz.libravault.core.database.MIGRATION_2_3
 import xyz.libravault.core.database.MIGRATION_3_4
+import xyz.libravault.core.database.MIGRATION_4_5
 import xyz.libravault.core.database.dao.BookmarkDao
 import xyz.libravault.core.database.dao.CollectionDao
 import xyz.libravault.core.database.dao.HighlightDao
@@ -31,7 +32,7 @@ object DatabaseModule {
             LibravaultDatabase::class.java,
             LibravaultDatabase.DATABASE_NAME,
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigration()
             .build()
 

@@ -346,12 +346,12 @@ fun LibraryScreen(
                             }
                         }
                     } else if (state.selectedVault != null) {
-                        // Single vault view
+                        // Single vault view — vaultGroupedItems is already format-filtered by ViewModel
                         val selected = state.selectedVault ?: return@LazyColumn
                         val vaultItems = viewModel.vaultFilteredItems(
                             state.vaultGroupedItems,
                             selected.id,
-                        ).applyFormatFilter(state.formatFilter)
+                        )
                         item { SectionHeader("All items") }
                         item {
                             LazyRow(
@@ -370,22 +370,21 @@ fun LibraryScreen(
                             }
                         }
                     } else {
-                        // All vaults view — grouped by vault folder
+                        // All vaults view — vaultGroupedItems is already format-filtered by ViewModel
                         state.vaultGroupedItems.forEach { (vault, vaultItems) ->
-                            val filtered = vaultItems.applyFormatFilter(state.formatFilter)
-                            if (filtered.isEmpty()) return@forEach
-                            item {
+                            if (vaultItems.isEmpty()) return@forEach
+                            item(key = "${vault.id}_header") {
                                 VaultSectionHeader(
                                     vault = vault,
                                     onClick = { viewModel.selectVault(vault.id) },
                                 )
                             }
-                            item {
+                            item(key = "${vault.id}_row") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    items(filtered, key = { it.id }) { item ->
+                                    items(vaultItems, key = { it.id }) { item ->
                                         LibraryItemCard(
                                             item = item,
                                             onClick = {
@@ -396,7 +395,7 @@ fun LibraryScreen(
                                     }
                                 }
                             }
-                            item { Spacer(Modifier.height(8.dp)) }
+                            item(key = "${vault.id}_spacer") { Spacer(Modifier.height(8.dp)) }
                         }
                     }
                 }

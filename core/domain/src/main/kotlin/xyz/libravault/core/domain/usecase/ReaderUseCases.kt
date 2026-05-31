@@ -47,6 +47,13 @@ class DeleteBookmarkUseCase @Inject constructor(
         bookmarkRepository.deleteBookmark(id)
 }
 
+class UpdateBookmarkNoteUseCase @Inject constructor(
+    private val bookmarkRepository: BookmarkRepository,
+) {
+    suspend operator fun invoke(id: Long, note: String?) =
+        bookmarkRepository.updateBookmarkNote(id, note)
+}
+
 class ObserveAllBookmarksUseCase @Inject constructor(
     private val bookmarkRepository: BookmarkRepository,
 ) {
