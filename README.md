@@ -2,7 +2,7 @@
 
 > Your library, under lock and key.
 
-A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listening to audiobooks — with zero broad file permissions and zero required accounts.
+A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listening to audiobooks — with zero broad file permissions, zero required accounts and zero ads.
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Android](https://img.shields.io/badge/Android-12%2B-green.svg)](https://developer.android.com)
