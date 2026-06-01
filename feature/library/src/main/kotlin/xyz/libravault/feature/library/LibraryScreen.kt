@@ -103,6 +103,7 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsState()
     val nowPlaying by viewModel.nowPlaying.collectAsState()
     val allBookmarks by viewModel.allBookmarks.collectAsState()
+    val isSupporter by viewModel.isSupporter.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var isSearchOpen by remember { mutableStateOf(false) }
     var showAllBookmarks by remember { mutableStateOf(false) }
@@ -184,12 +185,18 @@ fun LibraryScreen(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         } else {
-                            Text(
-                                text = "LibraVault",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = "LibraVault",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                if (isSupporter) SupporterBadge()
+                            }
                         }
                     },
                     navigationIcon = {
@@ -204,20 +211,20 @@ fun LibraryScreen(
                     },
                     actions = {
                         if (state.selectedVault == null) {
-                            IconButton(onClick = { isSearchOpen = true }) {
+                            IconButton(onClick = { isSearchOpen = true }, modifier = Modifier.size(38.dp)) {
                                 Icon(Icons.Default.Search, contentDescription = "Search")
                             }
-                            IconButton(onClick = { showAddVaultSheet = true }) {
+                            IconButton(onClick = { showAddVaultSheet = true }, modifier = Modifier.size(38.dp)) {
                                 Icon(Icons.Default.Add, contentDescription = "Add vault")
                             }
                         }
-                        IconButton(onClick = { showAllBookmarks = true }) {
+                        IconButton(onClick = { showAllBookmarks = true }, modifier = Modifier.size(38.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Bookmark,
                                 contentDescription = "Bookmarks",
                             )
                         }
-                        IconButton(onClick = onSettingsClick) {
+                        IconButton(onClick = onSettingsClick, modifier = Modifier.size(38.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
@@ -375,7 +382,7 @@ fun LibraryScreen(
                         val allBooks = state.allItems.filter { !it.format.isAudio() }
                         val allAudio = state.allItems.filter { it.format.isAudio() }
                         if (allBooks.isNotEmpty()) {
-                            item(key = "section_books_header") { SectionHeader("Books") }
+                            item(key = "section_books_header") { SectionHeader("Reading") }
                             item(key = "section_books_row") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -395,7 +402,7 @@ fun LibraryScreen(
                             item(key = "section_books_spacer") { Spacer(Modifier.height(8.dp)) }
                         }
                         if (allAudio.isNotEmpty()) {
-                            item(key = "section_audio_header") { SectionHeader("Audio") }
+                            item(key = "section_audio_header") { SectionHeader("Listening") }
                             item(key = "section_audio_row") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -666,6 +673,22 @@ private fun VaultSectionHeader(
 // ── Sub-composables ───────────────────────────────────────────────────────────
 
 @Composable
+private fun SupporterBadge() {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = Color(0xFFFFB300),
+    ) {
+        Text(
+            text = "★ Supporter",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+@Composable
 private fun EmptyLibrary(hasVaults: Boolean) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
@@ -863,7 +886,7 @@ private fun FormatFilterRow(
             FilterChip(
                 selected = currentFilter == "AUDIO",
                 onClick = { onFilterChanged("AUDIO") },
-                label = { Text("Audio") },
+                label = { Text("Listening") },
             )
         }
     }

@@ -6,9 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.DocumentsContract
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +68,10 @@ fun SettingsScreen(
 ) {
     val prefs by viewModel.preferences.collectAsState()
     val vaultState by viewModel.vaultState.collectAsState()
+    val isSupporter by viewModel.isSupporter.collectAsState()
+    val donationState by viewModel.donationState.collectAsState()
     val context = LocalContext.current
+    var showDonateSheet by remember { mutableStateOf(false) }
 
     // SAF folder picker launcher
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -299,8 +300,9 @@ fun SettingsScreen(
             )
             SettingLabel(
                 title    = "Permissions",
-                subtitle = "This app does not request internet access, " +
-                        "location, contacts, camera, or broad file access. " +
+                subtitle = "This app does not request location, contacts, camera, or broad " +
+                        "file access. Internet is used only to verify donations via the " +
+                        "self-hosted BTCPay server at pay.libravault.xyz. " +
                         "It reads only folders you explicitly grant it.",
             )
 
@@ -309,30 +311,41 @@ fun SettingsScreen(
             // ── Support Development ─────────────────────────────────────────────
             SectionHeader("Support Development")
 
+            if (isSupporter) {
+                Text(
+                    text = "★ You're a Supporter — thank you!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = androidx.compose.ui.graphics.Color(0xFFFFB300),
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+
             SettingLabel(
                 title    = "LibraVault is free",
                 subtitle = "No ads, no tracking, no accounts. If this app brings you " +
                         "joy, consider supporting its development.",
             )
 
-            Row(
+            OutlinedButton(
+                onClick = { showDonateSheet = true },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                DonationButton(
-                    label = "Donate XMR",
-                    coinName = "XMR",
-                    address = "42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF",
-                )
-                DonationButton(
-                    label = "Donate BTC",
-                    coinName = "BTC",
-                    address = "bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg",
-                )
+                Text(if (isSupporter) "Donate again" else "Donate BTC or XMR")
             }
 
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (showDonateSheet) {
+        DonateSheet(
+            isSupporter = isSupporter,
+            donationState = donationState,
+            onDismiss = { showDonateSheet = false },
+            onCreateInvoice = viewModel::createDonationInvoice,
+            onCancel = viewModel::cancelDonation,
+        )
     }
 }
 
@@ -432,22 +445,7 @@ private fun Divider() {
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 }
 
-@Composable
-private fun DonationButton(label: String, coinName: String, address: String) {
-    val context = LocalContext.current
-
-    OutlinedButton(onClick = {
-        copyToClipboard(context, address)
-        // Android 13+ shows its own "Copied to clipboard" system notification automatically
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            Toast.makeText(context, "$coinName address copied", Toast.LENGTH_SHORT).show()
-        }
-    }) {
-        Text(label)
-    }
-}
-
-private fun copyToClipboard(context: Context, text: String) {
+internal fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText("crypto address", text)
     clipboard.setPrimaryClip(clip)

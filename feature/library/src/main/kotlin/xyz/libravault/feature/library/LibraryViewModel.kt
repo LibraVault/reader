@@ -28,6 +28,7 @@ import android.net.Uri
 import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryUseCase
 import xyz.libravault.core.domain.usecase.RemoveVaultFolderUseCase
+import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.domain.usecase.ObserveCurrentlyReadingUseCase
 import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
@@ -74,6 +75,7 @@ class LibraryViewModel @Inject constructor(
     private val observeAllBookmarks: ObserveAllBookmarksUseCase,
     private val deleteBookmark: DeleteBookmarkUseCase,
     private val controllerFuture: ListenableFuture<MediaController>,
+    private val supporterRepository: SupporterRepository,
 ) : ViewModel() {
 
     private var controller: MediaController? = null
@@ -92,6 +94,9 @@ class LibraryViewModel @Inject constructor(
 
     val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
+
+    val isSupporter: StateFlow<Boolean> = supporterRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), supporterRepository.isSupporter())
 
     val allBookmarks: StateFlow<List<BookmarkWithItemInfo>> = observeAllBookmarks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

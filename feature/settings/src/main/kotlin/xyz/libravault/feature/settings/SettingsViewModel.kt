@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +22,7 @@ import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
 import xyz.libravault.core.domain.usecase.RemoveVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.storage.CoverArtCache
+import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
@@ -29,6 +32,25 @@ data class VaultManagementState(
     val isScanning: Boolean = false,
     val scanMessage: String? = null,
 )
+
+sealed class DonationState {
+    object Idle : DonationState()
+    object Creating : DonationState()
+    data class Pending(
+        val invoiceId: String,
+        val address: String,
+        val paymentLink: String,
+        val cryptoAmount: String,
+        val checkoutLink: String,
+    ) : DonationState()
+    object Paid : DonationState()
+    data class NoMethod(
+        val coin: String,
+        val fallbackAddress: String,
+        val checkoutLink: String,
+    ) : DonationState()
+    data class Error(val message: String) : DonationState()
+}
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -40,18 +62,44 @@ class SettingsViewModel @Inject constructor(
     private val observeVaults: ObserveVaultsUseCase,
     private val scanVaultsUseCase: ScanVaultUseCase,
     private val logger: LibravaultLogger,
+    private val supporterRepository: SupporterRepository,
+    private val btcPayClient: BtcPayClient,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), prefsRepo.read())
 
+    val isSupporter: StateFlow<Boolean> = supporterRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), supporterRepository.isSupporter())
+
     private val _vaultState = MutableStateFlow(VaultManagementState())
     val vaultState: StateFlow<VaultManagementState> = _vaultState.asStateFlow()
+
+    private val _donationState = MutableStateFlow<DonationState>(DonationState.Idle)
+    val donationState: StateFlow<DonationState> = _donationState.asStateFlow()
+
+    private var donationJob: Job? = null
 
     init {
         viewModelScope.launch {
             observeVaults().collect { vaults ->
                 _vaultState.value = _vaultState.value.copy(vaults = vaults)
+            }
+        }
+        // Resume polling if the app was closed while waiting for a payment
+        val pendingId = supporterRepository.getPendingInvoiceId()
+        if (pendingId != null && !supporterRepository.isSupporter()) {
+            donationJob = viewModelScope.launch { pollUntilPaid(pendingId) }
+        }
+        // Check BTCPay for any settled invoices in case badge was never flipped
+        if (!supporterRepository.isSupporter()) {
+            viewModelScope.launch {
+                try {
+                    if (btcPayClient.hasAnySettledInvoice()) {
+                        supporterRepository.setSupporter(true)
+                        logger.i("Donation", "Settled invoice found on startup — supporter activated")
+                    }
+                } catch (_: Exception) { }
             }
         }
     }
@@ -152,6 +200,68 @@ class SettingsViewModel @Inject constructor(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    // ── Donation ─────────────────────────────────────────────────────────────
+
+    fun createDonationInvoice(amountUsd: Int, coin: String) {
+        donationJob?.cancel()
+        donationJob = viewModelScope.launch {
+            _donationState.value = DonationState.Creating
+            try {
+                val invoice = btcPayClient.createInvoice(amountUsd)
+                supporterRepository.setPendingInvoiceId(invoice.id)
+                val paymentInfo = btcPayClient.getPaymentInfo(invoice.id, coin)
+                if (paymentInfo == null) {
+                    val fallback = if (coin == "XMR") XMR_ADDRESS else BTC_ADDRESS
+                    _donationState.value = DonationState.NoMethod(coin, fallback, invoice.checkoutLink)
+                    return@launch
+                }
+                _donationState.value = DonationState.Pending(
+                    invoiceId = invoice.id,
+                    address = paymentInfo.address,
+                    paymentLink = paymentInfo.paymentLink,
+                    cryptoAmount = paymentInfo.cryptoAmount,
+                    checkoutLink = invoice.checkoutLink,
+                )
+                pollUntilPaid(invoice.id)
+            } catch (e: Exception) {
+                logger.e("Donation", "Invoice creation failed", e)
+                _donationState.value = DonationState.Error(e.message ?: "Failed to create payment request")
+            }
+        }
+    }
+
+    fun cancelDonation() {
+        donationJob?.cancel()
+        supporterRepository.setPendingInvoiceId(null)
+        _donationState.value = DonationState.Idle
+    }
+
+    private suspend fun pollUntilPaid(invoiceId: String) {
+        while (true) {
+            delay(15_000)
+            val status = try {
+                btcPayClient.getInvoiceStatus(invoiceId)
+            } catch (e: Exception) {
+                InvoiceStatus.Unknown
+            }
+            when (status) {
+                InvoiceStatus.Processing, InvoiceStatus.Settled -> {
+                    supporterRepository.setSupporter(true)
+                    supporterRepository.setPendingInvoiceId(null)
+                    logger.i("Donation", "Payment confirmed for invoice $invoiceId")
+                    _donationState.value = DonationState.Paid
+                    return
+                }
+                InvoiceStatus.Expired, InvoiceStatus.Invalid -> {
+                    supporterRepository.setPendingInvoiceId(null)
+                    _donationState.value = DonationState.Idle
+                    return
+                }
+                else -> { /* keep polling */ }
             }
         }
     }

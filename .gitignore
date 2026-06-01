@@ -36,3 +36,7 @@ Thumbs.db
 # Test/release APKs at repo root
 *.apk
 feedback-1-changes.html
+
+# Claude Code
+.claude/
+clear
