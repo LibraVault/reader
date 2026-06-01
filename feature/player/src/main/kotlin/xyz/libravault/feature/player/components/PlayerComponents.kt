@@ -403,6 +403,11 @@ fun BookmarksSheet(
     onEditNote: (Long, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val sorted = remember(bookmarks) {
+        bookmarks.sortedBy { ref ->
+            ref.positionRef.removePrefix("ms:").toLongOrNull() ?: Long.MAX_VALUE
+        }
+    }
     var editingBookmark by remember { mutableStateOf<xyz.libravault.core.domain.model.Bookmark?>(null) }
     var noteText by remember { mutableStateOf("") }
 
@@ -452,7 +457,7 @@ fun BookmarksSheet(
             } else {
                 LazyColumn {
                     items(
-                        items = bookmarks,
+                        items = sorted,
                         key   = { it.id },
                     ) { bookmark ->
                         val dismissState = rememberSwipeToDismissBoxState(

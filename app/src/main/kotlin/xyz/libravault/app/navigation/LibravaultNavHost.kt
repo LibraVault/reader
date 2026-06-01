@@ -91,8 +91,9 @@ fun LibravaultNavHost(
             arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
         ) { backStackEntry ->
             ReaderScreen(
-                itemId = backStackEntry.arguments!!.getLong("itemId"),
-                onBack = { navController.popBackStack() },
+                itemId           = backStackEntry.arguments!!.getLong("itemId"),
+                onBack           = { navController.popBackStack() },
+                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
             )
         }
 
@@ -118,9 +119,10 @@ fun LibravaultNavHost(
             val encodedUri = backStackEntry.arguments!!.getString("encodedUri")!!
             val uri        = Uri.parse(Uri.decode(encodedUri))
             ReaderScreen(
-                fileUri = uri,
-                itemId  = null,
-                onBack  = { navController.popBackStack() },
+                fileUri           = uri,
+                itemId            = null,
+                onBack            = { navController.popBackStack() },
+                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
             )
         }
 

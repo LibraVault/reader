@@ -171,6 +171,9 @@ class ReaderViewModel @Inject constructor(
         )
     }
 
+    fun increaseFontSize() = onFontSizeChanged(_uiState.value.settings.fontSize + 0.1f)
+    fun decreaseFontSize() = onFontSizeChanged(_uiState.value.settings.fontSize - 0.1f)
+
     fun onFontFamilyChanged(family: FontFamily) {
         _uiState.value = _uiState.value.copy(
             settings = _uiState.value.settings.copy(fontFamily = family)

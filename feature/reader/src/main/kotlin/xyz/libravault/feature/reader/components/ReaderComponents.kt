@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.SwipeToDismissBox
@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.json.JSONObject
 import xyz.libravault.core.domain.model.Bookmark
 import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.feature.reader.FontFamily
@@ -65,10 +66,13 @@ import xyz.libravault.feature.reader.ScrollMode
 @Composable
 fun ReaderTopBar(
     title: String,
-    isBookmarked: Boolean,
     onBack: () -> Unit,
-    onBookmark: () -> Unit,
+    onFontDecrease: () -> Unit,
+    onFontIncrease: () -> Unit,
+    onAddBookmark: () -> Unit,
+    onShowBookmarks: () -> Unit,
     onSettings: () -> Unit,
+    showFontControls: Boolean = true,
 ) {
     TopAppBar(
         title = {
@@ -86,14 +90,27 @@ fun ReaderTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onBookmark) {
-                Icon(
-                    imageVector = if (isBookmarked) Icons.Default.Bookmark
-                    else Icons.Default.BookmarkBorder,
-                    contentDescription = "Bookmark",
-                    tint = if (isBookmarked) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-                )
+            if (showFontControls) {
+                IconButton(onClick = onFontDecrease, modifier = Modifier.size(38.dp)) {
+                    Text(
+                        text = "A-",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                IconButton(onClick = onFontIncrease, modifier = Modifier.size(38.dp)) {
+                    Text(
+                        text = "A+",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            IconButton(onClick = onAddBookmark, modifier = Modifier.size(38.dp)) {
+                Icon(Icons.Default.BookmarkAdd, contentDescription = "Add bookmark")
+            }
+            IconButton(onClick = onShowBookmarks) {
+                Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Reader settings")
@@ -214,6 +231,44 @@ fun ReaderSettingsSheet(
     }
 }
 
+private fun positionRefSortKey(ref: String): Long = when {
+    ref.startsWith("ms:")   -> ref.removePrefix("ms:").toLongOrNull() ?: Long.MAX_VALUE
+    ref.startsWith("page:") -> (ref.removePrefix("page:").toIntOrNull() ?: Int.MAX_VALUE).toLong()
+    ref.startsWith("{")     -> runCatching {
+        val locs = JSONObject(ref).optJSONObject("locations")
+        val prog = locs?.optDouble("totalProgression", -1.0)?.takeIf { it >= 0 }
+        val pos  = locs?.optInt("position", -1)?.takeIf { it >= 0 }
+        when {
+            prog != null -> (prog * 1_000_000).toLong()
+            pos  != null -> pos.toLong()
+            else         -> Long.MAX_VALUE
+        }
+    }.getOrDefault(Long.MAX_VALUE)
+    else -> Long.MAX_VALUE
+}
+
+private fun formatBookmarkLabel(positionRef: String): String = when {
+    positionRef.startsWith("page:") ->
+        positionRef.removePrefix("page:").toIntOrNull()
+            ?.let { "Page ${it + 1}" } ?: positionRef
+    positionRef.startsWith("{") -> runCatching {
+        val json = JSONObject(positionRef)
+        val title = json.optString("title").takeIf { it.isNotBlank() }
+        val locs  = json.optJSONObject("locations")
+        val pos   = locs?.optInt("position", -1)?.takeIf { it >= 0 }
+        val prog  = locs?.optDouble("totalProgression", -1.0)?.takeIf { it >= 0 }
+        when {
+            title != null && pos  != null -> "$title, p.$pos"
+            title != null && prog != null -> "$title (${(prog * 100).toInt()}%)"
+            title != null                 -> title
+            pos   != null                 -> "Position $pos"
+            prog  != null                 -> "${(prog * 100).toInt()}% through"
+            else                          -> "Bookmark"
+        }
+    }.getOrDefault("Bookmark")
+    else -> positionRef
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookmarksSheet(
@@ -223,6 +278,7 @@ fun BookmarksSheet(
     onEditNote: (Long, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val sorted = remember(bookmarks) { bookmarks.sortedBy { positionRefSortKey(it.positionRef) } }
     var editingBookmark by remember { mutableStateOf<Bookmark?>(null) }
     var noteText by remember { mutableStateOf("") }
 
@@ -272,7 +328,7 @@ fun BookmarksSheet(
                 )
             } else {
                 LazyColumn {
-                    items(bookmarks, key = { it.id }) { bookmark ->
+                    items(sorted, key = { it.id }) { bookmark ->
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
                                 if (value == SwipeToDismissBoxValue.EndToStart) {
@@ -314,7 +370,7 @@ fun BookmarksSheet(
                                         .padding(horizontal = 12.dp),
                                 ) {
                                     Text(
-                                        text = bookmark.label ?: bookmark.positionRef,
+                                        text = bookmark.label ?: formatBookmarkLabel(bookmark.positionRef),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
                                     )

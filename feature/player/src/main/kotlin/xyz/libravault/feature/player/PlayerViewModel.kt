@@ -156,7 +156,7 @@ class PlayerViewModel @Inject constructor(
                     val holder = playbackStateHolder.state.value
                     val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
                     val resumePos = initialSeekMs ?: livePos ?: startPositionMs
-                    if (ctrl.currentPosition < resumePos) {
+                    if (initialSeekMs != null || ctrl.currentPosition < resumePos) {
                         ctrl.seekTo(resumePos)
                     }
                     ctrl.setPlaybackSpeed(savedSpeed)
@@ -219,10 +219,10 @@ class PlayerViewModel @Inject constructor(
                     // leaves lastKnownPositionMs from the previous book in the holder.
                     val holder = playbackStateHolder.state.value
                     val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
-                    val resumePos = livePos ?: savedPos
-                    // Bug-1 fix: only seek when the player is behind the resume point.
-                    // seekTo() on a live ExoPlayer flushes its decode buffer = stutter.
-                    if (ctrl.currentPosition < resumePos) {
+                    val resumePos = initialSeekMs ?: livePos ?: savedPos
+                    // Only seek when necessary: avoid flushing ExoPlayer's decode buffer
+                    // (causes stutter) unless a bookmark seek is requested or we're behind.
+                    if (initialSeekMs != null || ctrl.currentPosition < resumePos) {
                         ctrl.seekTo(resumePos)
                     }
                     // Restore saved speed for this book

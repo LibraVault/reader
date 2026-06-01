@@ -1,17 +1,27 @@
 package xyz.libravault.feature.reader.epub
 
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +34,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.*
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -60,7 +71,6 @@ private val HIGHLIGHT_COLORS = listOf(
     "#87CEEB" to "Blue",
     "#FFB6C1" to "Pink",
 )
-private const val HIGHLIGHT_ITEM_BASE = 0x1000
 
 /**
  * EPUB reader screen — full Readium 3.0.0-beta.2 integration.
@@ -159,6 +169,7 @@ private fun EpubNavigatorView(
     onCentreTap: () -> Unit,
     onAddHighlight: (positionRef: String, selectedText: String, colorHex: String) -> Unit,
 ) {
+    val context = LocalContext.current
     // Stable ID for the FragmentContainerView so we can look up the fragment later
     val containerId = remember { View.generateViewId() }
 
@@ -174,13 +185,63 @@ private fun EpubNavigatorView(
     var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
     val scope = rememberCoroutineScope()
 
-    // ── FragmentContainerView ────────────────────────────────────────────────
-    AndroidView(
-        factory = { context ->
-            FragmentContainerView(context).apply { id = containerId }
-        },
-        modifier = Modifier.fillMaxSize(),
-    )
+    var showColorPicker    by remember { mutableStateOf(false) }
+    var pendingLocatorJson by remember { mutableStateOf("") }
+    var pendingText        by remember { mutableStateOf("") }
+
+    // ── FragmentContainerView + color-picker overlay ─────────────────────────
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context ->
+                FragmentContainerView(context).apply { id = containerId }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        if (showColorPicker) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable {
+                            scope.launch { navigator?.clearSelection() }
+                            showColorPicker = false
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(32.dp),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.clickable(onClick = {}),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        HIGHLIGHT_COLORS.forEach { (colorHex, _) ->
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(
+                                        color  = Color(AndroidColor.parseColor(colorHex)),
+                                        shape  = CircleShape,
+                                    )
+                                    .clickable {
+                                        val lj = pendingLocatorJson
+                                        val pt = pendingText
+                                        if (lj.isNotEmpty()) {
+                                            currentOnAddHighlight.value(lj, pt, colorHex)
+                                            scope.launch { navigator?.clearSelection() }
+                                        }
+                                        showColorPicker = false
+                                    }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // ── Fragment setup ───────────────────────────────────────────────────────
     @OptIn(ExperimentalReadiumApi::class)
@@ -231,31 +292,20 @@ private fun EpubNavigatorView(
 
         val selectionCallback = object : ActionMode.Callback {
             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                HIGHLIGHT_COLORS.forEachIndexed { i, (colorHex, label) ->
-                    val menuItem = menu.add(Menu.NONE, HIGHLIGHT_ITEM_BASE + i, i, label)
-                    menuItem.setIcon(GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor(colorHex))
-                        setSize(64, 64)
-                    })
-                    menuItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                scope.launch {
+                    val sel = navigator?.currentSelection() ?: return@launch
+                    pendingLocatorJson = sel.locator.toJSON().toString()
+                    pendingText        = sel.locator.text?.highlight ?: ""
+                    showColorPicker    = true
+                    // Finish after saving selection so the action mode state machine
+                    // resets cleanly — returning false leaves it stuck and blocks
+                    // subsequent selections.
+                    mode.finish()
                 }
                 return true
             }
             override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
-            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-                val idx = item.itemId - HIGHLIGHT_ITEM_BASE
-                val (color, _) = HIGHLIGHT_COLORS.getOrNull(idx) ?: return false
-                scope.launch {
-                    val sel = navigator?.currentSelection() ?: return@launch
-                    val locatorJson = sel.locator.toJSON().toString()
-                    val text = sel.locator.text?.highlight ?: ""
-                    currentOnAddHighlight.value.invoke(locatorJson, text, color)
-                    navigator?.clearSelection()
-                }
-                mode.finish()
-                return true
-            }
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem) = false
             override fun onDestroyActionMode(mode: ActionMode) {}
         }
 
@@ -337,9 +387,11 @@ private fun EpubNavigatorView(
     }
 
     // ── Settings hot-reload ──────────────────────────────────────────────────
-    // Push updated preferences to the navigator whenever settings change,
-    // without recreating the fragment (avoids position loss and re-parse cost).
-    LaunchedEffect(settings) {
+    // Push updated preferences to the navigator whenever settings or the navigator
+    // itself changes. Keying on both ensures preferences are applied immediately
+    // after the fragment is committed (navigator starts null and is set inside
+    // DisposableEffect, so LaunchedEffect(settings) alone would miss the first apply).
+    LaunchedEffect(settings, navigator) {
         navigator?.submitPreferences(settings.toEpubPreferences())
     }
 
@@ -355,7 +407,7 @@ private fun EpubNavigatorView(
                     id      = "h_${h.id}",
                     locator = locator,
                     style   = Decoration.Style.Highlight(
-                        tint = Color.parseColor(h.colorHex),
+                        tint = AndroidColor.parseColor(h.colorHex),
                     ),
                 )
             }.getOrNull()
@@ -386,7 +438,11 @@ private fun ReaderSettings.toEpubPreferences(): EpubPreferences {
         },
         // Disable publisher CSS so our font/size/spacing overrides take effect.
         publisherStyles = false,
-        fontSize   = fontSize.toDouble() * 100.0,  // multiplier → percentage
+        // Readium's EpubPreferences.fontSize is a ratio stored in Length.Percent, whose
+        // toCss() implementation already multiplies by 100 to produce the % string.
+        // Pass the raw multiplier (0.8–2.0); do NOT multiply by 100 here or the WebView
+        // receives values like "10000%" which browsers silently ignore.
+        fontSize   = fontSize.toDouble(),
         lineHeight = lineSpacing.toDouble(),
         fontFamily = when (fontFamily) {
             FontFamily.SERIF      -> ReadiumFontFamily.SERIF

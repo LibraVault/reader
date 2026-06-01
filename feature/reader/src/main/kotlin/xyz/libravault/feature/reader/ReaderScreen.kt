@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,6 +78,7 @@ fun ReaderScreen(
     itemId: Long? = null,
     fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
+    onNowPlayingClick: ((Long) -> Unit)? = null,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val state      by viewModel.uiState.collectAsState()
@@ -113,7 +115,12 @@ fun ReaderScreen(
                     bottomBar = {
                         if (showMiniPlayer) {
                             ReaderMiniPlayerBar(
-                                nowPlaying    = nowPlaying,
+                                nowPlaying       = nowPlaying,
+                                onNowPlayingClick = {
+                                    nowPlaying.itemId?.let { id ->
+                                        onNowPlayingClick?.invoke(id)
+                                    }
+                                },
                                 onPrevious    = viewModel::skipPreviousAudiobook,
                                 onSeekBack    = viewModel::seekBackAudiobook,
                                 onPlayPause   = viewModel::playPauseAudiobook,
@@ -183,25 +190,22 @@ fun ReaderScreen(
                             exit  = fadeOut() + slideOutVertically { -it },
                         ) {
                             ReaderTopBar(
-                                title          = item.title,
-                                isBookmarked   = bookmarks.any {
-                                    val epubRef = state.progress?.positionCfi ?: currentLocatorJson
-                                    it.positionRef == epubRef
-                                        || it.positionRef == "page:${state.progress?.pageIndex ?: 0}"
-                                },
-                                onBack         = onBack,
-                                onBookmark     = {
-                                    val ref = when (item.format) {
+                                title             = item.title,
+                                onBack            = onBack,
+                                onFontDecrease    = viewModel::decreaseFontSize,
+                                onFontIncrease    = viewModel::increaseFontSize,
+                                showFontControls  = item.format != MediaFormat.PDF,
+                                onAddBookmark     = {
+                                    val ref: String? = when (item.format) {
                                         MediaFormat.PDF ->
                                             "page:${state.progress?.pageIndex ?: 0}"
                                         else ->
-                                            state.progress?.positionCfi
-                                                ?: currentLocatorJson
-                                                ?: return@ReaderTopBar
+                                            state.progress?.positionCfi ?: currentLocatorJson
                                     }
-                                    viewModel.addBookmark(ref)
+                                    ref?.let { viewModel.addBookmark(it) }
                                 },
-                                onSettings     = viewModel::showSettings,
+                                onShowBookmarks = viewModel::showBookmarks,
+                                onSettings      = viewModel::showSettings,
                             )
                         }
                     }
@@ -254,6 +258,7 @@ fun ReaderScreen(
 @Composable
 private fun ReaderMiniPlayerBar(
     nowPlaying: PlaybackStateHolder.State,
+    onNowPlayingClick: () -> Unit,
     onPrevious: () -> Unit,
     onSeekBack: () -> Unit,
     onPlayPause: () -> Unit,
@@ -274,12 +279,13 @@ private fun ReaderMiniPlayerBar(
                 .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Cover art thumbnail
+            // Cover art thumbnail — tapping opens full player
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surface),
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable(onClick = onNowPlayingClick),
                 contentAlignment = Alignment.Center,
             ) {
                 if (nowPlaying.coverArtPath != null) {
@@ -301,9 +307,11 @@ private fun ReaderMiniPlayerBar(
 
             Spacer(Modifier.width(10.dp))
 
-            // Title + author
+            // Title + author — tapping also opens full player
             androidx.compose.foundation.layout.Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onNowPlayingClick),
             ) {
                 Text(
                     text = nowPlaying.title,
