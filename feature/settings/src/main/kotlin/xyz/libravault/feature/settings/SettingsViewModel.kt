@@ -63,7 +63,7 @@ class SettingsViewModel @Inject constructor(
     private val scanVaultsUseCase: ScanVaultUseCase,
     private val logger: LibravaultLogger,
     private val supporterRepository: SupporterRepository,
-    private val btcPayClient: BtcPayClient,
+    private val donationClient: DonationClient,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.observe()
@@ -95,7 +95,7 @@ class SettingsViewModel @Inject constructor(
         if (!supporterRepository.isSupporter()) {
             viewModelScope.launch {
                 try {
-                    if (btcPayClient.hasAnySettledInvoice()) {
+                    if (donationClient.hasAnySettledInvoice()) {
                         supporterRepository.setSupporter(true)
                         logger.i("Donation", "Settled invoice found on startup — supporter activated")
                     }
@@ -211,9 +211,9 @@ class SettingsViewModel @Inject constructor(
         donationJob = viewModelScope.launch {
             _donationState.value = DonationState.Creating
             try {
-                val invoice = btcPayClient.createInvoice(amountUsd)
+                val invoice = donationClient.createInvoice(amountUsd)
                 supporterRepository.setPendingInvoiceId(invoice.id)
-                val paymentInfo = btcPayClient.getPaymentInfo(invoice.id, coin)
+                val paymentInfo = donationClient.getPaymentInfo(invoice.id, coin)
                 if (paymentInfo == null) {
                     val fallback = if (coin == "XMR") XMR_ADDRESS else BTC_ADDRESS
                     _donationState.value = DonationState.NoMethod(coin, fallback, invoice.checkoutLink)
@@ -226,7 +226,7 @@ class SettingsViewModel @Inject constructor(
                     cryptoAmount = paymentInfo.cryptoAmount,
                     checkoutLink = invoice.checkoutLink,
                 )
-                pollUntilPaid(invoice.id)
+                if (!invoice.isStatic) pollUntilPaid(invoice.id)
             } catch (e: Exception) {
                 logger.e("Donation", "Invoice creation failed", e)
                 _donationState.value = DonationState.Error(e.message ?: "Failed to create payment request")
@@ -244,7 +244,7 @@ class SettingsViewModel @Inject constructor(
         while (true) {
             delay(15_000)
             val status = try {
-                btcPayClient.getInvoiceStatus(invoiceId)
+                donationClient.getInvoiceStatus(invoiceId)
             } catch (e: Exception) {
                 InvoiceStatus.Unknown
             }

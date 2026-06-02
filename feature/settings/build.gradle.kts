@@ -5,6 +5,12 @@ plugins {
 
 android {
     namespace = "xyz.libravault.feature.settings"
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("fdroid") { dimension = "distribution" }
+        create("play")   { dimension = "distribution" }
+    }
 }
 
 dependencies {
@@ -17,6 +23,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("com.google.zxing:core:3.5.3")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // OkHttp is play-only — fdroid build has no network calls
+    "playImplementation"("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }

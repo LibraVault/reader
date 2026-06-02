@@ -31,7 +31,8 @@ Description: |-
   Permissions: FOREGROUND_SERVICE (background audio), POST_NOTIFICATIONS
   (media controls on Android 13+), and SAF URI grants for folders you choose.
   READ_EXTERNAL_STORAGE, INTERNET, CAMERA, CONTACTS, and LOCATION are never
-  requested.
+  requested in the F-Droid build. BTC/XMR donation addresses are shown
+  statically; no network calls are made.
 
 RepoType: git
 Repo: https://github.com/libravault-xyz/libravault
