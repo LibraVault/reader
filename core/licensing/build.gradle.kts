@@ -29,7 +29,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Ed25519 signature verification (offline, no network)
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78")
+    implementation(libs.bouncycastle.bcprov)
 
     // Google Play Billing — play flavor only; excluded from F-Droid to prevent
     // google.android.datatransport (Google's telemetry layer) from entering the APK

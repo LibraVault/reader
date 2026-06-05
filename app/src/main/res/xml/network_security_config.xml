@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext (plain HTTP) is blocked for all traffic.
+  minSdk 31 already enforces this by default, but the explicit declaration
+  documents intent and provides a single place to add domain exceptions
+  if a future feature requires them (e.g. local-network device discovery).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

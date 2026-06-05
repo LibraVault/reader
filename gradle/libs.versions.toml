@@ -23,6 +23,7 @@ junit5-android      = "1.10.0.0"     # mannodermaus android-junit5 bridge
 mockk               = "1.13.11"
 turbine             = "1.1.0"
 compose-test        = "1.6.7"
+bouncycastle        = "1.84"
 
 [libraries]
 # AndroidX core
@@ -77,6 +78,9 @@ readium-navigator               = { group = "org.readium.kotlin-toolkit", name =
 androidx-splashscreen           = { group = "androidx.core",              name = "core-splashscreen",          version.ref = "splashscreen" }
 androidx-fragment-ktx           = { group = "androidx.fragment",          name = "fragment-ktx",               version.ref = "fragment" }
 material                        = { group = "com.google.android.material", name = "material",                  version.ref = "material" }
+
+# Cryptography
+bouncycastle-bcprov             = { group = "org.bouncycastle",           name = "bcprov-jdk18on",              version.ref = "bouncycastle" }
 
 # Testing — JVM
 junit                           = { group = "junit",                     name = "junit",                       version.ref = "junit" }
