@@ -382,7 +382,13 @@ fun LibraryScreen(
                         val allBooks = state.allItems.filter { !it.format.isAudio() }
                         val allAudio = state.allItems.filter { it.format.isAudio() }
                         if (allBooks.isNotEmpty()) {
-                            item(key = "section_books_header") { SectionHeader("Reading") }
+                            item(key = "section_books_header") {
+                                LibrarySectionHeader(
+                                    title = "Reading",
+                                    count = allBooks.size,
+                                    onViewAll = { viewModel.onFormatFilterChanged("BOOK") },
+                                )
+                            }
                             item(key = "section_books_row") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -402,7 +408,13 @@ fun LibraryScreen(
                             item(key = "section_books_spacer") { Spacer(Modifier.height(8.dp)) }
                         }
                         if (allAudio.isNotEmpty()) {
-                            item(key = "section_audio_header") { SectionHeader("Listening") }
+                            item(key = "section_audio_header") {
+                                LibrarySectionHeader(
+                                    title = "Listening",
+                                    count = allAudio.size,
+                                    onViewAll = { viewModel.onFormatFilterChanged("AUDIO") },
+                                )
+                            }
                             item(key = "section_audio_row") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -712,6 +724,27 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
+private fun LibrarySectionHeader(title: String, count: Int, onViewAll: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "$title ($count)",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        TextButton(onClick = onViewAll) {
+            Text("View all")
+        }
+    }
+}
+
+@Composable
 private fun ContinueCard(
     item: LibraryItem,
     onClick: () -> Unit,
@@ -847,6 +880,7 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
 private fun List<LibraryItem>.applyFormatFilter(filter: String?): List<LibraryItem> = when (filter) {
     null   -> this
     "AUDIO" -> filter { it.format.isAudio() }
+    "BOOK"  -> filter { !it.format.isAudio() }
     else   -> filter { it.format.name == filter }
 }
 

@@ -139,6 +139,7 @@ class LibraryViewModel @Inject constructor(
         val filteredItems: List<LibraryItem> = when (val fmt = extras.format) {
             null   -> items
             "AUDIO" -> items.filter { it.format.isAudio() }
+            "BOOK"  -> items.filter { !it.format.isAudio() }
             else   -> items.filter { it.format.name == fmt }
         }
 
@@ -283,8 +284,12 @@ class LibraryViewModel @Inject constructor(
 
     /** Returns filtered items based on format, or all items if no format filter is set. */
     fun formatFilteredItems(items: List<LibraryItem>, formatFilter: String?): List<LibraryItem> {
-        if (formatFilter == null) return items
-        return items.filter { it.format.name == formatFilter }
+        return when (formatFilter) {
+            null    -> items
+            "AUDIO" -> items.filter { it.format.isAudio() }
+            "BOOK"  -> items.filter { !it.format.isAudio() }
+            else    -> items.filter { it.format.name == formatFilter }
+        }
     }
 
     // ── Stale file handling ───────────────────────────────────────────────────
