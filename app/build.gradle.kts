@@ -41,7 +41,7 @@ android {
 
     defaultConfig {
         applicationId = "xyz.libravault.app"
-        versionCode   = 1
+        versionCode   = 2
         versionName   = "0.1.0-alpha"
     }
 
