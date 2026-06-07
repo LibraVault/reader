@@ -6,15 +6,12 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val BASE_URL = "https://pay.libravault.xyz"
-private const val STORE_ID = "Fr4b3j8B2CHMHsh2a4QT5QSKgNxT41r2ymz3F4RrcWxe"
-private const val API_KEY = "REVOKED"
+private const val PROXY_URL = "https://libravault.xyz/donate"
 
 @Singleton
 class BtcPayClient @Inject constructor() : DonationClient {
@@ -27,12 +24,10 @@ class BtcPayClient @Inject constructor() : DonationClient {
 
     override suspend fun createInvoice(amountUsd: Int): NewInvoice = withContext(Dispatchers.IO) {
         val body = JSONObject().apply {
-            put("currency", "USD")
-            put("amount", amountUsd)
+            put("amountUsd", amountUsd)
         }.toString().toRequestBody(mediaTypeJson)
         val req = Request.Builder()
-            .url("$BASE_URL/api/v1/stores/$STORE_ID/invoices")
-            .addHeader("Authorization", "token $API_KEY")
+            .url("$PROXY_URL/invoice")
             .post(body)
             .build()
         http.newCall(req).execute().use { resp ->
@@ -44,8 +39,7 @@ class BtcPayClient @Inject constructor() : DonationClient {
 
     override suspend fun getInvoiceStatus(invoiceId: String): InvoiceStatus = withContext(Dispatchers.IO) {
         val req = Request.Builder()
-            .url("$BASE_URL/api/v1/stores/$STORE_ID/invoices/$invoiceId")
-            .addHeader("Authorization", "token $API_KEY")
+            .url("$PROXY_URL/invoice/$invoiceId")
             .get()
             .build()
         http.newCall(req).execute().use { resp ->
@@ -63,39 +57,30 @@ class BtcPayClient @Inject constructor() : DonationClient {
 
     override suspend fun hasAnySettledInvoice(): Boolean = withContext(Dispatchers.IO) {
         val req = Request.Builder()
-            .url("$BASE_URL/api/v1/stores/$STORE_ID/invoices?status=Settled&take=10")
-            .addHeader("Authorization", "token $API_KEY")
+            .url("$PROXY_URL/settled")
             .get()
             .build()
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return@withContext false
-            JSONArray(resp.body!!.string()).length() > 0
+            JSONObject(resp.body!!.string()).optBoolean("settled", false)
         }
     }
 
     override suspend fun getPaymentInfo(invoiceId: String, coinCode: String): InvoicePaymentInfo? = withContext(Dispatchers.IO) {
         val req = Request.Builder()
-            .url("$BASE_URL/api/v1/stores/$STORE_ID/invoices/$invoiceId/payment-methods")
-            .addHeader("Authorization", "token $API_KEY")
+            .url("$PROXY_URL/invoice/$invoiceId/payment/$coinCode")
             .get()
             .build()
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return@withContext null
-            val methods = JSONArray(resp.body!!.string())
-            val methodId = if (coinCode == "XMR") "XMR-CHAIN" else "BTC-CHAIN"
-            for (i in 0 until methods.length()) {
-                val m = methods.getJSONObject(i)
-                if (m.getString("paymentMethodId") == methodId) {
-                    val rawAmount = m.optString("amount", m.optString("due", ""))
-                    val currency  = m.optString("currency", coinCode)
-                    return@withContext InvoicePaymentInfo(
-                        address     = m.getString("destination"),
-                        paymentLink = m.optString("paymentLink", ""),
-                        cryptoAmount = if (rawAmount.isNotEmpty()) "$rawAmount $currency" else "",
-                    )
-                }
-            }
-            null
+            val body = resp.body!!.string()
+            if (body == "null") return@withContext null
+            val obj = JSONObject(body)
+            InvoicePaymentInfo(
+                address      = obj.getString("address"),
+                paymentLink  = obj.optString("paymentLink", ""),
+                cryptoAmount = obj.optString("cryptoAmount", ""),
+            )
         }
     }
 }

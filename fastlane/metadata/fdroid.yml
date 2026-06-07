@@ -5,8 +5,8 @@ Categories:
 License: GPL-3.0-only
 
 WebSite: https://libravault.xyz
-SourceCode: https://github.com/libravault-xyz/libravault
-IssueTracker: https://github.com/libravault-xyz/libravault/issues
+SourceCode: https://github.com/LibraVault/reader
+IssueTracker: https://github.com/LibraVault/reader/issues
 
 AutoName: LibraVault
 Summary: Privacy-first EPUB, PDF, and audiobook reader — no internet, no account
@@ -35,7 +35,7 @@ Description: |-
   statically; no network calls are made.
 
 RepoType: git
-Repo: https://github.com/libravault-xyz/libravault
+Repo: https://github.com/LibraVault/reader
 
 Builds:
   - versionName: 0.1.0-alpha

@@ -16,7 +16,7 @@ Pull requests that compromise any of these principles will not be merged.
 ## Getting started
 
 ```bash
-git clone git@github.com:libravault-xyz/libravault.git
+git clone git@github.com:LibraVault/reader.git
 cd libravault
 ./gradlew assembleDebug
 ./gradlew testDebugUnitTest
@@ -45,7 +45,7 @@ cd libravault
 
 ## Reporting bugs
 
-Open an issue at https://github.com/libravault-xyz/libravault/issues.
+Open an issue at https://github.com/LibraVault/reader/issues.
 Include Android version, device model, and steps to reproduce.
 
 ## License

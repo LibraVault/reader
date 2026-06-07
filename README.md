@@ -115,7 +115,7 @@ libravault/
 
 ```bash
 # Clone
-git clone git@github.com:libravault-xyz/libravault.git
+git clone git@github.com:LibraVault/reader.git
 cd libravault
 
 # Debug build

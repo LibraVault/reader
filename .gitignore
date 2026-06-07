@@ -33,6 +33,9 @@ Thumbs.db
 .DS_Store
 .kotlin/
 
+# Server .env (never commit secrets)
+server/.env
+
 # Test/release APKs at repo root
 *.apk
 feedback-1-changes.html
