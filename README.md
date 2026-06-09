@@ -57,6 +57,17 @@ A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listeni
 - Optional local-only logging — never transmitted
 - Scoped Storage — only folders you explicitly grant
 
+## Screenshots
+
+| | |
+|---|---|
+| <img src="docs/screenshots/2026-06-09%2013.00.47.jpg" width="50%" alt="Library screen with books" /> | <img src="docs/screenshots/2026-06-09%2013.00.59.jpg" width="50%" alt="Book detail view" /> |
+| <img src="docs/screenshots/2026-06-09%2013.01.04.jpg" width="50%" alt="Reader with dark theme" /> | <img src="docs/screenshots/2026-06-09%2013.01.16.jpg" width="50%" alt="Reader with sepia theme" /> |
+| <img src="docs/screenshots/2026-06-09%2013.01.21.jpg" width="50%" alt="Audio player interface" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.07.jpeg" width="50%" alt="Library search feature" /> |
+| <img src="docs/screenshots/photo_2026-06-07%2008.44.28.jpeg" width="50%" alt="Settings screen" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.32.jpeg" width="50%" alt="Sleep timer options" /> |
+| <img src="docs/screenshots/photo_2026-06-07%2008.44.37.jpeg" width="50%" alt="Bookmarks and highlights" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.42.jpeg" width="50%" alt="PDF viewer" /> |
+| <img src="docs/screenshots/photo_2026-06-07%2008.44.45.jpeg" width="50%" alt="Light theme variant" /> | |
+
 ---
 
 ## Tech Stack
