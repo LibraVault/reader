@@ -57,7 +57,7 @@ A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listeni
 - Optional local-only logging — never transmitted
 - Scoped Storage — only folders you explicitly grant
 
-## Screenshots
+### Screenshots
 
 | | | | |
 |---|---|---|---|
