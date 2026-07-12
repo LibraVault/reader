@@ -77,6 +77,8 @@ class GetListeningProgressUseCase @Inject constructor(
 class ObserveCurrentlyReadingUseCase @Inject constructor(
     private val progressRepository: ProgressRepository,
 ) {
-    fun book(): Flow<LibraryItem?> = progressRepository.observeCurrentBook()
-    fun audiobook(): Flow<LibraryItem?> = progressRepository.observeCurrentAudiobook()
+    fun reading(limit: Int = 8): Flow<List<LibraryItem>> =
+        progressRepository.observeContinueReading(limit)
+    fun listening(limit: Int = 4): Flow<List<LibraryItem>> =
+        progressRepository.observeContinueListening(limit)
 }

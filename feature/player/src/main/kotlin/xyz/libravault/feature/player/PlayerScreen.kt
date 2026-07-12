@@ -1,12 +1,12 @@
 package xyz.libravault.feature.player
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import xyz.libravault.core.ui.components.BookmarkAddedToast
+import xyz.libravault.core.ui.components.GeneratedCover
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -109,6 +111,26 @@ fun PlayerScreen(
             },
         ) { innerPadding ->
 
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Bookmark-added confirmation toast, anchored at the bottom of the
+                // top 22% of the player so it sits between the toolbar and the cover art.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.22f),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    BookmarkAddedToast(
+                        visible   = state.lastAddedBookmarkId != null,
+                        onEdit    = {
+                            viewModel.clearBookmarkToast()
+                            viewModel.showBookmarks()
+                        },
+                        onDismiss = viewModel::clearBookmarkToast,
+                    )
+                }
+
             when {
                 state.isLoading -> Box(
                     Modifier.fillMaxSize().padding(innerPadding),
@@ -149,7 +171,7 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .fillMaxWidth(0.7f)
                                 .aspectRatio(1f)
-                                .clip(RoundedCornerShape(16.dp)),
+                                .clip(MaterialTheme.shapes.large),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (item.coverArtPath != null) {
@@ -160,16 +182,11 @@ fun PlayerScreen(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text("\uD83C\uDFA7", style = MaterialTheme.typography.displayLarge)
-                                }
+                                GeneratedCover(
+                                    title = item.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    initialStyle = MaterialTheme.typography.displayLarge,
+                                )
                             }
                         }
 
@@ -253,6 +270,7 @@ fun PlayerScreen(
                     }
                 }
             }
+            }  // end Box wrapping content
         }
 
         // ── Bottom sheets ─────────────────────────────────────────────────────

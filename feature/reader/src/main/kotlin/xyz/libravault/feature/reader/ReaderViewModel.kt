@@ -42,6 +42,8 @@ data class ReaderUiState(
     val showToolbar: Boolean        = true,
     val showSettingsSheet: Boolean  = false,
     val showBookmarksSheet: Boolean = false,
+    /** Set briefly after a bookmark is added; the screen shows a confirmation toast. */
+    val lastAddedBookmarkId: Long?  = null,
 )
 
 @HiltViewModel
@@ -200,8 +202,15 @@ class ReaderViewModel @Inject constructor(
     fun addBookmark(positionRef: String, label: String? = null) {
         val id = itemId ?: return
         viewModelScope.launch {
-            addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
-            logger.i("Reader", "Bookmark added at $positionRef")
+            val newId = addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
+            _uiState.value = _uiState.value.copy(lastAddedBookmarkId = newId)
+            logger.i("Reader", "Bookmark added at $positionRef (id=$newId)")
+        }
+    }
+
+    fun clearBookmarkToast() {
+        if (_uiState.value.lastAddedBookmarkId != null) {
+            _uiState.value = _uiState.value.copy(lastAddedBookmarkId = null)
         }
     }
 

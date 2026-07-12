@@ -45,6 +45,12 @@ class ColorSchemeContrastTest {
         assertTrue(ratio >= 4.5, "Dark onSurfaceVariant contrast $ratio < 4.5:1 — fails WCAG AA")
     }
 
+    @Test
+    fun `dark onSurfaceVariant on surface meets 4_5_1`() {
+        val ratio = contrastRatio(DarkColorScheme.onSurfaceVariant, DarkColorScheme.surface)
+        assertTrue(ratio >= 4.5, "Dark onSurfaceVariant on surface $ratio < 4.5:1")
+    }
+
     // ── LIB-241: Outline visibility in both schemes ──────────────────────────
 
     @Test
@@ -91,5 +97,26 @@ class ColorSchemeContrastTest {
     fun `sepia onSurface meets WCAG AA normal-text contrast (4_5_1)`() {
         val ratio = contrastRatio(SepiaColorScheme.onSurface, SepiaColorScheme.surface)
         assertTrue(ratio >= 4.5, "Sepia onSurface contrast $ratio < 4.5:1 — regression?")
+    }
+
+    // ── Primary / secondary contrast against surfaces ─────────────────────────
+
+    @Test
+    fun `dark primary on surface meets 4_5_1`() {
+        val ratio = contrastRatio(DarkColorScheme.primary, DarkColorScheme.surface)
+        assertTrue(ratio >= 4.5, "Dark primary on surface $ratio < 4.5:1")
+    }
+
+    @Test
+    fun `light primary on surface meets 4_5_1`() {
+        val ratio = contrastRatio(LightColorScheme.primary, LightColorScheme.surface)
+        assertTrue(ratio >= 4.5, "Light primary on surface $ratio < 4.5:1")
+    }
+
+    @Test
+    fun `AgedBrass as secondary on dark surface meets 4_5_1`() {
+        // AgedBrass is decorative only; if used as text on dark surface it must be legible.
+        val ratio = contrastRatio(AgedBrass, DarkSurface0)
+        assertTrue(ratio >= 4.5, "AgedBrass on DarkSurface0 $ratio < 4.5:1 — fails WCAG AA")
     }
 }

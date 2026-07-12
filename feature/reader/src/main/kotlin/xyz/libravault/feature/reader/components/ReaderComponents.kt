@@ -126,6 +126,7 @@ fun ReaderTopBar(
 @Composable
 fun ReaderSettingsSheet(
     settings: ReaderSettings,
+    showFontControls: Boolean,
     onThemeChanged: (ReadingTheme) -> Unit,
     onFontSizeChanged: (Float) -> Unit,
     onFontFamilyChanged: (FontFamily) -> Unit,
@@ -158,54 +159,56 @@ fun ReaderSettingsSheet(
                 }
             }
 
-            HorizontalDivider()
+            if (showFontControls) {
+                HorizontalDivider()
 
-            // ── Font size ──────────────────────────────────────────────────
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.TextFields, contentDescription = "Text formatting", modifier = Modifier.size(16.dp))
-                Spacer(Modifier.weight(1f))
-                Text("${(settings.fontSize * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelLarge)
-            }
-            Slider(
-                value = settings.fontSize,
-                onValueChange = onFontSizeChanged,
-                valueRange = 0.8f..2.0f,
-                steps = 11,
-            )
+                // ── Font size ──────────────────────────────────────────────
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.TextFields, contentDescription = "Text formatting", modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.weight(1f))
+                    Text("${(settings.fontSize * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                Slider(
+                    value = settings.fontSize,
+                    onValueChange = onFontSizeChanged,
+                    valueRange = 0.8f..2.0f,
+                    steps = 11,
+                )
 
-            HorizontalDivider()
+                HorizontalDivider()
 
-            // ── Line spacing ───────────────────────────────────────────────
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Line spacing", style = MaterialTheme.typography.labelLarge,
+                // ── Line spacing ───────────────────────────────────────────
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Line spacing", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
+                    Text("%.1f×".format(settings.lineSpacing),
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                Slider(
+                    value = settings.lineSpacing,
+                    onValueChange = onLineSpacingChanged,
+                    valueRange = 1.0f..2.5f,
+                    steps = 14,
+                )
+
+                HorizontalDivider()
+
+                // ── Font family ────────────────────────────────────────────
+                Text("Font", style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
-                Text("%.1f×".format(settings.lineSpacing),
-                    style = MaterialTheme.typography.labelLarge)
-            }
-            Slider(
-                value = settings.lineSpacing,
-                onValueChange = onLineSpacingChanged,
-                valueRange = 1.0f..2.5f,
-                steps = 14,
-            )
-
-            HorizontalDivider()
-
-            // ── Font family ────────────────────────────────────────────────
-            Text("Font", style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-            ) {
-                FontFamily.entries.forEach { family ->
-                    FilterChip(
-                        selected = settings.fontFamily == family,
-                        onClick  = { onFontFamilyChanged(family) },
-                        label    = { Text(family.displayName) },
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                    FontFamily.entries.forEach { family ->
+                        FilterChip(
+                            selected = settings.fontFamily == family,
+                            onClick  = { onFontFamilyChanged(family) },
+                            label    = { Text(family.displayName) },
+                        )
+                    }
                 }
             }
 

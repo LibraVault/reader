@@ -110,11 +110,11 @@ class ProgressRepositoryImpl @Inject constructor(
     override suspend fun saveListeningProgress(progress: ListeningProgress) =
         dao.upsertListeningProgress(progress.toEntity())
 
-    override fun observeCurrentBook(): Flow<LibraryItem?> =
-        dao.observeCurrentBook().map { it?.toDomain() }
+    override fun observeContinueReading(limit: Int): Flow<List<LibraryItem>> =
+        dao.observeContinueReading(limit).map { it.map(LibraryItemEntity::toDomain) }
 
-    override fun observeCurrentAudiobook(): Flow<LibraryItem?> =
-        dao.observeCurrentAudiobook().map { it?.toDomain() }
+    override fun observeContinueListening(limit: Int): Flow<List<LibraryItem>> =
+        dao.observeContinueListening(limit).map { it.map(LibraryItemEntity::toDomain) }
 }
 
 // ── BookmarkRepository ───────────────────────────────────────────────────────

@@ -42,4 +42,7 @@ feedback-1-changes.html
 
 # Claude Code
 .claude/
+
+# Kilo CLI (agent plans, scratch files)
+.kilo/
 clear

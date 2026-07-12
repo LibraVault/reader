@@ -776,28 +776,6 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.string.empty_library_no_vaults` appears to be unused"
-        errorLine1="    &lt;string name=&quot;empty_library_no_vaults&quot;>Tap + to select folders where your books and audiobooks are stored.&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="19"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.string.empty_library_with_vaults` appears to be unused"
-        errorLine1="    &lt;string name=&quot;empty_library_with_vaults&quot;>No items found in your vaults. Pull down to scan for new files.&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="20"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.string.search` appears to be unused"
         errorLine1="    &lt;string name=&quot;search&quot;>Search&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~">

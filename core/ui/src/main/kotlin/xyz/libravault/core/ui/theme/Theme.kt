@@ -19,19 +19,19 @@ val LocalReadingTheme = staticCompositionLocalOf { ReadingTheme.DARK }
 
 @PublishedApi
 internal val DarkColorScheme = darkColorScheme(
-    primary             = LeatherBrown,
-    onPrimary           = WarmNeutral50,
+    primary             = LeatherLight,
+    onPrimary           = WarmNeutral900,
     primaryContainer    = LeatherDark,
     onPrimaryContainer  = LeatherLight,
-    secondary           = VaultGold,
+    secondary           = AgedBrass,
     onSecondary         = WarmNeutral900,
-    background          = DarkBackground,
+    background          = DarkSurface0,
     onBackground        = WarmNeutral100,
-    surface             = DarkSurface,
+    surface             = DarkSurface1,
     onSurface           = WarmNeutral100,
-    surfaceVariant      = DarkSurfaceVar,
-    onSurfaceVariant    = WarmNeutral500,
-    outline             = WarmNeutral700,
+    surfaceVariant      = DarkSurface2,
+    onSurfaceVariant    = WarmGrey400,
+    outline             = WarmNeutral500,
 )
 
 @PublishedApi
@@ -40,15 +40,15 @@ internal val LightColorScheme = lightColorScheme(
     onPrimary           = WarmNeutral50,
     primaryContainer    = LeatherLight,
     onPrimaryContainer  = LeatherDark,
-    secondary           = VaultGold,
+    secondary           = AgedBrass,
     onSecondary         = WarmNeutral900,
     background          = WarmNeutral50,
     onBackground        = WarmNeutral900,
     surface             = WarmNeutral100,
     onSurface           = WarmNeutral900,
-    surfaceVariant      = WarmNeutral200,
+    surfaceVariant      = WarmNeutral300,
     onSurfaceVariant    = WarmNeutral700,
-    outline             = WarmNeutral200,
+    outline             = WarmNeutral700,
 )
 
 @PublishedApi
@@ -57,7 +57,7 @@ internal val SepiaColorScheme = lightColorScheme(
     onPrimary           = WarmNeutral50,
     primaryContainer    = LeatherLight,
     onPrimaryContainer  = LeatherDark,
-    secondary           = VaultGold,
+    secondary           = AgedBrass,
     onSecondary         = WarmNeutral900,
     background          = SepiaBackground,
     onBackground        = SepiaText,
@@ -65,7 +65,7 @@ internal val SepiaColorScheme = lightColorScheme(
     onSurface           = SepiaText,
     surfaceVariant      = Color(0xFFE3D5B6),
     onSurfaceVariant    = SepiaText.copy(alpha = 0.7f),
-    outline             = Color(0xFFC4B490),
+    outline             = SepiaOutline,
 )
 
 @Composable
@@ -90,6 +90,7 @@ fun LibravaultTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography  = LibravaultTypography,
+            shapes      = LibravaultShapes,
             content     = content,
         )
     }

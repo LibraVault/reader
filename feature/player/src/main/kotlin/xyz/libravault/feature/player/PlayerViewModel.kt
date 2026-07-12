@@ -61,6 +61,8 @@ data class PlayerUiState(
     val showSleepTimerSheet: Boolean = false,
     // Bookmarks
     val showBookmarksSheet: Boolean = false,
+    /** Set briefly after a bookmark is added; the screen shows a confirmation toast. */
+    val lastAddedBookmarkId: Long?  = null,
 )
 
 @HiltViewModel
@@ -515,14 +517,21 @@ class PlayerViewModel @Inject constructor(
         val positionMs = controller?.currentPosition ?: return
         viewModelScope.launch {
             val id = itemId ?: return@launch
-            addBookmark(
+            val newId = addBookmark(
                 Bookmark(
                     itemId      = id,
                     positionRef = "ms:$positionMs",
                     label       = label ?: formatPosition(positionMs),
                 )
             )
-            logger.i(TAG, "Bookmark added at ${formatPosition(positionMs)}")
+            _uiState.value = _uiState.value.copy(lastAddedBookmarkId = newId)
+            logger.i(TAG, "Bookmark added at ${formatPosition(positionMs)} (id=$newId)")
+        }
+    }
+
+    fun clearBookmarkToast() {
+        if (_uiState.value.lastAddedBookmarkId != null) {
+            _uiState.value = _uiState.value.copy(lastAddedBookmarkId = null)
         }
     }
 

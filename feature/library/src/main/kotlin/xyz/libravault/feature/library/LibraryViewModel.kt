@@ -43,8 +43,7 @@ import javax.inject.Inject
 
 data class LibraryUiState(
     val vaults: List<VaultFolder>         = emptyList(),
-    val currentBook: LibraryItem?         = null,
-    val currentAudiobook: LibraryItem?    = null,
+    val continueItems: List<LibraryItem>  = emptyList(),  // Most recent reading + listening, interleaved.
     val allItems: List<LibraryItem>       = emptyList(),
     val searchResults: List<LibraryItem>? = null,   // null = not in search mode
     val searchQuery: String               = "",
@@ -128,10 +127,10 @@ class LibraryViewModel @Inject constructor(
     val uiState: StateFlow<LibraryUiState> = combine(
         observeVaults(),
         getLibrary(),
-        observeCurrentlyReading.book(),
-        observeCurrentlyReading.audiobook(),
+        observeCurrentlyReading.reading(),
+        observeCurrentlyReading.listening(),
         _extras,
-    ) { vaults, items, book, audiobook, extras ->
+    ) { vaults, items, reading, listening, extras ->
         val vaultById = vaults.associateBy { it.id }
 
         // Apply format filter at the ViewModel level so the UI always receives
@@ -151,11 +150,14 @@ class LibraryViewModel @Inject constructor(
             )
         }
 
+        // Interleave reading + listening so the most-recently-active item is first
+        // regardless of format. Round-robin merge by last-activity time.
+        val continueItems = interleaveByRecency(reading, listening)
+
         LibraryUiState(
             vaults            = vaults,
             allItems          = items,          // intentionally unfiltered (used for bookmark lookup)
-            currentBook       = book,
-            currentAudiobook  = audiobook,
+            continueItems     = continueItems,
             isScanning        = extras.scanning,
             scanError         = extras.error,
             searchQuery       = extras.query,
@@ -391,4 +393,35 @@ class LibraryViewModel @Inject constructor(
             triggerScan()
         }
     }
+}
+
+/**
+ * Merge two already-sorted "in progress" lists into one ordered list.
+ * Each source list is already sorted by last-activity (most recent first);
+ * the result interleaves them so the freshest item from either list comes
+ * first. Duplicates (same item appearing in both lists) are removed.
+ */
+private fun interleaveByRecency(
+    reading: List<LibraryItem>,
+    listening: List<LibraryItem>,
+): List<LibraryItem> {
+    val seen = HashSet<Long>()
+    val out = ArrayList<LibraryItem>(reading.size + listening.size)
+    var i = 0
+    var j = 0
+    while (i < reading.size || j < listening.size) {
+        val takeReading = when {
+            i >= reading.size -> false
+            j >= listening.size -> true
+            else -> true  // Both have items — alternate to interleave
+        }
+        if (takeReading) {
+            val item = reading[i++]
+            if (seen.add(item.id)) out += item
+        } else {
+            val item = listening[j++]
+            if (seen.add(item.id)) out += item
+        }
+    }
+    return out
 }

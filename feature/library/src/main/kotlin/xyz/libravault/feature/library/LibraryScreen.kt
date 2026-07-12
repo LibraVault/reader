@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -43,8 +45,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -78,7 +84,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.unit.dp
@@ -88,6 +96,9 @@ import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.BookmarkWithItemInfo
+import xyz.libravault.core.ui.components.GeneratedCover
+import xyz.libravault.core.ui.theme.Dimens
+import xyz.libravault.feature.library.R
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import kotlin.math.abs
 
@@ -107,6 +118,7 @@ fun LibraryScreen(
     val snackbarHost = remember { SnackbarHostState() }
     var isSearchOpen by remember { mutableStateOf(false) }
     var showAllBookmarks by remember { mutableStateOf(false) }
+    var overflowMenuOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // ── Vault management state ────────────────────────────────────────────────
@@ -181,19 +193,18 @@ fun LibraryScreen(
                             Text(
                                 text = vault.displayName,
                                 style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         } else {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
                             ) {
+                                BrandMonogram()
                                 Text(
                                     text = "LibraVault",
                                     style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 if (isSupporter) SupporterBadge()
                             }
@@ -210,25 +221,44 @@ fun LibraryScreen(
                         }
                     },
                     actions = {
-                        if (state.selectedVault == null) {
-                            IconButton(onClick = { isSearchOpen = true }, modifier = Modifier.size(38.dp)) {
-                                Icon(Icons.Default.Search, contentDescription = "Search")
-                            }
-                            IconButton(onClick = { showAddVaultSheet = true }, modifier = Modifier.size(38.dp)) {
-                                Icon(Icons.Default.Add, contentDescription = "Add vault")
-                            }
+                        IconButton(onClick = { isSearchOpen = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
                         }
-                        IconButton(onClick = { showAllBookmarks = true }, modifier = Modifier.size(38.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Bookmark,
-                                contentDescription = "Bookmarks",
-                            )
+                        IconButton(onClick = { showAddVaultSheet = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add vault")
                         }
-                        IconButton(onClick = onSettingsClick, modifier = Modifier.size(38.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings",
-                            )
+                        Box {
+                            IconButton(onClick = { overflowMenuOpen = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More",
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = overflowMenuOpen,
+                                onDismissRequest = { overflowMenuOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Bookmarks") },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Bookmark, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        overflowMenuOpen = false
+                                        showAllBookmarks = true
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Settings, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        overflowMenuOpen = false
+                                        onSettingsClick()
+                                    },
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -271,39 +301,43 @@ fun LibraryScreen(
                 .padding(innerPadding),
         ) {
             if (state.allItems.isEmpty() && !state.isScanning) {
-                EmptyLibrary(hasVaults = state.vaults.isNotEmpty())
+                EmptyLibrary(
+                    hasVaults = state.vaults.isNotEmpty(),
+                    onAddVault = { showAddVaultSheet = true },
+                    onRescan = viewModel::refresh,
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 32.dp),
+                    contentPadding = PaddingValues(bottom = Dimens.spaceXxl),
                 ) {
 
-                    // ── Continue cards — compact row, up to 3 side by side ────
-                    val continueItems = listOfNotNull(state.currentBook, state.currentAudiobook)
+                    // ── Continue cards — horizontally scrollable row of fixed-width covers ──────
+                    val continueItems = state.continueItems
                     if (continueItems.isNotEmpty()) {
                         item {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            Text(
+                                text = "Continue",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
+                            )
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                             ) {
-                                continueItems.forEach { item ->
+                                items(continueItems, key = { it.id }) { item ->
                                     ContinueCard(
                                         item    = item,
                                         onClick = {
                                             if (viewModel.validateItem(item)) onItemClick(item)
                                             else viewModel.showStaleMessage()
                                         },
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(Dimens.coverWidth),
                                     )
                                 }
-                                // Phantom weight to keep cards left-aligned when only one item
-                                if (continueItems.size == 1) {
-                                    Spacer(Modifier.weight(2f))
-                                }
                             }
-                            Spacer(Modifier.height(20.dp))
+                            Spacer(Modifier.height(Dimens.spaceLg))
                         }
                     }
 
@@ -326,7 +360,7 @@ fun LibraryScreen(
                                 currentFilter   = state.formatFilter,
                                 onFilterChanged = viewModel::onFormatFilterChanged,
                             )
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(Dimens.spaceXs))
                         }
                     }
 
@@ -339,8 +373,8 @@ fun LibraryScreen(
                         }
                         item {
                             LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                             ) {
                                 items(items, key = { it.id }) { item ->
                                     LibraryItemCard(
@@ -363,8 +397,8 @@ fun LibraryScreen(
                         item { SectionHeader("All items") }
                         item {
                             LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                             ) {
                                 items(vaultItems, key = { it.id }) { item ->
                                     LibraryItemCard(
@@ -391,8 +425,8 @@ fun LibraryScreen(
                             }
                             item(key = "section_books_row") {
                                 LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                                 ) {
                                     items(allBooks, key = { it.id }) { item ->
                                         LibraryItemCard(
@@ -405,7 +439,7 @@ fun LibraryScreen(
                                     }
                                 }
                             }
-                            item(key = "section_books_spacer") { Spacer(Modifier.height(8.dp)) }
+                            item(key = "section_books_spacer") { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
                         if (allAudio.isNotEmpty()) {
                             item(key = "section_audio_header") {
@@ -417,8 +451,8 @@ fun LibraryScreen(
                             }
                             item(key = "section_audio_row") {
                                 LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                                 ) {
                                     items(allAudio, key = { it.id }) { item ->
                                         LibraryItemCard(
@@ -431,7 +465,7 @@ fun LibraryScreen(
                                     }
                                 }
                             }
-                            item(key = "section_audio_spacer") { Spacer(Modifier.height(8.dp)) }
+                            item(key = "section_audio_spacer") { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
                     } else {
                         // Format filter active: per-vault rows (already filtered by ViewModel)
@@ -445,8 +479,8 @@ fun LibraryScreen(
                             }
                             item(key = "${vault.id}_row") {
                                 LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                                 ) {
                                     items(vaultItems, key = { it.id }) { item ->
                                         LibraryItemCard(
@@ -459,7 +493,7 @@ fun LibraryScreen(
                                     }
                                 }
                             }
-                            item(key = "${vault.id}_spacer") { Spacer(Modifier.height(8.dp)) }
+                            item(key = "${vault.id}_spacer") { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
                     }
                 }
@@ -480,7 +514,7 @@ fun LibraryScreen(
             placeholder = { Text("Search title, author, narrator, series…") },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+            LazyColumn(contentPadding = PaddingValues(vertical = Dimens.spaceSm)) {
                 // Format filter chips
                 item {
                     FormatFilterRow(
@@ -504,7 +538,7 @@ fun LibraryScreen(
                 } else if (state.searchQuery.isNotBlank()) {
                     item {
                         Box(
-                            Modifier.fillMaxWidth().padding(32.dp),
+                            Modifier.fillMaxWidth().padding(Dimens.spaceXxl),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -531,7 +565,7 @@ fun LibraryScreen(
                 onAddVault = { launchFolderPicker() },
                 onRemoveVault = { vaultToRemove = it },
             )
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(Dimens.spaceXxl))
         }
     }
 
@@ -568,21 +602,21 @@ private fun VaultManagementSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
+        verticalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
     ) {
         vaults.forEach { vault ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceMd),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Folder,
@@ -612,7 +646,7 @@ private fun VaultManagementSheet(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(Icons.Default.Add, contentDescription = "Add vault")
-            Spacer(Modifier.size(8.dp))
+            Spacer(Modifier.size(Dimens.spaceSm))
             Text("Add vault")
         }
     }
@@ -628,8 +662,8 @@ private fun VaultFilterChips(
     onShowAll: () -> Unit,
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
     ) {
         item {
             FilterChip(
@@ -644,7 +678,7 @@ private fun VaultFilterChips(
                 onClick = { onSelectVault(vault.id) },
                 label = { Text(vault.displayName) },
                 leadingIcon = {
-                    Icon(Icons.Default.Folder, contentDescription = "Folder", modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Folder, contentDescription = "Folder", modifier = Modifier.size(Dimens.spaceLg))
                 },
             )
         }
@@ -660,13 +694,13 @@ private fun VaultSectionHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
         ) {
             Icon(imageVector = Icons.Default.Folder, contentDescription = "Folder", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Text(
@@ -687,7 +721,7 @@ private fun VaultSectionHeader(
 @Composable
 private fun SupporterBadge() {
     Surface(
-        shape = RoundedCornerShape(4.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         color = Color(0xFFFFB300),
     ) {
         Text(
@@ -701,14 +735,91 @@ private fun SupporterBadge() {
 }
 
 @Composable
-private fun EmptyLibrary(hasVaults: Boolean) {
+private fun BrandMonogram() {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier.size(28.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "L",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSecondary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibrary(
+    hasVaults: Boolean,
+    onAddVault: () -> Unit,
+    onRescan: () -> Unit,
+) {
+    val headlineRes = if (hasVaults) R.string.empty_headline_with_vaults else R.string.empty_headline_no_vaults
+    val bodyRes = if (hasVaults) R.string.empty_library_with_vaults else R.string.empty_library_no_vaults
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = if (hasVaults) "Your vault is empty.\nAdd some books or audio files to get started."
-            else "No vaults set up yet.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Dimens.spaceLg),
+            modifier = Modifier.padding(horizontal = Dimens.spaceXl),
+        ) {
+            EmptyLibraryIllustration()
+            Text(
+                text = stringResource(headlineRes),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = stringResource(bodyRes),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            if (hasVaults) {
+                OutlinedButton(onClick = onRescan) {
+                    Text(stringResource(R.string.empty_cta_rescan))
+                }
+            } else {
+                Button(onClick = onAddVault) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.size(Dimens.spaceSm))
+                    Text(stringResource(R.string.empty_cta_add_vault))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibraryIllustration() {
+    // Stylized open-vault glyph drawn with the new shape + colour tokens.
+    // Avoids the need to ship an extra PNG while still feeling deliberate.
+    Box(
+        modifier = Modifier.size(96.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.size(96.dp),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp),
+                )
+            }
+        }
     }
 }
 
@@ -719,7 +830,7 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
     )
 }
 
@@ -728,7 +839,7 @@ private fun LibrarySectionHeader(title: String, count: Int, onViewAll: () -> Uni
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
+            .padding(start = Dimens.spaceLg, end = Dimens.spaceXs, top = Dimens.spaceSm, bottom = Dimens.spaceXs),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -752,73 +863,75 @@ private fun ContinueCard(
 ) {
     Card(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Box {
-            // Cover art — portrait aspect ratio
-            if (item.coverArtPath != null) {
-                AsyncImage(
-                    model = item.coverArtPath,
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(2f / 3f),
-                )
-            } else {
-                // Fallback placeholder when no cover art
+        Column(modifier = Modifier.padding(Dimens.spaceSm)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(Dimens.coverAspect)
+                    .clip(MaterialTheme.shapes.small),
+            ) {
+                if (item.coverArtPath != null) {
+                    AsyncImage(
+                        model = item.coverArtPath,
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    GeneratedCover(
+                        title = item.title,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                // In-progress indicator — thin strip along the cover's bottom edge.
+                // Lighter than the full black scrim and signals "resume".
                 Box(
                     modifier = Modifier
+                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .aspectRatio(2f / 3f)
-                        .background(MaterialTheme.colorScheme.surface),
-                    contentAlignment = Alignment.Center,
+                        .height(3.dp)
+                        .background(MaterialTheme.colorScheme.secondary),
+                )
+
+                // Play chip — small primary-tinted circular surface, top-end.
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(Dimens.spaceXs)
+                        .size(28.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
-                    Icon(
-                        imageVector = if (item.format in listOf(
-                            MediaFormat.MP3,
-                            MediaFormat.M4B,
-                            MediaFormat.OGG,
-                            MediaFormat.FLAC,
-                            MediaFormat.OPUS,
-                            MediaFormat.AAC,
-                        )) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        modifier = Modifier.size(32.dp),
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Resume",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                 }
             }
 
-            // Resume icon — bottom-left overlay with dark scrim
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(topEnd = 8.dp),
-                    )
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Resume",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
-
-        // Title below the art
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Spacer(Modifier.height(Dimens.spaceSm))
             Text(
                 text = item.title,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = item.author,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -828,19 +941,19 @@ private fun ContinueCard(
 @Composable
 private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.width(120.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.width(Dimens.coverWidth).clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.padding(Dimens.spaceSm)) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(2f / 3f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .aspectRatio(Dimens.coverAspect)
+                    .clip(MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
                 if (item.coverArtPath != null) {
@@ -851,24 +964,24 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    Icon(
-                        imageVector = if (item.format in listOf(
-                                MediaFormat.MP3, MediaFormat.M4B,
-                                MediaFormat.OGG, MediaFormat.FLAC,
-                                MediaFormat.OPUS, MediaFormat.AAC,
-                            )
-                        ) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = if (item.format.isAudio()) "Audiobook" else "Book",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(32.dp),
+                    GeneratedCover(
+                        title = item.title,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Dimens.spaceSm))
             Text(
                 text = item.title,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = item.author,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -892,8 +1005,8 @@ private fun FormatFilterRow(
     onFilterChanged: (String?) -> Unit,
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = Dimens.spaceLg, vertical = Dimens.spaceXs),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
     ) {
         item {
             FilterChip(
@@ -932,9 +1045,9 @@ private fun SearchResultRow(item: LibraryItem, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceMd),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
     ) {
         Icon(
             imageVector = if (item.format in listOf(
@@ -984,25 +1097,25 @@ private fun AllBookmarksSheet(
             Text(
                 text = "Bookmarks",
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                modifier = Modifier.padding(horizontal = Dimens.spaceXl, vertical = Dimens.spaceLg),
             )
             if (bookmarks.isEmpty()) {
                 Text(
                     text = "No bookmarks yet.\nAdd bookmarks from the player or reader.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(Dimens.spaceXl),
                 )
             } else {
-                LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                LazyColumn(contentPadding = PaddingValues(bottom = Dimens.spaceXxl)) {
                     items(bookmarks, key = { it.bookmark.id }) { entry ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onBookmarkClick(entry) }
-                                .padding(horizontal = 24.dp, vertical = 12.dp),
+                                .padding(horizontal = Dimens.spaceXl, vertical = Dimens.spaceMd),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Bookmark,
@@ -1035,7 +1148,7 @@ private fun AllBookmarksSheet(
                             }
                         }
                         HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 24.dp),
+                            modifier = Modifier.padding(horizontal = Dimens.spaceXl),
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                         )
                     }
@@ -1078,7 +1191,7 @@ private fun MiniPlayerBar(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.surface)
                     .clickable(onClick = onArtClick),
                 contentAlignment = Alignment.Center,
@@ -1091,16 +1204,14 @@ private fun MiniPlayerBar(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Default.Headphones,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                    GeneratedCover(
+                        title = title,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(Dimens.spaceMd))
 
             // Title + author — tapping also navigates to the full player
             Column(

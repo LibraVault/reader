@@ -209,7 +209,7 @@ private fun EpubNavigatorView(
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
-                    shape = RoundedCornerShape(32.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     shadowElevation = 8.dp,
                     modifier = Modifier.clickable(onClick = {}),
                 ) {

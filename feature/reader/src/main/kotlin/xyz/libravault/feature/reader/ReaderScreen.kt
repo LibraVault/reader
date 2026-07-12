@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import xyz.libravault.core.ui.components.GeneratedCover
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +52,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.MediaFormat
+import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.components.BookmarksSheet
@@ -131,6 +134,26 @@ fun ReaderScreen(
                     }
                 ) { innerPadding ->
                     Box(Modifier.fillMaxSize()) {
+                        // Bookmark-added confirmation toast — anchored at the bottom of the
+                        // top 22% of the parent so it sits below the toolbar but well above
+                        // the reader's mid-page reading position.
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .fillMaxHeight(0.22f),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            BookmarkAddedToast(
+                                visible   = state.lastAddedBookmarkId != null,
+                                onEdit    = {
+                                    viewModel.clearBookmarkToast()
+                                    viewModel.showBookmarks()
+                                },
+                                onDismiss = viewModel::clearBookmarkToast,
+                            )
+                        }
+
                         // Bottom padding is CONSTANT so the EPUB WebView never resizes
                         // when bars appear or disappear. Scaffold bottomBar handles the
                         // correct screen position (same pattern as Library screen).
@@ -215,6 +238,7 @@ fun ReaderScreen(
                 if (state.showSettingsSheet) {
                     ReaderSettingsSheet(
                         settings             = state.settings,
+                        showFontControls     = item.format != MediaFormat.PDF,
                         onThemeChanged       = viewModel::onThemeChanged,
                         onFontSizeChanged    = viewModel::onFontSizeChanged,
                         onFontFamilyChanged  = viewModel::onFontFamilyChanged,
@@ -283,7 +307,7 @@ private fun ReaderMiniPlayerBar(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.surface)
                     .clickable(onClick = onNowPlayingClick),
                 contentAlignment = Alignment.Center,
@@ -296,11 +320,9 @@ private fun ReaderMiniPlayerBar(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Default.Headphones,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                    GeneratedCover(
+                        title = nowPlaying.title,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }

@@ -93,25 +93,30 @@ interface ProgressDao {
     @Upsert
     suspend fun upsertListeningProgress(progress: ListeningProgressEntity)
 
-    /** Most recently read text item (EPUB or PDF) */
+    /**
+     * Up to [limit] most recently read text items (EPUB or PDF), in progress order.
+     * Used to populate the Continue row on the library screen.
+     */
     @Query("""
         SELECT li.* FROM library_items li
         INNER JOIN reading_progress rp ON li.id = rp.itemId
         WHERE li.format IN ('EPUB', 'PDF')
         ORDER BY rp.lastReadAt DESC
-        LIMIT 1
+        LIMIT :limit
     """)
-    fun observeCurrentBook(): Flow<LibraryItemEntity?>
+    fun observeContinueReading(limit: Int): Flow<List<LibraryItemEntity>>
 
-    /** Most recently listened audiobook */
+    /**
+     * Up to [limit] most recently listened audiobooks, in progress order.
+     */
     @Query("""
         SELECT li.* FROM library_items li
         INNER JOIN listening_progress lp ON li.id = lp.itemId
         WHERE li.format IN ('MP3', 'M4B', 'OGG', 'FLAC', 'OPUS', 'AAC')
         ORDER BY lp.lastListenedAt DESC
-        LIMIT 1
+        LIMIT :limit
     """)
-    fun observeCurrentAudiobook(): Flow<LibraryItemEntity?>
+    fun observeContinueListening(limit: Int): Flow<List<LibraryItemEntity>>
 }
 
 @Dao

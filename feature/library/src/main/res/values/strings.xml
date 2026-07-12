@@ -24,6 +24,10 @@
     <string name="continue_listening">Continue listening</string>
     <string name="empty_library_no_vaults">Tap + to select folders where your books and audiobooks are stored.</string>
     <string name="empty_library_with_vaults">No items found in your vaults. Pull down to scan for new files.</string>
+    <string name="empty_headline_no_vaults">Start your library</string>
+    <string name="empty_headline_with_vaults">Your library is empty</string>
+    <string name="empty_cta_add_vault">Add a vault folder</string>
+    <string name="empty_cta_rescan">Rescan vaults</string>
 
     <!-- Player mini-bar -->
     <string name="resume">Resume</string>

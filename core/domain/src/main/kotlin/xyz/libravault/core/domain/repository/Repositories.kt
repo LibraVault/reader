@@ -36,8 +36,8 @@ interface ProgressRepository {
     suspend fun saveReadingProgress(progress: ReadingProgress)
     suspend fun getListeningProgress(itemId: Long): ListeningProgress?
     suspend fun saveListeningProgress(progress: ListeningProgress)
-    fun observeCurrentBook(): Flow<LibraryItem?>
-    fun observeCurrentAudiobook(): Flow<LibraryItem?>
+    fun observeContinueReading(limit: Int): Flow<List<LibraryItem>>
+    fun observeContinueListening(limit: Int): Flow<List<LibraryItem>>
 }
 
 interface BookmarkRepository {
