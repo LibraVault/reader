@@ -41,6 +41,7 @@ import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import com.google.common.util.concurrent.MoreExecutors
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
 import javax.inject.Inject
 
@@ -352,21 +353,13 @@ class LibraryViewModel @Inject constructor(
      * `seekBackIncrementMs` / `seekForwardIncrementMs` values on `ExoPlayer.Builder`
      * are immutable past build).
      *
-     * Media3 reports `C.TIME_UNSET` (a large negative sentinel) for `duration` while
-     * the player is still buffering or has no timeline. Naive `coerceAtLeast(0L)`
-     * on that would clamp the seek target to 0 (which would skip *backwards* to the
-     * start on every +N s tap) — so we treat `TIME_UNSET` as "no upper bound" and
-     * fall back to `Long.MAX_VALUE`.
+     * The `C.TIME_UNSET` clamp logic lives in
+     * [xyz.libravault.feature.player.service.SeekClamp.clamp] — see the unit tests
+     * there for boundary cases (currentPosition near 0 / duration, duration UNSET).
      */
     private fun seekBy(deltaMs: Long) {
         val ctrl = controller ?: return
-        val maxPos = if (ctrl.duration == androidx.media3.common.C.TIME_UNSET) {
-            Long.MAX_VALUE
-        } else {
-            ctrl.duration.coerceAtLeast(0L)
-        }
-        val target = (ctrl.currentPosition + deltaMs).coerceIn(0L, maxPos)
-        ctrl.seekTo(target)
+        ctrl.seekTo(SeekClamp.clamp(ctrl.currentPosition, deltaMs, ctrl.duration))
     }
 
     // ── Init ─────────────────────────────────────────────────────────────────

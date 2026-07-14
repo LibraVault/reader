@@ -32,6 +32,7 @@ import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
 import java.time.Instant
 import javax.inject.Inject
@@ -291,17 +292,11 @@ class ReaderViewModel @Inject constructor(
      * See [xyz.libravault.feature.library.LibraryViewModel.seekBy] — same rationale: the
      * explicit `seekTo` honors the user's runtime `defaultSkipDurationSec` preference,
      * whereas `MediaController.seekBack`/`seekForward` defer to ExoPlayer's immutable
-     * build-time seek increment. Same `C.TIME_UNSET` guard for buffering-state
-     * durations (otherwise the upper bound clamps to 0 and a +N s tap rewinds to start).
+     * build-time seek increment. Clamp logic lives in
+     * [xyz.libravault.feature.player.service.SeekClamp.clamp].
      */
     private fun seekByAudiobook(deltaMs: Long) {
         val ctrl = controller ?: return
-        val maxPos = if (ctrl.duration == androidx.media3.common.C.TIME_UNSET) {
-            Long.MAX_VALUE
-        } else {
-            ctrl.duration.coerceAtLeast(0L)
-        }
-        val target = (ctrl.currentPosition + deltaMs).coerceIn(0L, maxPos)
-        ctrl.seekTo(target)
+        ctrl.seekTo(SeekClamp.clamp(ctrl.currentPosition, deltaMs, ctrl.duration))
     }
 }

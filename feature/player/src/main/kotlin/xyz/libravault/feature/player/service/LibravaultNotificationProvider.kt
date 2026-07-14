@@ -31,12 +31,16 @@ import com.google.common.collect.ImmutableList
  *
  * The default [DefaultMediaNotificationProvider] builds a maximum of three actions (and on
  * a single-track audiobook playlist the right-hand seek action frequently ends up
- * `isEnabled=false` and gets dropped — explaining the "only play/previous" layout reported
- * by users). The previous build of this provider pinned exactly three compact-view slots and
+ * `isEnabled=false` and gets dropped — explaining the "only play/previous" layout reported by
+ * users). The previous build of this provider pinned exactly three compact-view slots and
  * had an index-resolution bug (disabled buttons counted into the action index) that caused
  * slot selection to land on the wrong command, which manifested as taps on the play/pause
  * glyph appearing to do nothing. This implementation pins all five buttons in a stable order
- * and returns the indices `[0, 1, 2, 3, 4]` so the platform tile receives the full strip.
+ * and returns the indices `[0..size)` so the platform tile receives the full strip.
+ *
+ * Any buttons the session publishes via `MediaSession.setCustomLayout(...)` are appended
+ * after the standard 5 — they show up in the expanded notification (and in the compact view
+ * when the total is 5 or fewer). Earlier versions of this provider silently dropped them.
  *
  * ## Runtime setting changes
  *
@@ -123,6 +127,10 @@ internal class LibravaultNotificationProvider(context: Context) :
                         androidx.media3.session.R.string.media3_controls_play_description
                 )
             )
+            // The icon flips between play and pause via `showPauseButton`, which is
+            // decoupled from the underlying `COMMAND_PLAY_PAUSE` availability — a paused
+            // player still receives `COMMAND_PLAY_PAUSE` and the button is enabled,
+            // it just renders the play glyph. Tap target is identical either way.
             .setEnabled(true)
             .build()
 
@@ -137,25 +145,47 @@ internal class LibravaultNotificationProvider(context: Context) :
             .setEnabled(true)
             .build()
 
-        // Positional order: Prev | −seek | PlayPause | +seek | Next
-        return ImmutableList.of(prevButton, skipBackButton, playPauseButton, skipForwardButton, nextButton)
+        // Positional order: Prev | −seek | PlayPause | +seek | Next | (custom buttons).
+        // Custom buttons are appended so the pinned standard-5 strip is preserved
+        // (lockscreen tile always shows the same Prev/−seek/PlayPause/+seek/Next),
+        // but anything the session publishes via `MediaSession.setCustomLayout(...)`
+        // (e.g. bookmark, sleep timer, download) is honored instead of silently
+        // dropped.
+        //
+        // Mirrors `DefaultMediaNotificationProvider`'s own filter: only enabled
+        // buttons with a non-null `sessionCommand` survive into the action list —
+        // player-command buttons are not part of the custom layout contract.
+        val standardFive = ImmutableList.of(
+            prevButton, skipBackButton, playPauseButton, skipForwardButton, nextButton,
+        )
+        if (customLayout.isEmpty()) return standardFive
+
+        val customButtons = customLayout.filter {
+            it.sessionCommand != null && it.isEnabled
+        }
+        return if (customButtons.isEmpty()) {
+            standardFive
+        } else {
+            ImmutableList.builder<CommandButton>()
+                .addAll(standardFive)
+                .addAll(customButtons)
+                .build()
+        }
     }
 
     /**
-     * Adds the five buttons to the notification and returns all five as compact-view
-     * indices. The superclass invocation still appends every button as a notification
-     * action, so the expanded notification also ends up with five actions in the same
-     * order. Android 13+ honors up to five compact-view indices; older versions display
-     * the first three.
+     * Adds every button from [mediaButtons] to the notification (delegated to super),
+     * then returns one compact-view index per action so the system tile renders the
+     * whole strip. The standard 5 occupy positions `[0..4]`; any custom buttons
+     * appended by [getMediaButtons] occupy positions `[5..N)` and fall through to the
+     * expanded notification (the platform caps visible compact slots at 5).
      *
-     * Why this is safe to hardcode `[0, 1, 2, 3, 4]`: per `DefaultMediaNotificationProvider`
-     * source, `super.addNotificationActions(...)` calls `builder.addAction(...)` for every
-     * entry in [mediaButtons] regardless of `CommandButton.isEnabled`. Disabled buttons
-     * still occupy an action-list slot — they just render dimmed. So even on a single-track
-     * audiobook (where the prev/next `Player.COMMAND_*` is reported unavailable), all five
-     * actions are appended and `[0, 1, 2, 3, 4]` always references valid positions.
+     * Per `DefaultMediaNotificationProvider` source, `super.addNotificationActions(...)`
+     * calls `builder.addAction(...)` for every entry in [mediaButtons] regardless of
+     * `CommandButton.isEnabled`. Disabled buttons still occupy an action-list slot —
+     * they just render dimmed. So every index we hand back is in-bounds.
      *
-     * The pure helper that produces the same array lives in [Companion.compactViewIndicesFor]
+     * The pure helper that produces the index array lives in [Companion.compactViewIndicesFor]
      * and is unit-tested separately to make the invariant explicit.
      */
     override fun addNotificationActions(
@@ -170,15 +200,20 @@ internal class LibravaultNotificationProvider(context: Context) :
 
     companion object {
         /**
-         * Pure helper that returns the compact-view indices for a 5-slot strip.
-         * Clamped to the size of the action list so callers that pass fewer than five
-         * buttons (e.g. a future override that conditionally drops a slot) don't get
-         * out-of-bounds indices handed back to `Notification.MediaStyle.setShowActionsInCompactView`.
+         * Pure helper that returns the compact-view indices for the strip.
+         *
+         * Always returns every index `[0, size)` so the system tile renders
+         * the entire action list — including any custom buttons appended after
+         * the standard 5 by [getMediaButtons]. The platform caps the visible
+         * compact slots at 5, so when the list grows beyond 5 the system still
+         * shows just the first 5 (the pinned Prev / −seek / PlayPause / +seek /
+         * Next) and the rest fall through to the expanded notification only.
+         * Returning all indices (rather than `[0..4]` hardcoded) keeps the
+         * helper in sync with the actual action-list size so callers that
+         * supply fewer than 5 buttons still get in-bounds indices handed back
+         * to `Notification.MediaStyle.setShowActionsInCompactView`.
          */
         internal fun compactViewIndicesFor(actionListSize: Int): IntArray =
-            intArrayOf(0, 1, 2, 3, 4).let { full ->
-                if (actionListSize >= full.size) full
-                else full.copyOfRange(0, actionListSize.coerceAtLeast(0))
-            }
+            IntArray(actionListSize.coerceAtLeast(0)) { it }
     }
 }
