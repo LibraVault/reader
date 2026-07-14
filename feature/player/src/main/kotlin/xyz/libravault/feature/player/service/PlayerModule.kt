@@ -25,6 +25,13 @@ object PlayerModule {
      *  - CONTENT_TYPE_SPEECH for audiobooks (better focus handling)
      *  - handleAudioBecomingNoisy = true (pauses on headphone unplug)
      *  - handleAudioFocus = true (pauses on call, resumes after)
+     *
+     * Seek increments are seeded from the user's `defaultSkipDurationSec` setting.
+     * Because ExoPlayer's increment is immutable after build, runtime setting
+     * changes are honored by the UI layer and (where applicable) media-session
+     * callbacks — both read [SkipDurationPreference] directly. The legacy
+     * `MediaController.seekBack`/`seekForward` transport commands used by the
+     * lockscreen / Quick-Settings compact strip use this initial value.
      */
     @Provides
     @Singleton
@@ -38,8 +45,8 @@ object PlayerModule {
                 /* handleAudioFocus = */ true,
             )
             .setHandleAudioBecomingNoisy(true)
-            .setSeekBackIncrementMs(30_000)
-            .setSeekForwardIncrementMs(30_000)
+            .setSeekBackIncrementMs(SkipDurationPreference.getSkipDurationMs(context))
+            .setSeekForwardIncrementMs(SkipDurationPreference.getSkipDurationMs(context))
             .build()
 
     /**

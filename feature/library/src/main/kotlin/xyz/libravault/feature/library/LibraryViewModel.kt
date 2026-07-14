@@ -1,11 +1,13 @@
 package xyz.libravault.feature.library
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -39,6 +41,7 @@ import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import com.google.common.util.concurrent.MoreExecutors
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.SkipDurationPreference
 import javax.inject.Inject
 
 data class LibraryUiState(
@@ -75,6 +78,7 @@ class LibraryViewModel @Inject constructor(
     private val deleteBookmark: DeleteBookmarkUseCase,
     private val controllerFuture: ListenableFuture<MediaController>,
     private val supporterRepository: SupporterRepository,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private var controller: MediaController? = null
@@ -335,10 +339,25 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun seekBack()    { controller?.seekBack() }
-    fun seekForward() { controller?.seekForward() }
+    fun seekBack()    { seekBy(-SkipDurationPreference.getSkipDurationMs(appContext)) }
+    fun seekForward() { seekBy( SkipDurationPreference.getSkipDurationMs(appContext)) }
     fun skipPrevious() { controller?.seekToPreviousMediaItem() }
     fun skipNext()     { controller?.seekToNextMediaItem() }
+
+    /**
+     * Seeks [deltaMs] from the current position, clamped to the item duration.
+     * Uses an explicit `seekTo` rather than `MediaController.seekBack` /
+     * `MediaController.seekForward` so the user's runtime `defaultSkipDurationSec`
+     * preference is honored even after the ExoPlayer singleton has been built (the
+     * `seekBackIncrementMs` / `seekForwardIncrementMs` values on `ExoPlayer.Builder`
+     * are immutable past build).
+     */
+    private fun seekBy(deltaMs: Long) {
+        val ctrl = controller ?: return
+        val target = (ctrl.currentPosition + deltaMs)
+            .coerceIn(0L, ctrl.duration.coerceAtLeast(0L))
+        ctrl.seekTo(target)
+    }
 
     // ── Init ─────────────────────────────────────────────────────────────────
 

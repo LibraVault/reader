@@ -1,5 +1,6 @@
 package xyz.libravault.feature.reader
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,7 @@ import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.SkipDurationPreference
 import java.time.Instant
 import javax.inject.Inject
 
@@ -63,6 +66,7 @@ class ReaderViewModel @Inject constructor(
     private val logger: LibravaultLogger,
     private val playbackStateHolder: PlaybackStateHolder,
     private val controllerFuture: ListenableFuture<MediaController>,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private var controller: MediaController? = null
@@ -278,8 +282,21 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun seekBackAudiobook()    { controller?.seekBack() }
-    fun seekForwardAudiobook() { controller?.seekForward() }
+    fun seekBackAudiobook()    { seekByAudiobook(-SkipDurationPreference.getSkipDurationMs(appContext)) }
+    fun seekForwardAudiobook() { seekByAudiobook( SkipDurationPreference.getSkipDurationMs(appContext)) }
     fun skipPreviousAudiobook() { controller?.seekToPreviousMediaItem() }
     fun skipNextAudiobook()     { controller?.seekToNextMediaItem() }
+
+    /**
+     * See [xyz.libravault.feature.library.LibraryViewModel.seekBy] — same rationale: the
+     * explicit `seekTo` honors the user's runtime `defaultSkipDurationSec` preference,
+     * whereas `MediaController.seekBack`/`seekForward` defer to ExoPlayer's immutable
+     * build-time seek increment.
+     */
+    private fun seekByAudiobook(deltaMs: Long) {
+        val ctrl = controller ?: return
+        val target = (ctrl.currentPosition + deltaMs)
+            .coerceIn(0L, ctrl.duration.coerceAtLeast(0L))
+        ctrl.seekTo(target)
+    }
 }
