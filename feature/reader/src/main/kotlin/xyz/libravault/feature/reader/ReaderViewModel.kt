@@ -291,12 +291,17 @@ class ReaderViewModel @Inject constructor(
      * See [xyz.libravault.feature.library.LibraryViewModel.seekBy] — same rationale: the
      * explicit `seekTo` honors the user's runtime `defaultSkipDurationSec` preference,
      * whereas `MediaController.seekBack`/`seekForward` defer to ExoPlayer's immutable
-     * build-time seek increment.
+     * build-time seek increment. Same `C.TIME_UNSET` guard for buffering-state
+     * durations (otherwise the upper bound clamps to 0 and a +N s tap rewinds to start).
      */
     private fun seekByAudiobook(deltaMs: Long) {
         val ctrl = controller ?: return
-        val target = (ctrl.currentPosition + deltaMs)
-            .coerceIn(0L, ctrl.duration.coerceAtLeast(0L))
+        val maxPos = if (ctrl.duration == androidx.media3.common.C.TIME_UNSET) {
+            Long.MAX_VALUE
+        } else {
+            ctrl.duration.coerceAtLeast(0L)
+        }
+        val target = (ctrl.currentPosition + deltaMs).coerceIn(0L, maxPos)
         ctrl.seekTo(target)
     }
 }

@@ -351,11 +351,21 @@ class LibraryViewModel @Inject constructor(
      * preference is honored even after the ExoPlayer singleton has been built (the
      * `seekBackIncrementMs` / `seekForwardIncrementMs` values on `ExoPlayer.Builder`
      * are immutable past build).
+     *
+     * Media3 reports `C.TIME_UNSET` (a large negative sentinel) for `duration` while
+     * the player is still buffering or has no timeline. Naive `coerceAtLeast(0L)`
+     * on that would clamp the seek target to 0 (which would skip *backwards* to the
+     * start on every +N s tap) — so we treat `TIME_UNSET` as "no upper bound" and
+     * fall back to `Long.MAX_VALUE`.
      */
     private fun seekBy(deltaMs: Long) {
         val ctrl = controller ?: return
-        val target = (ctrl.currentPosition + deltaMs)
-            .coerceIn(0L, ctrl.duration.coerceAtLeast(0L))
+        val maxPos = if (ctrl.duration == androidx.media3.common.C.TIME_UNSET) {
+            Long.MAX_VALUE
+        } else {
+            ctrl.duration.coerceAtLeast(0L)
+        }
+        val target = (ctrl.currentPosition + deltaMs).coerceIn(0L, maxPos)
         ctrl.seekTo(target)
     }
 

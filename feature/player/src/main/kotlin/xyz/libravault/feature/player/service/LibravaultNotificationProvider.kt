@@ -71,7 +71,7 @@ internal class LibravaultNotificationProvider(context: Context) :
 
     override fun getMediaButtons(
         session: MediaSession,
-        playerCommands: Player.Commands,
+        @Suppress("UNUSED_PARAMETER") playerCommands: Player.Commands,
         customLayout: ImmutableList<CommandButton>,
         showPauseButton: Boolean,
     ): ImmutableList<CommandButton> {
@@ -83,7 +83,11 @@ internal class LibravaultNotificationProvider(context: Context) :
                     androidx.media3.session.R.string.media3_controls_seek_to_previous_description
                 )
             )
-            .setEnabled(playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM))
+            // Force-enable so the strip layout is stable across playlist shapes
+            // (single-track audiobooks report this command as unavailable). Taps on
+            // an unavailable prev/next route through the standard seek/transport path
+            // and are no-op'd by ExoPlayer; the system still renders the button.
+            .setEnabled(true)
             .build()
 
         val skipBackButton = CommandButton.Builder()
@@ -94,7 +98,7 @@ internal class LibravaultNotificationProvider(context: Context) :
                     androidx.media3.session.R.string.media3_controls_seek_back_description
                 )
             )
-            .setEnabled(playerCommands.contains(Player.COMMAND_SEEK_BACK))
+            .setEnabled(true)
             .build()
 
         val skipForwardButton = CommandButton.Builder()
@@ -105,7 +109,7 @@ internal class LibravaultNotificationProvider(context: Context) :
                     androidx.media3.session.R.string.media3_controls_seek_forward_description
                 )
             )
-            .setEnabled(playerCommands.contains(Player.COMMAND_SEEK_FORWARD))
+            .setEnabled(true)
             .build()
 
         val playPauseButton = CommandButton.Builder()
@@ -119,7 +123,7 @@ internal class LibravaultNotificationProvider(context: Context) :
                         androidx.media3.session.R.string.media3_controls_play_description
                 )
             )
-            .setEnabled(playerCommands.contains(Player.COMMAND_PLAY_PAUSE))
+            .setEnabled(true)
             .build()
 
         val nextButton = CommandButton.Builder()
@@ -130,7 +134,7 @@ internal class LibravaultNotificationProvider(context: Context) :
                     androidx.media3.session.R.string.media3_controls_seek_to_next_description
                 )
             )
-            .setEnabled(playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+            .setEnabled(true)
             .build()
 
         // Positional order: Prev | −seek | PlayPause | +seek | Next
@@ -143,6 +147,16 @@ internal class LibravaultNotificationProvider(context: Context) :
      * action, so the expanded notification also ends up with five actions in the same
      * order. Android 13+ honors up to five compact-view indices; older versions display
      * the first three.
+     *
+     * Why this is safe to hardcode `[0, 1, 2, 3, 4]`: per `DefaultMediaNotificationProvider`
+     * source, `super.addNotificationActions(...)` calls `builder.addAction(...)` for every
+     * entry in [mediaButtons] regardless of `CommandButton.isEnabled`. Disabled buttons
+     * still occupy an action-list slot — they just render dimmed. So even on a single-track
+     * audiobook (where the prev/next `Player.COMMAND_*` is reported unavailable), all five
+     * actions are appended and `[0, 1, 2, 3, 4]` always references valid positions.
+     *
+     * The pure helper that produces the same array lives in [Companion.compactViewIndicesFor]
+     * and is unit-tested separately to make the invariant explicit.
      */
     override fun addNotificationActions(
         mediaSession: MediaSession,
@@ -151,6 +165,20 @@ internal class LibravaultNotificationProvider(context: Context) :
         actionFactory: MediaNotification.ActionFactory,
     ): IntArray {
         super.addNotificationActions(mediaSession, mediaButtons, builder, actionFactory)
-        return intArrayOf(0, 1, 2, 3, 4)
+        return compactViewIndicesFor(mediaButtons.size)
+    }
+
+    companion object {
+        /**
+         * Pure helper that returns the compact-view indices for a 5-slot strip.
+         * Clamped to the size of the action list so callers that pass fewer than five
+         * buttons (e.g. a future override that conditionally drops a slot) don't get
+         * out-of-bounds indices handed back to `Notification.MediaStyle.setShowActionsInCompactView`.
+         */
+        internal fun compactViewIndicesFor(actionListSize: Int): IntArray =
+            intArrayOf(0, 1, 2, 3, 4).let { full ->
+                if (actionListSize >= full.size) full
+                else full.copyOfRange(0, actionListSize.coerceAtLeast(0))
+            }
     }
 }
