@@ -549,7 +549,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun updateBookmarkNote(id: Long, note: String?) {
-        viewModelScope.launch { updateBookmarkNote(id, note) }
+        viewModelScope.launch { updateBookmarkNote.invoke(id, note) }
     }
 
     // ── Position polling & progress saving ────────────────────────────────────
