@@ -25,10 +25,12 @@ import org.junit.jupiter.api.Test
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
+import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
 import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
+import xyz.libravault.core.domain.usecase.UpdateBookmarkNoteUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.feature.player.service.Chapter
 import xyz.libravault.feature.player.service.ChapterExtractor
@@ -60,6 +62,8 @@ class PlayerViewModelTest {
     private val saveProgress     = mockk<SaveListeningProgressUseCase>(relaxed = true)
     private val observeBookmarks = mockk<ObserveBookmarksUseCase>()
     private val addBookmark      = mockk<AddBookmarkUseCase>(relaxed = true)
+    private val deleteBookmark   = mockk<DeleteBookmarkUseCase>(relaxed = true)
+    private val updateBookmarkNote = mockk<UpdateBookmarkNoteUseCase>(relaxed = true)
     private val chapterExtractor = mockk<ChapterExtractor>()
     private val sleepTimer          = mockk<SleepTimer>(relaxed = true)
     private val logger              = mockk<LibravaultLogger>(relaxed = true)
@@ -98,6 +102,8 @@ class PlayerViewModelTest {
             saveProgress       = saveProgress,
             observeBookmarks   = observeBookmarks,
             addBookmark        = addBookmark,
+            deleteBookmark     = deleteBookmark,
+            updateBookmarkNote = updateBookmarkNote,
             controllerFuture   = controllerFuture,
             chapterExtractor   = chapterExtractor,
             sleepTimer         = sleepTimer,
@@ -131,6 +137,8 @@ class PlayerViewModelTest {
             saveProgress     = saveProgress,
             observeBookmarks = observeBookmarks,
             addBookmark      = addBookmark,
+            deleteBookmark   = deleteBookmark,
+            updateBookmarkNote = updateBookmarkNote,
             controllerFuture = controllerFuture,
             chapterExtractor = chapterExtractor,
             sleepTimer       = sleepTimer,
