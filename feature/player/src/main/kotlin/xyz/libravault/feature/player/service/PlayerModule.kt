@@ -1,5 +1,6 @@
 package xyz.libravault.feature.player.service
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import androidx.media3.common.AudioAttributes
@@ -15,6 +16,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+@SuppressLint("UnsafeOptInUsageError")
 @Module
 @InstallIn(SingletonComponent::class)
 object PlayerModule {

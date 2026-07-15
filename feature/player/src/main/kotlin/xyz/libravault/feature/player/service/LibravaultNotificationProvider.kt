@@ -1,7 +1,6 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package xyz.libravault.feature.player.service
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.media3.common.Player
 import androidx.media3.session.CommandButton
@@ -58,6 +57,8 @@ import com.google.common.collect.ImmutableList
  * icons from `androidx.media3.ui` which ships equivalent bitmaps for the standard
  * transport actions.
  */
+@OptIn(androidx.media3.common.util.UnstableApi::class)
+@SuppressLint("UnsafeOptInUsageError")
 internal class LibravaultNotificationProvider(context: Context) :
     DefaultMediaNotificationProvider(context) {
 
