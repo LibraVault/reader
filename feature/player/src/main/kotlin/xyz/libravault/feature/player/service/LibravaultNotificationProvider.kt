@@ -64,87 +64,18 @@ internal class LibravaultNotificationProvider(context: Context) :
 
     private val context: Context = context.applicationContext
 
-    /** Bundled transport icons shipped by `androidx.media3.ui` as `exo_notification_*` resources. */
-    private object Icons {
-        val play     = androidx.media3.ui.R.drawable.exo_notification_play
-        val pause    = androidx.media3.ui.R.drawable.exo_notification_pause
-        val previous = androidx.media3.ui.R.drawable.exo_notification_previous
-        val next     = androidx.media3.ui.R.drawable.exo_notification_next
-        val rewind   = androidx.media3.ui.R.drawable.exo_notification_rewind
-        val ffwd     = androidx.media3.ui.R.drawable.exo_notification_fastforward
-    }
-
     override fun getMediaButtons(
         session: MediaSession,
         @Suppress("UNUSED_PARAMETER") playerCommands: Player.Commands,
         customLayout: ImmutableList<CommandButton>,
         showPauseButton: Boolean,
     ): ImmutableList<CommandButton> {
-        val prevButton = CommandButton.Builder()
-            .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-            .setIconResId(Icons.previous)
-            .setDisplayName(
-                context.getString(
-                    androidx.media3.session.R.string.media3_controls_seek_to_previous_description
-                )
-            )
-            // Force-enable so the strip layout is stable across playlist shapes
-            // (single-track audiobooks report this command as unavailable). Taps on
-            // an unavailable prev/next route through the standard seek/transport path
-            // and are no-op'd by ExoPlayer; the system still renders the button.
-            .setEnabled(true)
-            .build()
-
-        val skipBackButton = CommandButton.Builder()
-            .setPlayerCommand(Player.COMMAND_SEEK_BACK)
-            .setIconResId(Icons.rewind)
-            .setDisplayName(
-                context.getString(
-                    androidx.media3.session.R.string.media3_controls_seek_back_description
-                )
-            )
-            .setEnabled(true)
-            .build()
-
-        val skipForwardButton = CommandButton.Builder()
-            .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
-            .setIconResId(Icons.ffwd)
-            .setDisplayName(
-                context.getString(
-                    androidx.media3.session.R.string.media3_controls_seek_forward_description
-                )
-            )
-            .setEnabled(true)
-            .build()
-
-        val playPauseButton = CommandButton.Builder()
-            .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
-            .setIconResId(if (showPauseButton) Icons.pause else Icons.play)
-            .setDisplayName(
-                context.getString(
-                    if (showPauseButton)
-                        androidx.media3.session.R.string.media3_controls_pause_description
-                    else
-                        androidx.media3.session.R.string.media3_controls_play_description
-                )
-            )
-            // The icon flips between play and pause via `showPauseButton`, which is
-            // decoupled from the underlying `COMMAND_PLAY_PAUSE` availability — a paused
-            // player still receives `COMMAND_PLAY_PAUSE` and the button is enabled,
-            // it just renders the play glyph. Tap target is identical either way.
-            .setEnabled(true)
-            .build()
-
-        val nextButton = CommandButton.Builder()
-            .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-            .setIconResId(Icons.next)
-            .setDisplayName(
-                context.getString(
-                    androidx.media3.session.R.string.media3_controls_seek_to_next_description
-                )
-            )
-            .setEnabled(true)
-            .build()
+        // Build the standard 5 with explicit bitmap icons (the notification uses them).
+        val standardFive = buildStandardStrip(
+            context = context,
+            showPauseButton = showPauseButton,
+            icon = Icons,
+        )
 
         // Positional order: Prev | −seek | PlayPause | +seek | Next | (custom buttons).
         // Custom buttons are appended so the pinned standard-5 strip is preserved
@@ -156,9 +87,6 @@ internal class LibravaultNotificationProvider(context: Context) :
         // Mirrors `DefaultMediaNotificationProvider`'s own filter: only enabled
         // buttons with a non-null `sessionCommand` survive into the action list —
         // player-command buttons are not part of the custom layout contract.
-        val standardFive = ImmutableList.of(
-            prevButton, skipBackButton, playPauseButton, skipForwardButton, nextButton,
-        )
         if (customLayout.isEmpty()) return standardFive
 
         val customButtons = customLayout.filter {
@@ -199,7 +127,108 @@ internal class LibravaultNotificationProvider(context: Context) :
         return compactViewIndicesFor(mediaButtons.size)
     }
 
-    companion object {
+companion object {
+        /** Bundled transport icons shipped by `androidx.media3.ui` as `exo_notification_*` resources. */
+        object Icons {
+            val play     = androidx.media3.ui.R.drawable.exo_notification_play
+            val pause    = androidx.media3.ui.R.drawable.exo_notification_pause
+            val previous = androidx.media3.ui.R.drawable.exo_notification_previous
+            val next     = androidx.media3.ui.R.drawable.exo_notification_next
+            val rewind   = androidx.media3.ui.R.drawable.exo_notification_rewind
+            val ffwd     = androidx.media3.ui.R.drawable.exo_notification_fastforward
+        }
+
+        /**
+         * Builds the standard 5-button strip in positional order:
+         * `[Prev, −seek, PlayPause, +seek, Next]`.
+         *
+         * Used by both [LibravaultNotificationProvider.getMediaButtons] (notification
+         * path, which uses the bitmap icons) and [PlaybackService] (MediaSession
+         * `setCustomLayout(...)` path, which leaves `iconResId` at 0 and lets the
+         * system supply its own icons for the predefined `Player.COMMAND_*`).
+         *
+         * @param icon optional bitmap resource IDs for each slot. When `null`,
+         *   `iconResId` is left at 0 and the consuming surface supplies its own
+         *   default icon for the predefined `Player.COMMAND_*`.
+         * @param showPauseButton if true, the play/pause button uses the
+         *   pause glyph and "Pause" displayName; otherwise the play glyph
+         *   and "Play" displayName.
+         */
+        @JvmStatic
+        fun buildStandardStrip(
+            context: Context,
+            showPauseButton: Boolean,
+            icon: Icons? = null,
+        ): ImmutableList<CommandButton> {
+            val builder = ImmutableList.builder<CommandButton>()
+
+            builder.add(
+                CommandButton.Builder()
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .applyIcon(context, icon?.previous, androidx.media3.session.R.string.media3_controls_seek_to_previous_description)
+                    .setEnabled(true)
+                    .build()
+            )
+            builder.add(
+                CommandButton.Builder()
+                    .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                    .applyIcon(context, icon?.rewind, androidx.media3.session.R.string.media3_controls_seek_back_description)
+                    .setEnabled(true)
+                    .build()
+            )
+            builder.add(
+                CommandButton.Builder()
+                    .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
+                    .applyIcon(
+                        context = context,
+                        iconResId = if (showPauseButton) icon?.pause else icon?.play,
+                        displayNameRes = if (showPauseButton)
+                            androidx.media3.session.R.string.media3_controls_pause_description
+                        else
+                            androidx.media3.session.R.string.media3_controls_play_description,
+                    )
+                    // The icon flips between play and pause via `showPauseButton`, which is
+                    // decoupled from the underlying `COMMAND_PLAY_PAUSE` availability — a
+                    // paused player still receives `COMMAND_PLAY_PAUSE` and the button is
+                    // enabled, it just renders the play glyph. Tap target is identical
+                    // either way.
+                    .setEnabled(true)
+                    .build()
+            )
+            builder.add(
+                CommandButton.Builder()
+                    .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                    .applyIcon(context, icon?.ffwd, androidx.media3.session.R.string.media3_controls_seek_forward_description)
+                    .setEnabled(true)
+                    .build()
+            )
+            builder.add(
+                CommandButton.Builder()
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .applyIcon(context, icon?.next, androidx.media3.session.R.string.media3_controls_seek_to_next_description)
+                    .setEnabled(true)
+                    .build()
+            )
+
+            return builder.build()
+        }
+
+        /**
+         * Applies an icon resource id (when non-null) and a localized display name to a
+         * [CommandButton.Builder]. `iconResId == null` leaves the builder's icon at the
+         * default (0), so the consuming surface supplies its own icon for the predefined
+         * `Player.COMMAND_*`.
+         */
+        private fun CommandButton.Builder.applyIcon(
+            context: Context,
+            iconResId: Int?,
+            displayNameRes: Int,
+        ): CommandButton.Builder {
+            if (iconResId != null) this.setIconResId(iconResId)
+            this.setDisplayName(context.getString(displayNameRes))
+            return this
+        }
+
         /**
          * Pure helper that returns the compact-view indices for the strip.
          *
@@ -207,7 +236,7 @@ internal class LibravaultNotificationProvider(context: Context) :
          * the entire action list — including any custom buttons appended after
          * the standard 5 by [getMediaButtons]. The platform caps the visible
          * compact slots at 5, so when the list grows beyond 5 the system still
-         * shows just the first 5 (the pinned Prev / −seek / PlayPause / +seek /
+         * shows just the first 5 (the pinned Prev / -seek / PlayPause / +seek /
          * Next) and the rest fall through to the expanded notification only.
          * Returning all indices (rather than `[0..4]` hardcoded) keeps the
          * helper in sync with the actual action-list size so callers that

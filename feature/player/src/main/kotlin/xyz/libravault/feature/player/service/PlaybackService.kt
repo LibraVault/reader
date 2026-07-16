@@ -5,6 +5,7 @@ package xyz.libravault.feature.player.service
 import android.annotation.SuppressLint
 import android.app.PendingIntent
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import dagger.hilt.android.AndroidEntryPoint
@@ -19,6 +20,22 @@ import javax.inject.Inject
  * `[ Prev | −N s | Play/Pause | +N s | Next ]`, where `N` is the user's
  * `defaultSkipDurationSec` preference (default 30 s). See the provider class for
  * details and the documented runtime-increment limitation.
+ *
+ * ## Custom layout — required for the system media tile
+ *
+ * The lockscreen "Live notifications" card and the Quick-Settings media output
+ * panel read directly from the `MediaSession`'s custom layout (Android 13+
+ * forwards `PlaybackStateCompat.customActions` from there, not from the
+ * notification's compact-view indices). Without an explicit custom layout,
+ * the system falls back to a minimal 2-button default that exposes only
+ * `COMMAND_PLAY_PAUSE` and one of the seek commands — that's the exact
+ * "only << and ▶" symptom users reported after the previous fix shipped.
+ *
+ * `MediaSession.Builder.setCustomLayout(...)` is called here with the same
+ * 5-button strip that the notification uses, so the two surfaces stay in
+ * sync. Each button's `isEnabled` is rewritten per-controller by the session
+ * based on the actual `Player.Commands` available — taps on a disabled
+ * prev/next (single-track audiobook playlist) are no-op'd by ExoPlayer.
  *
  * The seek increment is seeded from `defaultSkipDurationSec` on the ExoPlayer
  * singleton in [PlayerModule] when the player is first built; in-app ± buttons in
@@ -55,6 +72,18 @@ class PlaybackService : MediaSessionService() {
         val builder = MediaSession.Builder(this, player)
 
         sessionActivity?.let { builder.setSessionActivity(it) }
+
+        // Publish the 5-button strip to the system media tile (lockscreen +
+        // Quick Settings media output). `icon = null` here — for the
+        // MediaSession surface we let the system supply the default icon for
+        // each predefined `Player.COMMAND_*`; the notification path uses the
+        // same builder with explicit bitmap icons via `LibravaultNotificationProvider`.
+        val standardStrip: List<CommandButton> = LibravaultNotificationProvider.buildStandardStrip(
+            context = this,
+            showPauseButton = player.playWhenReady,
+        )
+        builder.setCustomLayout(standardStrip)
+
         mediaSession = builder.build()
     }
 
