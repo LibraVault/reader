@@ -16,6 +16,7 @@ import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.snapPlaybackSpeed
+import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.domain.scanner.ScanProgress
 import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
@@ -24,7 +25,6 @@ import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.storage.CoverArtCache
 import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
-import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
 

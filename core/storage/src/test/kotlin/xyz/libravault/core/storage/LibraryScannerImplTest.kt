@@ -94,6 +94,25 @@ class LibraryScannerImplTest {
     }
 
     @Test
+    fun `format gate short-circuits before the file-stat check`() {
+        // Pins the optimization: when the format gate already fires (stub
+        // needing enrichment), we must NOT consult `File.exists()` — the
+        // result is `true` regardless of the cover-file state. Pairs with
+        // a real missing path so any future reorder of the boolean that
+        // makes the file check first would still produce `true`, but a
+        // hypothetical future change that mistakenly ANDs the two gates
+        // (returning false here) would fail this test.
+        val missingPath = "/nonexistent/cache/cover-${System.nanoTime()}.jpg"
+        val item = libraryItem(
+            format       = MediaFormat.EPUB,
+            coverArtPath = missingPath,
+            author       = "Unknown",
+        )
+
+        assertTrue(scanner.needsEnrichment(item))
+    }
+
+    @Test
     fun `PDF stub with null cover and Unknown author is enriched`() {
         val item = libraryItem(
             format       = MediaFormat.PDF,

@@ -166,34 +166,41 @@ class LibraryScannerImpl @Inject constructor(
             scanInProgress.set(false)
             logger.d(TAG, "Scan lock released")
         }
-    }
+}
 
     /**
-     * Phase 2 enrichment — runs independently of the scan flow.
-     * Items already enriched (coverArtPath or durationMs set) are skipped
-     * to avoid redundant I/O on every restart.
-     *
      * Pure function so it can be unit-tested without spinning up the
      * scanner's background coroutine scope.
+     *
+     * Order matters for performance: the format-specific gate is checked
+     * first so unprocessed stubs (which always need enrichment) never
+     * pay for a `File.exists()` stat. The defensive file check only runs
+     * for already-enriched items — the small set where the bug fix
+     * actually matters.
      */
     internal fun needsEnrichment(item: LibraryItem): Boolean {
-        // Defensive: if the row says it has a cover but the file on disk
-        // has gone (user wiped the cover cache, OS evicted `cacheDir`,
-        // etc.), force a re-extraction regardless of the format-specific
-        // gate below. Otherwise the stale absolute path would survive
-        // forever and the UI would show a permanently blank cover.
-        val savedCoverPath = item.coverArtPath
-        val coverFileMissing = savedCoverPath != null && !File(savedCoverPath).exists()
-
-        return coverFileMissing || when (item.format) {
+        val formatGateFires = when (item.format) {
             MediaFormat.MP3, MediaFormat.M4B,
             MediaFormat.OGG, MediaFormat.FLAC,
             MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
             MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
                     item.author == "Unknown"
         }
+        if (formatGateFires) return true
+
+        // Defensive: if the row says it has a cover but the file on disk
+        // has gone (user wiped the cover cache, OS evicted `cacheDir`,
+        // etc.), force a re-extraction. Otherwise the stale absolute
+        // path would survive forever and the UI would show a permanently
+        // blank cover.
+        return item.coverArtPath != null && !File(item.coverArtPath).exists()
     }
 
+    /**
+     * Phase 2 enrichment — runs independently of the scan flow.
+     * Items already enriched (coverArtPath or durationMs set) are skipped
+     * to avoid redundant I/O on every restart.
+     */
     private suspend fun enrichMetadata() {
         try {
             var enriched = 0
