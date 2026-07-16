@@ -4,6 +4,7 @@ package xyz.libravault.feature.player.service
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.util.Log
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -53,9 +54,12 @@ class PlaybackService : MediaSessionService() {
     @SuppressLint("UnsafeOptInUsageError")
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "onCreate: start")
         try {
             setMediaNotificationProvider(LibravaultNotificationProvider(this))
-        } catch (_: Exception) {
+            Log.i(TAG, "onCreate: notification provider set")
+        } catch (t: Throwable) {
+            Log.e(TAG, "onCreate: setMediaNotificationProvider threw", t)
             // Fall back to Media3's default notification layout. This is non-fatal —
             // playback works correctly without the custom compact-strip configuration.
         }
@@ -70,6 +74,7 @@ class PlaybackService : MediaSessionService() {
             }
 
         val builder = MediaSession.Builder(this, player)
+        Log.i(TAG, "onCreate: builder constructed, sessionActivity not null=${sessionActivity != null}")
 
         sessionActivity?.let { builder.setSessionActivity(it) }
 
@@ -78,19 +83,40 @@ class PlaybackService : MediaSessionService() {
         // MediaSession surface we let the system supply the default icon for
         // each predefined `Player.COMMAND_*`; the notification path uses the
         // same builder with explicit bitmap icons via `LibravaultNotificationProvider`.
-        val standardStrip: List<CommandButton> = LibravaultNotificationProvider.buildStandardStrip(
-            context = this,
-            showPauseButton = player.playWhenReady,
-        )
-        builder.setCustomLayout(standardStrip)
+        val standardStrip: List<CommandButton> = try {
+            LibravaultNotificationProvider.buildStandardStrip(
+                context = this,
+                showPauseButton = player.playWhenReady,
+            ).also { Log.i(TAG, "onCreate: buildStandardStrip produced ${it.size} buttons") }
+        } catch (t: Throwable) {
+            Log.e(TAG, "onCreate: buildStandardStrip threw; continuing without customLayout", t)
+            emptyList()
+        }
+        if (standardStrip.isNotEmpty()) builder.setCustomLayout(standardStrip)
 
-        mediaSession = builder.build()
+        try {
+            mediaSession = builder.build()
+            Log.i(TAG, "onCreate: MediaSession built; id=${mediaSession?.id}")
+        } catch (t: Throwable) {
+            Log.e(TAG, "onCreate: MediaSession.Builder.build() threw", t)
+            throw t
+        }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
-        mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        val session = mediaSession
+        Log.i(
+            TAG,
+            "onGetSession: pkg=${controllerInfo.packageName} " +
+                "interfaceVersion=${controllerInfo.interfaceVersion} " +
+                "sessionNotNull=${session != null} " +
+                "isMediaNotification=${session?.isMediaNotificationController(controllerInfo)}",
+        )
+        return session
+    }
 
     override fun onDestroy() {
+        Log.i(TAG, "onDestroy")
         mediaSession?.run {
             release()
             // Do NOT release the singleton ExoPlayer here — it is @Singleton scoped
@@ -100,5 +126,9 @@ class PlaybackService : MediaSessionService() {
         }
         mediaSession = null
         super.onDestroy()
+    }
+
+    private companion object {
+        const val TAG = "LibravaultPlayback"
     }
 }
