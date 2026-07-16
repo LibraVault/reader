@@ -42,7 +42,9 @@ import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
 import xyz.libravault.core.domain.usecase.RemoveVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.storage.CoverArtCache
+import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
+import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.logger.LibravaultLogger
 
 @ExtendWith(MockKExtension::class)
@@ -52,12 +54,15 @@ class SettingsViewModelTest {
 
     private val prefsRepo  = mockk<UserPreferencesRepository>()
     private val coverCache = mockk<CoverArtCache>(relaxed = true)
+    private val libraryRepository = mockk<LibraryRepository>(relaxed = true)
     private val vaultManager = mockk<VaultManager>(relaxed = true)
     private val addVaultFolder = mockk<AddVaultFolderUseCase>()
     private val removeVaultFolder = mockk<RemoveVaultFolderUseCase>()
     private val observeVaults = mockk<ObserveVaultsUseCase>()
     private val scanVaultsUseCase = mockk<ScanVaultUseCase>()
     private val logger     = mockk<LibravaultLogger>(relaxed = true)
+    private val supporterRepository = mockk<SupporterRepository>(relaxed = true)
+    private val donationClient = mockk<DonationClient>(relaxed = true)
 
     private val mainDispatcher = UnconfinedTestDispatcher()
     private val vaultsFlow = MutableStateFlow(emptyList<VaultFolder>())
@@ -83,8 +88,9 @@ class SettingsViewModelTest {
 
     private fun viewModel(): SettingsViewModel {
         return SettingsViewModel(
-            prefsRepo, coverCache, vaultManager,
+            prefsRepo, coverCache, libraryRepository, vaultManager,
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
+            supporterRepository, donationClient,
         )
     }
 
@@ -141,11 +147,17 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `clear cover cache delegates to CoverArtCache`() = runTest(mainDispatcher) {
-        val vm = viewModel()
-        vm.clearCoverCache()
-        verify(exactly = 1) { coverCache.clearAll() }
-    }
+    fun `clear cover cache wipes files AND nulls coverArtPaths so refresh can recover`() =
+        runTest(mainDispatcher) {
+            val vm = viewModel()
+            vm.clearCoverCache()
+            // Both calls are mandatory: deleting JPEG files alone leaves the DB
+            // with stale absolute paths, and the enrichment gate keys off
+            // `coverArtPath == null`, so without the DB clear refresh would
+            // *not* recover the covers.
+            verify(exactly = 1) { coverCache.clearAll() }
+            coVerify(exactly = 1) { libraryRepository.clearCoverArtPaths() }
+        }
 
     @Test
     fun `vault state observes vaults from use case`() = runTest(mainDispatcher) {

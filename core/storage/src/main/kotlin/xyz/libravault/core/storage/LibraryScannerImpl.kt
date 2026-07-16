@@ -1,6 +1,7 @@
 package xyz.libravault.core.storage
 
 import android.net.Uri
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import dagger.Binds
 import dagger.Module
@@ -165,6 +166,34 @@ class LibraryScannerImpl @Inject constructor(
             scanInProgress.set(false)
             logger.d(TAG, "Scan lock released")
         }
+}
+
+    /**
+     * Pure function so it can be unit-tested without spinning up the
+     * scanner's background coroutine scope.
+     *
+     * Order matters for performance: the format-specific gate is checked
+     * first so unprocessed stubs (which always need enrichment) never
+     * pay for a `File.exists()` stat. The defensive file check only runs
+     * for already-enriched items — the small set where the bug fix
+     * actually matters.
+     */
+    internal fun needsEnrichment(item: LibraryItem): Boolean {
+        val formatGateFires = when (item.format) {
+            MediaFormat.MP3, MediaFormat.M4B,
+            MediaFormat.OGG, MediaFormat.FLAC,
+            MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
+            MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
+                    item.author == "Unknown"
+        }
+        if (formatGateFires) return true
+
+        // Defensive: if the row says it has a cover but the file on disk
+        // has gone (user wiped the cover cache, OS evicted `cacheDir`,
+        // etc.), force a re-extraction. Otherwise the stale absolute
+        // path would survive forever and the UI would show a permanently
+        // blank cover.
+        return item.coverArtPath != null && !File(item.coverArtPath).exists()
     }
 
     /**
@@ -178,15 +207,7 @@ class LibraryScannerImpl @Inject constructor(
             val itemsToEnrich = libraryRepository.observeAll().first()
 
             for (item in itemsToEnrich) {
-                // Skip items that already have rich metadata
-                val needsEnrichment = when (item.format) {
-                    MediaFormat.MP3, MediaFormat.M4B,
-                    MediaFormat.OGG, MediaFormat.FLAC,
-                    MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
-                    MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
-                            item.author == "Unknown"
-                }
-                if (!needsEnrichment) continue
+                if (!needsEnrichment(item)) continue
 
                 runCatching {
                     val scannedFile = xyz.libravault.core.storage.model.ScannedFile(

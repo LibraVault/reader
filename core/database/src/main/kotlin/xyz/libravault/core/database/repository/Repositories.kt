@@ -89,6 +89,9 @@ class LibraryRepositoryImpl @Inject constructor(
 
     override suspend fun deleteByVault(vaultId: Long) =
         dao.deleteByVault(vaultId)
+
+    override suspend fun clearCoverArtPaths() =
+        dao.clearAllCoverArtPaths()
 }
 
 // ── ProgressRepository ───────────────────────────────────────────────────────
