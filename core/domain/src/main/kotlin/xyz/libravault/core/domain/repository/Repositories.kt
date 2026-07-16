@@ -29,6 +29,15 @@ interface LibraryRepository {
     suspend fun upsert(item: LibraryItem): Long
     suspend fun deleteItem(id: Long)
     suspend fun deleteByVault(vaultId: Long)
+
+    /**
+     * Nulls out `coverArtPath` for every library item. Intended to be
+     * invoked after `CoverArtCache.clearAll()` so the next scan's
+     * enrichment gate (which keys off `coverArtPath == null`) re-extracts
+     * covers instead of trusting stale absolute paths whose backing
+     * files were just deleted.
+     */
+    suspend fun clearCoverArtPaths()
 }
 
 interface ProgressRepository {

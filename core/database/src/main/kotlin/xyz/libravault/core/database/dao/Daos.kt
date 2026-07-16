@@ -77,6 +77,16 @@ interface LibraryItemDao {
 
     @Query("SELECT * FROM library_items WHERE filePath = :path LIMIT 1")
     suspend fun findByPath(path: String): LibraryItemEntity?
+
+    /**
+     * Nulls out every library item's cover-path column without touching
+     * the rest of the row. Used after `CoverArtCache.clearAll()` so the
+     * enrichment gate (which keys off `coverArtPath == null`) will
+     * re-extract covers on the next scan instead of trusting a stale
+     * absolute path that no longer points at a file on disk.
+     */
+    @Query("UPDATE library_items SET coverArtPath = NULL")
+    suspend fun clearAllCoverArtPaths()
 }
 
 @Dao

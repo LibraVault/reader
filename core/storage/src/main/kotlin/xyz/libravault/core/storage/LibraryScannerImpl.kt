@@ -1,6 +1,7 @@
 package xyz.libravault.core.storage
 
 import android.net.Uri
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import dagger.Binds
 import dagger.Module
@@ -178,8 +179,17 @@ class LibraryScannerImpl @Inject constructor(
             val itemsToEnrich = libraryRepository.observeAll().first()
 
             for (item in itemsToEnrich) {
+                // Defensive: if the row says it has a cover but the file
+                // on disk has gone (e.g. user wiped the cover cache, or
+                // the app's `cacheDir` was evicted by the OS), force a
+                // re-extraction regardless of the format-specific gate
+                // below. Otherwise the stale absolute path would survive
+                // forever and the UI would show a permanently blank cover.
+                val savedCoverPath = item.coverArtPath
+                val coverFileMissing = savedCoverPath != null && !File(savedCoverPath).exists()
+
                 // Skip items that already have rich metadata
-                val needsEnrichment = when (item.format) {
+                val needsEnrichment = coverFileMissing || when (item.format) {
                     MediaFormat.MP3, MediaFormat.M4B,
                     MediaFormat.OGG, MediaFormat.FLAC,
                     MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null

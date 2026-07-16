@@ -24,6 +24,7 @@ import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.storage.CoverArtCache
 import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
+import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.logger.LibravaultLogger
 import javax.inject.Inject
 
@@ -56,6 +57,7 @@ sealed class DonationState {
 class SettingsViewModel @Inject constructor(
     private val prefsRepo: UserPreferencesRepository,
     private val coverArtCache: CoverArtCache,
+    private val libraryRepository: LibraryRepository,
     private val vaultManager: VaultManager,
     private val addVaultFolder: AddVaultFolderUseCase,
     private val removeVaultFolder: RemoveVaultFolderUseCase,
@@ -123,9 +125,18 @@ class SettingsViewModel @Inject constructor(
         it.copy(dynamicColorEnabled = enabled)
     }
 
+    /**
+     * Wipes the on-disk cover cache AND nulls `coverArtPath` for every
+     * library item. Both must move together: deleting the JPEG files
+     * alone leaves the DB holding stale absolute paths, which makes the
+     * scanner's enrichment gate (`coverArtPath == null`) refuse to
+     * re-extract, so covers stay missing forever. See
+     * `LibraryScannerImpl.enrichMetadata`.
+     */
     fun clearCoverCache() {
         viewModelScope.launch {
             coverArtCache.clearAll()
+            libraryRepository.clearCoverArtPaths()
             logger.i("Settings", "Cover art cache cleared")
         }
     }
