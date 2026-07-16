@@ -172,31 +172,35 @@ class LibraryScannerImpl @Inject constructor(
      * Phase 2 enrichment — runs independently of the scan flow.
      * Items already enriched (coverArtPath or durationMs set) are skipped
      * to avoid redundant I/O on every restart.
+     *
+     * Pure function so it can be unit-tested without spinning up the
+     * scanner's background coroutine scope.
      */
+    internal fun needsEnrichment(item: LibraryItem): Boolean {
+        // Defensive: if the row says it has a cover but the file on disk
+        // has gone (user wiped the cover cache, OS evicted `cacheDir`,
+        // etc.), force a re-extraction regardless of the format-specific
+        // gate below. Otherwise the stale absolute path would survive
+        // forever and the UI would show a permanently blank cover.
+        val savedCoverPath = item.coverArtPath
+        val coverFileMissing = savedCoverPath != null && !File(savedCoverPath).exists()
+
+        return coverFileMissing || when (item.format) {
+            MediaFormat.MP3, MediaFormat.M4B,
+            MediaFormat.OGG, MediaFormat.FLAC,
+            MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
+            MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
+                    item.author == "Unknown"
+        }
+    }
+
     private suspend fun enrichMetadata() {
         try {
             var enriched = 0
             val itemsToEnrich = libraryRepository.observeAll().first()
 
             for (item in itemsToEnrich) {
-                // Defensive: if the row says it has a cover but the file
-                // on disk has gone (e.g. user wiped the cover cache, or
-                // the app's `cacheDir` was evicted by the OS), force a
-                // re-extraction regardless of the format-specific gate
-                // below. Otherwise the stale absolute path would survive
-                // forever and the UI would show a permanently blank cover.
-                val savedCoverPath = item.coverArtPath
-                val coverFileMissing = savedCoverPath != null && !File(savedCoverPath).exists()
-
-                // Skip items that already have rich metadata
-                val needsEnrichment = coverFileMissing || when (item.format) {
-                    MediaFormat.MP3, MediaFormat.M4B,
-                    MediaFormat.OGG, MediaFormat.FLAC,
-                    MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
-                    MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
-                            item.author == "Unknown"
-                }
-                if (!needsEnrichment) continue
+                if (!needsEnrichment(item)) continue
 
                 runCatching {
                     val scannedFile = xyz.libravault.core.storage.model.ScannedFile(
