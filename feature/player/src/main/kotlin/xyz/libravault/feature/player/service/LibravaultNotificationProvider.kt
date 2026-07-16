@@ -2,13 +2,11 @@ package xyz.libravault.feature.player.service
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.os.Bundle
 import androidx.media3.common.Player
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
-import androidx.media3.session.SessionCommand
 import androidx.core.app.NotificationCompat
 import com.google.common.collect.ImmutableList
 
@@ -39,25 +37,17 @@ import com.google.common.collect.ImmutableList
  * glyph appearing to do nothing. This implementation pins all five buttons in a stable order
  * and returns the indices `[0..size)` so the platform tile receives the full strip.
  *
- * ## Why custom commands (not Player.COMMAND_*)
- *
- * The legacy `PlaybackStateCompat` that feeds the Android 13+ system media tile only
- * receives [CommandButton]s whose `sessionCommand` has
- * `commandCode == COMMAND_CODE_CUSTOM` — see [PlayerWrapper.createPlaybackStateCompat]'s
- * filter. Player-command buttons (the previous design) are dropped from the platform
- * session state and therefore never reach the lockscreen / Quick-Settings tile; only the
- * in-app expanded notification rendered them, which is why the user kept seeing only
- * `<<` and `▶` after the previous fix. Custom commands defined in [CustomCommandActions]
- * are routed through both surfaces and dispatched in
- * [PlaybackService.MediaButtonCallback.onCustomCommand].
+ * Any buttons the session publishes via `MediaSession.setCustomLayout(...)` are appended
+ * after the standard 5 — they show up in the expanded notification (and in the compact view
+ * when the total is 5 or fewer). Earlier versions of this provider silently dropped them.
  *
  * ## Runtime setting changes
  *
- * The seek increment for [Player.seekBack]/[Player.seekForward] is fixed at ExoPlayer build
+ * The seek increment read by `Player.seekBack`/`seekForward` is fixed at ExoPlayer build
  * time in [PlayerModule] and can't be mutated afterward. A change to
- * `defaultSkipDurationSec` in Settings therefore takes effect on the lockscreen ±seek
- * strip on the next app start, while reader and library mini-player ±seek buttons honor
- * the preference live (see
+ * `defaultSkipDurationSec` in Settings therefore takes effect on the lockscreen strip on
+ * the next app start, while reader and library mini-player ±seek buttons honor the
+ * preference live (see
  * [xyz.libravault.feature.library.LibraryViewModel.seekBy] and the reader equivalent).
  *
  * ## Icon set (Media3 1.3.1 API surface)
@@ -81,15 +71,10 @@ internal class LibravaultNotificationProvider(context: Context) :
         showPauseButton: Boolean,
     ): ImmutableList<CommandButton> {
         // Build the standard 5 with explicit bitmap icons (the notification uses them).
-        // `skipDurationMs` lives in the live player so the custom buttons reflect the
-        // current setting on each rebuild (the lockscreen notification is rebuilt
-        // regularly by `DefaultMediaNotificationProvider`).
-        val skipMs = session.player.seekForwardIncrement
         val standardFive = buildStandardStrip(
             context = context,
             showPauseButton = showPauseButton,
             icon = Icons,
-            skipDurationMs = skipMs,
         )
 
         // Positional order: Prev | −seek | PlayPause | +seek | Next | (custom buttons).
@@ -157,17 +142,14 @@ companion object {
          * Builds the standard 5-button strip in positional order:
          * `[Prev, −seek, PlayPause, +seek, Next]`.
          *
-         * Each button uses a custom [androidx.media3.session.SessionCommand] (one of
-         * [CustomCommandActions]) rather than a `Player.Command`. This is required for
-         * the buttons to appear in the system Quick-Settings / lockscreen media tile —
-         * see the class KDoc for the full rationale.
+         * Used by both [LibravaultNotificationProvider.getMediaButtons] (notification
+         * path, which uses the bitmap icons) and [PlaybackService] (MediaSession
+         * `setCustomLayout(...)` path, which leaves `iconResId` at 0 and lets the
+         * system supply its own icons for the predefined `Player.COMMAND_*`).
          *
-         * @param skipDurationMs the seek increment for ±seek, in milliseconds. Carried
-         *   inside the [CustomCommandActions.SEEK_BY] `Bundle` so the callback can apply
-         *   it without re-reading the preference at dispatch time.
          * @param icon optional bitmap resource IDs for each slot. When `null`,
          *   `iconResId` is left at 0 and the consuming surface supplies its own
-         *   default icon.
+         *   default icon for the predefined `Player.COMMAND_*`.
          * @param showPauseButton if true, the play/pause button uses the
          *   pause glyph and "Pause" displayName; otherwise the play glyph
          *   and "Play" displayName.
@@ -176,39 +158,27 @@ companion object {
         fun buildStandardStrip(
             context: Context,
             showPauseButton: Boolean,
-            skipDurationMs: Long,
             icon: Icons? = null,
         ): ImmutableList<CommandButton> {
-            val seekBackExtras = Bundle().apply {
-                putLong(CustomCommandActions.EXTRA_OFFSET_MS, -skipDurationMs)
-            }
-            val seekForwardExtras = Bundle().apply {
-                putLong(CustomCommandActions.EXTRA_OFFSET_MS, skipDurationMs)
-            }
-
             val builder = ImmutableList.builder<CommandButton>()
 
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.PREVIOUS, Bundle.EMPTY))
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                     .applyIcon(context, icon?.previous, androidx.media3.session.R.string.media3_controls_seek_to_previous_description)
-                    // Force-enable so the strip layout is stable across playlist shapes
-                    // (single-track audiobooks have no Prev/Next). The session still
-                    // rewrites this to false for controllers whose `availableSessionCommands`
-                    // don't include PREVIOUS — see `CommandButton.isEnabled`.
                     .setEnabled(true)
                     .build()
             )
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.SEEK_BY, seekBackExtras))
+                    .setPlayerCommand(Player.COMMAND_SEEK_BACK)
                     .applyIcon(context, icon?.rewind, androidx.media3.session.R.string.media3_controls_seek_back_description)
                     .setEnabled(true)
                     .build()
             )
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.PLAY_PAUSE, Bundle.EMPTY))
+                    .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
                     .applyIcon(
                         context = context,
                         iconResId = if (showPauseButton) icon?.pause else icon?.play,
@@ -217,22 +187,24 @@ companion object {
                         else
                             androidx.media3.session.R.string.media3_controls_play_description,
                     )
-                    // The icon flips between play and pause via `showPauseButton`. Tap target
-                    // is identical either way; PLAY_PAUSE is enabled whenever the player
-                    // supports play/pause, which it always does for audiobook playback.
+                    // The icon flips between play and pause via `showPauseButton`, which is
+                    // decoupled from the underlying `COMMAND_PLAY_PAUSE` availability — a
+                    // paused player still receives `COMMAND_PLAY_PAUSE` and the button is
+                    // enabled, it just renders the play glyph. Tap target is identical
+                    // either way.
                     .setEnabled(true)
                     .build()
             )
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.SEEK_BY, seekForwardExtras))
+                    .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
                     .applyIcon(context, icon?.ffwd, androidx.media3.session.R.string.media3_controls_seek_forward_description)
                     .setEnabled(true)
                     .build()
             )
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.NEXT, Bundle.EMPTY))
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                     .applyIcon(context, icon?.next, androidx.media3.session.R.string.media3_controls_seek_to_next_description)
                     .setEnabled(true)
                     .build()
@@ -244,7 +216,8 @@ companion object {
         /**
          * Applies an icon resource id (when non-null) and a localized display name to a
          * [CommandButton.Builder]. `iconResId == null` leaves the builder's icon at the
-         * default (0), so the consuming surface supplies its own icon.
+         * default (0), so the consuming surface supplies its own icon for the predefined
+         * `Player.COMMAND_*`.
          */
         private fun CommandButton.Builder.applyIcon(
             context: Context,

@@ -4,17 +4,10 @@ package xyz.libravault.feature.player.service
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
-import android.os.Bundle
-import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.session.SessionCommand
-import androidx.media3.session.SessionCommands
-import androidx.media3.session.SessionResult
-import com.google.common.util.concurrent.Futures
-import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -25,29 +18,24 @@ import javax.inject.Inject
  * publishes a five-button compact strip to the Android 13+ system media tile
  * (lockscreen "Live notifications" / Quick-Settings media output):
  * `[ Prev | −N s | Play/Pause | +N s | Next ]`, where `N` is the user's
- * `defaultSkipDurationSec` preference (default 30 s).
+ * `defaultSkipDurationSec` preference (default 30 s). See the provider class for
+ * details and the documented runtime-increment limitation.
  *
  * ## Custom layout — required for the system media tile
  *
  * The lockscreen "Live notifications" card and the Quick-Settings media output
- * panel read directly from the legacy `PlaybackStateCompat.customActions` of the
- * underlying `MediaSessionCompat` (Android 13+). Without an explicit custom layout
- * the system falls back to a minimal 2-button default exposing only
- * `ACTION_PLAY_PAUSE` and one of the seek actions — that's the exact
+ * panel read directly from the `MediaSession`'s custom layout (Android 13+
+ * forwards `PlaybackStateCompat.customActions` from there, not from the
+ * notification's compact-view indices). Without an explicit custom layout,
+ * the system falls back to a minimal 2-button default that exposes only
+ * `COMMAND_PLAY_PAUSE` and one of the seek commands — that's the exact
  * "only << and ▶" symptom users reported after the previous fix shipped.
  *
- * In Media3 1.3.1, `PlayerWrapper.createPlaybackStateCompat` filters the customLayout
- * to entries with `sessionCommand.commandCode == COMMAND_CODE_CUSTOM` — buttons
- * using `Player.Command` are dropped before they reach the platform session. That's
- * why this service publishes 5 **custom** `SessionCommand` buttons (see
- * [CustomCommandActions]) rather than `Player.COMMAND_*` shortcuts; the latter
- * wouldn't survive the filter.
- *
  * `MediaSession.Builder.setCustomLayout(...)` is called here with the same
- * 5-button strip that the notification uses, so both surfaces stay in sync. Each
- * button's `isEnabled` is rewritten per-controller by the session based on the
- * actual `SessionCommands` available — taps on a disabled prev/next (single-track
- * audiobook playlist) are no-op'd by the controller's `onCustomCommand` dispatcher.
+ * 5-button strip that the notification uses, so the two surfaces stay in
+ * sync. Each button's `isEnabled` is rewritten per-controller by the session
+ * based on the actual `Player.Commands` available — taps on a disabled
+ * prev/next (single-track audiobook playlist) are no-op'd by ExoPlayer.
  *
  * The seek increment is seeded from `defaultSkipDurationSec` on the ExoPlayer
  * singleton in [PlayerModule] when the player is first built; in-app ± buttons in
@@ -82,20 +70,17 @@ class PlaybackService : MediaSessionService() {
             }
 
         val builder = MediaSession.Builder(this, player)
-            .setCallback(MediaButtonCallback(player))
 
         sessionActivity?.let { builder.setSessionActivity(it) }
 
         // Publish the 5-button strip to the system media tile (lockscreen +
-        // Quick Settings media output). `icon = null` here — for the MediaSession
-        // surface we let the system supply the default icon for each custom action;
-        // the notification path uses the same builder with explicit bitmap icons via
-        // `LibravaultNotificationProvider`.
+        // Quick Settings media output). `icon = null` here — for the
+        // MediaSession surface we let the system supply the default icon for
+        // each predefined `Player.COMMAND_*`; the notification path uses the
+        // same builder with explicit bitmap icons via `LibravaultNotificationProvider`.
         val standardStrip: List<CommandButton> = LibravaultNotificationProvider.buildStandardStrip(
             context = this,
             showPauseButton = player.playWhenReady,
-            skipDurationMs = player.seekForwardIncrement,
-            icon = null,
         )
         builder.setCustomLayout(standardStrip)
 
@@ -115,87 +100,5 @@ class PlaybackService : MediaSessionService() {
         }
         mediaSession = null
         super.onDestroy()
-    }
-
-    /**
-     * Routes the four unique custom session commands (see [CustomCommandActions]) to the
-     * underlying [ExoPlayer]. Also overrides [MediaSession.Callback.onConnect] so the
-     * system notification controller (which is what feeds the lockscreen /
-     * Quick-Settings media tile) is allowed to send those commands — without this
-     * declaration, `PlaybackStateCompat.customActions` for the system tile would
-     * still be filtered to actions the controller is allowed to send.
-     */
-    internal class MediaButtonCallback(
-        private val player: ExoPlayer,
-    ) : MediaSession.Callback {
-
-        override fun onConnect(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-        ): MediaSession.ConnectionResult {
-            // Accept every controller by default; restrict the available session commands
-            // to the four unique custom actions we publish in [CustomCommandActions].
-            // This is what lets the lockscreen / Quick-Settings system controller render
-            // the actions in the platform `PlaybackStateCompat.customActions` list —
-            // see `PlayerWrapper.createPlaybackStateCompat`'s filter on
-            // `availableSessionCommands`.
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(
-                    SessionCommands.Builder()
-                        .add(SessionCommand(CustomCommandActions.PREVIOUS, Bundle.EMPTY))
-                        .add(SessionCommand(CustomCommandActions.PLAY_PAUSE, Bundle.EMPTY))
-                        .add(SessionCommand(CustomCommandActions.NEXT, Bundle.EMPTY))
-                        // SEEK_BY has the same action string for both ±seek directions;
-                        // we only need to advertise it once.
-                        .add(SessionCommand(CustomCommandActions.SEEK_BY, Bundle.EMPTY))
-                        .build()
-                )
-                .build()
-        }
-
-        override fun onCustomCommand(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-            customCommand: SessionCommand,
-            args: Bundle,
-        ): ListenableFuture<SessionResult> {
-            // Media3 dispatches `Callback` methods on the player's application thread —
-            // see MediaSessionImpl.onCustomCommandOnHandler. Return the result directly
-            // via `Futures.immediateFuture` so the contract is explicit.
-            return Futures.immediateFuture(dispatch(customCommand, args))
-        }
-
-        private fun dispatch(command: SessionCommand, args: Bundle): SessionResult {
-            when (command.customAction) {
-                CustomCommandActions.PREVIOUS -> {
-                    if (player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)) {
-                        player.seekToPreviousMediaItem()
-                    }
-                }
-                CustomCommandActions.NEXT -> {
-                    if (player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
-                        player.seekToNextMediaItem()
-                    }
-                }
-                CustomCommandActions.PLAY_PAUSE -> {
-                    if (player.playWhenReady) player.pause() else player.play()
-                }
-                CustomCommandActions.SEEK_BY -> {
-                    val deltaMs = args.getLong(CustomCommandActions.EXTRA_OFFSET_MS, 0L)
-                    val target = SeekClamp.clamp(
-                        currentPosition = player.currentPosition,
-                        deltaMs = deltaMs,
-                        duration = player.duration,
-                    )
-                    player.seekTo(target)
-                }
-                else -> {
-                    // Unknown custom command — return not-supported so the framework can
-                    // surface an error rather than silently no-op.
-                    return SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
-                }
-            }
-            return SessionResult(SessionResult.RESULT_SUCCESS)
-        }
     }
 }
