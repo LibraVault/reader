@@ -6,10 +6,11 @@ Thank you for your interest in contributing. Libravault is GPL-3.0 licensed and 
 
 Every contribution should preserve these properties:
 
-1. **No network access** — no `INTERNET` permission, no outbound connections
-2. **No broad storage access** — Scoped Storage only, never `MANAGE_EXTERNAL_STORAGE`
-3. **No tracking** — no analytics, telemetry, or remote crash reporting
-4. **No mandatory account** — the app must work fully offline and without sign-in
+1. **No network access in the F-Droid flavor** — the fdroid manifest strips `INTERNET`; do not add code paths that require it
+2. **Minimal network in the Play flavor** — Play-only network use is currently limited to BTCPay invoice polling for donations; any new outbound call must be opt-in and documented
+3. **No broad storage access** — Scoped Storage only, never `MANAGE_EXTERNAL_STORAGE`
+4. **No tracking** — no analytics, telemetry, or remote crash reporting
+5. **No mandatory account** — the app must work fully offline and without sign-in
 
 Pull requests that compromise any of these principles will not be merged.
 
@@ -18,8 +19,8 @@ Pull requests that compromise any of these principles will not be merged.
 ```bash
 git clone git@github.com:LibraVault/reader.git
 cd libravault
-./gradlew assembleDebug
-./gradlew testDebugUnitTest
+./gradlew assembleFdroidDebug
+./gradlew testFdroidDebugUnitTest testPlayDebugUnitTest
 ```
 
 ## Branch strategy
@@ -40,7 +41,7 @@ cd libravault
 1. Fork the repo
 2. Create a branch off `dev`
 3. Write tests for your changes
-4. Run `./gradlew testDebugUnitTest lint` and confirm it passes
+4. Run `./gradlew testFdroidDebugUnitTest testPlayDebugUnitTest lint` and confirm it passes
 5. Open a pull request against `dev` with a clear description
 
 ## Reporting bugs

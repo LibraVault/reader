@@ -40,30 +40,40 @@ A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listeni
 - Variable playback speed 0.5×–3.0×
 - Sleep timer with 6 presets, end-of-chapter option, and 10-second fade-out
 - Background playback with lock screen and notification controls
-- Android Auto ready via MediaSession
+- Android Auto ready via MediaSession _(pending verification — no automotive manifest entry or Auto-specific intent filter is declared yet; behavior depends on the system-level MediaSession surface)_
 - Progress saved every 5 seconds
 
 ### Library
-- Opens in < 200 ms — Room cache serves UI immediately
+- Opens in < 200 ms — Room cache serves UI immediately _(target — not yet measured on-device)_
 - Background scan on cold start; pull-to-refresh anytime
 - Search by title, author, narrator, or series
 - "Continue reading" and "Continue listening" cards
 - Stale file handling — silent removal on next scan
 
 ### Privacy
-- No `INTERNET` permission — ever
+- No analytics, telemetry, or remote crash reporting — ever
 - No account required
-- No analytics, telemetry, or remote crash reporting
 - Optional local-only logging — never transmitted
 - Scoped Storage — only folders you explicitly grant
+
+**Distribution flavors**
+
+LibraVault ships two product flavors that differ only in how donations are processed:
+
+| Flavor | `INTERNET` permission | Donations |
+|---|---|---|
+| `fdroid` | **Never requested** — manifest strips it | BTC/XMR addresses only |
+| `play` | Requested, used solely to poll BTCPay for invoice settlement | Google Play Billing + BTCPay + BTC/XMR |
+
+The F-Droid build therefore has zero outbound network calls. The Play build's network access is limited to BTCPay endpoints required to confirm a donation you initiated.
 
 ### Screenshots
 
 | | | | |
 |---|---|---|---|
-| <img src="docs/screenshots/2026-06-09%2013.00.47.jpg" width="50%" alt="Library screen with books" /> | <img src="docs/screenshots/2026-06-09%2013.00.59.jpg" width="50%" alt="Book detail view" /> | <img src="docs/screenshots/2026-06-09%2013.01.04.jpg" width="50%" alt="Reader with dark theme" /> | <img src="docs/screenshots/2026-06-09%2013.01.16.jpg" width="50%" alt="Reader with sepia theme" /> |
-| <img src="docs/screenshots/2026-06-09%2013.01.21.jpg" width="50%" alt="Audio player interface" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.07.jpeg" width="50%" alt="Library search feature" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.28.jpeg" width="50%" alt="Settings screen" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.32.jpeg" width="50%" alt="Sleep timer options" /> |
-| <img src="docs/screenshots/photo_2026-06-07%2008.44.37.jpeg" width="50%" alt="Bookmarks and highlights" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.42.jpeg" width="50%" alt="PDF viewer" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.45.jpeg" width="50%" alt="Light theme variant" /> | |
+| <img src="docs/screenshots/2026-06-09%2013.00.47.jpg" width="100%" alt="Library screen with books" /> | <img src="docs/screenshots/2026-06-09%2013.00.59.jpg" width="100%" alt="Book detail view" /> | <img src="docs/screenshots/2026-06-09%2013.01.04.jpg" width="100%" alt="Reader with dark theme" /> | <img src="docs/screenshots/2026-06-09%2013.01.16.jpg" width="100%" alt="Reader with sepia theme" /> |
+| <img src="docs/screenshots/2026-06-09%2013.01.21.jpg" width="100%" alt="Audio player interface" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.07.jpeg" width="100%" alt="Library search feature" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.28.jpeg" width="100%" alt="Settings screen" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.32.jpeg" width="100%" alt="Sleep timer options" /> |
+| <img src="docs/screenshots/photo_2026-06-07%2008.44.37.jpeg" width="100%" alt="Bookmarks and highlights" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.42.jpeg" width="100%" alt="PDF viewer" /> | <img src="docs/screenshots/photo_2026-06-07%2008.44.45.jpeg" width="100%" alt="Light theme variant" /> | |
 
 ---
 
@@ -92,10 +102,12 @@ libravault/
 ├── app/                        # Entry point, navigation, manifest
 ├── build-logic/                # Convention plugins (shared build config)
 ├── core/
-│   ├── database/               # Room entities, DAOs, repositories
-│   ├── domain/                 # Models, interfaces, use cases (KMP-ready)
-│   ├── logger/                 # Local opt-in crash logger
+│   ├── database/               # Room entities, DAOs, repositories (KMP commonMain)
+│   ├── domain/                 # Models, interfaces, use cases (KMP commonMain)
+│   ├── licensing/              # Play Billing + F-Droid Ed25519 license key (KMP)
+│   ├── logger/                 # Local opt-in crash logger (KMP commonMain)
 │   ├── storage/                # SAF vault manager, file scanner, metadata extractor
+│   ├── tts/                    # Text-to-speech reader support (KMP commonMain)
 │   └── ui/                     # Material3 theme, colours, typography
 └── feature/
     ├── onboarding/             # First-launch vault setup
@@ -109,13 +121,17 @@ libravault/
 
 ## Permissions
 
-| Permission | Purpose |
-|---|---|
-| `FOREGROUND_SERVICE` | Background audio playback |
-| `POST_NOTIFICATIONS` | Media playback controls (Android 13+) |
-| `SAF URI access` | Read user-selected vault folders only |
+| Permission | Purpose | Requested in |
+|---|---|---|
+| `FOREGROUND_SERVICE` | Background audio playback | both flavors |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Media playback foreground service type | both flavors |
+| `POST_NOTIFICATIONS` | Media playback controls (Android 13+) | both flavors |
+| `INTERNET` | BTCPay invoice polling for donations | **play only** |
+| `SAF URI access` | Read user-selected vault folders only | both flavors |
 
-**Never requested:** `READ_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `CAMERA`, `CONTACTS`, `LOCATION`.
+**Never requested in any flavor:** `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`, `CAMERA`, `CONTACTS`, `LOCATION`.
+
+The F-Droid flavor's manifest strips `INTERNET` via `app/src/fdroid/AndroidManifest.xml`, so the F-Droid APK has no network capability at all.
 
 ---
 
@@ -126,11 +142,13 @@ libravault/
 git clone git@github.com:LibraVault/reader.git
 cd libravault
 
-# Debug build
-./gradlew assembleDebug
+# Debug build (fdroid flavor — no Play Billing, no BTCPay)
+./gradlew assembleFdroidDebug
+# Debug build (play flavor — Play Billing + BTCPay)
+./gradlew assemblePlayDebug
 
 # Run JVM tests (fast — no emulator)
-./gradlew testDebugUnitTest
+./gradlew testFdroidDebugUnitTest testPlayDebugUnitTest
 
 # Release build (requires keystore.properties — see keystore.properties.template)
 ./gradlew assembleRelease
@@ -153,7 +171,7 @@ keytool -genkey -v \
 # 2. Copy the template and fill in your credentials
 cp keystore.properties.template keystore.properties
 
-# 3. Build signed release APK
+# 3. Build signed release APK (builds both fdroidRelease and playRelease)
 ./gradlew assembleRelease
 ```
 
@@ -161,13 +179,15 @@ cp keystore.properties.template keystore.properties
 
 ## CI / CD
 
-Three GitHub Actions workflows (all free for public repos):
+Five GitHub Actions workflows (all free for public repos):
 
 | Workflow | Trigger | Duration |
 |---|---|---|
 | `jvm-tests.yml` | Every push | ~2–3 min |
 | `ui-tests.yml` | PRs to main | ~15–20 min |
 | `release.yml` | Version tags (`v*.*.*`) | ~10 min |
+| `kmp-ios-build.yml` | Pushes/PRs that touch shared modules | ~5–8 min |
+| `netbird-debug.yml` | Debug builds for internal testing | ~10 min |
 
 ---
 
@@ -175,7 +195,7 @@ Three GitHub Actions workflows (all free for public repos):
 
 | Version | Focus |
 |---|---|
-| **v1 (current)** | Android app — EPUB, PDF, audio, privacy-first |
+| **0.2.0-alpha (current)** | Android app — EPUB, PDF, audio, privacy-first, donations |
 | v1.1 | Clip bookmarks, home screen widget |
 | v2 | DRM (Readium LCP), OPDS browsing, Comic/CBZ |
 | v3 | iOS (Compose Multiplatform) |
@@ -198,8 +218,8 @@ More sponsoring and donation options are in the works.
 
 - **F-Droid** — free, full feature set, reproducible builds
 - **GitHub Releases** — signed APK on every version tag
-- **Obtanium - tbd
-- **Google Play** — one-time purchase, tbd
+- **Obtanium** — planned
+- **Google Play** — planned
 
 ---
 

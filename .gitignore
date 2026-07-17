@@ -6,6 +6,14 @@ local.properties
 *.hprof
 .caches/
 
+# SQLite databases (JVM Room test artefacts, never commit)
+*.db
+*.db.lck
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
 # Android Studio / IntelliJ
 .idea/
 *.iml
