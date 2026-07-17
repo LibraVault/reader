@@ -49,6 +49,10 @@ Thumbs.db
 # Server .env (never commit secrets)
 server/.env
 
+# Node
+node_modules/
+server/node_modules/
+
 # Test/release APKs at repo root
 *.apk
 feedback-1-changes.html

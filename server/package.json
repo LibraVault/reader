@@ -1,12 +1,16 @@
 {
   "name": "libravault-donate-proxy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
-    "start": "node proxy.js"
+    "start": "node proxy.js",
+    "test": "node --test test/proxy.test.js"
   },
   "dependencies": {
-    "dotenv": "^16.0.0"
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0"
   },
   "engines": {
     "node": ">=22"
