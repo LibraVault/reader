@@ -11,23 +11,40 @@ import org.bouncycastle.crypto.signers.Ed25519Signer
  * payload  = "pro:v1:<uuid>" as UTF-8 bytes
  * signature = raw 64-byte Ed25519 signature of payload
  *
- * Forks under GPLv3 must generate their own keypair (scripts/gen_keypair.py)
+ * Forks under GPLv3 must generate their own keypair (tools/gen_keypair.py)
  * and replace PUBLIC_KEY_B64 below.
  */
 object LicenseVerifier {
 
-    // Replace with your own Ed25519 public key (32 bytes, base64 encoded).
-    private const val PUBLIC_KEY_B64 =
+    /**
+     * Replace with your own Ed25519 public key (32 bytes, base64 encoded).
+     *
+     * The placeholder literal is detected at class-load time and causes
+     * every [verify] call to short-circuit with [Result.Invalid]. This
+     * prevents an accidental production release where the placeholder
+     * public key still rejects all valid signatures and then silently
+     * accepts anything once a malicious actor replaces it.
+     */
+    const val PUBLIC_KEY_B64 =
         "REPLACE_WITH_YOUR_BASE64_ED25519_PUBLIC_KEY_32_BYTES"
+
+    private const val PLACEHOLDER_PREFIX = "REPLACE_WITH_"
 
     private val SEPARATOR = '|'.code.toByte()
 
+    /** Pro-tier enum — currently only [PRO] is issued. Add future tiers here. */
+    enum class ProTier { PRO }
+
     sealed class Result {
-        data class Valid(val tier: String, val tokenId: String) : Result()
+        data class Valid(val tier: ProTier, val tokenId: String) : Result()
         data class Invalid(val reason: String) : Result()
     }
 
     fun verify(licenseKey: String): Result {
+        if (PUBLIC_KEY_B64.startsWith(PLACEHOLDER_PREFIX)) {
+            return Result.Invalid("Server public key not configured")
+        }
+
         val cleaned = licenseKey.trim().replace("-", "").replace(" ", "").uppercase()
         if (cleaned.isEmpty()) return Result.Invalid("Empty key")
 
@@ -57,11 +74,17 @@ object LicenseVerifier {
 
         val payloadStr = String(payload, Charsets.UTF_8)
         val parts      = payloadStr.split(":")
-        if (parts.size != 3 || parts[0] != "pro" || parts[1] != "v1") {
-            return Result.Invalid("Unsupported payload format")
+        if (parts.size != 3) return Result.Invalid("Unsupported payload format")
+        // Explicit branch — review finding #15: previously folded into a single
+        // inequality check that could never trigger because the constructor
+        // also required 'pro'/'v1'. Splitting out makes future format evolution
+        // (e.g. v2, "pro-lifetime") a deliberate edit instead of an accidental one.
+        when {
+            parts[0] != "pro" -> return Result.Invalid("Unknown tier prefix")
+            parts[1] != "v1"  -> return Result.Invalid("Unsupported key version")
         }
 
-        return Result.Valid(tier = parts[0], tokenId = parts[2])
+        return Result.Valid(tier = ProTier.PRO, tokenId = parts[2])
     }
 
     // RFC 4648 base32 decode (uppercase, padding optional).
