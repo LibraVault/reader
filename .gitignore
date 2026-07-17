@@ -29,6 +29,11 @@ captures/
 *.keystore
 keystore.properties
 
+# Pro license private seed (NEVER commit; see tools/README.md)
+libravault_pro_private.hex
+tools/*.private
+tools/*.key
+
 # Generated
 app/src/main/assets/index.android.bundle
 
