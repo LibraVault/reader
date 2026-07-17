@@ -69,32 +69,35 @@ class MetadataExtractor @Inject constructor(
     private suspend fun extractAudio(file: ScannedFile): ExtractedMetadata {
         val retriever = MediaMetadataRetriever()
         return try {
-            // Guard against native hangs on corrupted/unusual files — 10s hard cap
+            // Whole-extract timeout — the previous guard only wrapped
+            // setDataSource, but extract() / embeddedPicture can also hang
+            // on malformed frames. 10 s is generous for a 3-hour audiobook;
+            // a healthy 5 MB file extracts in <100 ms.
             withTimeout(10_000L) {
                 retriever.setDataSource(context, file.uri)
+
+                val title    = retriever.extract(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?: file.displayName.substringBeforeLast('.')
+                val author   = retriever.extract(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?: retriever.extract(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
+                    ?: UNKNOWN
+                val duration = retriever.extract(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+
+                // Embedded album art
+                val coverPath = retriever.embeddedPicture?.let { bytes ->
+                    val cacheKey = file.uri.toString()
+                    coverArtCache.getCachedPath(cacheKey)
+                        ?: coverArtCache.save(cacheKey, bytes)
+                }
+
+                ExtractedMetadata(
+                    title        = title,
+                    author       = author,
+                    durationMs   = duration,
+                    coverArtPath = coverPath,
+                )
             }
-
-            val title    = retriever.extract(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                ?: file.displayName.substringBeforeLast('.')
-            val author   = retriever.extract(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                ?: retriever.extract(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
-                ?: UNKNOWN
-            val duration = retriever.extract(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull()
-
-            // Embedded album art
-            val coverPath = retriever.embeddedPicture?.let { bytes ->
-                val cacheKey = file.uri.toString()
-                coverArtCache.getCachedPath(cacheKey)
-                    ?: coverArtCache.save(cacheKey, bytes)
-            }
-
-            ExtractedMetadata(
-                title       = title,
-                author      = author,
-                durationMs  = duration,
-                coverArtPath = coverPath,
-            )
         } catch (_: TimeoutCancellationException) {
             logger.w(TAG, "Metadata extraction timed out for ${file.displayName}")
             fallback(file)
@@ -283,7 +286,20 @@ class MetadataExtractor @Inject constructor(
         extractMetadata(key)?.takeIf { it.isNotBlank() }
 
     private fun newParser(stream: InputStream): XmlPullParser =
-        XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }
+        XmlPullParserFactory.newInstance().apply {
+            isNamespaceAware = true
+            // Disable DOCTYPE / DTD processing entirely — an attacker can
+            // ship an EPUB whose container.xml or OPF declares a DTD that
+            // resolves to an external file (XXE) or a billion-laughs
+            // expansion (CVE-style DoS). Set before any parse input is set.
+            try {
+                setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+            } catch (_: Exception) {
+                // Some bundled factories (e.g. older AOSP variants) don't
+                // support toggling this feature — feature absence on those
+                // platforms already implies "no DOCTYPE expansion".
+            }
+        }
             .newPullParser()
             .also { it.setInput(stream, null) }
             .also { it.next() }

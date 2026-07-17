@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import xyz.libravault.core.logger.LibravaultLogger
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -24,6 +25,7 @@ import javax.inject.Singleton
 @Singleton
 class CoverArtCache @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val logger: LibravaultLogger,
 ) {
     private val cacheDir: File
         get() = File(context.cacheDir, "covers").also { it.mkdirs() }
@@ -34,17 +36,23 @@ class CoverArtCache @Inject constructor(
      *
      * Images are downsampled to [MAX_COVER_PX] on the long edge before saving
      * to prevent large embedded art from bloating the cache.
+     *
+     * Failures (corrupt header, OOM during decode) are logged at W and result
+     * in a null return — callers treat null as "no cover available" and skip
+     * rendering.
      */
     suspend fun save(key: String, imageBytes: ByteArray): String? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val bitmap = decode(imageBytes) ?: return@runCatching null
+                val bitmap = decode(key, imageBytes) ?: return@runCatching null
                 val file = File(cacheDir, "${keyHash(key)}.jpg")
                 FileOutputStream(file).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                 }
                 bitmap.recycle()
                 file.absolutePath
+            }.onFailure { e ->
+                logger.w(TAG, "save: failed to decode cover for $key (${imageBytes.size}B): ${e.javaClass.simpleName}: ${e.message}")
             }.getOrNull()
         }
 
@@ -62,12 +70,20 @@ class CoverArtCache @Inject constructor(
     /** Clears the entire cover cache. */
     fun clearAll() = cacheDir.listFiles()?.forEach { it.delete() }
 
-    private fun decode(bytes: ByteArray): Bitmap? {
+    private fun decode(key: String, bytes: ByteArray): Bitmap? {
         // First pass: read dimensions only
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
 
-        // Calculate downsample factor
+        // Guard against malformed headers that return 0 dimensions — without
+        // this, maxOf(0, 0) → 0 → calculateSampleSize(0, _) returns 1, then
+        // the second decode attempts to render a full-size corrupt image and
+        // can crash native Skia on historical CVEs (CVE-2020-0103 class).
+        if (opts.outWidth <= 0 || opts.outHeight <= 0) {
+            logger.w(TAG, "decode: header reported 0×0 dimensions for $key (${bytes.size}B)")
+            return null
+        }
+
         val longEdge = maxOf(opts.outWidth, opts.outHeight)
         opts.inSampleSize = calculateSampleSize(longEdge, MAX_COVER_PX)
         opts.inJustDecodeBounds = false
@@ -75,9 +91,15 @@ class CoverArtCache @Inject constructor(
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
     }
 
-    private fun calculateSampleSize(actual: Int, target: Int): Int {
+    /**
+     * Returns a power-of-two sample size that brings [actual] down toward
+     * [target] on the long edge. Result is bounded to [1, MAX_SAMPLE_SIZE] —
+     * a sample size > 16 allocates pixel buffers of fractional dimensions and
+     * can produce OOM on adversarial multi-MB cover inputs.
+     */
+    internal fun calculateSampleSize(actual: Int, target: Int): Int {
         var size = 1
-        while (actual / (size * 2) >= target) size *= 2
+        while (actual / (size * 2) >= target && size < MAX_SAMPLE_SIZE) size *= 2
         return size
     }
 
@@ -88,6 +110,8 @@ class CoverArtCache @Inject constructor(
     }
 
     companion object {
-        private const val MAX_COVER_PX = 512
+        private const val TAG = "CoverArtCache"
+        private const val MAX_COVER_PX   = 512
+        private const val MAX_SAMPLE_SIZE = 16
     }
 }
