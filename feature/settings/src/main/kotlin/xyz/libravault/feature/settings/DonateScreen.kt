@@ -184,6 +184,10 @@ private fun DonateSheetContent(
 
                 Button(
                     onClick = { onCreateInvoice(selectedAmount, selectedCoin) },
+                    // WS5.3 / review finding #20 — disable while Creating to
+                    // prevent a fast double-tap from creating two BTCPay
+                    // invoices (BTCPay does not dedupe; no idempotency key).
+                    enabled = donationState !is DonationState.Creating,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Get Payment Address")

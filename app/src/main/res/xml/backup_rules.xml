@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  LibraVault backs up user preferences and reading progress only.
-  It never backs up vault URIs, as those are device-specific SAF grants.
+  Auto Backup (Android 6.0 → 11) configuration for LibraVault.
+
+  What we back up:
+    - libravault_prefs.xml — non-sensitive prefs (theme, reading settings,
+      playback speed). NOT the license blob (see data_extraction_rules.xml).
+
+  What we explicitly exclude:
+    - databases/libravault.db — Room database holds vault SAF grants
+      (content:// URIs) which are device-specific. A user restoring to a
+      new device would see vaults without valid grants, prompting them to
+      revoke and re-add. Bookmarks/highlights travel via device-transfer
+      instead, where SAF grants can be re-acquired via the picker.
+    - sharedpref/libravault_pro.xml — license key is device-specific and
+      shouldn't leak to a Google account restore.
 -->
 <full-backup-content>
     <include domain="sharedpref" path="libravault_prefs.xml" />
+    <exclude domain="database"   path="libravault.db" />
+    <exclude domain="sharedpref" path="libravault_pro.xml" />
 </full-backup-content>
