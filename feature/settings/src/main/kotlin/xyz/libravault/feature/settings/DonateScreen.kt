@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +47,38 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+
+/**
+ * Validates and launches a checkout URL from BTCPay.
+ *
+ * Defense against compromised BTCPay or MITM returning a malicious scheme
+ * (review finding #23 / WS5.2): we explicitly require `https://` and
+ * extract the host so the UI can show "Opens checkout.btcpayserver.com".
+ * Anything else (`javascript:`, `intent:`, raw `file:`, malformed URL) is
+ * rejected and the caller is expected to surface that to the user.
+ *
+ * Returns `null` if the URL is unsafe or unparseable — caller should
+ * disable the "Open checkout" button rather than silently dropping the
+ * click.
+ *
+ * Uses [java.net.URI] (not [Uri]) for validation because URI is a pure
+ * JVM class that works in unit tests without an Android runtime. URI is
+ * also stricter about scheme parsing — `javascript:alert(1)` is not a
+ * valid URI because `alert(1)` is not a valid hier-part.
+ */
+internal fun safeCheckoutLink(raw: String): java.net.URI? {
+    if (raw.isBlank()) return null
+    val parsed = runCatching { java.net.URI(raw) }.getOrNull() ?: return null
+    if (parsed.scheme == null || !parsed.scheme.equals("https", ignoreCase = true)) return null
+    if (parsed.host.isNullOrBlank()) return null
+    return parsed
+}
+
+/**
+ * Wraps a validated [java.net.URI] as an Android [Uri] for [Intent.ACTION_VIEW].
+ * Kept separate so [safeCheckoutLink] can be tested without an Android runtime.
+ */
+internal fun uriForIntent(uri: java.net.URI): Uri = Uri.parse(uri.toString())
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -238,13 +271,20 @@ private fun DonateSheetContent(
                     )
                 }
 
-                if (donationState.checkoutLink.isNotEmpty()) {
+                safeCheckoutLink(donationState.checkoutLink)?.let { link ->
                     TextButton(onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(donationState.checkoutLink))
-                        )
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uriForIntent(link)))
+                        }
                     }) {
-                        Text("Open in browser")
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("Open in browser")
+                            Text(
+                                text = "Opens ${link.host}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
 
@@ -318,13 +358,20 @@ private fun DonateSheetContent(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (donationState.checkoutLink.isNotEmpty()) {
+                    safeCheckoutLink(donationState.checkoutLink)?.let { link ->
                         TextButton(onClick = {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(donationState.checkoutLink))
-                            )
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uriForIntent(link)))
+                            }
                         }) {
-                            Text("Open checkout")
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Open checkout")
+                                Text(
+                                    text = "Opens ${link.host}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                     TextButton(onClick = onCancel) {
