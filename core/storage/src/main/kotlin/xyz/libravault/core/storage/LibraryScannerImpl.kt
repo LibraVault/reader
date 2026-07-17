@@ -237,7 +237,7 @@ class LibraryScannerImpl @Inject constructor(
             }
 
             logger.i(TAG, "Phase 2 complete — enriched $enriched items")
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             logger.e(TAG, "Unhandled enrichment exception", e)
         }
     }
