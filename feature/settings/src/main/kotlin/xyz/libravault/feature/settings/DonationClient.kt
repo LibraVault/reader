@@ -1,8 +1,5 @@
 package xyz.libravault.feature.settings
 
-internal const val BTC_ADDRESS = "bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg"
-internal const val XMR_ADDRESS = "48LTe9fEF311sJ1syhC9oD8VcNqfjsLAo8WcmXYC8iJwg24cM6R2mydXSnQ18N2Q2jLU8qtc26rrpadUra6DDiTW82eVXWm"
-
 data class NewInvoice(val id: String, val checkoutLink: String) {
     // Empty id signals a static (no-network) invoice — skip payment polling.
     val isStatic: Boolean get() = id.isEmpty()
@@ -21,4 +18,20 @@ interface DonationClient {
     suspend fun getInvoiceStatus(invoiceId: String): InvoiceStatus
     suspend fun hasAnySettledInvoice(): Boolean
     suspend fun getPaymentInfo(invoiceId: String, coinCode: String): InvoicePaymentInfo?
+}
+
+/**
+ * Static BTC / XMR donation addresses used when no live invoice can be
+ * created (F-Droid flavor with no network, or Play flavor when BTCPay is
+ * unreachable). Implemented by a Hilt-injected flavor-specific provider:
+ *  - fdroid sourceSet ships the real addresses.
+ *  - play sourceSet ships an empty impl (Play always tries BTCPay first).
+ *
+ * Was previously two `internal const val` literals in this file, which
+ * meant they ended up in the Play APK's strings table — an unnecessary
+ * information leak (review finding #16 / #9).
+ */
+interface StaticDonationAddresses {
+    val btc: String
+    val xmr: String
 }

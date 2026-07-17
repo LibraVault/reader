@@ -12,4 +12,8 @@ abstract class DonationModule {
     @Binds
     @Singleton
     abstract fun bindDonationClient(client: BtcPayClient): DonationClient
+
+    @Binds
+    @Singleton
+    abstract fun bindStaticAddresses(impl: EmptyStaticDonationAddresses): StaticDonationAddresses
 }

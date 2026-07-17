@@ -66,6 +66,7 @@ class SettingsViewModel @Inject constructor(
     private val logger: LibravaultLogger,
     private val supporterRepository: SupporterRepository,
     private val donationClient: DonationClient,
+    private val staticAddresses: StaticDonationAddresses,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.observe()
@@ -226,8 +227,12 @@ class SettingsViewModel @Inject constructor(
                 supporterRepository.setPendingInvoiceId(invoice.id)
                 val paymentInfo = donationClient.getPaymentInfo(invoice.id, coin)
                 if (paymentInfo == null) {
-                    val fallback = if (coin == "XMR") XMR_ADDRESS else BTC_ADDRESS
-                    _donationState.value = DonationState.NoMethod(coin, fallback, invoice.checkoutLink)
+                    val fallback = if (coin == "XMR") staticAddresses.xmr else staticAddresses.btc
+                    if (fallback.isNotEmpty()) {
+                        _donationState.value = DonationState.NoMethod(coin, fallback, invoice.checkoutLink)
+                    } else {
+                        _donationState.value = DonationState.Error("BTCPay has no ${coin} method; try again later")
+                    }
                     return@launch
                 }
                 _donationState.value = DonationState.Pending(

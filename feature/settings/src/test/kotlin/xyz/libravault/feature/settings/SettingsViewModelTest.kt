@@ -63,6 +63,7 @@ class SettingsViewModelTest {
     private val logger     = mockk<LibravaultLogger>(relaxed = true)
     private val supporterRepository = mockk<SupporterRepository>(relaxed = true)
     private val donationClient = mockk<DonationClient>(relaxed = true)
+    private val staticAddresses = mockk<StaticDonationAddresses>(relaxed = true)
 
     private val mainDispatcher = UnconfinedTestDispatcher()
     private val vaultsFlow = MutableStateFlow(emptyList<VaultFolder>())
@@ -90,7 +91,7 @@ class SettingsViewModelTest {
         return SettingsViewModel(
             prefsRepo, coverCache, libraryRepository, vaultManager,
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
-            supporterRepository, donationClient,
+            supporterRepository, donationClient, staticAddresses,
         )
     }
 
