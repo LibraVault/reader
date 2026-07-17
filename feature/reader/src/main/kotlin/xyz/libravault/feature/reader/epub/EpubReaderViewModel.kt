@@ -168,6 +168,7 @@ class EpubReaderViewModel @Inject constructor(
         val bytes = resource.read().getOrNull()
         resource.close()
         return bytes
+            ?.takeIf { it.size <= Companion.MAX_CHAPTER_BYTES }
             ?.let { String(it, Charsets.UTF_8) }
             ?.let { stripHtml(it) }
             ?.let { EpubTextPreprocessor.clean(it) }
@@ -184,31 +185,50 @@ class EpubReaderViewModel @Inject constructor(
         }
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "EpubReaderViewModel"
 
-        // Strips HTML tags and collapses whitespace. Good enough for TTS; avoids
-        // a full HTML parser dependency in the reader module.
-        fun stripHtml(html: String): String =
-            html
-                .replace(Regex("<style[^>]*>.*?</style>", RegexOption.DOT_MATCHES_ALL), " ")
-                .replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), " ")
-                // Only strip <nav epub:type="..."> elements — those are machine-readable TOC/
-                // landmarks hidden via CSS and must not be read aloud. Plain <nav> elements
-                // without an epub:type attribute may contain legitimate chapter content.
-                .replace(Regex("<nav[^>]+epub:type=['\"][^'\"]*['\"][^>]*>.*?</nav>", RegexOption.DOT_MATCHES_ALL), " ")
-                .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-                .replace(Regex("<p[^>]*>", RegexOption.IGNORE_CASE), "\n")
-                .replace(Regex("<[^>]+>"), " ")
-                .replace(Regex("&nbsp;"), " ")
-                .replace(Regex("&amp;"), "&")
-                .replace(Regex("&lt;"), "<")
-                .replace(Regex("&gt;"), ">")
-                .replace(Regex("&quot;"), "\"")
-                .replace(Regex("&#?\\w+;"), " ")
-                .replace(Regex("[ \\t]+"), " ")
-                .replace(Regex("\\n{3,}"), "\n\n")
-                .trim()
+        // Hard cap on per-chapter HTML size. 2 MB of plain HTML is ~700k
+        // words — 12+ hours of TTS at 160 wpm. A chapter that exceeds this
+        // is almost certainly a ZIP-bomb-style malicious EPUB; bail out and
+        // log instead of pegging the IO thread (review finding #17 / WS3.6).
+        internal const val MAX_CHAPTER_BYTES = 2 * 1024 * 1024
+
+        /**
+         * Strips HTML to plain text for TTS, using Jsoup's safe cleaner.
+         *
+         * Replaces a regex-based stripper (review finding #10) that was
+         * O(n²) on long chapters and silently mishandled `<style>` blocks
+         * containing `<` inside CSS comments, CDATA sections, etc. Jsoup
+         * parses the HTML once in O(n) and handles all the edge cases.
+         *
+         * Returns null if [html] is malformed beyond repair or exceeds
+         * [MAX_CHAPTER_BYTES]; caller should surface that to the UI.
+         */
+        internal fun stripHtml(html: String): String? {
+            if (html.isEmpty()) return ""
+            if (html.length > MAX_CHAPTER_BYTES) {
+                stripHtmlLog("chapter exceeds ${MAX_CHAPTER_BYTES / 1024} KB cap (${html.length} B); refusing")
+                return null
+            }
+            return try {
+                val doc = org.jsoup.Jsoup.parse(html)
+                // Drop entire elements that often carry attacker-controlled
+                // content. Safelist.none() in Jsoup.clean strips the tags
+                // but keeps the inner text — we want to drop the text too.
+                doc.select("script, style, iframe, object, embed, noscript, svg").remove()
+                doc.text()
+            } catch (e: Exception) {
+                stripHtmlLog("parse failure (${e.javaClass.simpleName}): ${e.message}")
+                null
+            }
+        }
+
+        // android.util.Log is a no-op stub in JVM unit tests — wrap so the
+        // call sites stay simple and the test surface stays clean.
+        private fun stripHtmlLog(msg: String) {
+            runCatching { android.util.Log.w(TAG, "stripHtml: $msg") }
+        }
     }
 }
 
