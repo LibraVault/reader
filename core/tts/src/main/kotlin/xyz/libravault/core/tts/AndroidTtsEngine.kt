@@ -80,12 +80,15 @@ class AndroidTtsEngine @Inject constructor(
 
     override fun speak(text: String) {
         val engine = tts ?: return
-        // Only block if engine isn't ready yet; allow recovery from transient errors.
         val status = _state.value.status
         if (status == TtsStatus.UNINITIALIZED || status == TtsStatus.INITIALIZING) return
 
-        // Bump generation BEFORE engine.stop() so any onDone/onError that fires
-        // for the stopped utterance carries the old gen and is rejected.
+        val validationError = validateSelectedVoiceInternal(engine)
+        if (validationError != null) {
+            _state.value = _state.value.copy(status = TtsStatus.ERROR, error = validationError)
+            return
+        }
+
         utteranceGeneration++
         engine.stop()
         utterances = splitIntoUtterances(text)
@@ -219,15 +222,35 @@ class AndroidTtsEngine @Inject constructor(
         }
     }
 
+    fun validateSelectedVoice(): Result<Unit> {
+        val engine = tts ?: return Result.failure(Exception("TTS engine not initialized"))
+        val error = validateSelectedVoiceInternal(engine)
+        return if (error != null) {
+            Result.failure(Exception(error))
+        } else {
+            Result.success(Unit)
+        }
+    }
+
+    private fun validateSelectedVoiceInternal(engine: TextToSpeech): String? {
+        val voiceId = _state.value.selectedVoiceId ?: return "No voice selected"
+        val voice = engine.voices?.find { it.name == voiceId }
+            ?: return "Voice '$voiceId' is no longer available"
+        if (voice.isNetworkConnectionRequired) {
+            return "Voice '$voiceId' requires network connection"
+        }
+        return null
+    }
+
     private fun buildVoiceList(engine: TextToSpeech): List<TtsVoiceInfo> {
         return engine.voices
-            ?.filter { !it.isNetworkConnectionRequired }
             ?.sortedWith(compareBy({ it.locale.displayName }, { it.name }))
             ?.map { voice ->
                 TtsVoiceInfo(
                     id = voice.name,
                     displayName = "${voice.locale.displayName} — ${voice.name}",
                     locale = voice.locale.toLanguageTag(),
+                    requiresNetwork = voice.isNetworkConnectionRequired,
                 )
             }
             ?: emptyList()

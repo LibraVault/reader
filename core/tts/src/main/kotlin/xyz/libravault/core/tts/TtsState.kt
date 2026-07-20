@@ -13,6 +13,7 @@ data class TtsVoiceInfo(
     val id: String,
     val displayName: String,
     val locale: String,
+    val requiresNetwork: Boolean = false,
 )
 
 data class TtsState(
