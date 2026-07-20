@@ -17,7 +17,5 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.11")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("app.cash.turbine:turbine:1.1.0")
-    testImplementation("org.xmlpull:xmlpull:1.1.3.1")
-    testImplementation("net.sf.kxml:kxml2:2.3.0")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")
 }
