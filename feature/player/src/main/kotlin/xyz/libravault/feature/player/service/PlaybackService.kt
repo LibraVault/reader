@@ -18,19 +18,24 @@ import xyz.libravault.feature.player.R
  *
  * # Notification + lockscreen tile plumbing
  *
- * - **Notification provider**: stock [DefaultMediaNotificationProvider] with our small-icon
- *   override. We deliberately don't subclass it — the standard provider renders a
- *   notification with up to 3 transport actions derived from `Player.Commands`, and our
- *   ±seek buttons are surfaced through the same standard-actions path (not the customLayout
- *   path) on older Android versions where the notification IS the lockscreen surface.
+ * - **Notification provider**: stock [DefaultMediaNotificationProvider]. The small icon
+ *   is set via the `androidx.media3.session.SMALL_ICON_RESOURCE` `<meta-data>` entry on
+ *   `<application>` in `AndroidManifest.xml` — that's the documented Media3 way to set
+ *   the small icon without subclassing the provider. We deliberately don't subclass it.
  *
  * - **Lockscreen / Quick-Settings tile (Android 13+)**: populated by [LibravaultMediaCallback]
  *   via [MediaSession.Callback.onConnect]. See that class for the full rationale. The
- *   callback publishes a 5-button strip
- *   `[Prev | −seek | PlayPause | +seek | Next]` to `MediaSession.customLayout` and populates
- *   `availablePlayerCommands` with all standard commands (minus prev/next media items), so
- *   the system tile shows the standard-actions bitmask `[<<, ▶, >>]` plus the 5 custom
- *   actions as `PlaybackStateCompat.customActions`.
+ *   callback publishes a 3-button strip `[−seek | PlayPause | +seek]` to
+ *   `MediaSession.customLayout` and populates `availablePlayerCommands` with all standard
+ *   commands (minus prev/next media items), so the system tile shows the standard-actions
+ *   bitmask `[<<, ▶, >>]` plus the 3 custom actions as `PlaybackStateCompat.customActions`.
+ *
+ * - **Skip duration**: read from [SkipDurationPreference] at service-create time and
+ *   passed into [LibravaultMediaCallback] so the ±seek tile buttons embed the correct
+ *   offset magnitude in their [android.os.Bundle]. The ExoPlayer's
+ *   `seekBackIncrementMs` / `seekForwardIncrementMs` are seeded from the same source in
+ *   [PlayerModule.provideExoPlayer], keeping the tile, the player transport commands,
+ *   and the in-app ±seek buttons in sync at app start.
  *
  * # Why we use MediaSessionService (not MediaLibraryService)
  *
@@ -72,12 +77,14 @@ class PlaybackService : MediaSessionService() {
                 )
             }
 
+        val seekStepMs = SkipDurationPreference.getSkipDurationMs(this)
+
         try {
             val builder = MediaSession.Builder(this, player)
-                .setCallback(LibravaultMediaCallback(this, player))
+                .setCallback(LibravaultMediaCallback(this, player, seekStepMs))
             sessionActivity?.let { builder.setSessionActivity(it) }
             mediaSession = builder.build()
-            Log.i(TAG, "onCreate: MediaSession built; id=${mediaSession?.id}")
+            Log.i(TAG, "onCreate: MediaSession built; id=${mediaSession?.id} seekStepMs=$seekStepMs")
         } catch (t: Throwable) {
             Log.e(TAG, "onCreate: MediaSession.Builder.build() threw", t)
             throw t
@@ -109,7 +116,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private companion object {
-        const val TAG = "LibravaultPlayback"
+        const val TAG = "LibravaultPlaybackService"
 
         /**
          * Notification channel id for the playback notification. Kept stable across releases

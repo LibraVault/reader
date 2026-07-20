@@ -14,8 +14,8 @@ package xyz.libravault.feature.player.service
  * `commandCode == COMMAND_CODE_CUSTOM` — see `PlayerWrapper.createPlaybackStateCompat`
  * in Media3 1.3.1 (filter verified via `javap` of the AAR). Player-command buttons are
  * filtered out before they reach the platform notification, so they never appear on the
- * system tile. Using custom commands lets us publish 5 buttons (Prev / ±seek / PlayPause /
- * +seek / Next) to both the notification and the system tile.
+ * system tile. Using custom commands lets us publish [−seek | PlayPause | +seek] to both
+ * the notification and the system tile.
  *
  * Stability: changing any value here would break cached lockscreen notifications until
  * the app is fully restarted. Treat as part of the public API of [LibravaultMediaCallback].
@@ -23,12 +23,6 @@ package xyz.libravault.feature.player.service
 internal object CustomCommandActions {
 
     private const val PREFIX = "xyz.libravault.feature.player."
-
-    /** Tap target: previous media item (chapter/track). No extras. */
-    const val PREVIOUS = PREFIX + "PREVIOUS"
-
-    /** Tap target: next media item (chapter/track). No extras. */
-    const val NEXT = PREFIX + "NEXT"
 
     /**
      * Tap target: play/pause toggle. No extras — the callback inspects the player's
@@ -40,9 +34,12 @@ internal object CustomCommandActions {
      * Tap target: seek by a signed offset in milliseconds. Extras:
      *  - [EXTRA_OFFSET_MS]: signed [Long]; negative = seek back, positive = seek forward.
      *
-     * Currently not used for system-tile taps (those route through [Player.seekBack] /
-     * [Player.seekForward] via the `onPlayerCommandRequest` path). Kept for future
-     * non-standard layouts where a button might dispatch an arbitrary offset.
+     * The offset magnitude is sourced from the user's `defaultSkipDurationSec` preference
+     * via [SkipDurationPreference.getSkipDurationMs] in [PlaybackService.onCreate] and
+     * embedded in the button's [android.os.Bundle] at build time. Tapping a lockscreen
+     * tile button routes through [LibravaultMediaCallback.dispatch], which reads the
+     * offset and calls [androidx.media3.common.Player.seekTo] after [SeekClamp.clamp]
+     * bounds-checks the target.
      */
     const val SEEK_BY = PREFIX + "SEEK_BY"
 

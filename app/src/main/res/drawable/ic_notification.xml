@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Notification small-icon for the playback notification.
+
+    Notification icons on Android must be monochrome white-on-transparent silhouettes:
+    the system tints them to match the notification's accent color (and darkens them
+    in the status bar). This drawable is a simple stylized "play arrow" shape so the
+    playback notification is visually distinguishable from the app launcher icon.
+
+    Sourced via the androidx.media3.session.SMALL_ICON_RESOURCE <meta-data> entry in
+    AndroidManifest.xml — see DefaultMediaNotificationProvider / PlaybackService.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5 L8,19 L19,12 Z" />
+</vector>

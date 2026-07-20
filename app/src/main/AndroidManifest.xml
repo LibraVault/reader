@@ -153,6 +153,15 @@
 
         </activity>
 
+        <!-- Media3 small-icon override for DefaultMediaNotificationProvider.
+             Without this, the playback notification falls back to the system's
+             default small-icon resolution (often the app launcher). Setting it
+             here keeps the notification icon distinct from the launcher so the
+             notification stays visually recognizable when collapsed. -->
+        <meta-data
+            android:name="androidx.media3.session.SMALL_ICON_RESOURCE"
+            android:resource="@drawable/ic_notification" />
+
         <!-- M3: Media playback service.
              tools:ignore="Instantiatable" suppresses a lint false-positive:
              PlaybackService extends Media3's MediaSessionService which extends

@@ -31,12 +31,12 @@ import com.google.common.util.concurrent.ListenableFuture
  *
  * For each connecting controller, `onConnect` returns a `ConnectionResult` whose:
  * - `availableSessionCommands` starts from
- *   [MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS] and adds the four
- *   custom action strings defined in [CustomCommandActions]. Without this base, Media3's
- *   `PlayerWrapper.createPlaybackStateCompat` filter (`sessionCommand != null AND
- *   sessionCommand.commandCode == COMMAND_CODE_CUSTOM AND isEnabled(button,
- *   availableSessionCommands, availablePlayerCommands)`) rejects all session-command
- *   buttons on the system tile.
+ *   [MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS] and adds the two
+ *   custom action strings defined in [CustomCommandActions] (`PLAY_PAUSE` and `SEEK_BY`).
+ *   Without this base, Media3's `PlayerWrapper.createPlaybackStateCompat` filter
+ *   (`sessionCommand != null AND sessionCommand.commandCode == COMMAND_CODE_CUSTOM AND
+ *   isEnabled(button, availableSessionCommands, availablePlayerCommands)`) rejects all
+ *   session-command buttons on the system tile.
  * - `availablePlayerCommands` is the full Player.Commands set with
  *   [Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM] and [Player.COMMAND_SEEK_TO_PREVIOUS]
  *   **removed** (single-item audiobook playlists have no prev/next concept — AntennaPod does
@@ -45,16 +45,16 @@ import com.google.common.util.concurrent.ListenableFuture
  *   produced by `PlayerWrapper.createPlaybackStateCompat`'s `convertCommandToPlaybackStateActions`
  *   for [Player.COMMAND_SEEK_BACK] / [Player.COMMAND_PLAY_PAUSE] /
  *   [Player.COMMAND_SEEK_FORWARD].
- * - `customLayout` is the five-button strip built by
- *   [buildStandardStrip]. These buttons reach `PlaybackStateCompat.customActions` (via
- *   the filter above) on the system tile, giving us prev / −seek / play-pause / +seek /
- *   next.
+ * - `customLayout` is the three-button strip built by
+ *   [buildStandardStrip] ([−seek | PlayPause | +seek]). These buttons reach
+ *   `PlaybackStateCompat.customActions` (via the filter above) on the system tile.
  *
  * [antenna]: https://github.com/AntennaPod/AntennaPod/blob/develop/playback/service/src/main/java/de/danoeh/antennapod/playback/service/internal/MediaLibrarySessionCallback.java
  */
 internal class LibravaultMediaCallback(
     private val context: Context,
     private val player: ExoPlayer,
+    private val seekStepMs: Long,
 ) : MediaSession.Callback {
 
     override fun onConnect(
@@ -68,7 +68,7 @@ internal class LibravaultMediaCallback(
         )
         // `DEFAULT_SESSION_AND_LIBRARY_COMMANDS` provides a baseline set of session commands
         // that the system already trusts (including COMMAND_PLAY_PAUSE and similar).
-        // Building `availableSessionCommands` from scratch with only our 4 custom actions
+        // Building `availableSessionCommands` from scratch with only our 2 custom actions
         // would leave the standard playback actions unavailable to the controller, which
         // causes PlaybackStateCompat to omit standard transport actions like SEEK_BACK /
         // SEEK_FORWARD — leaving the user with the broken 2-button layout the system has
@@ -76,9 +76,7 @@ internal class LibravaultMediaCallback(
         val sessionCommands =
             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                 .buildUpon()
-                .add(SessionCommand(CustomCommandActions.PREVIOUS, Bundle.EMPTY))
                 .add(SessionCommand(CustomCommandActions.PLAY_PAUSE, Bundle.EMPTY))
-                .add(SessionCommand(CustomCommandActions.NEXT, Bundle.EMPTY))
                 // SEEK_BY has the same action string for both ±seek directions; we only
                 // need to advertise it once.
                 .add(SessionCommand(CustomCommandActions.SEEK_BY, Bundle.EMPTY))
@@ -99,12 +97,27 @@ internal class LibravaultMediaCallback(
         val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(sessionCommands)
             .setAvailablePlayerCommands(playerCommands)
-            .setCustomLayout(buildStandardStrip(context))
+            .setCustomLayout(
+                buildStandardStrip(
+                    seekStepMs = seekStepMs,
+                    displayNames = StripDisplayNames(
+                        back = context.getString(
+                            androidx.media3.session.R.string.media3_controls_seek_back_description,
+                        ),
+                        play = context.getString(
+                            androidx.media3.session.R.string.media3_controls_play_description,
+                        ),
+                        forward = context.getString(
+                            androidx.media3.session.R.string.media3_controls_seek_forward_description,
+                        ),
+                    ),
+                ),
+            )
             .build()
         Log.i(
             TAG,
             "onConnect: returning Accepted; sessionCommands.size=${sessionCommands.commands.size} " +
-                "playerCommands.size=${playerCommands.size()} customLayout.size=5",
+                "playerCommands.size=${playerCommands.size()} customLayout.size=3 seekStepMs=$seekStepMs",
         )
         return result
     }
@@ -129,32 +142,17 @@ internal class LibravaultMediaCallback(
 
     /**
      * Dispatches a custom session command to the underlying [ExoPlayer]. Tapping a
-     * lockscreen / Quick-Settings button routes through here. ±seek uses
-     * [Player.seekBack] / [Player.seekForward] which respect the `seekBackIncrementMs` /
-     * `seekForwardIncrementMs` configured on the ExoPlayer in [PlayerModule].
+     * lockscreen / Quick-Settings ±seek button routes through here; the offset is read
+     * from [CustomCommandActions.EXTRA_OFFSET_MS] in the [SessionCommand]'s extras bundle
+     * (seeded by [buildStandardStrip] from the user's `defaultSkipDurationSec` preference)
+     * and applied via [Player.seekTo] after [SeekClamp.clamp] bounds-checks the target.
      */
     private fun dispatch(command: SessionCommand): SessionResult {
         when (command.customAction) {
-            CustomCommandActions.PREVIOUS -> {
-                if (player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)) {
-                    player.seekToPreviousMediaItem()
-                }
-            }
-            CustomCommandActions.NEXT -> {
-                if (player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
-                    player.seekToNextMediaItem()
-                }
-            }
             CustomCommandActions.PLAY_PAUSE -> {
                 if (player.playWhenReady) player.pause() else player.play()
             }
             CustomCommandActions.SEEK_BY -> {
-                // We don't actually use SEEK_BY for system-tile taps; the ±seek buttons on
-                // the tile are wired through COMMAND_SEEK_BACK / COMMAND_SEEK_FORWARD which
-                // route to onPlayerCommandRequest, not through this custom-command dispatcher.
-                // Keeping the dispatch entry so future custom-session-command buttons (e.g. a
-                // big "skip 30s" chip in some hypothetical future layout) can dispatch via
-                // [CustomCommandActions.SEEK_BY] with a signed offset bundle.
                 val deltaMs = command.customExtras?.getLong(CustomCommandActions.EXTRA_OFFSET_MS, 0L) ?: 0L
                 val target = SeekClamp.clamp(
                     currentPosition = player.currentPosition,
@@ -172,12 +170,22 @@ internal class LibravaultMediaCallback(
     }
 
     companion object {
-        private const val TAG = "LibravaultPlayback"
+        private const val TAG = "LibravaultMediaCallback"
 
         /**
-         * Builds the standard five-button strip in positional order
-         * `[Prev | −seek | PlayPause | +seek | Next]` for use with
+         * Builds the standard three-button strip in positional order
+         * `[−seek | PlayPause | +seek]` for use with
          * [MediaSession.ConnectionResult.AcceptedResultBuilder.setCustomLayout].
+         *
+         * @param seekStepMs signed-offset magnitude embedded in each ±seek button's
+         *   [Bundle] (positive for forward, negated for back). Sourced from
+         *   [SkipDurationPreference.getSkipDurationMs] in [PlaybackService.onCreate] so
+         *   the lockscreen strip honors the user's `defaultSkipDurationSec` setting at
+         *   service-create time.
+         * @param displayNames localized display strings for the three buttons, in
+         *   positional order (back / play / forward). Resolved at the call site (which
+         *   has a real [Context]) so this helper stays Context-free and trivially
+         *   unit-testable on the JVM.
          *
          * Icons are the bitmaps bundled in `androidx.media3.session` 1.3.1
          * (`media3_notification_*`). Display names come from the same module
@@ -190,76 +198,34 @@ internal class LibravaultMediaCallback(
          * full rationale.
          */
         @JvmStatic
-        fun buildStandardStrip(context: Context): ImmutableList<CommandButton> {
+        fun buildStandardStrip(
+            seekStepMs: Long,
+            displayNames: StripDisplayNames,
+        ): ImmutableList<CommandButton> {
+            require(seekStepMs > 0L) { "seekStepMs must be positive (got $seekStepMs)" }
             val builder = ImmutableList.builder<CommandButton>()
 
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.PREVIOUS, Bundle.EMPTY))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_to_previous)
-                    .setDisplayName(
-                        context.getString(
-                            androidx.media3.session.R.string.media3_controls_seek_to_previous_description,
-                        ),
-                    )
-                    .setEnabled(true)
-                    .build(),
-            )
-            builder.add(
-                CommandButton.Builder()
-                    .setSessionCommand(
-                        SessionCommand(
-                            CustomCommandActions.SEEK_BY,
-                            Bundle().apply { putLong(CustomCommandActions.EXTRA_OFFSET_MS, -DEFAULT_SEEK_STEP_MS) },
-                        ),
-                    )
+                    .setSessionCommand(seekByCommand(-seekOffset(seekStepMs)))
                     .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_back)
-                    .setDisplayName(
-                        context.getString(
-                            androidx.media3.session.R.string.media3_controls_seek_back_description,
-                        ),
-                    )
+                    .setDisplayName(displayNames.back)
                     .setEnabled(true)
                     .build(),
             )
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.PLAY_PAUSE, Bundle.EMPTY))
+                    .setSessionCommand(SessionCommand(CustomCommandActions.PLAY_PAUSE, Bundle()))
                     .setIconResId(androidx.media3.session.R.drawable.media3_notification_play)
-                    .setDisplayName(
-                        context.getString(
-                            androidx.media3.session.R.string.media3_controls_play_description,
-                        ),
-                    )
+                    .setDisplayName(displayNames.play)
                     .setEnabled(true)
                     .build(),
             )
             builder.add(
                 CommandButton.Builder()
-                    .setSessionCommand(
-                        SessionCommand(
-                            CustomCommandActions.SEEK_BY,
-                            Bundle().apply { putLong(CustomCommandActions.EXTRA_OFFSET_MS, DEFAULT_SEEK_STEP_MS) },
-                        ),
-                    )
+                    .setSessionCommand(seekByCommand(seekOffset(seekStepMs)))
                     .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_forward)
-                    .setDisplayName(
-                        context.getString(
-                            androidx.media3.session.R.string.media3_controls_seek_forward_description,
-                        ),
-                    )
-                    .setEnabled(true)
-                    .build(),
-            )
-            builder.add(
-                CommandButton.Builder()
-                    .setSessionCommand(SessionCommand(CustomCommandActions.NEXT, Bundle.EMPTY))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_to_next)
-                    .setDisplayName(
-                        context.getString(
-                            androidx.media3.session.R.string.media3_controls_seek_to_next_description,
-                        ),
-                    )
+                    .setDisplayName(displayNames.forward)
                     .setEnabled(true)
                     .build(),
             )
@@ -268,13 +234,52 @@ internal class LibravaultMediaCallback(
         }
 
         /**
-         * Default seek step (ms) embedded in the ±seek buttons' [Bundle]. Overridden at
-         * build time by [PlayerModule] which reads the user's `defaultSkipDurationSec`
-         * preference. This default is only used if a button's [Bundle] extras are somehow
-         * missing — the runtime path actually dispatches through
-         * [MediaSession.setCustomLayout] + [Player.seekBack]/[Player.seekForward] which
-         * use the live `seekBackIncrementMs` on the player.
+         * Pure helper — returns the signed seek offset for the given positive [seekStepMs]
+         * and direction. Forward direction returns the magnitude; backward returns its
+         * negation. Extracted from [buildStandardStrip] so it can be unit-tested on the
+         * JVM without needing a real [android.os.Bundle] (which is not mocked in plain
+         * JUnit 5 tests).
+         *
+         * @throws IllegalArgumentException if [seekStepMs] is not strictly positive.
          */
-        private const val DEFAULT_SEEK_STEP_MS = 30_000L
+        @JvmStatic
+        internal fun seekOffset(seekStepMs: Long): Long {
+            require(seekStepMs > 0L) { "seekStepMs must be positive (got $seekStepMs)" }
+            return seekStepMs
+        }
+
+        /**
+         * Pure helper — returns the negation of [seekOffset] for the back direction.
+         * Pairs with [seekOffset] for the forward direction so each ±seek button carries
+         * a deterministic, testable signed offset.
+         */
+        @JvmStatic
+        internal fun seekOffsetBack(seekStepMs: Long): Long {
+            require(seekStepMs > 0L) { "seekStepMs must be positive (got $seekStepMs)" }
+            return -seekStepMs
+        }
+
+        /**
+         * Pure helper — wraps [offsetMs] in the [Bundle] that
+         * [androidx.media3.session.SessionCommand] expects. Lives next to [buildStandardStrip]
+         * so the offset-encoding logic stays in one place; tests cover [seekOffset] /
+         * [seekOffsetBack] and the strip shape separately.
+         */
+        @JvmStatic
+        internal fun seekByCommand(offsetMs: Long): SessionCommand =
+            SessionCommand(
+                CustomCommandActions.SEEK_BY,
+                Bundle().apply { putLong(CustomCommandActions.EXTRA_OFFSET_MS, offsetMs) },
+            )
+
+        /**
+         * Localized display-name strings for the three buttons in
+         * [buildStandardStrip], resolved at the call site.
+         */
+        data class StripDisplayNames(
+            val back: String,
+            val play: String,
+            val forward: String,
+        )
     }
 }

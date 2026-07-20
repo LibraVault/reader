@@ -9,6 +9,13 @@ android {
     lint {
         baseline = file("lint-baseline.xml")
     }
+
+    // Standard Android unit-test config: android.os.Bundle / android.util.Log etc.
+    // return defaults instead of throwing "not mocked" RuntimeExceptions. Required
+    // for tests that touch the Media3 CommandButton / SessionCommand API surface.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
