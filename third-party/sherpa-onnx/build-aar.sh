@@ -45,8 +45,14 @@ if [ ! -f "gradlew" ]; then
     exit 1
 fi
 
+# Set up local.properties for the build
+cat > local.properties <<EOF
+sdk.dir=${ANDROID_SDK_ROOT:-$HOME/android-sdk}
+ndk.dir=${ANDROID_NDK}
+EOF
+
 # Build release AAR
-./gradlew --stacktrace assembleRelease -DANDROID_NDK="${ANDROID_NDK}"
+./gradlew --stacktrace assembleRelease -DANDROID_NDK="${ANDROID_NDK}" -DANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/android-sdk}"
 
 # Find the built AAR
 BUILT_AAR=$(find . -name "*release.aar" -type f | head -1)
