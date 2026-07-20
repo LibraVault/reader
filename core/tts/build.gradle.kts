@@ -32,6 +32,15 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation(files("${rootProject.projectDir}/third-party/sherpa-onnx/sherpa-onnx-android.aar"))
 
+    // DataStore for persistent preferences
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // HTTP client for model downloads
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
+
+    // Tar/gzip extraction for model archives
+    implementation("org.apache.commons:commons-compress:1.24.0")
+
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)
 }

@@ -1,10 +1,8 @@
 package xyz.libravault.core.tts
 
 import android.util.Log
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +17,6 @@ private const val TAG = "TtsEngineProvider"
 class TtsEngineProvider @Inject constructor(
     private val factory: TtsEngineFactory,
     private val preferences: TtsPreferences,
-    @ApplicationContext private val context: android.content.Context,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default)
 
@@ -30,10 +27,21 @@ class TtsEngineProvider @Inject constructor(
     val engineType: StateFlow<TtsEngineType> = _engineType.asStateFlow()
 
     init {
+        _engine.value.initialize()
+
         // Observe preference changes and switch engines
         scope.launch {
             preferences.engineTypeFlow.collect { newType ->
                 switchEngine(newType)
+            }
+        }
+
+        // Observe voice changes and apply to current engine
+        scope.launch {
+            preferences.selectedVoiceFlow.collect { voiceId ->
+                if (voiceId != null) {
+                    _engine.value.setVoice(voiceId)
+                }
             }
         }
     }

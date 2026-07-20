@@ -62,10 +62,25 @@ class PocketVoiceCatalog @Inject constructor(
 
     private fun copyBundledVoices() {
         try {
-            // TODO: Copy bundled voice assets to filesDir
-            // Assets are typically at: assets/pocket-tts/voices/
-            // Use context.assets.open("pocket-tts/voices/bria.wav") to read and copy
-            Log.d(TAG, "TODO: Copy bundled voices from assets to ${voicesDir.absolutePath}")
+            val assetManager = context.assets
+            val voiceAssets = listOf("bria.wav") // Add more voices as needed
+
+            for (voiceFile in voiceAssets) {
+                val assetPath = "pocket-tts/voices/$voiceFile"
+                val destFile = File(voicesDir, voiceFile)
+
+                try {
+                    assetManager.open(assetPath).use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Log.d(TAG, "Copied voice: $voiceFile")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to copy voice $voiceFile: ${e.message}")
+                    // Continue with next voice
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to copy bundled voices: ${e.message}", e)
         }

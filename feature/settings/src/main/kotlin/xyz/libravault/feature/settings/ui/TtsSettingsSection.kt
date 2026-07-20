@@ -123,12 +123,27 @@ private fun EngineRadioOption(
 
 @Composable
 private fun PocketTtsModelSection(modelManager: PocketModelManager) {
-    // TODO: Observe modelManager state and show download UI
-    Text(
-        text = "Pocket TTS Model: [Status]",
-        style = MaterialTheme.typography.bodySmall,
-    )
-    // TODO: Show LinearProgressIndicator for download progress
+    // TODO: Observe modelManager.ensureModelAvailable() state and show download UI
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "Model Status: Downloading…",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        LinearProgressIndicator(
+            progress = 0.5f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "~120 MB (first use only)",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+    }
 }
 
 @Composable

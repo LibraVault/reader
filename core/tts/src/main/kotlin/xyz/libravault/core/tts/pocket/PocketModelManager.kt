@@ -90,9 +90,35 @@ class PocketModelManager @Inject constructor(
     }
 
     private suspend fun downloadFile(url: String, destination: File, onProgress: (Float) -> Unit) {
-        // TODO: Implement HTTP download using java.net.URL or equivalent
-        // For now, this is a placeholder that will be connected to actual HTTP client
-        Log.d(TAG, "TODO: Download model from $url to ${destination.absolutePath}")
+        try {
+            val okHttpClient = okhttp3.OkHttpClient()
+            val request = okhttp3.Request.Builder().url(url).build()
+            val response = okHttpClient.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                throw Exception("Download failed: HTTP ${response.code}")
+            }
+
+            val contentLength = response.body?.contentLength() ?: -1L
+            var downloadedBytes = 0L
+
+            destination.outputStream().use { fileOut ->
+                response.body?.byteStream()?.use { input ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        fileOut.write(buffer, 0, bytesRead)
+                        downloadedBytes += bytesRead
+                        if (contentLength > 0) {
+                            onProgress(downloadedBytes.toFloat() / contentLength)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Download error: ${e.message}", e)
+            throw e
+        }
     }
 
     private fun calculateSha256(file: File): String {
@@ -108,9 +134,33 @@ class PocketModelManager @Inject constructor(
     }
 
     private fun extractTarGz(tarFile: File, destination: File) {
-        // TODO: Implement tar.gz extraction (or use external library)
-        // For now, placeholder that logs intent
-        Log.d(TAG, "TODO: Extract $tarFile to ${destination.absolutePath}")
-        // In production, use a tar library like commons-compress
+        try {
+            val gzipInputStream = java.util.zip.GZIPInputStream(tarFile.inputStream())
+            val tarInputStream = org.apache.commons.compress.archivers.tar.TarArchiveInputStream(gzipInputStream)
+
+            var entry = tarInputStream.nextTarEntry
+            while (entry != null) {
+                val entryFile = File(destination, entry.name)
+
+                if (entry.isDirectory) {
+                    entryFile.mkdirs()
+                } else {
+                    entryFile.parentFile?.mkdirs()
+                    entryFile.outputStream().use { output ->
+                        tarInputStream.copyTo(output)
+                    }
+                }
+
+                entry = tarInputStream.nextTarEntry
+            }
+
+            tarInputStream.close()
+            gzipInputStream.close()
+
+            Log.d(TAG, "Extracted ${tarFile.name} to ${destination.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Extraction error: ${e.message}", e)
+            throw Exception("Failed to extract model: ${e.message}", e)
+        }
     }
 }
