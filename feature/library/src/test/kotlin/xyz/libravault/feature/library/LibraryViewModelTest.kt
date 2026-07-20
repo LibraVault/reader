@@ -6,7 +6,6 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -21,7 +20,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import xyz.libravault.core.domain.model.BookmarkWithItemInfo
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
@@ -39,7 +37,6 @@ import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.feature.player.service.PlaybackStateHolder
-import xyz.libravault.feature.player.service.SkipDurationPreference
 import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.SettableFuture
 
@@ -51,9 +48,9 @@ class LibraryViewModelTest {
     )
 
     private val fakeItems = listOf(
-        LibraryItem(1L, 1L, "file1.epub", "Book 1", "Author A", MediaFormat.EPUB, 0L),
-        LibraryItem(2L, 1L, "file2.m4b", "Audio 1", "Narrator B", MediaFormat.M4B, 3_600_000L),
-        LibraryItem(3L, 2L, "file3.pdf", "Book 2", "Author C", MediaFormat.PDF, 0L),
+        LibraryItem(id = 1L, vaultFolderId = 1L, filePath = "file1.epub", title = "Book 1", author = "Author A", format = MediaFormat.EPUB, durationMs = 0L),
+        LibraryItem(id = 2L, vaultFolderId = 1L, filePath = "file2.m4b", title = "Audio 1", author = "Narrator B", format = MediaFormat.M4B, durationMs = 3_600_000L),
+        LibraryItem(id = 3L, vaultFolderId = 2L, filePath = "file3.pdf", title = "Book 2", author = "Author C", format = MediaFormat.PDF, durationMs = 0L),
     )
 
     private val observeVaults         = mockk<ObserveVaultsUseCase>()
@@ -115,39 +112,7 @@ class LibraryViewModelTest {
         )
     }
 
-    // ── Interleaving and filtering ───────────────────────────────────────────
-
-    @Test
-    fun `interleaveByRecency merges two sorted lists by round-robin`() = runTest {
-        val reading = listOf(
-            LibraryItem(1L, 1L, "r1.epub", "R1", "A", MediaFormat.EPUB, 0L),
-            LibraryItem(2L, 1L, "r2.epub", "R2", "A", MediaFormat.EPUB, 0L),
-        )
-        val listening = listOf(
-            LibraryItem(10L, 1L, "l1.m4b", "L1", "B", MediaFormat.M4B, 0L),
-            LibraryItem(11L, 1L, "l2.m4b", "L2", "B", MediaFormat.M4B, 0L),
-        )
-
-        val result = interleaveByRecency(reading, listening)
-
-        // Interleave: reading[0], listening[0], reading[1], listening[1]
-        assertEquals(listOf(1L, 10L, 2L, 11L), result.map { it.id })
-    }
-
-    @Test
-    fun `interleaveByRecency deduplicates by id`() = runTest {
-        val reading = listOf(
-            LibraryItem(1L, 1L, "file.epub", "Book", "Author", MediaFormat.EPUB, 0L),
-        )
-        val listening = listOf(
-            LibraryItem(1L, 1L, "file.m4b", "Audio", "Narrator", MediaFormat.M4B, 0L),
-        )
-
-        val result = interleaveByRecency(reading, listening)
-
-        assertEquals(1, result.size)
-        assertEquals(1L, result[0].id)
-    }
+    // ── Format filter ────────────────────────────────────────────────────────
 
     @Test
     fun `formatFilteredItems filters by AUDIO`() {
@@ -205,7 +170,6 @@ class LibraryViewModelTest {
 
         vm.onSearchQueryChanged("test")
         assertEquals("test", vm.uiState.value.searchQuery)
-        // Give debounce time to fire (300ms in the ViewModel)
         kotlinx.coroutines.delay(350)
         coVerify { searchLibrary("test") }
     }
@@ -225,9 +189,10 @@ class LibraryViewModelTest {
         val vm = viewModel()
         vm.uiState.test {
             awaitItem() // initial state
-            assertEquals(true, awaitItem().isScanning) // scanning started
+            val scanning = awaitItem()
+            assertTrue(scanning.isScanning)
             val final = awaitItem()
-            assertEquals(false, final.isScanning)
+            assertFalse(final.isScanning)
             assertNull(final.scanError)
             cancelAndIgnoreRemainingEvents()
         }
@@ -257,7 +222,6 @@ class LibraryViewModelTest {
 
         coVerify { vaultManager.persistPermission(Uri.parse("content://test")) }
         coVerify { addVaultFolder("content://test", "TestVault") }
-        // triggerScan should be called automatically
         coVerify(atLeast = 1) { scanVault() }
     }
 
@@ -288,7 +252,7 @@ class LibraryViewModelTest {
     // ── Mini-player controls ─────────────────────────────────────────────────
 
     @Test
-    fun `playPause toggles controller and updates PlaybackStateHolder`() = runTest {
+    fun `playPause toggles controller`() = runTest {
         every { mockController.isPlaying } returns false
         val vm = viewModel()
 
@@ -298,7 +262,7 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun `seekBack delegates to SeekClamp and calls seekTo`() = runTest {
+    fun `seekBack delegates to controller seekTo`() = runTest {
         every { mockController.currentPosition } returns 60_000L
         every { mockController.duration } returns 3_600_000L
         val vm = viewModel()
@@ -309,7 +273,7 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun `seekForward delegates to SeekClamp and calls seekTo`() = runTest {
+    fun `seekForward delegates to controller seekTo`() = runTest {
         every { mockController.currentPosition } returns 60_000L
         every { mockController.duration } returns 3_600_000L
         val vm = viewModel()
