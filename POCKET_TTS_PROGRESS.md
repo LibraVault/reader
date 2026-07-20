@@ -42,30 +42,30 @@
 - ✅ Unit tests: all new code must have tests
 - ⚠️ Local-only TTS: removed optional network-voice toggle (privacy-first)
 
-## In Progress ⏳
+### Step 5: PocketModelManager ✅
+- ✅ ModelStatus enum (Idle → Downloading → Ready/Failed)
+- ✅ SHA-256 verification logic
+- ✅ Idempotent cache in `context.filesDir/pocket-tts/model/`
+- ⚠️ **TODO**: Wire HTTP download + tar.gz extraction
 
-### Step 5: PocketModelManager
-- Not yet started
-- Will download & verify tarball from GitHub release
-- SHA-256 verification against manifest
-- Caching in `context.filesDir/pocket-tts/model/`
+### Step 6: PocketVoiceCatalog ✅
+- ✅ Voice prompts management (WAV files)
+- ✅ Surface as `TtsVoiceInfo` list with `requiresNetwork=false`
+- ✅ Voice name formatting (kebab-case → Title Case)
+- ⚠️ **TODO**: Copy bundled voices from assets
 
-### Step 6: PocketVoiceCatalog
-- Not yet started
-- Bundle `bria.wav` (CC-BY) voice prompt
-- Surface as `TtsVoiceInfo` list
+### Step 8: TtsPreferences & TtsEngineProvider ✅
+- ✅ In-memory StateFlow-based preferences
+- ✅ Engine type, voice selection, local-only toggle
+- ✅ TtsEngineProvider reactive engine switching
+- ⚠️ **TODO**: Add androidx.datastore dependency for persistence
 
-### Step 8: TtsPreferences & TtsEngineProvider
-- Not yet started
-- DataStore-backed preferences (engine type, voice, local-only setting)
-- StateFlow provider for reactive engine switching
-
-### Step 9: Settings UI (TtsSettingsSection)
-- Not yet started
-- Engine selection radio group
-- Voice picker with network badges
-- Speech rate slider
-- Download progress indicator for Pocket TTS model
+### Step 9: TtsSettingsSection (Compose) ✅
+- ✅ Engine selection radio group
+- ✅ Build flavor awareness (fdroid hides Pocket TTS)
+- ✅ Speech rate slider (0.5×–3.0×)
+- ✅ Model download status UI structure
+- ⚠️ **TODO**: Wire reactive state collection from providers
 
 ## Blocked/Known Issues ⚠️
 
@@ -88,7 +88,10 @@
 - `PocketPlaybackTest`: 4 tests (instantiation, lifecycle, clamping)
 - `PocketTtsEngineTest`: 4 tests (interface, state machine)
 - `TtsEngineFactoryTest`: 2 tests (enum, routing)
-- **Total**: 20 tests, 0 failures
+- `PocketModelManagerTest`: 4 tests (ModelStatus types, SHA256)
+- `PocketVoiceCatalogTest`: 3 tests (voice formatting, locale)
+- `TtsPreferencesTest`: 6 tests (engine type serialization)
+- **Total**: 33 tests, 0 failures ✅
 
 ### Manual Testing
 - Not yet (need real AAR)
@@ -133,15 +136,17 @@
 ## Next Steps
 
 **Immediate** (Priority):
-1. Resolve sherpa-onnx AAR build issue
-2. Implement PocketModelManager (step 5)
-3. Implement PocketVoiceCatalog (step 6)
+1. ✅ Implement steps 5–9 (all architecture layers complete)
+2. Resolve sherpa-onnx AAR build issue
+3. Add missing dependencies (DataStore, HTTP client)
+4. Wire TODO items (model download, voice assets, etc.)
 
 **Then**:
-4. TtsPreferences & TtsEngineProvider (step 8)
-5. Settings UI integration (step 9)
-6. Full integration testing on device
+1. Full integration testing on device
+2. Handle edge cases (network errors, low disk space)
+3. Settings UI polish & testing
 
 **Finally**:
-7. Documentation updates (README, in-app licenses)
-8. CI/CD integration for AAR builds
+1. Documentation updates (README, in-app licenses)
+2. CI/CD integration for AAR builds
+3. Performance optimization (model caching, lazy loading)
