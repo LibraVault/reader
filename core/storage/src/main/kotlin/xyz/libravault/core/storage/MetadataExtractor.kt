@@ -145,7 +145,7 @@ class MetadataExtractor @Inject constructor(
         }
     }
 
-    private fun findOpfPath(stream: InputStream): String? {
+    internal fun findOpfPath(stream: InputStream): String? {
         val parser = newParser(stream)
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType == XmlPullParser.START_TAG &&
@@ -158,7 +158,7 @@ class MetadataExtractor @Inject constructor(
         return null
     }
 
-    private suspend fun parseOpf(
+    internal suspend fun parseOpf(
         stream: InputStream,
         zipEntries: Map<String, ByteArray>,
         cacheKey: String,
