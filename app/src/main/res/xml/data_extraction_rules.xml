@@ -1,8 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ split backup rules for LibraVault.
+
+  cloud-backup:  Google Drive auto-backup. Prefs only (theme, reading
+                 settings). License blob EXCLUDED — a single-license
+                 shouldn't sync to multiple devices silently.
+
+  device-transfer:  Phone-to-phone migration. INCLUDES the Room database
+                    so bookmarks/highlights survive — but vault SAF
+                    grants inside the DB are device-scoped and will be
+                    invalid on the new device. The Library screen
+                    surfaces this with a "Grant access" banner.
+-->
 <data-extraction-rules>
     <cloud-backup>
+        <!-- Only back up non-sensitive preferences. License key and database are excluded implicitly. -->
         <include domain="sharedpref" path="libravault_prefs.xml" />
     </cloud-backup>
     <device-transfer>
+        <!-- Preserve prefs and database (with stale SAF grants — user will see "Grant access" banner). -->
+        <include domain="sharedpref" path="libravault_prefs.xml" />
+        <include domain="database"   path="libravault.db" />
     </device-transfer>
 </data-extraction-rules>

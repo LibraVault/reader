@@ -2,6 +2,7 @@ package xyz.libravault.feature.reader.epub
 
 import android.graphics.Color as AndroidColor
 import android.net.Uri
+import android.util.Log
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
@@ -397,12 +398,20 @@ private fun EpubNavigatorView(
 
     // ── Highlight decorations ────────────────────────────────────────────────
     // Re-apply all stored highlights whenever the highlight list or navigator changes.
+    // WS3.7 (review finding #18): explicit try/catch for IllegalArgumentException
+    // (bad color hex) and JSONException (corrupt locator JSON) so we log the
+    // highlight id, not silently drop it. Previously a `runCatching` swallowed
+    // Error and Exception equally — a malformed color or a corrupt locator
+    // JSON would make the entire highlight vanish with no breadcrumb.
     LaunchedEffect(navigator, highlights) {
         val nav = navigator ?: return@LaunchedEffect
         val decorations = highlights.mapNotNull { h ->
-            runCatching {
+            try {
                 val locator = Locator.fromJSON(JSONObject(h.positionRef))
-                    ?: return@mapNotNull null
+                if (locator == null) {
+                    Log.w("EpubReaderScreen", "highlight ${h.id}: Locator.fromJSON returned null; skipping")
+                    return@mapNotNull null
+                }
                 Decoration(
                     id      = "h_${h.id}",
                     locator = locator,
@@ -410,7 +419,13 @@ private fun EpubNavigatorView(
                         tint = AndroidColor.parseColor(h.colorHex),
                     ),
                 )
-            }.getOrNull()
+            } catch (e: IllegalArgumentException) {
+                Log.w("EpubReaderScreen", "highlight ${h.id}: bad color hex '${h.colorHex}': ${e.message}")
+                null
+            } catch (e: org.json.JSONException) {
+                Log.w("EpubReaderScreen", "highlight ${h.id}: bad locator JSON: ${e.message}")
+                null
+            }
         }
         nav.applyDecorations(decorations, DECORATION_GROUP_HIGHLIGHTS)
     }

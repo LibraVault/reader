@@ -39,6 +39,11 @@ dependencies {
     implementation("org.readium.kotlin-toolkit:readium-streamer:3.0.0-beta.2")
     implementation("org.readium.kotlin-toolkit:readium-navigator:3.0.0-beta.2")
 
+    // Jsoup — HTML parsing for TTS-friendly text extraction (review
+    // finding #17 / WS3.6). ~600 KB. Not transitively pulled by Readium,
+    // so we add it explicitly here.
+    implementation("org.jsoup:jsoup:1.18.1")
+
     // AndroidX PDF Viewer — PDF rendering (API 31+, confirmed stable for v1)
     implementation("androidx.pdf:pdf-viewer:1.0.0-alpha04")
 

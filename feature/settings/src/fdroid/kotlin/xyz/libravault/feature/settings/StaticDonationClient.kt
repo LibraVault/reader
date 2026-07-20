@@ -8,7 +8,9 @@ import javax.inject.Singleton
  * getInvoiceStatus returns Expired to stop any stale pending-invoice poll loops.
  */
 @Singleton
-class StaticDonationClient @Inject constructor() : DonationClient {
+class StaticDonationClient @Inject constructor(
+    private val addresses: StaticDonationAddresses,
+) : DonationClient {
     override suspend fun createInvoice(amountUsd: Int) =
         NewInvoice(id = "", checkoutLink = "")
 
@@ -18,7 +20,7 @@ class StaticDonationClient @Inject constructor() : DonationClient {
 
     override suspend fun getPaymentInfo(invoiceId: String, coinCode: String) =
         InvoicePaymentInfo(
-            address = if (coinCode == "XMR") XMR_ADDRESS else BTC_ADDRESS,
+            address = if (coinCode == "XMR") addresses.xmr else addresses.btc,
             paymentLink = "",
             cryptoAmount = "",
         )

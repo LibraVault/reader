@@ -26,4 +26,12 @@ dependencies {
     // OkHttp is play-only — fdroid build has no network calls
     "playImplementation"("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+
+    // SettingsViewModelTest constructs ~12 MockK mocks per test plus mocks
+    // Uri.parse statically, which inflates Metaspace. Bump the heap so the
+    // runner doesn't OOM at classload time.
+    tasks.withType<Test>().configureEach {
+        maxHeapSize = "2g"
+        jvmArgs("-XX:MaxMetaspaceSize=768m")
+    }
 }
