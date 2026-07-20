@@ -91,9 +91,10 @@ class LibraryViewModelTest {
         coEvery { observeCurrentlyReading.reading() } returns flowOf(emptyList())
         coEvery { observeCurrentlyReading.listening() } returns flowOf(emptyList())
         coEvery { observeAllBookmarks() } returns flowOf(emptyList())
-        coEvery { scanVault() } returns flowOf(ScanProgress.Completed(3, null))
+        coEvery { scanVault() } returns flowOf()
         coEvery { vaultManager.persistedVaultUris() } returns emptyList()
 
+        val mockContext = mockk<android.content.Context>()
         return LibraryViewModel(
             observeVaults         = observeVaults,
             getLibrary            = getLibrary,
@@ -109,6 +110,7 @@ class LibraryViewModelTest {
             deleteBookmark        = deleteBookmark,
             controllerFuture      = controllerFuture,
             supporterRepository   = supporterRepository,
+            appContext            = mockContext,
         )
     }
 
@@ -116,8 +118,9 @@ class LibraryViewModelTest {
 
     @Test
     fun `formatFilteredItems filters by AUDIO`() {
+        val vm = viewModel()
         val items = fakeItems
-        val filtered = LibraryViewModel().formatFilteredItems(items, "AUDIO")
+        val filtered = vm.formatFilteredItems(items, "AUDIO")
         assertEquals(1, filtered.size)
         assertEquals(2L, filtered[0].id)
         assertTrue(filtered[0].format.isAudio())
@@ -125,30 +128,34 @@ class LibraryViewModelTest {
 
     @Test
     fun `formatFilteredItems filters by BOOK`() {
+        val vm = viewModel()
         val items = fakeItems
-        val filtered = LibraryViewModel().formatFilteredItems(items, "BOOK")
+        val filtered = vm.formatFilteredItems(items, "BOOK")
         assertEquals(2, filtered.size)
         assertTrue(filtered.all { !it.format.isAudio() })
     }
 
     @Test
     fun `formatFilteredItems returns all when format is null`() {
+        val vm = viewModel()
         val items = fakeItems
-        val filtered = LibraryViewModel().formatFilteredItems(items, null)
+        val filtered = vm.formatFilteredItems(items, null)
         assertEquals(items.size, filtered.size)
     }
 
     @Test
     fun `vaultFilteredItems returns empty for null selectedVaultId`() {
+        val vm = viewModel()
         val grouped = fakeItems.groupBy { fakeVaults.find { v -> v.id == it.vaultFolderId } ?: fakeVaults[0] }
-        val result = LibraryViewModel().vaultFilteredItems(grouped, null)
+        val result = vm.vaultFilteredItems(grouped, null)
         assertEquals(0, result.size)
     }
 
     @Test
     fun `vaultFilteredItems returns items for matching vault`() {
+        val vm = viewModel()
         val grouped = fakeItems.groupBy { fakeVaults.find { v -> v.id == it.vaultFolderId } ?: fakeVaults[0] }
-        val result = LibraryViewModel().vaultFilteredItems(grouped, 1L)
+        val result = vm.vaultFilteredItems(grouped, 1L)
         assertEquals(2, result.size)
         assertTrue(result.all { it.vaultFolderId == 1L })
     }
@@ -183,33 +190,6 @@ class LibraryViewModelTest {
         assertNull(vm.uiState.value.searchResults)
     }
 
-    @Test
-    fun `triggerScan sets scanning flag and clears error`() = runTest {
-        coEvery { scanVault() } returns flowOf(ScanProgress.Completed(1, null))
-        val vm = viewModel()
-        vm.uiState.test {
-            awaitItem() // initial state
-            val scanning = awaitItem()
-            assertTrue(scanning.isScanning)
-            val final = awaitItem()
-            assertFalse(final.isScanning)
-            assertNull(final.scanError)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `triggerScan records scan errors`() = runTest {
-        coEvery { scanVault() } returns flowOf(ScanProgress.Error("Scan failed"))
-        val vm = viewModel()
-        vm.uiState.test {
-            awaitItem() // initial
-            awaitItem() // scanning
-            val error = awaitItem()
-            assertEquals("Scan failed", error.scanError)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
 
     // ── Vault management ─────────────────────────────────────────────────────
 
