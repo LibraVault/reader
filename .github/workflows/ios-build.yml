@@ -1,0 +1,218 @@
+name: iOS Build & Test
+
+on:
+  push:
+    branches: [dev, feat/v3-ios-port, main]
+  pull_request:
+    branches: [dev, feat/v3-ios-port, main]
+
+jobs:
+  kmp-build:
+    name: KMP Framework Build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build KMP framework (iOS Arm64)
+        run: |
+          ./gradlew :core:domain:assembleIosArm64MainKlibrary \
+                    :core:logger:assembleIosArm64MainKlibrary \
+                    :core:licensing:assembleIosArm64MainKlibrary \
+                    :core:database:assembleIosArm64MainKlibrary \
+                    :core:storage:assembleIosArm64MainKlibrary \
+                    :core:tts:assembleIosArm64MainKlibrary
+
+      - name: Build KMP framework (iOS Simulator Arm64)
+        run: |
+          ./gradlew :core:domain:assembleIosSimulatorArm64MainKlibrary \
+                    :core:logger:assembleIosSimulatorArm64MainKlibrary \
+                    :core:licensing:assembleIosSimulatorArm64MainKlibrary \
+                    :core:database:assembleIosSimulatorArm64MainKlibrary \
+                    :core:storage:assembleIosSimulatorArm64MainKlibrary \
+                    :core:tts:assembleIosSimulatorArm64MainKlibrary
+
+      - name: Build KMP framework (iOS Simulator X86_64)
+        run: |
+          ./gradlew :core:domain:assembleIosX64MainKlibrary \
+                    :core:logger:assembleIosX64MainKlibrary \
+                    :core:licensing:assembleIosX64MainKlibrary \
+                    :core:database:assembleIosX64MainKlibrary \
+                    :core:storage:assembleIosX64MainKlibrary \
+                    :core:tts:assembleIosX64MainKlibrary
+
+      - name: Run KMP common tests
+        run: |
+          ./gradlew :core:domain:allTests \
+                    :core:database:allTests \
+                    :core:storage:allTests
+
+  android-regression:
+    name: Android Regression Check
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Verify Android app still builds
+        run: ./gradlew assembleDebug
+
+      - name: Run Android unit tests
+        run: ./gradlew test
+
+  xcode-build:
+    name: Xcode Build
+    runs-on: macos-14
+    needs: kmp-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java (for KMP re-sync if needed)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Resolve iOS dependencies
+        run: |
+          cd ios
+          swift package resolve
+
+      - name: Build iOS app for simulator
+        run: |
+          xcodebuild build \
+            -workspace ios/LibraVault.xcworkspace \
+            -scheme LibraVault \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/Build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+  ios-unit-tests:
+    name: iOS Unit Tests
+    runs-on: macos-14
+    needs: kmp-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Run iOS unit tests (Simulator)
+        run: |
+          xcodebuild test \
+            -workspace ios/LibraVault.xcworkspace \
+            -scheme LibraVault \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator,name=iPhone 15' \
+            -derivedDataPath ios/Build \
+            -resultBundlePath ios/Build/TestResults.xcresult \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: ios/Build/TestResults.xcresult
+
+  ios-ui-tests:
+    name: iOS UI Tests (Smoke)
+    runs-on: macos-14
+    needs: kmp-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Run iOS UI tests
+        run: |
+          xcodebuild test \
+            -workspace ios/LibraVault.xcworkspace \
+            -scheme LibraVaultUITests \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator,name=iPhone 15' \
+            -derivedDataPath ios/Build \
+            -resultBundlePath ios/Build/UITestResults.xcresult \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-test-results
+          path: ios/Build/UITestResults.xcresult
+
+  lint-and-security:
+    name: Lint & Security Checks
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check dependency denylist (Package.swift)
+        run: |
+          echo "Checking for privacy-sensitive dependencies..."
+          if grep -E '(firebase|sentry|bugsnag|amplitude|mixpanel|segment|google-sign-in|facebook)' ios/Package.swift; then
+            echo "❌ Denied dependency detected in ios/Package.swift"
+            exit 1
+          fi
+          echo "✅ No denied dependencies found"
+
+      - name: Verify NSURLIsExcludedFromBackupKey configuration
+        run: |
+          echo "Verifying privacy configuration..."
+          if ! grep -r "NSURLIsExcludedFromBackupKey" ios/LibraVault/Persistence/; then
+            echo "⚠️  Warning: NSURLIsExcludedFromBackupKey not found in Persistence layer"
+          fi
+          echo "✅ Privacy configuration check complete"
+
+  summary:
+    name: Build Status Summary
+    runs-on: ubuntu-latest
+    needs: [kmp-build, android-regression, xcode-build, ios-unit-tests, lint-and-security]
+    if: always()
+    steps:
+      - name: Check job statuses
+        run: |
+          if [ "${{ needs.kmp-build.result }}" != "success" ]; then
+            echo "❌ KMP build failed"
+            exit 1
+          fi
+          if [ "${{ needs.android-regression.result }}" != "success" ]; then
+            echo "❌ Android regression detected"
+            exit 1
+          fi
+          if [ "${{ needs.xcode-build.result }}" != "success" ]; then
+            echo "❌ Xcode build failed"
+            exit 1
+          fi
+          if [ "${{ needs.ios-unit-tests.result }}" != "success" ]; then
+            echo "❌ iOS unit tests failed"
+            exit 1
+          fi
+          echo "✅ All checks passed"

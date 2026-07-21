@@ -1,0 +1,235 @@
+name: iOS Release (TestFlight & App Store)
+
+on:
+  push:
+    tags:
+      - 'v3.*'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+      is-beta: ${{ steps.extract-version.outputs.is-beta }}
+    steps:
+      - name: Extract version from tag
+        id: extract-version
+        run: |
+          TAG="${{ github.ref_name }}"
+          # Format: v3.0.0, v3.0.0-beta.1, v3.0.0-rc.1
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          if [[ "${VERSION}" =~ (-beta|-rc) ]]; then
+            echo "is-beta=true" >> $GITHUB_OUTPUT
+          else
+            echo "is-beta=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify version format
+        run: |
+          VERSION="${{ steps.extract-version.outputs.version }}"
+          if ! [[ "${VERSION}" =~ ^3\.[0-9]+\.[0-9]+(-(beta|rc)\.[0-9]+)?$ ]]; then
+            echo "❌ Invalid version format: ${VERSION}"
+            echo "Expected format: 3.0.0 or 3.0.0-beta.1 or 3.0.0-rc.1"
+            exit 1
+          fi
+          echo "✅ Version format valid: ${VERSION}"
+
+  kmp-build:
+    name: Build KMP Release Artifacts
+    runs-on: macos-14
+    needs: validate-tag
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build KMP frameworks (release)
+        run: |
+          ./gradlew :core:domain:assembleIosArm64MainKlibrary \
+                    :core:domain:assembleIosSimulatorArm64MainKlibrary \
+                    :core:domain:assembleIosX64MainKlibrary \
+                    :core:database:assembleIosArm64MainKlibrary \
+                    :core:database:assembleIosSimulatorArm64MainKlibrary \
+                    :core:database:assembleIosX64MainKlibrary \
+                    :core:storage:assembleIosArm64MainKlibrary \
+                    :core:storage:assembleIosSimulatorArm64MainKlibrary \
+                    :core:storage:assembleIosX64MainKlibrary \
+                    -Dorg.gradle.internal.android.aapt2FromMaven=true
+
+  build-and-sign:
+    name: Build, Sign & Archive iOS App
+    runs-on: macos-14
+    needs: [validate-tag, kmp-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Setup signing certificate
+        env:
+          APPLE_DISTRIBUTION_CERT: ${{ secrets.APPLE_DISTRIBUTION_CERT }}
+          APPLE_DISTRIBUTION_CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create temporary keychain for signing
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          # Import certificate
+          echo "$APPLE_DISTRIBUTION_CERT" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k "$KEYCHAIN_PATH" -P "$APPLE_DISTRIBUTION_CERT_PASSWORD" -T /usr/bin/codesign
+
+          # Configure codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          rm $RUNNER_TEMP/cert.p12
+
+      - name: Setup provisioning profile
+        env:
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/LibraVault.mobileprovision
+
+      - name: Build & archive iOS app (Release)
+        run: |
+          xcodebuild archive \
+            -workspace ios/LibraVault.xcworkspace \
+            -scheme LibraVault \
+            -configuration Release \
+            -archivePath ios/Build/LibraVault.xcarchive \
+            -derivedDataPath ios/Build \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="LibraVault"
+
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath ios/Build/LibraVault.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath ios/Build/Export \
+            -allowProvisioningUpdates
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libravault-ios-ipa
+          path: ios/Build/Export/*.ipa
+          retention-days: 7
+
+  upload-testflight:
+    name: Upload to TestFlight
+    runs-on: macos-14
+    needs: [validate-tag, build-and-sign]
+    if: needs.validate-tag.outputs.is-beta == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: libravault-ios-ipa
+          path: ./ipa
+
+      - name: Upload to TestFlight
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: |
+          # Create temporary auth key file
+          AUTH_KEY_PATH=$RUNNER_TEMP/AuthKey.p8
+          echo "$APP_STORE_CONNECT_KEY" > "$AUTH_KEY_PATH"
+
+          # Upload via xcrun altool
+          xcrun altool --upload-app \
+            --file ./ipa/LibraVault.ipa \
+            --type ios \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            --apiKeyFile "$AUTH_KEY_PATH"
+
+          rm "$AUTH_KEY_PATH"
+
+  submit-app-store:
+    name: Submit to App Store (Production Release)
+    runs-on: macos-14
+    needs: [validate-tag, build-and-sign]
+    if: needs.validate-tag.outputs.is-beta == 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: libravault-ios-ipa
+          path: ./ipa
+
+      - name: Prepare App Store submission
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: |
+          # Create temporary auth key file
+          AUTH_KEY_PATH=$RUNNER_TEMP/AuthKey.p8
+          echo "$APP_STORE_CONNECT_KEY" > "$AUTH_KEY_PATH"
+
+          # Upload for App Store review
+          xcrun altool --upload-app \
+            --file ./ipa/LibraVault.ipa \
+            --type ios \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            --apiKeyFile "$AUTH_KEY_PATH"
+
+          echo "✅ Build submitted to App Store. Manual review required in App Store Connect."
+
+          rm "$AUTH_KEY_PATH"
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-tag, build-and-sign]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: libravault-ios-ipa
+          path: ./ipa
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./ipa/**/*.ipa
+          body: |
+            # LibraVault iOS v${{ needs.validate-tag.outputs.version }}
+
+            ## Release Notes
+            See [iOS v3.0 roadmap](docs/v3-ios-roadmap.md) for details.
+
+            ${{ needs.validate-tag.outputs.is-beta == 'true' && '🔔 **Beta Release** — TestFlight link available in repo README' || '🎉 **Production Release** — Available on App Store' }}
+          draft: false
+          prerelease: ${{ needs.validate-tag.outputs.is-beta == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
