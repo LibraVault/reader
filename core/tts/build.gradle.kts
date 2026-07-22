@@ -14,7 +14,7 @@ kotlin {
         }
 
         androidMain.dependencies {
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+            implementation(libs.coroutines.android)
             implementation(libs.hilt.android)
         }
 
