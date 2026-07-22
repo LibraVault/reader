@@ -51,5 +51,9 @@ gradlePlugin {
             id = "libravault.android.compose"
             implementationClass = "AndroidComposeConventionPlugin"
         }
+        register("kmpLibrary") {
+            id = "libravault.kmp.library"
+            implementationClass = "KotlinMultiplatformLibraryConventionPlugin"
+        }
     }
 }

@@ -1,0 +1,212 @@
+# Mamba-based TTS v2 Enhancement Plan
+
+**Status**: Planned for post-v1.0 release  
+**Priority**: Medium (quality/features enhancement)  
+**Complexity**: High (ML training required)
+
+## Overview
+
+Explore training a lightweight, specialized Mamba-based TTS model (10-30M params) that natively handles e-reader metadata skipping (page numbers, footnotes, chapter markers) without post-processing. This complements or potentially replaces sherpa-onnx for higher quality narration on supported devices.
+
+## Motivation
+
+**Current Implementation (v1.0 - Pocket-TTS/sherpa-onnx):**
+- ✅ Works, proven in testing
+- ✅ Local-only, privacy-first
+- ⚠️ Generic TTS, not optimized for e-reader clutter
+- ⚠️ Requires separate text preprocessing for metadata
+
+**Proposed v2 (Mamba):**
+- 🎯 Specialized for e-reader workflows
+- 🎯 Special tokens (<skip>...</skip>) learned during training
+- 🎯 Seamless, human-like narration (no pauses on skipped text)
+- 🎯 Smaller model footprint (10-30M vs. larger TTS engines)
+- 🎯 Potential higher quality with discrete audio tokens
+
+## Architecture
+
+### Pipeline
+```
+Text Input → Phoneme Converter → Mamba Backbone (12-30M) 
+→ Discrete Audio Tokens → Lightweight Vocoder (HiFi-GAN/Mimic) 
+→ Audio Output
+```
+
+### Key Components
+1. **Mamba Backbone**: Replace Transformer blocks with Mamba (state-space model) for efficiency
+   - Base: `mamba-ssm-macos` or `state-spaces/mamba1`
+   - Compress to 12-30M parameters for mobile deployment
+   
+2. **Audio Tokenization**: Use SpeechTokenizer to discretize audio
+   - Maps continuous wav → discrete token sequence
+   - Model learns to predict next audio token given text
+
+3. **Vocoder**: Lightweight neural vocoder to convert tokens → audio
+   - HiFi-GAN (small variant) or Mimic
+   - Runs on-device with minimal overhead
+
+4. **Metadata Handling**: Special token learning
+   - Training data includes `<skip>Page 42</skip>`, `<skip>Ch. 3 Footnote</skip>`
+   - Target audio ignores these (continuous playback)
+   - Model learns zero-audio mapping for skip tokens
+
+## Data Preparation
+
+### Dataset Strategy
+- **Size**: 3-5 hours clean audio (3,000-5,000 sentences)
+- **Base**: Open audiobook dataset (LJSpeech, VCTK, or similar)
+- **Augmentation**: Programmatically inject e-reader metadata
+
+### Preparation Steps
+1. Source clean audiobook data with transcripts
+2. Parse transcripts and audio into sentence pairs
+3. Inject fake e-reader clutter:
+   ```
+   Original: "She opened the door. The room was empty."
+   Augmented: "She opened the door. <skip>Page 42</skip> The room was empty."
+   ```
+   - Keep audio unchanged (no pauses)
+   - Model learns to ignore skip tokens
+4. Convert audio to discrete tokens via SpeechTokenizer
+5. Organize into train/val/test splits
+
+### Data Preprocessing Script
+```python
+# Pseudocode for data injection
+def augment_with_metadata(text, audio_path, skip_probability=0.3):
+    # Randomly insert <skip>Page X</skip>, <skip>Ch. Y</skip>, etc.
+    # Keep audio file unchanged
+    # Return (augmented_text, audio_tokens)
+```
+
+## Training Plan
+
+### Environment Setup (Mac + MLX/PyTorch MPS)
+```bash
+conda create -n ereader_tts python=3.10
+conda activate ereader_tts
+pip install torch torchaudio mamba-ssm-macos speechtokenizer huggingface-hub
+```
+
+### Training Loop
+1. Initialize Mamba backbone (12-30M params, custom config)
+2. Tokenize audio training data with SpeechTokenizer
+3. Train to predict next audio token given:
+   - Text tokens (including <skip> markers)
+   - Previous audio tokens (autoregressive)
+4. Loss: Cross-entropy on audio token prediction
+5. Validation: Inference quality on held-out sentences
+
+### Key Hyperparameters (TBD during experimentation)
+- Model size: 12M-30M parameters
+- Batch size: 16-32 (Mac GPU memory)
+- Learning rate: 1e-4 to 1e-3
+- Warmup: 1000 steps
+- Total epochs: 20-50 (depends on convergence)
+- Gradient checkpointing: Yes (memory efficiency)
+
+### Expected Duration
+- Data prep: 2-3 days
+- Training (on Mac M1/M2): 3-7 days (continuous)
+- Iteration + tuning: 2-3 weeks
+- **Total**: 3-4 weeks of elapsed time (parallel work possible)
+
+## Integration & Deployment
+
+### Phase 1: Experimentation (Local)
+- Train on Mac, validate inference quality
+- Test on MacBook App (if Electron port exists)
+- Collect metrics: latency, quality, VRAM usage
+
+### Phase 2: Android Integration
+- Export to ONNX (TorchScript → ONNX)
+- Test with Android NDK build pipeline (like sherpa-onnx)
+- Create AAR library with Mamba model + vocoder
+- Integrate via TtsEngineFactory (swap backends)
+
+### Phase 3: Build Variant Control
+```kotlin
+// In TtsEngineFactory
+if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
+    return MambaTtsEngine(context)  // v2: Mamba
+} else if (BuildConfig.FLAVOR == "play") {
+    return PocketTtsEngine(context)  // v1: Pocket/sherpa-onnx (fallback)
+} else {
+    return AndroidTtsEngine(context) // F-Droid: Android TTS
+}
+```
+
+### Export Targets
+- **ONNX**: `model.onnx` (for Android NDK integration)
+- **CoreML**: `model.mlmodel` (for iOS future)
+- **Quantized**: INT8 quantization for smaller size
+
+## Success Criteria
+
+### Quality
+- [ ] Inference quality as good as or better than sherpa-onnx (subjective + BLIP scoring)
+- [ ] Metadata skipping seamless (no audio artifacts)
+- [ ] Audio latency <500ms for typical sentence
+
+### Performance
+- [ ] Model size <50MB (quantized)
+- [ ] Inference latency <100ms per second of audio
+- [ ] Memory footprint <200MB peak on Android
+
+### Coverage
+- [ ] Works on Android API 30+
+- [ ] Tested on ARM64, ARM32 (if feasible)
+- [ ] Battery consumption reasonable (no regression vs. v1)
+
+## Open Questions & Research
+
+1. **Model architecture**: How to best compress Mamba for 12-30M params without quality loss?
+2. **Audio tokenization**: Is SpeechTokenizer best, or are there better alternatives?
+3. **Vocoder choice**: HiFi-GAN vs. Mimic vs. lightweight custom neural vocoder?
+4. **Skip token effectiveness**: How well does the model learn to ignore skip tokens? Measure with ablation studies.
+5. **Multiple languages**: How to adapt for non-English e-books?
+6. **Fine-tuning**: Can we fine-tune a pre-trained Mamba model vs. training from scratch?
+
+## Risks & Mitigation
+
+| Risk | Mitigation |
+|------|-----------|
+| Training takes too long | Use smaller model (10M), consider pre-trained base |
+| Audio quality poor | Collect higher-quality audiobook data, iterate vocoder |
+| Android integration fails | Prototype ONNX export early, test on real devices |
+| Model too large for mobile | Quantize aggressively (INT8), profile memory usage |
+| Skip token learning fails | Use curriculum learning, explicit loss weighting |
+
+## Timeline (Post-v1.0)
+
+- **Week 1**: Data collection & preprocessing (LJSpeech augmentation)
+- **Week 2-3**: Model training on Mac (parallel with other work)
+- **Week 4**: Training iteration + quality evaluation
+- **Week 5**: ONNX export + Android NDK integration
+- **Week 6**: Testing & profiling on real devices
+- **Week 7**: Documentation & merge prep
+
+**Realistic**: 6-8 weeks of calendar time with focused effort.
+
+## References & Resources
+
+- **Mamba**: https://github.com/state-spaces/mamba
+- **SpeechTokenizer**: https://github.com/zhangxinyu-xyz/SpeechTokenizer
+- **HiFi-GAN**: https://github.com/jik876/hifi-gan
+- **MeloVC (Community TTS)**: https://huggingface.co/shichaog/MeloVC
+- **PyTorch MPS (Mac)**: https://pytorch.org/docs/stable/notes/mps.html
+
+## Next Steps (Post-v1.0)
+
+1. Revisit this plan after Pocket-TTS v1.0 ships
+2. Gather user feedback on current narration quality
+3. If quality/metadata handling is a blocker, prioritize Mamba v2
+4. Otherwise, consider it for v1.1 or later release cycle
+5. Prototype data augmentation script (low-risk first step)
+
+---
+
+**Created**: 2026-07-21  
+**Last Updated**: 2026-07-21  
+**Owner**: @Rob  
+**Status**: Backlog (post-v1.0)
