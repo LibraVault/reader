@@ -1,21 +1,11 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.multiplatform")
+    id("libravault.android.library")
     id("libravault.android.hilt")
     id("de.mannodermaus.android-junit5")
 }
 
 android {
     namespace = "xyz.libravault.core.storage"
-    compileSdk = 34
-}
-
-kotlin {
-    jvmToolchain(17)
-    androidTarget()
-    iosArm64()
-    iosSimulatorArm64()
-    iosX64()
 }
 
 dependencies {
