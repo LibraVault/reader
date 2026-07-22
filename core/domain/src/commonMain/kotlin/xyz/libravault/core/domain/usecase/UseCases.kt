@@ -1,5 +1,6 @@
 package xyz.libravault.core.domain.usecase
 
+import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import xyz.libravault.core.domain.model.Collection
 import xyz.libravault.core.domain.model.LibraryItem
@@ -10,7 +11,6 @@ import xyz.libravault.core.domain.repository.CollectionRepository
 import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.domain.repository.ProgressRepository
 import xyz.libravault.core.domain.repository.VaultRepository
-import javax.inject.Inject
 
 class AddVaultFolderUseCase @Inject constructor(
     private val vaultRepository: VaultRepository,
