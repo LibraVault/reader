@@ -1,0 +1,95 @@
+name: KMP iOS Build
+
+on:
+  push:
+    branches: [ feat/v3-ios-port, main, dev ]
+    paths:
+      - 'core/**'
+      - 'build-logic/**'
+      - 'gradle/**'
+      - '.github/workflows/kmp-ios-build.yml'
+  pull_request:
+    branches: [ feat/v3-ios-port ]
+    paths:
+      - 'core/**'
+
+jobs:
+  kmp-ios-frameworks:
+    name: Build KMP iOS Frameworks
+    runs-on: macos-14
+    strategy:
+      matrix:
+        target: [iosArm64, iosSimulatorArm64, iosX64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Build KMP framework - core:domain (${{ matrix.target }})
+        run: ./gradlew :core:domain:assemble${TARGET}MainKlibrary -x test
+        env:
+          TARGET: ${{ matrix.target }}
+
+      - name: Build KMP framework - core:tts (${{ matrix.target }})
+        run: ./gradlew :core:tts:assemble${TARGET}MainKlibrary -x test
+        env:
+          TARGET: ${{ matrix.target }}
+
+      - name: Build KMP framework - core:logger (${{ matrix.target }})
+        run: ./gradlew :core:logger:assemble${TARGET}MainKlibrary -x test
+        env:
+          TARGET: ${{ matrix.target }}
+
+  android-compatibility:
+    name: Android Compatibility Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Build Android targets for KMP modules
+        run: |
+          ./gradlew :core:domain:assembleDebug \
+                    :core:tts:assembleDebug \
+                    :core:logger:assembleDebug \
+                    :core:licensing:assembleDebug \
+                    :core:storage:assembleDebug \
+                    -x test
+
+  summary:
+    name: KMP Build Summary
+    runs-on: ubuntu-latest
+    needs: [ kmp-ios-frameworks, android-compatibility ]
+    if: always()
+    steps:
+      - name: Report Status
+        run: |
+          echo "## KMP Multiplatform Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| iOS Frameworks (macOS-14) | ${{ needs.kmp-ios-frameworks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Android Compatibility | ${{ needs.android-compatibility.result }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if any job failed
+        run: exit 1
+        if: |
+          needs.kmp-ios-frameworks.result == 'failure' ||
+          needs.android-compatibility.result == 'failure'
