@@ -113,40 +113,108 @@ struct BookCoverView: View {
 struct BookDetailView: View {
     let book: BookItem
     @Environment(\.dismiss) var dismiss
+    @State private var isLoading = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Cover area
+                    VStack {
+                        ZStack {
+                            Color.blue.opacity(0.3)
+                            Image(systemName: "book.fill")
+                                .font(.system(size: 80))
+                                .foregroundColor(.blue)
+                        }
+                        .frame(height: 200)
+                        .cornerRadius(12)
+                    }
+                    .padding()
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Title and author
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(book.title)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text(book.author)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Divider()
+
+                        // Progress
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label("Reading Progress", systemImage: "percent")
+                                Spacer()
+                                Text("\(Int(book.progress * 100))%")
+                                    .fontWeight(.semibold)
+                            }
+                            ProgressView(value: book.progress)
+                        }
+
+                        // Action buttons
+                        VStack(spacing: 12) {
+                            NavigationLink(destination: ReaderView(book: book)) {
+                                HStack {
+                                    Image(systemName: "book")
+                                    Text("Continue Reading")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                }
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                            }
+
+                            Button(action: {}) {
+                                HStack {
+                                    Image(systemName: "bookmark")
+                                    Text("View Bookmarks")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                }
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.green.opacity(0.7))
+                                .cornerRadius(8)
+                            }
+
+                            Button(action: {}) {
+                                HStack {
+                                    Image(systemName: "highlighter")
+                                    Text("View Highlights")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                }
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.orange.opacity(0.7))
+                                .cornerRadius(8)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .padding()
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
                     }
                 }
-
-                Spacer()
-
-                VStack(alignment: .trailing) {
-                    Text(book.title)
-                        .font(.headline)
-                    Text(book.author)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
             }
-            .padding()
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Progress: \(Int(book.progress * 100))%", systemImage: "percent")
-                Label("Continue Reading", systemImage: "arrow.right")
-            }
-            .padding()
-
-            Spacer()
         }
-        .navigationBarBackButtonHidden()
     }
 }
 

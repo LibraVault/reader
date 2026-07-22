@@ -93,32 +93,78 @@ struct LibrarySettingsView: View {
 }
 
 struct LogViewerView: View {
-    @State private var logs: String = "Logs will appear here...\n\n[Log integration with core:logger pending]"
+    @State private var logs: String = "[Phase B: Log viewer ready for Phase C integration with core:logger]"
+    @State private var isLoading = false
 
     var body: some View {
         VStack {
+            HStack {
+                Text("Logs")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button(action: { refreshLogs() }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
             ScrollView {
                 Text(logs)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
+                    .textSelection(.enabled)
             }
             .background(Color(.systemGray6))
+            .cornerRadius(8)
+            .padding()
 
-            HStack {
+            HStack(spacing: 12) {
                 Button(action: { logs = "" }) {
                     Label("Clear", systemImage: "trash")
+                        .font(.caption)
                 }
+                .buttonStyle(.bordered)
 
                 Spacer()
 
-                Button(action: { }) {
+                Button(action: { shareLogs() }) {
                     Label("Share", systemImage: "square.and.arrow.up")
+                        .font(.caption)
                 }
+                .buttonStyle(.bordered)
             }
             .padding()
         }
         .navigationTitle("Logs")
+    }
+
+    private func refreshLogs() {
+        logs = """
+        [LibraVault Diagnostic Logs]
+        Version: 3.0.0-alpha
+        Platform: iOS 17+
+
+        [Phase B] Library initialized with mock data
+        [Phase B] Domain bridge ready for Phase C KMP integration
+        [Phase B] Log viewer functional - Phase C will integrate core:logger
+
+        Phase C TODO:
+        - Integrate actual core:logger for persistent logging
+        - Wire up TTS state tracking
+        - Add database access logging
+        - Implement real file I/O logging
+        """
+    }
+
+    private func shareLogs() {
+        let pasteboard = UIPasteboard.general
+        pasteboard.string = logs
     }
 }
 

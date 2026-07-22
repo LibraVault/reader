@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 @MainActor
 final class AppState: ObservableObject {
@@ -7,20 +8,30 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var error: AppError?
 
-    // TODO: Integrate with Kotlin Multiplatform domain layer
-    // - Connect to core:domain UseCases
-    // - Bind to core:database repositories
-    // - Use core:logger for diagnostics
+    nonisolated static let shared = AppState()
+
+    private let bridge = LibravaultDomainBridge.shared
+
+    init() {
+        Task {
+            try? await bridge.initialize()
+            books = bridge.allBooks.map { BookItem(from: $0) }
+        }
+    }
 
     func loadLibrary() async {
         isLoading = true
         defer { isLoading = false }
 
-        // TODO: Call KMP ScanVaultUseCase
-        // For now: placeholder
-        books = [
-            BookItem(id: "1", title: "Sample Book", author: "Author", coverUrl: nil),
-        ]
+        do {
+            let libraryBooks = try await bridge.scanLibrary(vaultPath: "/Documents")
+            books = libraryBooks.map { BookItem(from: $0) }
+            bridge.log("Loaded \(books.count) books from library", tag: "Library")
+        } catch let err as DomainError {
+            error = AppError.libraryLoadFailed(err.localizedDescription)
+        } catch {
+            error = AppError.libraryLoadFailed(error.localizedDescription)
+        }
     }
 
     func selectBook(_ book: BookItem) {
@@ -37,7 +48,23 @@ struct BookItem: Identifiable {
     let title: String
     let author: String
     let coverUrl: String?
-    var progress: Double = 0.0
+    var progress: Double
+
+    init(id: String, title: String, author: String, coverUrl: String? = nil, progress: Double = 0.0) {
+        self.id = id
+        self.title = title
+        self.author = author
+        self.coverUrl = coverUrl
+        self.progress = progress
+    }
+
+    init(from bookData: BookData) {
+        self.id = bookData.id
+        self.title = bookData.title
+        self.author = bookData.author
+        self.coverUrl = nil
+        self.progress = bookData.progress
+    }
 }
 
 enum AppError: LocalizedError {
