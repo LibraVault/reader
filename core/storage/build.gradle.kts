@@ -12,32 +12,19 @@ android {
 
 kotlin {
     jvmToolchain(17)
-    androidTarget {
-        publishLibraryVariants("release")
-    }
+    androidTarget()
     iosArm64()
     iosSimulatorArm64()
     iosX64()
+}
 
-    sourceSets {
-        commonMain.dependencies {
-            api(project(":core:domain"))
-            api(project(":core:logger"))
-            implementation(libs.coroutines.core)
-        }
+dependencies {
+    api(project(":core:domain"))
+    api(project(":core:logger"))
+    implementation(libs.coroutines.core)
+    implementation(libs.coroutines.android)
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
-        androidMain.dependencies {
-            implementation(libs.coroutines.android)
-            implementation("androidx.documentfile:documentfile:1.0.1")
-        }
-
-        commonTest.dependencies {
-            implementation(libs.kotlin.test)
-        }
-
-        androidUnitTest.dependencies {
-            implementation(libs.bundles.testing.jvm)
-            runtimeOnly(libs.junit5.engine)
-        }
-    }
+    testImplementation(libs.bundles.testing.jvm)
+    testRuntimeOnly(libs.junit5.engine)
 }
