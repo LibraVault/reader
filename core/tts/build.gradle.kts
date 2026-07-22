@@ -1,16 +1,34 @@
 plugins {
-    id("libravault.android.library")
+    id("com.android.library")
+    id("org.jetbrains.kotlin.multiplatform")
     id("libravault.android.hilt")
     id("de.mannodermaus.android-junit5")
 }
 
 android {
     namespace = "xyz.libravault.core.tts"
+    compileSdk = 34
+    defaultConfig { minSdk = 24 }
+}
+
+kotlin {
+    jvmToolchain(17)
+
+    androidTarget {
+        publishLibraryVariants("release")
+    }
+
+    iosArm64()
+    iosSimulatorArm64()
+    iosX64()
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    commonMainImplementation(libs.coroutines.core)
+    androidMainImplementation(libs.coroutines.android)
 
-    testImplementation(libs.bundles.testing.jvm)
-    testRuntimeOnly(libs.junit5.engine)
+    commonTestImplementation(libs.kotlin.test)
+
+    androidTestImplementation(libs.bundles.testing.jvm)
+    androidTestRuntimeOnly(libs.junit5.engine)
 }
