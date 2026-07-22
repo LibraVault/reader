@@ -2,76 +2,112 @@ import Foundation
 
 // MARK: - KMP Domain Bridge
 // Provides Swift-friendly wrappers around Kotlin Multiplatform domain code
+// Phase B implementation uses mock data; Phase C will integrate actual KMP framework
 
-class LibravaultDomainBridge {
+@MainActor
+class LibravaultDomainBridge: ObservableObject {
     static let shared = LibravaultDomainBridge()
 
-    private var domainUseCases: DomainUseCases?
+    @Published var allBooks: [BookData] = []
+    @Published var highlights: [String: [Highlight]] = [:]
+    @Published var bookmarks: [String: [Bookmark]] = [:]
+    @Published var progress: [String: Double] = [:]
+
     private var logger: LoggerBridge?
     private var ttsEngine: TTSEngineBridge?
+    private var isInitialized = false
 
     // MARK: - Initialization
     func initialize() async throws {
-        // TODO: Initialize Kotlin Multiplatform domain layer
-        // This will be the bridge to:
-        // - core:domain (UseCases for scanning, reading progress)
-        // - core:database (Room database for persisted state)
-        // - core:logger (diagnostic logging)
-        // - core:tts (text-to-speech)
-        // - core:storage (file/metadata access)
+        guard !isInitialized else { return }
 
         logger = LoggerBridge()
         await logger?.initialize()
+        logger?.d(tag: "Bridge", message: "Logger initialized")
 
         ttsEngine = TTSEngineBridge()
         try await ttsEngine?.initialize()
+        logger?.d(tag: "Bridge", message: "TTS engine initialized")
 
-        domainUseCases = DomainUseCases()
+        // Phase B: Load mock library data
+        loadMockLibrary()
+
+        isInitialized = true
+        logger?.d(tag: "Bridge", message: "Domain bridge fully initialized")
     }
 
     // MARK: - Library Operations
     func scanLibrary(vaultPath: String) async throws -> [BookData] {
-        guard let useCases = domainUseCases else {
-            throw DomainError.notInitialized
-        }
+        guard isInitialized else { throw DomainError.notInitialized }
+        logger?.d(tag: "Library", message: "Scanning vault: \(vaultPath)")
 
-        // TODO: Call core:domain ScanVaultUseCase
-        // Maps Kotlin KMP models to Swift models
-        return []
+        // Phase B: Return cached mock library
+        // Phase C: Call core:domain ScanVaultUseCase and cache result
+        return allBooks
     }
 
     func loadBook(id: String) async throws -> BookData {
-        guard let useCases = domainUseCases else {
-            throw DomainError.notInitialized
+        guard isInitialized else { throw DomainError.notInitialized }
+
+        guard let book = allBooks.first(where: { $0.id == id }) else {
+            throw DomainError.bookNotFound(id)
         }
 
-        // TODO: Call core:domain ReaderUseCases
-        return BookData(id: id, title: "", author: "", format: .pdf)
+        logger?.d(tag: "Reader", message: "Loading book: \(book.title)")
+
+        // Phase C: Call core:domain GetLibraryItemUseCase
+        return book
     }
 
     // MARK: - Reading Operations
     func updateProgress(bookId: String, progress: Double) async throws {
-        guard let useCases = domainUseCases else {
-            throw DomainError.notInitialized
-        }
+        guard isInitialized else { throw DomainError.notInitialized }
 
-        // TODO: Call core:domain progress update use case
+        self.progress[bookId] = progress
+        logger?.d(tag: "Progress", message: "Updated \(bookId) to \(Int(progress * 100))%")
+
+        // Phase C: Call core:domain SaveReadingProgressUseCase
     }
 
-    func addHighlight(bookId: String, position: String, text: String) async throws {
-        guard let useCases = domainUseCases else {
-            throw DomainError.notInitialized
-        }
+    func addHighlight(bookId: String, position: String, text: String, color: String = "FFFF00") async throws {
+        guard isInitialized else { throw DomainError.notInitialized }
 
-        // TODO: Call core:domain highlight use case
+        let highlight = Highlight(
+            id: UUID().uuidString,
+            position: position,
+            text: text,
+            colorHex: color,
+            note: nil,
+            createdAt: Date()
+        )
+
+        if highlights[bookId] == nil {
+            highlights[bookId] = []
+        }
+        highlights[bookId]?.append(highlight)
+
+        logger?.d(tag: "Highlights", message: "Added highlight to \(bookId)")
+
+        // Phase C: Call core:domain AddHighlightUseCase
     }
 
     func addBookmark(bookId: String, position: String) async throws {
-        guard let useCases = domainUseCases else {
-            throw DomainError.notInitialized
-        }
+        guard isInitialized else { throw DomainError.notInitialized }
 
-        // TODO: Call core:domain bookmark use case
+        let bookmark = Bookmark(
+            id: UUID().uuidString,
+            position: position,
+            createdAt: Date()
+        )
+
+        if bookmarks[bookId] == nil {
+            bookmarks[bookId] = []
+        }
+        bookmarks[bookId]?.append(bookmark)
+
+        logger?.d(tag: "Bookmarks", message: "Added bookmark to \(bookId)")
+
+        // Phase C: Call core:domain AddBookmarkUseCase
     }
 
     // MARK: - Logger Integration
@@ -81,12 +117,64 @@ class LibravaultDomainBridge {
 
     // MARK: - TTS Integration
     func startSpeaking(text: String) async throws {
-        guard let tts = ttsEngine else { throw DomainError.notInitialized }
-        await tts.speak(text: text)
+        guard ttsEngine != nil else { throw DomainError.notInitialized }
+        logger?.d(tag: "TTS", message: "Starting speech: \(text.prefix(50))...")
+        await ttsEngine?.speak(text: text)
     }
 
     func stopSpeaking() async {
         await ttsEngine?.stop()
+    }
+
+    // MARK: - Mock Data (Phase B)
+    private func loadMockLibrary() {
+        allBooks = [
+            BookData(
+                id: "1",
+                title: "The Great Gatsby",
+                author: "F. Scott Fitzgerald",
+                format: .epub,
+                progress: 0.35,
+                highlights: [],
+                bookmarks: []
+            ),
+            BookData(
+                id: "2",
+                title: "1984",
+                author: "George Orwell",
+                format: .pdf,
+                progress: 0.67,
+                highlights: [],
+                bookmarks: []
+            ),
+            BookData(
+                id: "3",
+                title: "To Kill a Mockingbird",
+                author: "Harper Lee",
+                format: .epub,
+                progress: 0.0,
+                highlights: [],
+                bookmarks: []
+            ),
+            BookData(
+                id: "4",
+                title: "Pride and Prejudice",
+                author: "Jane Austen",
+                format: .epub,
+                progress: 0.42,
+                highlights: [],
+                bookmarks: []
+            ),
+            BookData(
+                id: "5",
+                title: "Brave New World",
+                author: "Aldous Huxley",
+                format: .pdf,
+                progress: 0.28,
+                highlights: [],
+                bookmarks: []
+            ),
+        ]
     }
 }
 
