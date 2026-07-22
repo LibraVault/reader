@@ -2,7 +2,22 @@ import Foundation
 
 // MARK: - KMP Domain Bridge
 // Provides Swift-friendly wrappers around Kotlin Multiplatform domain code
-// Phase B implementation uses mock data; Phase C will integrate actual KMP framework
+//
+// Phase B: Mock data implementation (100% functional UI)
+// Phase D: Real KMP framework integration point
+//
+// KMP Modules (build with: ./gradlew -f kmp-ios-build.gradle.kts :buildIosFrameworks):
+// - core:domain      → LibravaultDomainKmp (UseCases for library/reading)
+// - core:tts         → TtsEngineKmp (text-to-speech)
+// - core:logger      → LibravaultLoggerKmp (diagnostic logging)
+// - core:storage     → StorageManagerKmp (file access)
+// - core:licensing   → ProGateKmp (license/pro features)
+//
+// Phase D TODO:
+// 1. Link XCFrameworks from build/XCFrameworks/ in Package.swift
+// 2. Replace MockLibrary with actual GetLibraryUseCase calls
+// 3. Wire TTS to core:tts framework
+// 4. Connect logging to core:logger framework
 
 @MainActor
 class LibravaultDomainBridge: ObservableObject {
@@ -17,6 +32,11 @@ class LibravaultDomainBridge: ObservableObject {
     private var ttsEngine: TTSEngineBridge?
     private var isInitialized = false
 
+    // Phase D: KMP framework holders (will be populated when frameworks linked)
+    // private var kmpDomain: LibravaultDomainKmp?
+    // private var kmpTts: TtsEngineKmp?
+    // private var kmpLogger: LibravaultLoggerKmp?
+
     // MARK: - Initialization
     func initialize() async throws {
         guard !isInitialized else { return }
@@ -29,12 +49,22 @@ class LibravaultDomainBridge: ObservableObject {
         try await ttsEngine?.initialize()
         logger?.d(tag: "Bridge", message: "TTS engine initialized")
 
-        // Phase B: Load mock library data
+        // Phase D: Initialize KMP frameworks here
+        // try initializeKmpFrameworks()
+
+        // Phase B: Load mock library data (remove in Phase D when using real KMP)
         loadMockLibrary()
 
         isInitialized = true
         logger?.d(tag: "Bridge", message: "Domain bridge fully initialized")
     }
+
+    // Phase D: Will initialize actual KMP frameworks
+    // private func initializeKmpFrameworks() throws {
+    //     // Import KMP frameworks from build/XCFrameworks/
+    //     // Initialize domain, logging, TTS engines
+    //     // Load actual library via GetLibraryUseCase
+    // }
 
     // MARK: - Library Operations
     func scanLibrary(vaultPath: String) async throws -> [BookData] {
