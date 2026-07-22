@@ -1,5 +1,5 @@
 plugins {
-    id("libravault.android.library")
+    id("libravault.kmp.library")
     id("de.mannodermaus.android-junit5")
 }
 
@@ -7,12 +7,25 @@ android {
     namespace = "xyz.libravault.core.domain"
 }
 
-dependencies {
-    implementation(libs.coroutines.core)
-    implementation(libs.kotlinx.serialization.json)
-    implementation("javax.inject:javax.inject:1")
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation(libs.coroutines.core)
+            implementation(libs.kotlinx.serialization.json)
+        }
 
-    testImplementation(libs.bundles.testing.jvm)
-    testImplementation(libs.junit5.engine)
-    testRuntimeOnly(libs.junit5.engine)
+        androidMain.dependencies {
+            implementation("javax.inject:javax.inject:1")
+        }
+
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+
+        androidUnitTest.dependencies {
+            implementation(libs.bundles.testing.jvm)
+            implementation(libs.junit5.engine)
+            runtimeOnly(libs.junit5.engine)
+        }
+    }
 }

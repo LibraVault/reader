@@ -1,9 +1,9 @@
 package xyz.libravault.core.domain.usecase
 
+import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import xyz.libravault.core.domain.scanner.LibraryScanner
 import xyz.libravault.core.domain.scanner.ScanProgress
-import javax.inject.Inject
 
 /**
  * Triggers a full vault scan.

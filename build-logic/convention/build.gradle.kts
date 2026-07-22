@@ -22,6 +22,7 @@ dependencies {
     // Hardcoded because the root version catalog is not available to
     // included builds in Gradle 9.x without re-declaring it (which
     // triggers a duplicate-from() error). Keep in sync with libs.versions.toml.
+    // Note: KMP plugin is included in kotlin-gradle-plugin, no separate artifact needed
     compileOnly("com.android.tools.build:gradle:8.5.0")
     compileOnly("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
     compileOnly("com.google.devtools.ksp:symbol-processing-gradle-plugin:2.0.0-1.0.21")
@@ -50,6 +51,10 @@ gradlePlugin {
         register("androidCompose") {
             id = "libravault.android.compose"
             implementationClass = "AndroidComposeConventionPlugin"
+        }
+        register("kmpLibrary") {
+            id = "libravault.kmp.library"
+            implementationClass = "KotlinMultiplatformLibraryConventionPlugin"
         }
     }
 }
