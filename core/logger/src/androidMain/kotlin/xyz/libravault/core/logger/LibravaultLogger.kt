@@ -13,17 +13,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Opt-in, local-only crash and error logger.
+ * Android implementation: writes logs to app's private files directory
+ * with automatic rotation at [MAX_LOG_SIZE_BYTES].
  *
- * Logs are written to the app's private files directory — never transmitted
- * anywhere. The user explicitly enables logging via Settings. Logs rotate
- * at [MAX_LOG_SIZE_BYTES] to prevent unbounded disk growth.
- *
- * Usage:
- *   logger.e("FileScanner", "Failed to scan $uri", throwable)
+ * Opt-in state backed by SharedPreferences.
  */
 @Singleton
-class LibravaultLogger @Inject constructor(
+actual class LibravaultLogger @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     companion object {
@@ -40,7 +36,7 @@ class LibravaultLogger @Inject constructor(
         get() = File(context.filesDir, LOG_FILE_NAME)
 
     /** Whether the user has opted in to local logging. Backed by SharedPreferences. */
-    var isEnabled: Boolean
+    actual var isEnabled: Boolean
         get() = context
             .getSharedPreferences("libravault_prefs", Context.MODE_PRIVATE)
             .getBoolean("logging_enabled", false)
@@ -48,10 +44,10 @@ class LibravaultLogger @Inject constructor(
             .getSharedPreferences("libravault_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("logging_enabled", value).apply()
 
-    fun d(tag: String, message: String) = write("D", tag, message, null)
-    fun i(tag: String, message: String) = write("I", tag, message, null)
-    fun w(tag: String, message: String, throwable: Throwable? = null) = write("W", tag, message, throwable)
-    fun e(tag: String, message: String, throwable: Throwable? = null) = write("E", tag, message, throwable)
+    actual fun d(tag: String, message: String) = write("D", tag, message, null)
+    actual fun i(tag: String, message: String) = write("I", tag, message, null)
+    actual fun w(tag: String, message: String, throwable: Throwable?) = write("W", tag, message, throwable)
+    actual fun e(tag: String, message: String, throwable: Throwable?) = write("E", tag, message, throwable)
 
     private fun write(level: String, tag: String, message: String, throwable: Throwable?) {
         // Always log to Logcat in debug builds
@@ -83,12 +79,12 @@ class LibravaultLogger @Inject constructor(
     }
 
     /** Returns log contents for user-initiated sharing / inspection. */
-    suspend fun readLogs(): String = withContext(Dispatchers.IO) {
+    actual suspend fun readLogs(): String = withContext(Dispatchers.IO) {
         if (!logFile.exists()) "No logs recorded." else logFile.readText()
     }
 
     /** Clears all local logs. */
-    suspend fun clearLogs() = withContext(Dispatchers.IO) {
+    actual suspend fun clearLogs(): Unit = withContext(Dispatchers.IO) {
         logFile.delete()
         File(context.filesDir, "libravault.log.bak").delete()
     }
