@@ -1,6 +1,5 @@
 plugins {
-    id("libravault.android.library")
-    id("libravault.android.hilt")
+    id("libravault.kmp.library")
     id("de.mannodermaus.android-junit5")
 }
 
@@ -8,9 +7,21 @@ android {
     namespace = "xyz.libravault.core.tts"
 }
 
-dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation(libs.coroutines.core)
+        }
 
-    testImplementation(libs.bundles.testing.jvm)
-    testRuntimeOnly(libs.junit5.engine)
+        androidMain.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+            implementation(libs.hilt.android)
+        }
+
+        androidUnitTest.dependencies {
+            implementation(libs.bundles.testing.jvm)
+            implementation(libs.junit5.engine)
+            runtimeOnly(libs.junit5.engine)
+        }
+    }
 }
