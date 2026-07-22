@@ -1,21 +1,43 @@
 plugins {
-    id("libravault.android.library")
+    id("com.android.library")
+    id("org.jetbrains.kotlin.multiplatform")
     id("libravault.android.hilt")
     id("de.mannodermaus.android-junit5")
 }
 
-android { namespace = "xyz.libravault.core.storage" }
+android {
+    namespace = "xyz.libravault.core.storage"
+    compileSdk = 34
+}
 
-dependencies {
-    api(project(":core:domain"))
-    api(project(":core:logger"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+kotlin {
+    jvmToolchain(17)
+    androidTarget {
+        publishLibraryVariants("release")
+    }
+    iosArm64()
+    iosSimulatorArm64()
+    iosX64()
 
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
-    testImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.2")
-    testImplementation("org.junit.jupiter:junit-jupiter-params:5.10.2")
-    testImplementation("io.mockk:mockk:1.13.11")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-    testImplementation("app.cash.turbine:turbine:1.1.0")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")
+    sourceSets {
+        commonMain.dependencies {
+            api(project(":core:domain"))
+            api(project(":core:logger"))
+            implementation(libs.coroutines.core)
+        }
+
+        androidMain.dependencies {
+            implementation(libs.coroutines.android)
+            implementation("androidx.documentfile:documentfile:1.0.1")
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
+
+        androidUnitTest.dependencies {
+            implementation(libs.bundles.testing.jvm)
+            runtimeOnly(libs.junit5.engine)
+        }
+    }
 }
