@@ -2,6 +2,7 @@ package xyz.libravault.core.tts
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 
 class AndroidTtsEngineTest {
@@ -82,5 +83,36 @@ class AndroidTtsEngineTest {
         val chunks = split(text)
         assertTrue(chunks.size >= 2)
         chunks.forEach { assertTrue(it.length <= 3900) }
+    }
+
+    // ── Voice validation (hardening) ───────────────────────────────────────────
+
+    @Test
+    fun `TtsVoiceInfo includes requiresNetwork flag`() {
+        val voiceLocal = TtsVoiceInfo(
+            id = "en-us",
+            displayName = "English US",
+            locale = "en-US",
+            requiresNetwork = false,
+        )
+        assertFalse(voiceLocal.requiresNetwork)
+
+        val voiceRemote = TtsVoiceInfo(
+            id = "en-gb-cloud",
+            displayName = "English GB (Cloud)",
+            locale = "en-GB",
+            requiresNetwork = true,
+        )
+        assertTrue(voiceRemote.requiresNetwork)
+    }
+
+    @Test
+    fun `TtsVoiceInfo defaults requiresNetwork to false`() {
+        val voice = TtsVoiceInfo(
+            id = "test",
+            displayName = "Test Voice",
+            locale = "en-US",
+        )
+        assertFalse(voice.requiresNetwork)
     }
 }

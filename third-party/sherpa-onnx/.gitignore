@@ -1,0 +1,5 @@
+# Build artifacts
+/build/
+
+# Optional: Uncomment to ignore the built AAR (recommend committing for reproducibility)
+# /sherpa-onnx-android.aar

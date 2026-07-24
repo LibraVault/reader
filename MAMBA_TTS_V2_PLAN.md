@@ -124,7 +124,13 @@ pip install torch torchaudio mamba-ssm-macos speechtokenizer huggingface-hub
 - Create AAR library with Mamba model + vocoder
 - Integrate via TtsEngineFactory (swap backends)
 
-### Phase 3: Build Variant Control
+### Phase 3: iOS Integration (Future)
+- Export to CoreML (TorchScript → CoreML)
+- Integrate into Swift/SwiftUI app
+- Use Metal Performance Shaders (MPS) for inference
+- Package as XCFramework
+
+### Build Variant Control (Android)
 ```kotlin
 // In TtsEngineFactory
 if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
@@ -137,8 +143,8 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 ```
 
 ### Export Targets
-- **ONNX**: `model.onnx` (for Android NDK integration)
-- **CoreML**: `model.mlmodel` (for iOS future)
+- **ONNX** (Android): `model.onnx` (NDK integration)
+- **CoreML** (iOS): `model.mlmodel` (Swift integration)
 - **Quantized**: INT8 quantization for smaller size
 
 ## Success Criteria
@@ -157,6 +163,7 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 - [ ] Works on Android API 30+
 - [ ] Tested on ARM64, ARM32 (if feasible)
 - [ ] Battery consumption reasonable (no regression vs. v1)
+- [ ] iOS: Works on iPhone 12+ (simulator + real device)
 
 ## Open Questions & Research
 
@@ -166,6 +173,7 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 4. **Skip token effectiveness**: How well does the model learn to ignore skip tokens? Measure with ablation studies.
 5. **Multiple languages**: How to adapt for non-English e-books?
 6. **Fine-tuning**: Can we fine-tune a pre-trained Mamba model vs. training from scratch?
+7. **iOS CoreML**: Does CoreML export preserve model quality? What's the inference speed on iPhone?
 
 ## Risks & Mitigation
 
@@ -174,6 +182,7 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 | Training takes too long | Use smaller model (10M), consider pre-trained base |
 | Audio quality poor | Collect higher-quality audiobook data, iterate vocoder |
 | Android integration fails | Prototype ONNX export early, test on real devices |
+| iOS CoreML export fails | Early prototyping, test on simulator first |
 | Model too large for mobile | Quantize aggressively (INT8), profile memory usage |
 | Skip token learning fails | Use curriculum learning, explicit loss weighting |
 
@@ -184,7 +193,8 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 - **Week 4**: Training iteration + quality evaluation
 - **Week 5**: ONNX export + Android NDK integration
 - **Week 6**: Testing & profiling on real devices
-- **Week 7**: Documentation & merge prep
+- **Week 7**: CoreML export + iOS integration
+- **Week 8**: Documentation & merge prep
 
 **Realistic**: 6-8 weeks of calendar time with focused effort.
 
@@ -195,6 +205,7 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 - **HiFi-GAN**: https://github.com/jik876/hifi-gan
 - **MeloVC (Community TTS)**: https://huggingface.co/shichaog/MeloVC
 - **PyTorch MPS (Mac)**: https://pytorch.org/docs/stable/notes/mps.html
+- **CoreML Export**: https://pytorch.org/docs/stable/generated/torch.jit.trace_module.html
 
 ## Next Steps (Post-v1.0)
 
