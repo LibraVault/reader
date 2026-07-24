@@ -68,6 +68,7 @@ jobs:
           echo "✅ iOS app built successfully"
 
       - name: Create Build Metadata
+        if: always()
         run: |
           cat > ios/LibraVault/build-info.txt << EOF
           Build Date: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
