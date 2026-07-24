@@ -257,20 +257,20 @@ jobs:
               repo: context.repo.repo,
               body: `## 📱 iOS Build Status
 
-✅ **KMP Frameworks** - Built successfully for iOS targets (arm64, simulator)
-✅ **iOS App** - Swift Package compiled for device and simulator
-✅ **Android Core** - All core modules built and tested
+            ✅ **KMP Frameworks** - Built successfully for iOS targets (arm64, simulator)
+            ✅ **iOS App** - Swift Package compiled for device and simulator
+            ✅ **Android Core** - All core modules built and tested
 
-### Available Artifacts
-- **ios-frameworks**: XCFrameworks for core:domain, core:tts, core:logger, core:storage, core:licensing
-- **ios-build-logs**: Detailed Swift build output
-- **android-test-results**: JUnit test reports
+            ### Available Artifacts
+            - **ios-frameworks**: XCFrameworks for core:domain, core:tts, core:logger, core:storage, core:licensing
+            - **ios-build-logs**: Detailed Swift build output
+            - **android-test-results**: JUnit test reports
 
-### Next Steps
-1. Download \`ios-frameworks\` artifact
-2. Copy to \`reader-ios/ios/LibraVault/Frameworks/\`
-3. Uncomment binary targets in Package.swift
-4. Link in your iOS project
+            ### Next Steps
+            1. Download \`ios-frameworks\` artifact
+            2. Copy to \`reader-ios/ios/LibraVault/Frameworks/\`
+            3. Uncomment binary targets in Package.swift
+            4. Link in your iOS project
 
-[View build artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+            [View build artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`
             })
