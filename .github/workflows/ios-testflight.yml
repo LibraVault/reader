@@ -181,38 +181,38 @@ jobs:
               issue_number: context.issue.number || null,
               body: `## 📱 iOS TestFlight Build Ready
 
-### Build Information
-\`\`\`
-${buildInfo}
-\`\`\`
+            ### Build Information
+            \`\`\`
+            ${buildInfo}
+            \`\`\`
 
-### Status
-✅ **Build Complete** — Ready for TestFlight distribution
+            ### Status
+            ✅ **Build Complete** — Ready for TestFlight distribution
 
-### Next Steps
+            ### Next Steps
 
-1. **Download Artifacts** from GitHub Actions:
-   - \`ios-build-${{ github.run_number }}\` (build files)
-   - \`testflight-upload-guide-${{ github.run_number }}\` (instructions)
+            1. **Download Artifacts** from GitHub Actions:
+               - \`ios-build-${{ github.run_number }}\` (build files)
+               - \`testflight-upload-guide-${{ github.run_number }}\` (instructions)
 
-2. **Upload to TestFlight**:
-   - Visit: https://appstoreconnect.apple.com/testflight/ios/builds
-   - Upload the build (automated in future releases)
-   - Takes 15-30 minutes for processing
+            2. **Upload to TestFlight**:
+               - Visit: https://appstoreconnect.apple.com/testflight/ios/builds
+               - Upload the build (automated in future releases)
+               - Takes 15-30 minutes for processing
 
-3. **Invite Testers**:
-   - Go to App Store Connect > TestFlight > Internal Testers
-   - Add tester emails
-   - They'll receive invite links
+            3. **Invite Testers**:
+               - Go to App Store Connect > TestFlight > Internal Testers
+               - Add tester emails
+               - They'll receive invite links
 
-4. **Wait for Review**:
-   - Apple's automated review: 2-4 hours
-   - Build becomes available in TestFlight
+            4. **Wait for Review**:
+               - Apple's automated review: 2-4 hours
+               - Build becomes available in TestFlight
 
-### Automated Upload
-Code signing certificate is configured for automated uploads in future workflows.
+            ### Automated Upload
+            Code signing certificate is configured for automated uploads in future workflows.
 
-Build completed: ${{ job.status }}`
+            Build completed: ${{ job.status }}`
             }).catch(err => console.log('PR comment skipped (not a PR context)'))
 
   create-release-notes:
