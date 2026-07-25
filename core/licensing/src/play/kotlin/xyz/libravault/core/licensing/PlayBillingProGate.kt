@@ -84,7 +84,7 @@ class PlayBillingProGate(context: Context) : IProGate, PurchasesUpdatedListener 
      * Opens the Play purchase sheet. Call from an Activity context only.
      * The result arrives asynchronously via onPurchasesUpdated / purchaseEvents.
      */
-    override suspend fun launchPurchaseFlow(activity: Activity) {
+    suspend fun launchPurchaseFlow(activity: Activity) {
         ensureConnected()
         val details = proProductDetails ?: run { fetchProductDetails(); proProductDetails } ?: return
         val flowParams = BillingFlowParams.newBuilder()

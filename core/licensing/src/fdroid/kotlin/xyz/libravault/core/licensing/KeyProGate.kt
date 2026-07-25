@@ -1,7 +1,10 @@
 package xyz.libravault.core.licensing
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * IProGate implementation for the F-Droid / direct-download build.
@@ -21,6 +24,10 @@ class KeyProGate(context: Context) : IProGate {
 
     override val isPro: StateFlow<Boolean> = stateManager.isPro
     override val supportsKeyEntry: Boolean = true
+
+    /** F-Droid has no purchase flow (offline key entry only) — this never emits. */
+    private val _purchaseOutcomes = MutableSharedFlow<PurchaseOutcome>()
+    override val purchaseOutcomes: SharedFlow<PurchaseOutcome> = _purchaseOutcomes.asSharedFlow()
 
     override fun activateWithKey(licenseKey: String): Boolean =
         stateManager.activate(licenseKey)
