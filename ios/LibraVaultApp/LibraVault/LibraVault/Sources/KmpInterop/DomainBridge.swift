@@ -170,6 +170,14 @@ class LibravaultDomainBridge: ObservableObject {
         await ttsEngine?.stop()
     }
 
+    func pauseSpeaking() async {
+        await ttsEngine?.pause()
+    }
+
+    func resumeSpeaking() async {
+        await ttsEngine?.resume()
+    }
+
     // MARK: - Mock Data (Phase B)
     private func loadMockLibrary() {
         allBooks = [

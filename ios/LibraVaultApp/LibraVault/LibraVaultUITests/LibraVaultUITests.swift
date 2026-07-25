@@ -160,4 +160,42 @@ final class LibraVaultUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Paginated"].exists)
         XCTAssertTrue(app.buttons["Scrolling"].exists)
     }
+
+    // MARK: - Player screen (Phase 4 of the Android/iOS UI parity plan)
+
+    @MainActor
+    func testReadAloudNavigatesToPlayer() throws {
+        let app = XCUIApplication()
+        openReaderForMockingbird(in: app)
+
+        let settingsButton = app.buttons["reader.settingsButton"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.tap()
+
+        let readAloudButton = app.buttons["Read Aloud"]
+        XCTAssertTrue(readAloudButton.waitForExistence(timeout: 5))
+        readAloudButton.tap()
+
+        XCTAssertTrue(app.navigationBars["Now Playing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["player.playPauseButton"].exists)
+        XCTAssertTrue(app.staticTexts["To Kill a Mockingbird"].exists)
+    }
+
+    @MainActor
+    func testPlayerChaptersSheetShowsAllChapters() throws {
+        let app = XCUIApplication()
+        openReaderForMockingbird(in: app)
+
+        app.buttons["reader.settingsButton"].tap()
+        let readAloudButton = app.buttons["Read Aloud"]
+        XCTAssertTrue(readAloudButton.waitForExistence(timeout: 5))
+        readAloudButton.tap()
+
+        let chaptersButton = app.buttons["player.chaptersButton"]
+        XCTAssertTrue(chaptersButton.waitForExistence(timeout: 5))
+        chaptersButton.tap()
+
+        XCTAssertTrue(app.staticTexts["Chapters"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Chapter 1: The Beginning"].exists)
+    }
 }
