@@ -22,6 +22,8 @@ jobs:
     name: Build & Upload to TestFlight
     runs-on: macos-26
     timeout-minutes: 120
+    outputs:
+      build_number: ${{ steps.build-number.outputs.value }}
 
     env:
       APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
@@ -69,6 +71,16 @@ jobs:
           echo "PROVISIONING_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
           echo "✅ Provisioning profile installed (UUID: $UUID)"
 
+      - name: Determine Build Number
+        id: build-number
+        env:
+          BUILD_NUMBER_INPUT: ${{ inputs.build_number }}
+        run: |
+          BUILD_NUMBER="${BUILD_NUMBER_INPUT:-${{ github.run_number }}}"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Using build number: $BUILD_NUMBER"
+
       - name: Build & Archive
         run: |
           xcodebuild archive \
@@ -80,9 +92,10 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_UUID" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
-          echo "✅ Archive created"
+          echo "✅ Archive created (build $BUILD_NUMBER)"
 
       - name: Create Export Options
         run: |
@@ -123,6 +136,7 @@ jobs:
         run: |
           cat > build-info.txt << EOF
           Build Date: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          Build Number: $BUILD_NUMBER
           Git Commit: ${{ github.sha }}
           Git Branch: ${{ github.ref_name }}
           GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -227,7 +241,7 @@ jobs:
           echo "- **Build Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> RELEASE_NOTES.md
           echo "- **Git Commit**: ${{ github.sha }}" >> RELEASE_NOTES.md
           echo "- **Branch**: ${{ github.ref_name }}" >> RELEASE_NOTES.md
-          echo "- **Build Number**: ${{ github.run_number }}" >> RELEASE_NOTES.md
+          echo "- **Build Number**: ${{ needs.build-and-upload.outputs.build_number }}" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "### Known Limitations" >> RELEASE_NOTES.md
           echo "- Using mock library data (Phase B)" >> RELEASE_NOTES.md
