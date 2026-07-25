@@ -259,6 +259,10 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun clearSearch() {
+        // Cancel any in-flight debounced search — otherwise it can complete
+        // after clearSearch() and silently repopulate searchResults with
+        // stale results for a query the user already dismissed.
+        searchJob?.cancel()
         _searchQuery.value   = ""
         _searchResults.value = null
     }
@@ -419,11 +423,15 @@ class LibraryViewModel @Inject constructor(
 
 /**
  * Merge two already-sorted "in progress" lists into one ordered list.
- * Each source list is already sorted by last-activity (most recent first);
- * the result interleaves them so the freshest item from either list comes
- * first. Duplicates (same item appearing in both lists) are removed.
+ * Each source list is already sorted by last-activity (most recent first),
+ * but [LibraryItem] carries no timestamp of its own — recency is encoded
+ * purely as list order — so we alternate one-for-one between the two
+ * sources rather than comparing values. This keeps a currently-reading book
+ * and a currently-listened-to audiobook both near the top of the shelf
+ * instead of one format's whole list burying the other. Duplicates (same
+ * item appearing in both lists) are removed.
  */
-private fun interleaveByRecency(
+internal fun interleaveByRecency(
     reading: List<LibraryItem>,
     listening: List<LibraryItem>,
 ): List<LibraryItem> {
@@ -431,19 +439,16 @@ private fun interleaveByRecency(
     val out = ArrayList<LibraryItem>(reading.size + listening.size)
     var i = 0
     var j = 0
+    var takeReadingNext = true
     while (i < reading.size || j < listening.size) {
         val takeReading = when {
             i >= reading.size -> false
             j >= listening.size -> true
-            else -> true  // Both have items — alternate to interleave
+            else -> takeReadingNext
         }
-        if (takeReading) {
-            val item = reading[i++]
-            if (seen.add(item.id)) out += item
-        } else {
-            val item = listening[j++]
-            if (seen.add(item.id)) out += item
-        }
+        val item = if (takeReading) reading[i++] else listening[j++]
+        takeReadingNext = !takeReading
+        if (seen.add(item.id)) out += item
     }
     return out
 }

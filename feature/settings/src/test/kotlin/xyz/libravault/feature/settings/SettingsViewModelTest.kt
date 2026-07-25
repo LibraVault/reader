@@ -9,6 +9,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.Runs
+import io.mockk.unmockkStatic
 import io.mockk.verify
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +79,16 @@ class SettingsViewModelTest {
         every { prefsRepo.update(any()) }   just Runs
         every { observeVaults() }           returns vaultsFlow
         every { scanVaultsUseCase() }        returns flowOf(ScanProgress.Completed(0))
+        // supporterRepository is a relaxed mock, so an unstubbed
+        // getPendingInvoiceId() returns a non-null default — which makes
+        // SettingsViewModel's init{} block think a donation is mid-flight
+        // and launch pollUntilPaid()'s `while (true)` loop in the background
+        // of every test. Under runTest's virtual time that loop never yields
+        // control back (donationClient.getInvoiceStatus() never resolves to
+        // a terminal state either), so it spins forever and hangs the whole
+        // class. Explicitly stubbing "no pending invoice" matches every
+        // test's actual starting state and keeps init{} a no-op here.
+        every { supporterRepository.getPendingInvoiceId() } returns null
     }
 
     @AfterEach
@@ -85,6 +96,11 @@ class SettingsViewModelTest {
         // Test dispatcher is automatically cleaned up by runTest.
         // No need to manually cancel; removed to fix build break.
         Dispatchers.resetMain()
+        // mockkStatic(Uri::class) in setUp() redefines the class via bytecode
+        // instrumentation on every test; without unmocking, 12 tests in one
+        // forked JVM (forkEvery=100) pile up redefinitions and OOM on Kotlin
+        // reflection metadata parsing before ever hitting an assertion.
+        unmockkStatic(Uri::class)
     }
 
     private fun viewModel(): SettingsViewModel {
