@@ -1,51 +1,72 @@
 import SwiftUI
 
+enum LibraryFormatFilter: String, CaseIterable {
+    case all = "All"
+    case epub = "EPUB"
+    case pdf = "PDF"
+
+    func matches(_ format: MediaFormat) -> Bool {
+        switch self {
+        case .all:  return true
+        case .epub: return format == .epub
+        case .pdf:  return format == .pdf
+        }
+    }
+}
+
 struct LibraryView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchText = ""
-    
-    var filteredBooks: [BookItem] {
-        if searchText.isEmpty {
-            return appState.books
-        }
-        return appState.books.filter { book in
+    @State private var formatFilter: LibraryFormatFilter = .all
+
+    private var continueBooks: [BookItem] {
+        appState.books.filter { $0.progress > 0 && $0.progress < 1 }
+    }
+
+    private var filteredBooks: [BookItem] {
+        let byFormat = appState.books.filter { formatFilter.matches($0.format) }
+        guard !searchText.isEmpty else { return byFormat }
+        return byFormat.filter { book in
             book.title.localizedCaseInsensitiveContains(searchText) ||
             book.author.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             Group {
                 if appState.isLoading {
                     ProgressView()
                 } else if filteredBooks.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "books.vertical")
-                            .font(.system(size: 48))
-                            .foregroundColor(.gray)
-                        Text("No Books Found")
-                            .font(.title2)
-                        Text("Add books to your library to get started")
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    emptyState
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 16) {
-                            ForEach(filteredBooks) { book in
-                                NavigationLink(destination: BookDetailView(book: book)) {
-                                    BookCoverView(book: book)
-                                }
+                        VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                            if !continueBooks.isEmpty {
+                                continueSection
                             }
+                            formatFilterChips
+                            librarySection
                         }
-                        .padding()
+                        .padding(LibraVaultSpacing.lg)
                     }
                 }
             }
+            .background(LibraVaultColor.background)
             .navigationTitle("Library")
-            .searchable(text: $searchText, prompt: "Search books")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search title, author")
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: LibraVaultSpacing.sm) {
+                        Text("LibraVault")
+                            .font(LibraVaultTypography.headlineSmall)
+                            .foregroundStyle(LibraVaultColor.primary)
+                        if appState.isSupporter {
+                            SupporterBadge()
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { Task { await appState.loadLibrary() } }) {
                         Image(systemName: "arrow.clockwise")
@@ -65,52 +86,189 @@ struct LibraryView: View {
             }
         }
     }
+
+    private var emptyState: some View {
+        VStack(spacing: LibraVaultSpacing.lg) {
+            Image(systemName: "books.vertical")
+                .font(.system(size: 48))
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+            Text("No Books Found")
+                .font(LibraVaultTypography.headlineSmall)
+                .foregroundStyle(LibraVaultColor.onBackground)
+            Text("Add books to your library to get started")
+                .font(LibraVaultTypography.bodyMedium)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(LibraVaultColor.background)
+    }
+
+    private var continueSection: some View {
+        VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+            Text("Continue")
+                .font(LibraVaultTypography.titleLarge)
+                .foregroundStyle(LibraVaultColor.onBackground)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: LibraVaultSpacing.sm) {
+                    ForEach(continueBooks) { book in
+                        NavigationLink(destination: BookDetailView(book: book)) {
+                            ContinueCard(book: book)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var formatFilterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: LibraVaultSpacing.sm) {
+                ForEach(LibraryFormatFilter.allCases, id: \.self) { filter in
+                    FilterChip(title: filter.rawValue, isSelected: formatFilter == filter) {
+                        formatFilter = filter
+                    }
+                }
+            }
+        }
+    }
+
+    private var librarySection: some View {
+        VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+            Text("Library")
+                .font(LibraVaultTypography.titleLarge)
+                .foregroundStyle(LibraVaultColor.onBackground)
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: LibraVaultSpacing.coverWidth), spacing: LibraVaultSpacing.sm)],
+                spacing: LibraVaultSpacing.lg
+            ) {
+                ForEach(filteredBooks) { book in
+                    NavigationLink(destination: BookDetailView(book: book)) {
+                        BookCoverView(book: book)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+/// Deterministic per-book gradient so covers without real artwork (all of them, until
+/// core:storage cover extraction is wired — see DomainBridge.swift's Phase D TODOs)
+/// stay visually distinct instead of a single flat placeholder color.
+private let generatedCoverPalette: [(Color, Color)] = [
+    (LibraVaultPalette.leatherBrown, LibraVaultPalette.leatherDark),
+    (LibraVaultPalette.agedBrass, LibraVaultPalette.leatherDark),
+    (LibraVaultPalette.warmNeutral400, LibraVaultPalette.warmNeutral700),
+    (LibraVaultPalette.leatherLight, LibraVaultPalette.warmNeutral500),
+]
+
+private func generatedCoverGradient(for book: BookItem) -> LinearGradient {
+    // book.id.hashValue is reseeded per process launch (Swift randomizes String hashing
+    // for hash-flooding resistance), which would make covers reshuffle colors on every
+    // relaunch — sum UTF-8 bytes instead for a value that's actually stable across runs.
+    let stableSeed = book.id.utf8.reduce(0) { $0 + Int($1) }
+    let (start, end) = generatedCoverPalette[stableSeed % generatedCoverPalette.count]
+    return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+struct SupporterBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "star.fill")
+                .font(.system(size: 10))
+            Text("Supporter")
+                .font(LibraVaultTypography.labelSmall)
+        }
+        .foregroundStyle(LibraVaultColor.onSecondary)
+        .padding(.horizontal, LibraVaultSpacing.sm)
+        .padding(.vertical, 4)
+        .background(LibraVaultColor.secondary)
+        .clipShape(Capsule())
+    }
+}
+
+struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(LibraVaultTypography.labelLarge)
+                .foregroundStyle(isSelected ? LibraVaultColor.onPrimary : LibraVaultColor.onSurfaceVariant)
+                .padding(.horizontal, LibraVaultSpacing.md)
+                .padding(.vertical, LibraVaultSpacing.sm)
+                .background(isSelected ? LibraVaultColor.primary : Color.clear)
+                .overlay(
+                    Capsule().stroke(LibraVaultColor.outline, lineWidth: isSelected ? 0 : 1)
+                )
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ContinueCard: View {
+    let book: BookItem
+
+    var body: some View {
+        HStack(spacing: LibraVaultSpacing.sm) {
+            RoundedRectangle(cornerRadius: LibraVaultRadius.cover)
+                .fill(generatedCoverGradient(for: book))
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(book.title)
+                    .font(LibraVaultTypography.titleSmall)
+                    .foregroundStyle(LibraVaultColor.onSurface)
+                    .lineLimit(1)
+                Text(book.author)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                    .lineLimit(1)
+            }
+        }
+        .padding(LibraVaultSpacing.sm)
+        .frame(width: 200, alignment: .leading)
+        .background(LibraVaultColor.surface)
+        .clipShape(RoundedRectangle(cornerRadius: LibraVaultRadius.card))
+    }
 }
 
 struct BookCoverView: View {
     let book: BookItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let coverUrl = book.coverUrl {
-                // TODO: Load actual cover images from core:storage
-                AsyncImage(url: URL(string: coverUrl)) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Color.gray
-                }
-                .frame(height: 150)
-                .clipped()
-            } else {
-                ZStack {
-                    Color.blue.opacity(0.3)
-                    Image(systemName: "book")
-                        .font(.system(size: 40))
-                }
-                .frame(height: 150)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: LibraVaultRadius.cover)
+                    .fill(generatedCoverGradient(for: book))
                 Text(book.title)
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(LibraVaultTypography.titleSmall)
+                    .foregroundStyle(.white)
+                    .lineLimit(3)
+                    .padding(LibraVaultSpacing.sm)
+            }
+            .aspectRatio(LibraVaultSpacing.coverAspect, contentMode: .fit)
+
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
+                Text(book.title)
+                    .font(LibraVaultTypography.bodyMedium)
+                    .foregroundStyle(LibraVaultColor.onSurface)
                     .lineLimit(2)
 
                 Text(book.author)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                     .lineLimit(1)
 
-                ProgressView(value: book.progress)
-                    .scaleEffect(y: 0.75, anchor: .center)
+                if book.progress > 0 {
+                    ProgressView(value: book.progress)
+                        .tint(LibraVaultColor.primary)
+                }
             }
-            .padding(8)
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(8)
-        .shadow(radius: 2)
     }
 }
 
