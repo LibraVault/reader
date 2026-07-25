@@ -63,3 +63,9 @@ feedback-1-changes.html
 # Kilo CLI (agent plans, scratch files)
 .kilo/
 clear
+
+# Xcode (per-machine user state, never commit)
+xcuserdata/
+*.xcuserstate
+DerivedData/
+*.xcscmblueprint
