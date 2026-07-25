@@ -60,8 +60,11 @@ struct PlayerView: View {
                     }
                     .disabled(appState.nowPlayingChapter <= 1)
 
-                    Button(action: { appState.skipBackward() }) {
-                        Image(systemName: "gobackward.30")
+                    Button(action: { appState.skipBackward(seconds: appState.skipDurationSeconds) }) {
+                        // SF Symbols ships exact variants for 10/15/30/45/60 — the same
+                        // 5 presets Settings' "Skip duration" chips offer, so this never
+                        // needs a fallback for an unsupported number.
+                        Image(systemName: "gobackward.\(Int(appState.skipDurationSeconds))")
                     }
 
                     Button(action: appState.togglePlayback) {
@@ -70,8 +73,8 @@ struct PlayerView: View {
                     }
                     .accessibilityIdentifier("player.playPauseButton")
 
-                    Button(action: { appState.skipForward() }) {
-                        Image(systemName: "goforward.30")
+                    Button(action: { appState.skipForward(seconds: appState.skipDurationSeconds) }) {
+                        Image(systemName: "goforward.\(Int(appState.skipDurationSeconds))")
                     }
 
                     Button(action: { appState.skipToChapter(appState.nowPlayingChapter + 1) }) {

@@ -75,6 +75,14 @@ struct ReaderView: View {
         .sheet(isPresented: $showBookmarksSheet) {
             BookmarksSheet(bookId: book.id)
         }
+        // @EnvironmentObject isn't available at init time, so the Settings-configured
+        // default can't be this @State var's initial value directly — apply it once
+        // the view actually appears instead. Runs once per view identity (not on
+        // every appearance), so cycling the theme in-session via the toolbar isn't
+        // clobbered by revisits.
+        .task {
+            readingTheme = appState.defaultReadingTheme
+        }
     }
 
     private var paginatedContent: some View {

@@ -1,92 +1,175 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject var appState: AppState
     @State private var enableLogging = false
-    @State private var enableTTS = true
-    @State private var fontSize: Double = 1.0
+
+    private let skipDurationPresets: [Double] = [10, 15, 30, 45, 60]
 
     var body: some View {
         Form {
-            // Display Settings
-            Section("Display") {
-                HStack {
-                    Text("Font Size")
-                    Slider(value: $fontSize, in: 0.8...1.5, step: 0.1)
-                }
-            }
-
-            // Audio Settings
-            Section("Audio & Accessibility") {
-                Toggle("Text-to-Speech", isOn: $enableTTS)
-                // TODO: Integrate with core:tts
-            }
-
-            // Library Settings
-            Section("Library") {
-                NavigationLink(destination: LibrarySettingsView()) {
-                    Text("Manage Vaults")
-                }
-            }
-
-            // Debug / Logging
-            Section("Developer") {
-                Toggle("Enable Logging", isOn: $enableLogging)
-                // TODO: Integrate with core:logger
-                if enableLogging {
-                    NavigationLink(destination: LogViewerView()) {
-                        Text("View Logs")
-                    }
-                }
-            }
-
-            // About
-            Section("About") {
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text("3.0.0-alpha")
-                        .foregroundColor(.secondary)
-                }
-
-                NavigationLink(destination: AboutView()) {
-                    Text("About LibraVault")
-                }
-            }
+            vaultsSection
+            readingSection
+            playbackSection
+            // No "Appearance" section: Android's only control there is Material You
+            // dynamic color, which has no iOS equivalent — nothing honest to put here.
+            privacySection
+            aboutSection
+            supportSection
         }
         .navigationTitle("Settings")
     }
-}
 
-struct LibrarySettingsView: View {
-    var body: some View {
-        VStack {
-            Text("Manage Your Library Vaults")
-                .font(.headline)
-                .padding()
+    // MARK: - Vaults
 
-            // TODO: Integrate with core:storage to show vault locations
-            List {
-                Section("Added Vaults") {
-                    HStack {
-                        Image(systemName: "folder.fill")
-                        Text("/Documents")
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                    }
-                }
+    private var vaultsSection: some View {
+        Section {
+            // TODO: Integrate with core:storage for real vault locations — same
+            // Phase D gap as DomainBridge.swift's scanLibrary(vaultPath:) hardcoding
+            // "/Documents".
+            HStack {
+                Image(systemName: "folder.fill")
+                    .foregroundStyle(LibraVaultColor.primary)
+                Text("/Documents")
+                    .foregroundStyle(LibraVaultColor.onSurface)
+                Spacer()
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(LibraVaultColor.primary)
+            }
+            Button(action: {}) {
+                Label("Add Vault", systemImage: "plus.circle")
+            }
+            .foregroundStyle(LibraVaultColor.primary)
+        } header: {
+            sectionHeader("Vaults")
+        }
+    }
 
-                Section {
-                    Button(action: {}) {
-                        HStack {
-                            Image(systemName: "plus.circle")
-                            Text("Add New Vault")
+    // MARK: - Reading
+
+    private var readingSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+                Text("Default theme")
+                    .foregroundStyle(LibraVaultColor.onSurface)
+                Text("Applied when opening a book or PDF")
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                HStack(spacing: LibraVaultSpacing.sm) {
+                    ForEach(ReadingTheme.allCases, id: \.self) { theme in
+                        FilterChip(title: theme.label, isSelected: appState.defaultReadingTheme == theme) {
+                            appState.defaultReadingTheme = theme
                         }
                     }
                 }
             }
+            .padding(.vertical, LibraVaultSpacing.xs)
+        } header: {
+            sectionHeader("Reading")
         }
-        .navigationTitle("Manage Vaults")
+    }
+
+    // MARK: - Playback
+
+    private var playbackSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+                HStack {
+                    Text("Default speed")
+                        .foregroundStyle(LibraVaultColor.onSurface)
+                    Spacer()
+                    Text("\(String(format: "%.2g", appState.playbackSpeed))×")
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                }
+                Slider(value: $appState.playbackSpeed, in: 0.5...3.0, step: 0.25)
+                    .tint(LibraVaultColor.primary)
+            }
+            .padding(.vertical, LibraVaultSpacing.xs)
+
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+                Text("Skip duration")
+                    .foregroundStyle(LibraVaultColor.onSurface)
+                Text("\(Int(appState.skipDurationSeconds)) seconds per skip")
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                HStack(spacing: LibraVaultSpacing.sm) {
+                    ForEach(skipDurationPresets, id: \.self) { seconds in
+                        FilterChip(title: "\(Int(seconds))s", isSelected: appState.skipDurationSeconds == seconds) {
+                            appState.skipDurationSeconds = seconds
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, LibraVaultSpacing.xs)
+        } header: {
+            sectionHeader("Playback")
+        }
+    }
+
+    // MARK: - Privacy & Diagnostics
+
+    private var privacySection: some View {
+        Section {
+            Toggle("Local crash logging", isOn: $enableLogging)
+                .tint(LibraVaultColor.primary)
+            // TODO: Integrate with core:logger
+            if enableLogging {
+                NavigationLink(destination: LogViewerView()) {
+                    Text("View Logs")
+                }
+            }
+        } header: {
+            sectionHeader("Privacy & Diagnostics")
+        } footer: {
+            Text("Logs are stored only on this device and never transmitted.")
+        }
+    }
+
+    // MARK: - About
+
+    private var aboutSection: some View {
+        Section {
+            HStack {
+                Text("Version")
+                    .foregroundStyle(LibraVaultColor.onSurface)
+                Spacer()
+                Text("3.0.0-alpha")
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+            }
+
+            NavigationLink(destination: AboutView()) {
+                Text("About LibraVault")
+            }
+        } header: {
+            sectionHeader("About")
+        }
+    }
+
+    // MARK: - Support Development
+
+    private var supportSection: some View {
+        Section {
+            if appState.isSupporter {
+                Text("★ You're a Supporter — thank you!")
+                    .font(LibraVaultTypography.bodyMedium.weight(.semibold))
+                    .foregroundStyle(LibraVaultColor.secondary)
+            }
+            // No donate button here: Android's is backed by a real BTCPay-verified
+            // BTC/XMR flow (SettingsScreen.kt's DonateSheet) — there's nothing honest
+            // to wire that button to on iOS yet, and a button that does nothing when
+            // tapped is worse than not having it.
+            Text("LibraVault is free — no ads, no tracking, no accounts. If this app brings you joy, consider supporting its development.")
+                .font(LibraVaultTypography.bodySmall)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+        } header: {
+            sectionHeader("Support Development")
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(LibraVaultTypography.titleSmall)
+            .foregroundStyle(LibraVaultColor.primary)
     }
 }
 
@@ -172,31 +255,33 @@ struct AboutView: View {
             VStack(spacing: 8) {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 64))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(LibraVaultColor.primary)
 
                 Text("LibraVault")
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(LibraVaultTypography.headlineMedium)
+                    .foregroundStyle(LibraVaultColor.onBackground)
 
                 Text("Your Personal E-Book Library")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
             }
             .padding()
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("About")
-                    .font(.headline)
+                    .font(LibraVaultTypography.titleMedium)
+                    .foregroundStyle(LibraVaultColor.onBackground)
 
                 Text("LibraVault is a privacy-first e-book reader and library manager for iOS, focused on giving you full control over your reading experience without tracking or data collection.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
+                    .font(LibraVaultTypography.bodyMedium)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
             }
             .padding()
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Privacy")
-                    .font(.headline)
+                    .font(LibraVaultTypography.titleMedium)
+                    .foregroundStyle(LibraVaultColor.onBackground)
 
                 BulletPoint(text: "No cloud sync or accounts")
                 BulletPoint(text: "All data stored locally")
@@ -208,8 +293,8 @@ struct AboutView: View {
             Spacer()
 
             Link("GitHub Repository", destination: URL(string: "https://github.com/LibraVault/reader")!)
-                .font(.caption)
-                .foregroundColor(.blue)
+                .font(LibraVaultTypography.bodySmall)
+                .foregroundStyle(LibraVaultColor.primary)
                 .padding()
         }
         .navigationTitle("About LibraVault")
@@ -223,7 +308,7 @@ struct BulletPoint: View {
         HStack(alignment: .top, spacing: 12) {
             Text("•")
             Text(text)
-                .foregroundColor(.secondary)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }
     }
 }
@@ -232,4 +317,5 @@ struct BulletPoint: View {
     NavigationStack {
         SettingsView()
     }
+    .environmentObject(AppState())
 }

@@ -11,6 +11,13 @@ final class AppState: ObservableObject {
     // rather than showing a badge no license check backs.
     @Published var isSupporter = false
 
+    // MARK: - Settings (Reading / Playback defaults)
+
+    /// Applied when ReaderView opens a book — see ReaderView's `.task` modifier.
+    @Published var defaultReadingTheme: ReadingTheme = .dark
+    /// Read by PlayerView's ±30s buttons instead of a hardcoded constant.
+    @Published var skipDurationSeconds: Double = 30
+
     // MARK: - Playback (mini-player / Player screen)
 
     @Published private(set) var nowPlayingBook: BookItem?
