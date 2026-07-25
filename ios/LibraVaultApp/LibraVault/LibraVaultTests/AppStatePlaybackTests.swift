@@ -30,6 +30,27 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertGreaterThan(state.totalEstimatedSeconds, 0)
     }
 
+    func testChangingSpeedMidPlaybackRecomputesDurationAndPreservesProgress() {
+        let state = AppState()
+        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+        let originalTotal = state.totalEstimatedSeconds
+        state.seek(to: originalTotal / 2)
+
+        state.playbackSpeed = 2.0
+
+        // Doubling speed halves the estimate for the same remaining text.
+        XCTAssertEqual(state.totalEstimatedSeconds, originalTotal / 2, accuracy: 0.01)
+        // Still halfway through the chapter — just against the new, shorter total.
+        XCTAssertEqual(state.elapsedSeconds, state.totalEstimatedSeconds / 2, accuracy: 0.01)
+    }
+
+    func testChangingSpeedWithoutActivePlaybackDoesNothing() {
+        let state = AppState()
+        state.playbackSpeed = 2.0
+        XCTAssertNil(state.nowPlayingBook)
+        XCTAssertEqual(state.totalEstimatedSeconds, 0)
+    }
+
     func testTogglePlaybackFlipsIsPlaying() {
         let state = AppState()
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))

@@ -16,7 +16,23 @@ final class AppState: ObservableObject {
     @Published private(set) var nowPlayingBook: BookItem?
     @Published private(set) var nowPlayingChapter = 1
     @Published private(set) var isPlaying = false
-    @Published var playbackSpeed: Double = 1.0
+    @Published var playbackSpeed: Double = 1.0 {
+        didSet {
+            // totalEstimatedSeconds was computed for the old speed at startPlayback/
+            // skipToChapter time — without this, changing speed mid-chapter leaves it
+            // stale, so the scrub bar's "total" stops matching the actual playback
+            // rate and the chapter advances earlier or later than it estimates.
+            // Rescale it (and elapsedSeconds proportionally, to preserve how far
+            // through the chapter the listener actually is) to the new speed.
+            guard nowPlayingBook != nil, totalEstimatedSeconds > 0 else { return }
+            let progressFraction = elapsedSeconds / totalEstimatedSeconds
+            totalEstimatedSeconds = Self.estimateDuration(
+                for: MockChapterContent.text(for: nowPlayingChapter),
+                speed: playbackSpeed
+            )
+            elapsedSeconds = progressFraction * totalEstimatedSeconds
+        }
+    }
     @Published private(set) var elapsedSeconds: Double = 0
     @Published private(set) var totalEstimatedSeconds: Double = 0
     @Published private(set) var sleepTimerRemainingSeconds: Double?
