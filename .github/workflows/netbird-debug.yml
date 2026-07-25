@@ -19,6 +19,8 @@ jobs:
     name: Attach NetBird + SSH to runner
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
