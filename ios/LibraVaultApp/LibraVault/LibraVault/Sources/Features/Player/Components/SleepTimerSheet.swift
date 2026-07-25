@@ -18,7 +18,7 @@ struct SleepTimerSheet: View {
 
             if let remainingSeconds {
                 HStack {
-                    Text("Stopping in \(formatted(remainingSeconds))")
+                    Text("Stopping in \(formatPlaybackTime(remainingSeconds))")
                         .font(LibraVaultTypography.bodyMedium)
                         .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                     Spacer()
@@ -50,12 +50,6 @@ struct SleepTimerSheet: View {
         .background(LibraVaultColor.surface)
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
-    }
-
-    private func formatted(_ seconds: Double) -> String {
-        let minutes = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%d:%02d", minutes, secs)
     }
 }
 

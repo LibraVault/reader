@@ -45,9 +45,9 @@ struct PlayerView: View {
                     Slider(value: elapsedBinding, in: 0...max(appState.totalEstimatedSeconds, 1))
                         .tint(LibraVaultColor.primary)
                     HStack {
-                        Text(formatted(appState.elapsedSeconds))
+                        Text(formatPlaybackTime(appState.elapsedSeconds))
                         Spacer()
-                        Text(formatted(appState.totalEstimatedSeconds))
+                        Text(formatPlaybackTime(appState.totalEstimatedSeconds))
                     }
                     .font(LibraVaultTypography.labelSmall)
                     .foregroundStyle(LibraVaultColor.onSurfaceVariant)
@@ -153,11 +153,6 @@ struct PlayerView: View {
         }
     }
 
-    private func formatted(_ seconds: Double) -> String {
-        let minutes = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%d:%02d", minutes, secs)
-    }
 }
 
 #Preview {

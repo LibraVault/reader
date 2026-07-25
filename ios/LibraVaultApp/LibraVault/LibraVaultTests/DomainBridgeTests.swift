@@ -23,6 +23,12 @@ final class DomainBridgeTests: XCTestCase {
         XCTAssertEqual(book.author, "George Orwell")
     }
 
+    func testScanLibraryReturnsAllBooks() async throws {
+        let scanned = try await bridge.scanLibrary(vaultPath: "/Documents")
+        XCTAssertEqual(scanned.count, bridge.allBooks.count)
+        XCTAssertEqual(Set(scanned.map(\.id)), Set(bridge.allBooks.map(\.id)))
+    }
+
     func testLoadBookThrowsForUnknownId() async {
         do {
             _ = try await bridge.loadBook(id: "does-not-exist")

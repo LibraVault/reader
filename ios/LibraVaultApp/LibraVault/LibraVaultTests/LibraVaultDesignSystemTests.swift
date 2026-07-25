@@ -14,6 +14,29 @@ final class LibraVaultDesignSystemTests: XCTestCase {
         XCTAssertEqual(b, 0x3C / 255.0, accuracy: 0.01)
     }
 
+    // MARK: - ReadingTheme
+
+    func testReadingThemeNextCyclesDarkLightSepiaDark() {
+        XCTAssertEqual(ReadingTheme.dark.next, .light)
+        XCTAssertEqual(ReadingTheme.light.next, .sepia)
+        XCTAssertEqual(ReadingTheme.sepia.next, .dark)
+    }
+
+    func testReadingThemeNextIsAFullCycleWithNoFixedPoint() {
+        // Every case should return to itself after exactly 3 steps, and never sooner —
+        // guards against a typo collapsing two cases onto the same next value.
+        for theme in ReadingTheme.allCases {
+            let afterThree = theme.next.next.next
+            XCTAssertEqual(afterThree, theme)
+            XCTAssertNotEqual(theme.next, theme)
+        }
+    }
+
+    func testReadingThemeSystemImageNamesAreDistinct() {
+        let names = Set(ReadingTheme.allCases.map(\.systemImageName))
+        XCTAssertEqual(names.count, ReadingTheme.allCases.count)
+    }
+
     // MARK: - LibraVaultColorScheme
 
     func testForReadingThemeReturnsMatchingScheme() {
