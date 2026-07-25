@@ -1,5 +1,7 @@
 # iOS v3.0 CI/CD Setup Guide
 
+> **⚠️ STATUS CORRECTION (2026-07-25):** This document describes `ios-build.yml`, `ios-release.yml`, and `ios-checks.yml` — none of which exist in this repo. They were planned but never implemented. The workflows that actually exist and work are `ios-app-build.yml` and `ios-testflight.yml`. For the real, verified-working release process, see **[iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md)**. This doc is kept for its architectural ideas (privacy/dependency-denylist CI checks, tag-based release tracks) in case they're worth building later, but nothing below should be treated as current state.
+
 This document describes the GitHub Actions workflows for iOS development and release. All workflows run on **macOS 14 runners** and assume KMP modules are built first before iOS Xcode builds.
 
 ## Workflows Overview
