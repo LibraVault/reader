@@ -1,5 +1,10 @@
 name: iOS TestFlight Build & Upload
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 on:
   workflow_dispatch:
     inputs:
