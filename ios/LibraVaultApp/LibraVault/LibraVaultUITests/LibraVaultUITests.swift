@@ -198,4 +198,68 @@ final class LibraVaultUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Chapters"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Chapter 1: The Beginning"].exists)
     }
+
+    // MARK: - Settings screen parity (Phase 5 of the Android/iOS UI parity plan)
+
+    private func openSettings(in app: XCUIApplication) {
+        app.launch()
+        let settingsButton = app.buttons["libraryToolbar.settingsButton"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testSettingsShowsAllSevenSections() throws {
+        let app = XCUIApplication()
+        openSettings(in: app)
+
+        XCTAssertTrue(app.staticTexts["Vaults"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Reading"].exists)
+        XCTAssertTrue(app.staticTexts["Playback"].exists)
+        XCTAssertTrue(app.staticTexts["Privacy & Diagnostics"].exists)
+        XCTAssertTrue(app.staticTexts["About"].exists)
+        XCTAssertTrue(app.staticTexts["Support Development"].exists)
+
+        // Deliberately omitted (see SettingsView.swift's comments): no iOS equivalent
+        // for Material You dynamic color, and no real cover cache to clear yet.
+        XCTAssertFalse(app.staticTexts["Appearance"].exists)
+        XCTAssertFalse(app.staticTexts["Storage"].exists)
+    }
+
+    @MainActor
+    func testSettingsReadingSectionShowsThemeChips() throws {
+        let app = XCUIApplication()
+        openSettings(in: app)
+
+        XCTAssertTrue(app.staticTexts["Default theme"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Dark"].exists)
+        XCTAssertTrue(app.buttons["Light"].exists)
+        XCTAssertTrue(app.buttons["Sepia"].exists)
+    }
+
+    @MainActor
+    func testSettingsPlaybackSectionShowsSpeedAndSkipControls() throws {
+        let app = XCUIApplication()
+        openSettings(in: app)
+
+        XCTAssertTrue(app.staticTexts["Default speed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sliders.firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Skip duration"].exists)
+        XCTAssertTrue(app.buttons["10s"].exists)
+        XCTAssertTrue(app.buttons["30s"].exists)
+        XCTAssertTrue(app.buttons["60s"].exists)
+    }
+
+    @MainActor
+    func testSettingsHasNoNonFunctionalDonateButton() throws {
+        let app = XCUIApplication()
+        openSettings(in: app)
+
+        XCTAssertTrue(app.staticTexts["Support Development"].waitForExistence(timeout: 5))
+        // Android's Support Development has a real BTCPay-verified donate flow; iOS
+        // has none yet, so there must be no button implying one — see
+        // SettingsView.swift's supportSection comment.
+        XCTAssertFalse(app.buttons["Donate BTC or XMR"].exists)
+    }
 }
