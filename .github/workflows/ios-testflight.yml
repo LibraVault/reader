@@ -23,7 +23,6 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
       SCHEME: LibraVault
-      PROVISIONING_PROFILE_NAME: LibraVault App Store
 
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +61,7 @@ jobs:
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
           rm -f profile.mobileprovision
 
+          echo "PROVISIONING_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
           echo "✅ Provisioning profile installed (UUID: $UUID)"
 
       - name: Build & Archive
@@ -74,7 +74,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_NAME" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_UUID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
 
           echo "✅ Archive created"
@@ -97,7 +97,7 @@ jobs:
               <key>provisioningProfiles</key>
               <dict>
                   <key>${APPLE_BUNDLE_ID}</key>
-                  <string>${PROVISIONING_PROFILE_NAME}</string>
+                  <string>${PROVISIONING_PROFILE_UUID}</string>
               </dict>
           </dict>
           </plist>
