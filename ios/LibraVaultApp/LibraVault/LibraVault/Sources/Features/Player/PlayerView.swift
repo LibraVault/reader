@@ -86,7 +86,7 @@ struct PlayerView: View {
                 .foregroundStyle(LibraVaultColor.onBackground)
 
                 Button(action: { showSpeedSheet = true }) {
-                    Text("\(String(format: "%.2g", appState.playbackSpeed))×")
+                    Text(formatPlaybackSpeed(appState.playbackSpeed))
                         .font(LibraVaultTypography.labelLarge)
                         .foregroundStyle(LibraVaultColor.primary)
                 }

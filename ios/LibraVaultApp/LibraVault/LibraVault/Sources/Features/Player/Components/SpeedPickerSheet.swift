@@ -18,7 +18,7 @@ struct SpeedPickerSheet: View {
                 ForEach(presets, id: \.self) { preset in
                     Button(action: { speed = preset }) {
                         HStack {
-                            Text("\(String(format: "%.2f", preset))×")
+                            Text(formatPlaybackSpeed(preset))
                                 .font(LibraVaultTypography.bodyLarge)
                                 .foregroundStyle(preset == speed ? LibraVaultColor.onPrimary : LibraVaultColor.onSurface)
                             Spacer()
