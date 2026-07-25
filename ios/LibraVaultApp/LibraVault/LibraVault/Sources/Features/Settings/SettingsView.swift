@@ -78,10 +78,10 @@ struct SettingsView: View {
                     Text("Default speed")
                         .foregroundStyle(LibraVaultColor.onSurface)
                     Spacer()
-                    Text("\(String(format: "%.2g", appState.playbackSpeed))×")
+                    Text(formatPlaybackSpeed(appState.defaultPlaybackSpeed))
                         .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                 }
-                Slider(value: $appState.playbackSpeed, in: 0.5...3.0, step: 0.25)
+                Slider(value: $appState.defaultPlaybackSpeed, in: 0.5...3.0, step: 0.25)
                     .tint(LibraVaultColor.primary)
             }
             .padding(.vertical, LibraVaultSpacing.xs)

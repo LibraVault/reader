@@ -44,6 +44,55 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(state.elapsedSeconds, state.totalEstimatedSeconds / 2, accuracy: 0.01)
     }
 
+    // MARK: - defaultPlaybackSpeed vs. live playbackSpeed
+    //
+    // These two are deliberately separate properties (see AppState.swift's comment on
+    // defaultPlaybackSpeed) — a regression here would mean adjusting the "Default
+    // speed" preference in Settings silently changes the pace of whatever's already
+    // playing in the background, which is exactly the bug this was written to catch.
+
+    func testStartingANewBookSeedsSpeedFromTheDefault() {
+        let state = AppState()
+        state.defaultPlaybackSpeed = 1.5
+
+        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+
+        XCTAssertEqual(state.playbackSpeed, 1.5)
+    }
+
+    func testAdvancingChapterOfTheSameBookDoesNotResetSpeedToDefault() {
+        let state = AppState()
+        state.defaultPlaybackSpeed = 1.0
+        let book = BookItem(id: "1", title: "T", author: "A")
+        state.startPlayback(book: book)
+        state.playbackSpeed = 1.75 // listener bumps it up mid-session
+
+        state.skipToChapter(2)
+
+        XCTAssertEqual(state.playbackSpeed, 1.75, "advancing a chapter of the same book shouldn't reset the listener's in-session speed choice")
+    }
+
+    func testStartingADifferentBookReSeedsFromTheDefault() {
+        let state = AppState()
+        state.defaultPlaybackSpeed = 1.0
+        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+        state.playbackSpeed = 2.0 // bumped up for book 1
+
+        state.startPlayback(book: BookItem(id: "2", title: "T2", author: "A2"))
+
+        XCTAssertEqual(state.playbackSpeed, 1.0, "a genuinely new book should start at the default, not whatever the previous book was left at")
+    }
+
+    func testChangingDefaultPlaybackSpeedDoesNotAffectAnAlreadyPlayingBook() {
+        let state = AppState()
+        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+        state.playbackSpeed = 1.75
+
+        state.defaultPlaybackSpeed = 2.5 // adjusting the Settings preference
+
+        XCTAssertEqual(state.playbackSpeed, 1.75, "changing the preference for future sessions shouldn't touch the live one")
+    }
+
     func testChangingSpeedWithoutActivePlaybackDoesNothing() {
         let state = AppState()
         state.playbackSpeed = 2.0

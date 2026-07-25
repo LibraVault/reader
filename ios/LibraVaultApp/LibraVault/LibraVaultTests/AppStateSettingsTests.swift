@@ -14,6 +14,16 @@ final class AppStateSettingsTests: XCTestCase {
         XCTAssertEqual(state.defaultReadingTheme, .sepia)
     }
 
+    func testDefaultPlaybackSpeedDefaultsTo1() {
+        XCTAssertEqual(AppState().defaultPlaybackSpeed, 1.0)
+    }
+
+    func testDefaultPlaybackSpeedIsSettable() {
+        let state = AppState()
+        state.defaultPlaybackSpeed = 1.75
+        XCTAssertEqual(state.defaultPlaybackSpeed, 1.75)
+    }
+
     func testSkipDurationSecondsDefaultsTo30() {
         XCTAssertEqual(AppState().skipDurationSeconds, 30)
     }

@@ -11,47 +11,24 @@ enum ReadingTheme: String, CaseIterable {
         case .sepia: return "Sepia"
         }
     }
-}
 
-private struct ReadingThemeKey: EnvironmentKey {
-    static let defaultValue: ReadingTheme = .dark
-}
-
-extension EnvironmentValues {
-    var readingTheme: ReadingTheme {
-        get { self[ReadingThemeKey.self] }
-        set { self[ReadingThemeKey.self] = newValue }
+    /// SF Symbol for ReaderView's theme-cycle toolbar button.
+    var systemImageName: String {
+        switch self {
+        case .dark:  return "moon.fill"
+        case .light: return "sun.max.fill"
+        case .sepia: return "book.fill"
+        }
     }
-}
 
-private struct LibraVaultColorSchemeKey: EnvironmentKey {
-    static let defaultValue = LibraVaultColorScheme.light
-}
-
-extension EnvironmentValues {
-    /// The resolved reading-mode color scheme (Dark/Light/Sepia). Distinct from the
-    /// system-appearance-driven `LibraVaultColor.*` tokens, which cover app chrome —
-    /// this one covers the book content surface, which the user picks explicitly.
-    var libraVaultColors: LibraVaultColorScheme {
-        get { self[LibraVaultColorSchemeKey.self] }
-        set { self[LibraVaultColorSchemeKey.self] = newValue }
-    }
-}
-
-/// Equivalent of the `LibravaultTheme` composable: applies the chosen reading theme's
-/// color scheme into the environment for a subtree (the Reader screen and its sheets).
-struct LibraVaultReadingTheme: ViewModifier {
-    let theme: ReadingTheme
-
-    func body(content: Content) -> some View {
-        content
-            .environment(\.readingTheme, theme)
-            .environment(\.libraVaultColors, .forReadingTheme(theme))
-    }
-}
-
-extension View {
-    func libraVaultReadingTheme(_ theme: ReadingTheme) -> some View {
-        modifier(LibraVaultReadingTheme(theme: theme))
+    /// The theme ReaderView's toolbar button switches to next — Dark → Light →
+    /// Sepia → Dark. Pulled out of ReaderView as a pure, directly testable mapping
+    /// rather than a private switch statement only reachable by tapping a button.
+    var next: ReadingTheme {
+        switch self {
+        case .dark:  return .light
+        case .light: return .sepia
+        case .sepia: return .dark
+        }
     }
 }

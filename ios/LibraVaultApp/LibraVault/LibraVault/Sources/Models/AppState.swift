@@ -15,8 +15,16 @@ final class AppState: ObservableObject {
 
     /// Applied when ReaderView opens a book — see ReaderView's `.task` modifier.
     @Published var defaultReadingTheme: ReadingTheme = .dark
-    /// Read by PlayerView's ±30s buttons instead of a hardcoded constant.
+    /// Read by PlayerView's skip-back/skip-forward buttons instead of a hardcoded 30.
     @Published var skipDurationSeconds: Double = 30
+    /// The Settings-configured preference a *new* listening session starts at —
+    /// deliberately not the same property as the live `playbackSpeed` below. Android
+    /// keeps these separate (prefs.defaultPlaybackSpeed vs. the live SpeedPickerSheet
+    /// control); collapsing them into one shared value would mean dragging "Default
+    /// speed" in Settings visibly changes the pace of whatever's already playing in
+    /// the background mini-player, which isn't what a "default for next time" setting
+    /// should do. See startPlayback's use of this.
+    @Published var defaultPlaybackSpeed: Double = 1.0
 
     // MARK: - Playback (mini-player / Player screen)
 
@@ -96,6 +104,13 @@ final class AppState: ObservableObject {
     // scrub bar in PlayerView reflects genuinely changing state instead of a static prop.
 
     func startPlayback(book: BookItem, chapter: Int = 1) {
+        // Only reset to the preference when this is genuinely a new listening session
+        // (a different book) — skipToChapter also routes through here to advance
+        // chapters of the *same* book, and shouldn't stomp a speed the listener just
+        // adjusted mid-session back to the default.
+        if nowPlayingBook?.id != book.id {
+            playbackSpeed = defaultPlaybackSpeed
+        }
         nowPlayingBook = book
         nowPlayingChapter = chapter
         let text = MockChapterContent.text(for: chapter)

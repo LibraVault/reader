@@ -33,8 +33,8 @@ struct ReaderView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: cycleTheme) {
-                    Image(systemName: themeIcon)
+                Button(action: { readingTheme = readingTheme.next }) {
+                    Image(systemName: readingTheme.systemImageName)
                         .foregroundStyle(colors.onBackground)
                 }
                 .accessibilityIdentifier("reader.themeButton")
@@ -133,22 +133,6 @@ struct ReaderView: View {
             }
             .padding(LibraVaultSpacing.lg)
             .textSelection(.enabled)
-        }
-    }
-
-    private var themeIcon: String {
-        switch readingTheme {
-        case .dark:  return "moon.fill"
-        case .light: return "sun.max.fill"
-        case .sepia: return "book.fill"
-        }
-    }
-
-    private func cycleTheme() {
-        switch readingTheme {
-        case .dark:  readingTheme = .light
-        case .light: readingTheme = .sepia
-        case .sepia: readingTheme = .dark
         }
     }
 

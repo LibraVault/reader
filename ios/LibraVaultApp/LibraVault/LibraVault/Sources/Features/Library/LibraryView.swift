@@ -163,12 +163,20 @@ let generatedCoverPalette: [(Color, Color)] = [
     (LibraVaultPalette.leatherLight, LibraVaultPalette.warmNeutral500),
 ]
 
-func generatedCoverGradient(for book: BookItem) -> LinearGradient {
-    // book.id.hashValue is reseeded per process launch (Swift randomizes String hashing
-    // for hash-flooding resistance), which would make covers reshuffle colors on every
-    // relaunch — sum UTF-8 bytes instead for a value that's actually stable across runs.
+/// Split out from generatedCoverGradient(for:) so the actual regression-prone part —
+/// hashing a book id into a stable palette slot — is a plain testable function instead
+/// of being locked inside a LinearGradient nobody can inspect the contents of.
+///
+/// book.id.hashValue is reseeded per process launch (Swift randomizes String hashing
+/// for hash-flooding resistance), which would make covers reshuffle colors on every
+/// relaunch — sum UTF-8 bytes instead for a value that's actually stable across runs.
+func generatedCoverPaletteIndex(for book: BookItem) -> Int {
     let stableSeed = book.id.utf8.reduce(0) { $0 + Int($1) }
-    let (start, end) = generatedCoverPalette[stableSeed % generatedCoverPalette.count]
+    return stableSeed % generatedCoverPalette.count
+}
+
+func generatedCoverGradient(for book: BookItem) -> LinearGradient {
+    let (start, end) = generatedCoverPalette[generatedCoverPaletteIndex(for: book)]
     return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 
