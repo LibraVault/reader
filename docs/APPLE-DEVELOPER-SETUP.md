@@ -1,5 +1,7 @@
 # Apple Developer Setup Checklist
 
+> **Updated 2026-07-25:** Steps 1–2, 4–5, 7 below are still accurate and were followed as written. Step 3 (certificate export) and Step 6 (secrets list) needed corrections based on real problems hit — see the notes inline. Also two secrets are missing from the original Step 6 list: `APPLE_DISTRIBUTION_CERT_PASSWORD` and `PROVISIONING_PROFILE_BASE64` — both required by the actual working pipeline. See **[iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md)** for the full current picture, including a provisioning-profile creation step this checklist never covered.
+
 Complete these steps to enable automated iOS app distribution via TestFlight.
 
 ---
@@ -73,14 +75,16 @@ Go to: https://developer.apple.com/account/resources/certificates/list
 
 **Export for GitHub:**
 
-- [ ] Open Keychain Access
+> ⚠️ **Category matters.** In the Keychain Access sidebar, click **"My Certificates"** specifically — not "Certificates" or "All Items". "My Certificates" bundles the certificate with its private key as one exportable "identity" (shown with a disclosure triangle). If you export from the wrong category, the "File Format" dropdown will be stuck on "Certificate (.cer)" with "Personal Information Exchange (.p12)" greyed out — you'll get a public-cert-only file that silently fails CI import later with a confusing "MAC verification failed (wrong password?)" error that has nothing to do with the actual password.
+
+- [ ] Open Keychain Access → click **"My Certificates"** in the sidebar
 - [ ] Find certificate: "Apple Distribution: Rob"
 - [ ] Right-click → Export
-  - [ ] Format: `Personal Information Exchange (.p12)`
+  - [ ] Format: `Personal Information Exchange (.p12)` (confirm it's selectable, not greyed out)
   - [ ] Save as: `AppleDistribution.p12`
-  - [ ] Password: (leave blank or create one — you'll need this in GitHub next)
+  - [ ] Password: **set an actual password** (don't leave blank — modern Keychain Access may silently produce an unusable export if you try)
 
-**Save:** `AppleDistribution.p12` file
+**Save:** `AppleDistribution.p12` file and the password you set — you'll need both for GitHub secrets.
 
 ---
 
@@ -135,6 +139,9 @@ gh secret set APPLE_TEAM_ID --body "H74LNL8UCG"
 # 3. Distribution Certificate (.p12) as base64
 cat ~/Desktop/AppleDistribution.p12 | base64 | gh secret set APPLE_DISTRIBUTION_CERT_BASE64
 
+# 3b. Distribution Certificate password (the one you set during export above)
+gh secret set APPLE_DISTRIBUTION_CERT_PASSWORD --body "<password you set>"
+
 # 4. API Key ID
 gh secret set APP_STORE_CONNECT_KEY_ID --body "ABC123XYZ"
 
@@ -143,6 +150,11 @@ gh secret set APP_STORE_CONNECT_ISSUER_ID --body "12345678-1234-1234-1234-123456
 
 # 6. Private Key (.p8 file)
 cat ~/Downloads/AuthKey_*.p8 | gh secret set APP_STORE_CONNECT_PRIVATE_KEY
+
+# 7. Provisioning Profile (.mobileprovision) as base64 — not covered by earlier steps above,
+#    create one at developer.apple.com/account/resources/profiles/list (Distribution >
+#    App Store Connect, matching the App ID and certificate from Steps 1 and 3)
+cat ~/Downloads/LibraVault.mobileprovision | base64 | gh secret set PROVISIONING_PROFILE_BASE64
 ```
 
 **Verify secrets were set:**
@@ -150,14 +162,16 @@ cat ~/Downloads/AuthKey_*.p8 | gh secret set APP_STORE_CONNECT_PRIVATE_KEY
 gh secret list --repo LibraVault/reader
 ```
 
-All 6 secrets should appear in the list (values are hidden).
+All 8 secrets should appear in the list (values are hidden).
 
 - [ ] APPLE_BUNDLE_ID
 - [ ] APPLE_TEAM_ID
 - [ ] APPLE_DISTRIBUTION_CERT_BASE64
+- [ ] APPLE_DISTRIBUTION_CERT_PASSWORD
 - [ ] APP_STORE_CONNECT_KEY_ID
 - [ ] APP_STORE_CONNECT_ISSUER_ID
 - [ ] APP_STORE_CONNECT_PRIVATE_KEY
+- [ ] PROVISIONING_PROFILE_BASE64
 
 ---
 
@@ -195,9 +209,10 @@ git push origin feat/v3-ios-port
 ```
 
 **Expected output:**
-- ✅ KMP frameworks built (30 min)
-- ✅ iOS app built & archived (10 min)
-- ✅ Uploaded to TestFlight (5 min)
+- ✅ Certificate and provisioning profile imported (~10 sec)
+- ✅ Archive built and signed (~1-2 min)
+- ✅ IPA exported and uploaded to TestFlight (~1-2 min)
+- Total: ~5 minutes (no KMP frameworks involved — the app currently ships with mock data, see [iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md))
 
 ---
 
@@ -245,7 +260,7 @@ Go to: https://appstoreconnect.apple.com/testflight/ios/builds
 
 ## Next: Distribute to Testers
 
-See [iOS-AUTOMATED-BUILDS.md](iOS-AUTOMATED-BUILDS.md) for:
+See [iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md) for:
 - How to trigger builds
 - How to invite testers
-- How to collect feedback
+- Real gotchas hit while building this pipeline, worth reading before touching it again

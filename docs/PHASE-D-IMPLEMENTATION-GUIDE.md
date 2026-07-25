@@ -1,5 +1,7 @@
 # Phase D Implementation Guide: KMP-Swift Integration
 
+> **⚠️ STATUS CORRECTION (2026-07-25):** This guide's `build-xcframeworks.gradle.kts` doesn't exist in the repo — this work was never started, not even the D1 framework-building step. Also note: Xcode 15+ is no longer sufficient — App Store Connect now requires the iOS 26 SDK (Xcode 26+). TestFlight distribution was solved by a different, simpler path (a real Xcode App target, no KMP frameworks) — see **[iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md)** for what's actually working today. This guide is kept in case the KMP-linking goal (real domain data instead of mocks) gets picked up later, but treat every command below as unverified against current code.
+
 **For:** Running on macOS with Xcode 15+  
 **Duration:** ~4-6 hours (depending on first-time setup)  
 **Prerequisites:** macOS 13+, Xcode 15+, Kotlin 2.0.0 (already in repo)

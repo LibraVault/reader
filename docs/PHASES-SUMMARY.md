@@ -1,5 +1,7 @@
 # LibraVault iOS v3.0 Development Phases Summary
 
+> **⚠️ STATUS CORRECTION (2026-07-25):** "Phase D Preparation Complete" below is misleading — the KMP XCFramework-linking work this doc describes (D1–D10) was never started; `build-xcframeworks.gradle.kts` doesn't exist anywhere in the repo. Separately, and by a completely different path, TestFlight distribution now actually works — a real Xcode App target was created (not KMP framework linking) and CI builds/signs/uploads it successfully. The iOS app still runs on **mock data only**, exactly as this doc describes for Phase B. See **[iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md)** for what's actually true today. Phase A/B/C claims below have not been independently re-verified in this pass.
+
 **Project:** LibraVault Reader - iOS v3.0 Port  
 **Status:** Phase D Preparation Complete ✅  
 **Last Updated:** 2026-07-22

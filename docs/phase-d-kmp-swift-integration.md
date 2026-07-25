@@ -1,5 +1,7 @@
 # Phase D: KMP-Swift Integration Roadmap
 
+> **⚠️ STATUS CORRECTION (2026-07-25):** Still accurate as "Planning" — none of D1–D10 below were executed. TestFlight distribution now works via an unrelated, simpler path (a real Xcode App target wrapping hand-written Swift, no KMP frameworks). See **[iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md)**. This roadmap remains a reasonable plan *if* real KMP domain-layer integration (replacing the current 5-book mock library) becomes a priority — just re-verify effort estimates against current code before starting, since a lot has changed since 2026-07-22.
+
 **Status:** Planning  
 **Started:** 2026-07-22  
 **Target:** Full KMP framework linking and real domain layer integration
