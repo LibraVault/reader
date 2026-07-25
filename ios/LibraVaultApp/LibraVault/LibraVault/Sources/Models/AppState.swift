@@ -6,6 +6,10 @@ final class AppState: ObservableObject {
     @Published var books: [BookItem] = []
     @Published var isLoading = false
     @Published var error: AppError?
+    // TODO: Wire to core:licensing once a Pro/Supporter state bridge exists (see
+    // DomainBridge.swift's Phase D TODOs) — always false until then, matching reality
+    // rather than showing a badge no license check backs.
+    @Published var isSupporter = false
 
     private let bridge = LibravaultDomainBridge.shared
 
@@ -40,13 +44,15 @@ struct BookItem: Identifiable {
     let id: String
     let title: String
     let author: String
+    let format: MediaFormat
     let coverUrl: String?
     var progress: Double
 
-    init(id: String, title: String, author: String, coverUrl: String? = nil, progress: Double = 0.0) {
+    init(id: String, title: String, author: String, format: MediaFormat = .epub, coverUrl: String? = nil, progress: Double = 0.0) {
         self.id = id
         self.title = title
         self.author = author
+        self.format = format
         self.coverUrl = coverUrl
         self.progress = progress
     }
@@ -55,6 +61,7 @@ struct BookItem: Identifiable {
         self.id = bookData.id
         self.title = bookData.title
         self.author = bookData.author
+        self.format = bookData.format
         self.coverUrl = nil
         self.progress = bookData.progress
     }

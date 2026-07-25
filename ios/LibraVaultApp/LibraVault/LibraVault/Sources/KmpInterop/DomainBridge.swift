@@ -220,7 +220,7 @@ struct BookData: Identifiable {
     var bookmarks: [Bookmark] = []
 }
 
-enum MediaFormat {
+enum MediaFormat: Equatable {
     case pdf
     case epub
     case mobi

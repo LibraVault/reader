@@ -67,4 +67,34 @@ final class LibraVaultUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
     }
+
+    // MARK: - Library screen parity (Phase 2 of the Android/iOS UI parity plan)
+
+    @MainActor
+    func testFormatFilterChipsExist() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["EPUB"].exists)
+        XCTAssertTrue(app.buttons["PDF"].exists)
+    }
+
+    @MainActor
+    func testSelectingPdfFilterHidesEpubOnlyBook() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // "To Kill a Mockingbird" (EPUB, 0% progress) is the one mock book that never
+        // appears in the Continue row (see DomainBridge.swift's loadMockLibrary()), so
+        // it's the only unambiguous choice for a "does it disappear" assertion — every
+        // other mock book has progress > 0 and would still be visible via Continue
+        // regardless of the format filter, which is correct behavior (Continue isn't
+        // filtered — matches Android, where the Continue row is filter-independent).
+        XCTAssertTrue(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 5))
+
+        app.buttons["PDF"].tap()
+
+        XCTAssertFalse(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 2))
+    }
 }
