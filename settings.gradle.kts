@@ -23,6 +23,12 @@ dependencyResolutionManagement {
         mavenCentral()
         maven("https://s01.oss.sonatype.org/content/repositories/snapshots/")
         maven("https://jitpack.io")
+        // sherpa-onnx prebuilt AAR (core:tts) - a direct `files(...)` dependency on this .aar
+        // isn't allowed when the consuming module itself produces an AAR, so it's resolved
+        // as a regular flatDir dependency instead (see core/tts/build.gradle.kts).
+        flatDir {
+            dirs("${rootDir}/third-party/sherpa-onnx")
+        }
     }
 }
 

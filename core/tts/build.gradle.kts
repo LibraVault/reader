@@ -30,7 +30,7 @@ android {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation(files("${rootProject.projectDir}/third-party/sherpa-onnx/sherpa-onnx-android.aar"))
+    implementation(group = "", name = "sherpa-onnx-android", ext = "aar")
 
     // DataStore for persistent preferences
     implementation("androidx.datastore:datastore-preferences:1.0.0")
