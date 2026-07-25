@@ -36,9 +36,6 @@ struct LibraryView: View {
                             ForEach(filteredBooks) { book in
                                 NavigationLink(destination: BookDetailView(book: book)) {
                                     BookCoverView(book: book)
-                                        .onTapGesture {
-                                            appState.selectBook(book)
-                                        }
                                 }
                             }
                         }
@@ -53,6 +50,12 @@ struct LibraryView: View {
                     Button(action: { Task { await appState.loadLibrary() } }) {
                         Image(systemName: "arrow.clockwise")
                     }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink(destination: SettingsView()) {
+                        Image(systemName: "gear")
+                    }
+                    .accessibilityIdentifier("libraryToolbar.settingsButton")
                 }
             }
             .onAppear {
@@ -113,109 +116,96 @@ struct BookCoverView: View {
 
 struct BookDetailView: View {
     let book: BookItem
-    @Environment(\.dismiss) var dismiss
     @State private var isLoading = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Cover area
-                    VStack {
-                        ZStack {
-                            Color.blue.opacity(0.3)
-                            Image(systemName: "book.fill")
-                                .font(.system(size: 80))
-                                .foregroundColor(.blue)
-                        }
-                        .frame(height: 200)
-                        .cornerRadius(12)
+        ScrollView {
+            VStack(spacing: 20) {
+                // Cover area
+                VStack {
+                    ZStack {
+                        Color.blue.opacity(0.3)
+                        Image(systemName: "book.fill")
+                            .font(.system(size: 80))
+                            .foregroundColor(.blue)
                     }
-                    .padding()
+                    .frame(height: 200)
+                    .cornerRadius(12)
+                }
+                .padding()
 
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Title and author
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(book.title)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            Text(book.author)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 16) {
+                    // Title and author
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(book.title)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Text(book.author)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+
+                    // Progress
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Label("Reading Progress", systemImage: "percent")
+                            Spacer()
+                            Text("\(Int(book.progress * 100))%")
+                                .fontWeight(.semibold)
                         }
+                        ProgressView(value: book.progress)
+                    }
 
-                        Divider()
-
-                        // Progress
-                        VStack(alignment: .leading, spacing: 8) {
+                    // Action buttons
+                    VStack(spacing: 12) {
+                        NavigationLink(destination: ReaderView(book: book)) {
                             HStack {
-                                Label("Reading Progress", systemImage: "percent")
+                                Image(systemName: "book")
+                                Text("Continue Reading")
                                 Spacer()
-                                Text("\(Int(book.progress * 100))%")
-                                    .fontWeight(.semibold)
+                                Image(systemName: "chevron.right")
                             }
-                            ProgressView(value: book.progress)
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(8)
                         }
 
-                        // Action buttons
-                        VStack(spacing: 12) {
-                            NavigationLink(destination: ReaderView(book: book)) {
-                                HStack {
-                                    Image(systemName: "book")
-                                    Text("Continue Reading")
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                }
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue)
-                                .cornerRadius(8)
+                        Button(action: {}) {
+                            HStack {
+                                Image(systemName: "bookmark")
+                                Text("View Bookmarks")
+                                Spacer()
+                                Image(systemName: "chevron.right")
                             }
-
-                            Button(action: {}) {
-                                HStack {
-                                    Image(systemName: "bookmark")
-                                    Text("View Bookmarks")
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                }
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.green.opacity(0.7))
-                                .cornerRadius(8)
-                            }
-
-                            Button(action: {}) {
-                                HStack {
-                                    Image(systemName: "highlighter")
-                                    Text("View Highlights")
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                }
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.orange.opacity(0.7))
-                                .cornerRadius(8)
-                            }
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.green.opacity(0.7))
+                            .cornerRadius(8)
                         }
 
-                        Spacer()
-                    }
-                    .padding()
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
+                        Button(action: {}) {
+                            HStack {
+                                Image(systemName: "highlighter")
+                                Text("View Highlights")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.orange.opacity(0.7))
+                            .cornerRadius(8)
                         }
                     }
+
+                    Spacer()
                 }
+                .padding()
             }
         }
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -4,7 +4,6 @@ import Foundation
 @MainActor
 final class AppState: ObservableObject {
     @Published var books: [BookItem] = []
-    @Published var selectedBook: BookItem?
     @Published var isLoading = false
     @Published var error: AppError?
 
@@ -30,10 +29,6 @@ final class AppState: ObservableObject {
         } catch {
             self.error = AppError.libraryLoadFailed(error.localizedDescription)
         }
-    }
-
-    func selectBook(_ book: BookItem) {
-        selectedBook = book
     }
 
     func clearError() {
