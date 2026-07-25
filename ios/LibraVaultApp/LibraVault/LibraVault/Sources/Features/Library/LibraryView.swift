@@ -3,7 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchText = ""
-
+    
     var filteredBooks: [BookItem] {
         if searchText.isEmpty {
             return appState.books
@@ -13,38 +13,39 @@ struct LibraryView: View {
             book.author.localizedCaseInsensitiveContains(searchText)
         }
     }
-
+    
     var body: some View {
         NavigationStack {
-            if appState.isLoading {
-                ProgressView()
-            } else if filteredBooks.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "books.vertical")
-                        .font(.system(size: 48))
-                        .foregroundColor(.gray)
-                    Text("No Books Found")
-                        .font(.title2)
-                    Text("Add books to your library to get started")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 16) {
-                        ForEach(filteredBooks) { book in
-                            NavigationLink(destination: BookDetailView(book: book)) {
-                                BookCoverView(book: book)
-                                    .onTapGesture {
-                                        appState.selectBook(book)
-                                    }
+            Group {
+                if appState.isLoading {
+                    ProgressView()
+                } else if filteredBooks.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "books.vertical")
+                            .font(.system(size: 48))
+                            .foregroundColor(.gray)
+                        Text("No Books Found")
+                            .font(.title2)
+                        Text("Add books to your library to get started")
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 16) {
+                            ForEach(filteredBooks) { book in
+                                NavigationLink(destination: BookDetailView(book: book)) {
+                                    BookCoverView(book: book)
+                                        .onTapGesture {
+                                            appState.selectBook(book)
+                                        }
+                                }
                             }
                         }
+                        .padding()
                     }
-                    .padding()
                 }
             }
-
             .navigationTitle("Library")
             .searchable(text: $searchText, prompt: "Search books")
             .toolbar {

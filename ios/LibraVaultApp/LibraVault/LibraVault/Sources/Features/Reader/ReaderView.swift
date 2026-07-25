@@ -138,7 +138,8 @@ struct ReaderView: View {
                 showingControls.toggle()
             }
         }
-        .navigationTitle("Reading", displayMode: .inline)
+        .navigationTitle("Reading")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func updateProgress() {

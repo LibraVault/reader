@@ -8,8 +8,6 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var error: AppError?
 
-    nonisolated static let shared = AppState()
-
     private let bridge = LibravaultDomainBridge.shared
 
     init() {
@@ -30,7 +28,7 @@ final class AppState: ObservableObject {
         } catch let err as DomainError {
             error = AppError.libraryLoadFailed(err.localizedDescription)
         } catch {
-            error = AppError.libraryLoadFailed(error.localizedDescription)
+            self.error = AppError.libraryLoadFailed(error.localizedDescription)
         }
     }
 

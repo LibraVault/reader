@@ -221,7 +221,7 @@ func mapMediaFormat(_ format: MediaFormat) -> MediaFormatSwift {
 
 /// Maps Swift BookmarkModel to Kotlin Bookmark
 /// Phase D: Will export to Kotlin Bookmark DTO
-func mapToKotlinBookmark(_ bookmark: Bookmark, itemId: Int64) -> String {
+func mapToKotlinBookmark(_ bookmark: BookmarkModel, itemId: Int64) -> String {
     // Returns JSON for serialization or Kotlin object
     return """
     {
