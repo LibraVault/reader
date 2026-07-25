@@ -326,6 +326,7 @@ struct BookDetailView: View {
                             .background(Color.blue)
                             .cornerRadius(8)
                         }
+                        .accessibilityIdentifier("bookDetail.continueReadingButton")
 
                         Button(action: {}) {
                             HStack {

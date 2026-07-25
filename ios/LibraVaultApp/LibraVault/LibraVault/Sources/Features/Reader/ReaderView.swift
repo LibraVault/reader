@@ -2,174 +2,172 @@ import SwiftUI
 
 struct ReaderView: View {
     let book: BookItem
-    @State private var currentPage = 1
-    @State private var totalPages = 100
-    @State private var showingControls = true
-    @State private var selectedText: String = ""
-    @State private var showHighlightOptions = false
-    @State private var isSpeaking = false
+
+    @State private var currentChapter = 1
+    private let totalChapters = 5
+
+    @State private var readingTheme: ReadingTheme = .dark
     @State private var fontSize: Double = 1.0
+    @State private var lineSpacing: Double = 1.4
+    @State private var fontDesign: Font.Design = .default
+    @State private var mode: ReaderLayoutMode = .paginated
+
+    @State private var showSettingsSheet = false
+    @State private var showBookmarksSheet = false
+    @State private var isSpeaking = false
+
+    @ObservedObject private var bridge = LibravaultDomainBridge.shared
+
+    private var colors: LibraVaultColorScheme { .forReadingTheme(readingTheme) }
+    private var hasBookmarks: Bool { !(bridge.bookmarks[book.id]?.isEmpty ?? true) }
 
     var body: some View {
-        ZStack {
-            // Content Area
-            VStack {
-                VStack(spacing: 16) {
-                    Text(book.title)
-                        .font(.headline)
-                        .padding()
-
-                    ScrollView {
-                        Text(sampleChapterContent(page: currentPage))
-                            .font(.system(size: 16 * fontSize))
-                            .lineSpacing(8)
-                            .padding()
-                            .textSelection(.enabled)
-                            .onContinuousHover { phase in
-                                if case .active = phase {
-                                    // Selection tracking for future highlight feature
-                                }
-                            }
-                    }
-                    .frame(maxHeight: .infinity)
-                    .background(Color(.systemBackground))
-
-                    // Page navigation
-                    HStack(spacing: 16) {
-                        Button(action: { if currentPage > 1 { currentPage -= 1; updateProgress() } }) {
-                            Image(systemName: "chevron.left")
-                        }
-                        .disabled(currentPage <= 1)
-
-                        Text("Page \(currentPage) of \(totalPages)")
-                            .font(.caption)
-
-                        ProgressView(value: Double(currentPage) / Double(totalPages))
-                            .frame(maxWidth: .infinity)
-
-                        Button(action: { if currentPage < totalPages { currentPage += 1; updateProgress() } }) {
-                            Image(systemName: "chevron.right")
-                        }
-                        .disabled(currentPage >= totalPages)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                }
-            }
-
-            // Overlay Controls
-            if showingControls {
-                VStack {
-                    HStack {
-                        Text("Reading: \(book.title)")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-
-                        Spacer()
-
-                        Menu {
-                            Button("Add Bookmark", action: { addBookmark() })
-                            Button("Adjust Font Size", action: {})
-                            if isSpeaking {
-                                Button("Stop Speaking", action: { stopSpeaking() })
-                            } else {
-                                Button("Read Aloud", action: { startSpeaking() })
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .padding()
-                    .background(Color.black.opacity(0.5))
-
-                    Spacer()
-
-                    HStack(spacing: 16) {
-                        Button(action: { addBookmark() }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "bookmark.fill")
-                                    .frame(width: 44, height: 44)
-                                Text("Bookmark")
-                                    .font(.caption)
-                            }
-                        }
-
-                        Button(action: { showHighlightOptions.toggle() }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "highlighter")
-                                    .frame(width: 44, height: 44)
-                                Text("Highlight")
-                                    .font(.caption)
-                            }
-                        }
-
-                        Button(action: { isSpeaking ? stopSpeaking() : startSpeaking() }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: isSpeaking ? "speaker.fill" : "speaker.wave.2")
-                                    .frame(width: 44, height: 44)
-                                Text(isSpeaking ? "Stop" : "Speak")
-                                    .font(.caption)
-                            }
-                        }
-
-                        Spacer()
-
-                        Button(action: { withAnimation { showingControls = false } }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "chevron.down")
-                                    .frame(width: 44, height: 44)
-                                Text("Hide")
-                                    .font(.caption)
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color.black.opacity(0.5))
-                }
-                .foregroundColor(.white)
-                .transition(.opacity)
+        Group {
+            switch mode {
+            case .paginated: paginatedContent
+            case .scrolling: scrollingContent
             }
         }
-        .background(Color(.systemBackground))
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showingControls.toggle()
-            }
-        }
-        .navigationTitle("Reading")
+        .background(colors.background)
+        .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: cycleTheme) {
+                    Image(systemName: themeIcon)
+                        .foregroundStyle(colors.onBackground)
+                }
+                .accessibilityIdentifier("reader.themeButton")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: addBookmark) {
+                    Image(systemName: "bookmark.badge.plus")
+                        .foregroundStyle(colors.onBackground)
+                }
+                .accessibilityIdentifier("reader.addBookmarkButton")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showBookmarksSheet = true }) {
+                    Image(systemName: hasBookmarks ? "bookmark.fill" : "bookmark")
+                        .foregroundStyle(colors.onBackground)
+                }
+                .accessibilityIdentifier("reader.bookmarksButton")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showSettingsSheet = true }) {
+                    Image(systemName: "textformat.size")
+                        .foregroundStyle(colors.onBackground)
+                }
+                .accessibilityIdentifier("reader.settingsButton")
+            }
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            ReaderSettingsSheet(
+                theme: $readingTheme,
+                fontSize: $fontSize,
+                lineSpacing: $lineSpacing,
+                fontDesign: $fontDesign,
+                mode: $mode,
+                isSpeaking: isSpeaking,
+                onToggleSpeaking: toggleSpeaking
+            )
+        }
+        .sheet(isPresented: $showBookmarksSheet) {
+            BookmarksSheet(bookId: book.id)
+        }
+    }
+
+    private var paginatedContent: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                Text(sampleChapterContent(chapter: currentChapter))
+                    .font(.system(size: 16 * fontSize, design: fontDesign))
+                    .lineSpacing(8 * lineSpacing)
+                    .foregroundStyle(colors.onBackground)
+                    .padding(LibraVaultSpacing.lg)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: .infinity)
+
+            HStack(spacing: LibraVaultSpacing.lg) {
+                Button(action: { if currentChapter > 1 { currentChapter -= 1; updateProgress() } }) {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(currentChapter <= 1)
+
+                Text("Page \(currentChapter) of \(totalChapters)")
+                    .font(LibraVaultTypography.labelMedium)
+
+                ProgressView(value: Double(currentChapter) / Double(totalChapters))
+                    .tint(colors.primary)
+                    .frame(maxWidth: .infinity)
+
+                Button(action: { if currentChapter < totalChapters { currentChapter += 1; updateProgress() } }) {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(currentChapter >= totalChapters)
+            }
+            .foregroundStyle(colors.onSurfaceVariant)
+            .padding(LibraVaultSpacing.lg)
+            .background(colors.surface)
+        }
+    }
+
+    private var scrollingContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                ForEach(1...totalChapters, id: \.self) { chapter in
+                    Text(sampleChapterContent(chapter: chapter))
+                        .font(.system(size: 16 * fontSize, design: fontDesign))
+                        .lineSpacing(8 * lineSpacing)
+                        .foregroundStyle(colors.onBackground)
+                }
+            }
+            .padding(LibraVaultSpacing.lg)
+            .textSelection(.enabled)
+        }
+    }
+
+    private var themeIcon: String {
+        switch readingTheme {
+        case .dark:  return "moon.fill"
+        case .light: return "sun.max.fill"
+        case .sepia: return "book.fill"
+        }
+    }
+
+    private func cycleTheme() {
+        switch readingTheme {
+        case .dark:  readingTheme = .light
+        case .light: readingTheme = .sepia
+        case .sepia: readingTheme = .dark
+        }
     }
 
     private func updateProgress() {
         Task {
-            let progress = Double(currentPage) / Double(totalPages)
-            try? await LibravaultDomainBridge.shared.updateProgress(bookId: book.id, progress: progress)
+            let progress = Double(currentChapter) / Double(totalChapters)
+            try? await bridge.updateProgress(bookId: book.id, progress: progress)
         }
     }
 
     private func addBookmark() {
         Task {
-            try? await LibravaultDomainBridge.shared.addBookmark(bookId: book.id, position: "page:\(currentPage)")
+            try? await bridge.addBookmark(bookId: book.id, position: "Chapter \(currentChapter)")
         }
     }
 
-    private func startSpeaking() {
-        isSpeaking = true
-        Task {
-            try? await LibravaultDomainBridge.shared.startSpeaking(text: sampleChapterContent(page: currentPage))
+    private func toggleSpeaking() {
+        if isSpeaking {
+            isSpeaking = false
+            Task { await bridge.stopSpeaking() }
+        } else {
+            isSpeaking = true
+            Task { try? await bridge.startSpeaking(text: sampleChapterContent(chapter: currentChapter)) }
         }
     }
 
-    private func stopSpeaking() {
-        isSpeaking = false
-        Task {
-            await LibravaultDomainBridge.shared.stopSpeaking()
-        }
-    }
-
-    private func sampleChapterContent(page: Int) -> String {
+    private func sampleChapterContent(chapter: Int) -> String {
         let chapters = [
             "Chapter 1: The Beginning\n\nIt was a bright cold day in April, and the clocks were striking thirteen. The city stretched before them, vast and incomprehensible, full of secrets and mysteries waiting to be discovered.",
             "Chapter 2: Into the Depths\n\nThey ventured deeper into the ancient library, their footsteps echoing against stone walls. The air grew colder as they descended, and the books seemed to watch their progress with silent judgment.",
@@ -177,10 +175,12 @@ struct ReaderView: View {
             "Chapter 4: Revelations\n\nAs they read, the truth began to unfold. Every sentence was a thread, weaving together into a tapestry of understanding. What they had thought was lost was merely hidden, waiting for someone brave enough to seek it.",
             "Chapter 5: The Choice\n\nNow came the moment of decision. Would they close the book and return to their ordinary lives, or would they follow the path laid out before them, into territories unknown?",
         ]
-        return chapters[(page - 1) % chapters.count]
+        return chapters[(chapter - 1) % chapters.count]
     }
 }
 
 #Preview {
-    ReaderView(book: BookItem(id: "1", title: "The Great Gatsby", author: "F. Scott Fitzgerald", coverUrl: nil, progress: 0.35))
+    NavigationStack {
+        ReaderView(book: BookItem(id: "1", title: "The Great Gatsby", author: "F. Scott Fitzgerald", progress: 0.35))
+    }
 }

@@ -127,6 +127,7 @@ class LibravaultDomainBridge: ObservableObject {
         let bookmark = Bookmark(
             id: UUID().uuidString,
             position: position,
+            note: nil,
             createdAt: Date()
         )
 
@@ -138,6 +139,19 @@ class LibravaultDomainBridge: ObservableObject {
         logger?.d(tag: "Bookmarks", message: "Added bookmark to \(bookId)")
 
         // Phase C: Call core:domain AddBookmarkUseCase
+    }
+
+    func updateBookmarkNote(bookId: String, bookmarkId: String, note: String) async throws {
+        guard isInitialized else { throw DomainError.notInitialized }
+
+        guard let index = bookmarks[bookId]?.firstIndex(where: { $0.id == bookmarkId }) else {
+            throw DomainError.bookNotFound(bookmarkId)
+        }
+        bookmarks[bookId]?[index].note = note.isEmpty ? nil : note
+
+        logger?.d(tag: "Bookmarks", message: "Updated note on bookmark \(bookmarkId)")
+
+        // Phase C: Call core:domain UpdateBookmarkUseCase
     }
 
     // MARK: - Logger Integration
@@ -239,6 +253,7 @@ struct Highlight: Identifiable {
 struct Bookmark: Identifiable {
     let id: String
     let position: String
+    var note: String?
     let createdAt: Date
 }
 
