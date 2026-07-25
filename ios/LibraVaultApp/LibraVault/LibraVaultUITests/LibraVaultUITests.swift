@@ -40,4 +40,31 @@ final class LibraVaultUITests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Navigation shape (Phase 1 of the Android/iOS UI parity plan)
+    //
+    // The app used to be a bottom TabView (Library/Reader/Settings); it's now a single
+    // NavigationStack rooted at Library, matching Android's model. These guard the two
+    // observable consequences of that change: there's no tab bar, and Settings — which
+    // used to be its own tab — is still reachable, now via the Library toolbar.
+
+    @MainActor
+    func testNoBottomTabBar() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertFalse(app.tabBars.firstMatch.waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testSettingsIsReachableFromLibraryToolbar() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let settingsButton = app.buttons["libraryToolbar.settingsButton"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.tap()
+
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+    }
 }

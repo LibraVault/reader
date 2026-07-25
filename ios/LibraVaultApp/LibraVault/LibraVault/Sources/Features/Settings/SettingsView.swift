@@ -6,56 +6,54 @@ struct SettingsView: View {
     @State private var fontSize: Double = 1.0
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // Display Settings
-                Section("Display") {
-                    HStack {
-                        Text("Font Size")
-                        Slider(value: $fontSize, in: 0.8...1.5, step: 0.1)
-                    }
+        Form {
+            // Display Settings
+            Section("Display") {
+                HStack {
+                    Text("Font Size")
+                    Slider(value: $fontSize, in: 0.8...1.5, step: 0.1)
                 }
+            }
 
-                // Audio Settings
-                Section("Audio & Accessibility") {
-                    Toggle("Text-to-Speech", isOn: $enableTTS)
-                    // TODO: Integrate with core:tts
+            // Audio Settings
+            Section("Audio & Accessibility") {
+                Toggle("Text-to-Speech", isOn: $enableTTS)
+                // TODO: Integrate with core:tts
+            }
+
+            // Library Settings
+            Section("Library") {
+                NavigationLink(destination: LibrarySettingsView()) {
+                    Text("Manage Vaults")
                 }
+            }
 
-                // Library Settings
-                Section("Library") {
-                    NavigationLink(destination: LibrarySettingsView()) {
-                        Text("Manage Vaults")
-                    }
-                }
-
-                // Debug / Logging
-                Section("Developer") {
-                    Toggle("Enable Logging", isOn: $enableLogging)
-                    // TODO: Integrate with core:logger
-                    if enableLogging {
-                        NavigationLink(destination: LogViewerView()) {
-                            Text("View Logs")
-                        }
-                    }
-                }
-
-                // About
-                Section("About") {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("3.0.0-alpha")
-                            .foregroundColor(.secondary)
-                    }
-
-                    NavigationLink(destination: AboutView()) {
-                        Text("About LibraVault")
+            // Debug / Logging
+            Section("Developer") {
+                Toggle("Enable Logging", isOn: $enableLogging)
+                // TODO: Integrate with core:logger
+                if enableLogging {
+                    NavigationLink(destination: LogViewerView()) {
+                        Text("View Logs")
                     }
                 }
             }
-            .navigationTitle("Settings")
+
+            // About
+            Section("About") {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text("3.0.0-alpha")
+                        .foregroundColor(.secondary)
+                }
+
+                NavigationLink(destination: AboutView()) {
+                    Text("About LibraVault")
+                }
+            }
         }
+        .navigationTitle("Settings")
     }
 }
 
@@ -231,5 +229,7 @@ struct BulletPoint: View {
 }
 
 #Preview {
-    SettingsView()
+    NavigationStack {
+        SettingsView()
+    }
 }
