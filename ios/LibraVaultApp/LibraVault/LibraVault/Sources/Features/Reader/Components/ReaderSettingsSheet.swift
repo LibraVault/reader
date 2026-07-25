@@ -90,7 +90,7 @@ struct ReaderSettingsSheet: View {
         }
     }
 
-    private func chipRow<T: Hashable>(_ items: [T], label: (T) -> String, isSelected: @escaping (T) -> Bool, onSelect: @escaping (T) -> Void) -> some View {
+    private func chipRow<T: Hashable>(_ items: [T], label: @escaping (T) -> String, isSelected: @escaping (T) -> Bool, onSelect: @escaping (T) -> Void) -> some View {
         HStack(spacing: LibraVaultSpacing.sm) {
             ForEach(items, id: \.self) { item in
                 FilterChip(title: label(item), isSelected: isSelected(item)) {
