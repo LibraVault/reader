@@ -50,9 +50,22 @@
 		D44C13073013592700ADEF59 /* LibraVaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraVaultTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D44C14003013592700ADEF59 /* Exceptions for "LibraVault" folder in "LibraVault" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D44C12AA301355A900ADEF59 /* LibraVault */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D44C12AD301355AA00ADEF59 /* LibraVault */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D44C14003013592700ADEF59 /* Exceptions for "LibraVault" folder in "LibraVault" target */,
+			);
 			path = LibraVault;
 			sourceTree = "<group>";
 		};
@@ -511,6 +524,7 @@
 				DEVELOPMENT_TEAM = H74LNL8UCG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LibraVault/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -543,6 +557,7 @@
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = H74LNL8UCG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LibraVault/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
