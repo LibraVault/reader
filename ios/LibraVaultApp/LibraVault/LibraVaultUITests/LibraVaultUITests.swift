@@ -97,4 +97,67 @@ final class LibraVaultUITests: XCTestCase {
 
         XCTAssertFalse(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 2))
     }
+
+    // MARK: - Reader screen parity (Phase 3 of the Android/iOS UI parity plan)
+    //
+    // All three navigate via "To Kill a Mockingbird" specifically — it's the one mock
+    // book with 0% progress, so its title appears exactly once on the Library screen
+    // (Continue-row books show their title twice: once there, once in the grid), which
+    // is what a single-match staticTexts[...] query needs to avoid an ambiguous-match
+    // failure. See testSelectingPdfFilterHidesEpubOnlyBook above for the same reasoning.
+
+    private func openReaderForMockingbird(in app: XCUIApplication) {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 5))
+        app.staticTexts["To Kill a Mockingbird"].tap()
+
+        let continueButton = app.buttons["bookDetail.continueReadingButton"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 5))
+        continueButton.tap()
+    }
+
+    @MainActor
+    func testReaderToolbarControlsExist() throws {
+        let app = XCUIApplication()
+        openReaderForMockingbird(in: app)
+
+        XCTAssertTrue(app.buttons["reader.themeButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reader.addBookmarkButton"].exists)
+        XCTAssertTrue(app.buttons["reader.bookmarksButton"].exists)
+        XCTAssertTrue(app.buttons["reader.settingsButton"].exists)
+    }
+
+    @MainActor
+    func testBookmarksSheetShowsAddedBookmark() throws {
+        let app = XCUIApplication()
+        openReaderForMockingbird(in: app)
+
+        let addBookmarkButton = app.buttons["reader.addBookmarkButton"]
+        XCTAssertTrue(addBookmarkButton.waitForExistence(timeout: 5))
+        addBookmarkButton.tap()
+
+        let bookmarksButton = app.buttons["reader.bookmarksButton"]
+        XCTAssertTrue(bookmarksButton.waitForExistence(timeout: 5))
+        bookmarksButton.tap()
+
+        XCTAssertTrue(app.staticTexts["Bookmarks"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Chapter 1"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testReaderSettingsSheetShowsThemeAndModeOptions() throws {
+        let app = XCUIApplication()
+        openReaderForMockingbird(in: app)
+
+        let settingsButton = app.buttons["reader.settingsButton"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.tap()
+
+        XCTAssertTrue(app.staticTexts["Reading settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Dark"].exists)
+        XCTAssertTrue(app.buttons["Light"].exists)
+        XCTAssertTrue(app.buttons["Sepia"].exists)
+        XCTAssertTrue(app.buttons["Paginated"].exists)
+        XCTAssertTrue(app.buttons["Scrolling"].exists)
+    }
 }

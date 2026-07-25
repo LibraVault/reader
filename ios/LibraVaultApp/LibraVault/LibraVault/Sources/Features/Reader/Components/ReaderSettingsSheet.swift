@@ -1,0 +1,114 @@
+import SwiftUI
+
+enum ReaderLayoutMode: String, CaseIterable {
+    case paginated = "Paginated"
+    case scrolling = "Scrolling"
+}
+
+/// Mirrors Android's ReaderSettingsSheet (feature/reader/components) — Theme, text size,
+/// line spacing, font, and layout mode. Uses app-chrome colors (LibraVaultColor.*), not
+/// the reading theme, matching Android's reference screenshots: the sheet renders as a
+/// light Material surface even when reading in Dark or Sepia mode.
+struct ReaderSettingsSheet: View {
+    @Binding var theme: ReadingTheme
+    @Binding var fontSize: Double
+    @Binding var lineSpacing: Double
+    @Binding var fontDesign: Font.Design
+    @Binding var mode: ReaderLayoutMode
+    let isSpeaking: Bool
+    let onToggleSpeaking: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                Text("Reading settings")
+                    .font(LibraVaultTypography.headlineSmall)
+                    .foregroundStyle(LibraVaultColor.onSurface)
+
+                settingSection("Theme") {
+                    chipRow(ReadingTheme.allCases, label: \.label, isSelected: { $0 == theme }) { theme = $0 }
+                }
+
+                settingSection("Text size", value: "\(Int(fontSize * 100))%") {
+                    Slider(value: $fontSize, in: 0.8...1.5, step: 0.1)
+                        .tint(LibraVaultColor.primary)
+                }
+
+                settingSection("Line spacing", value: String(format: "%.1f×", lineSpacing)) {
+                    Slider(value: $lineSpacing, in: 1.0...2.0, step: 0.1)
+                        .tint(LibraVaultColor.primary)
+                }
+
+                settingSection("Font") {
+                    HStack(spacing: LibraVaultSpacing.sm) {
+                        FilterChip(title: "System", isSelected: fontDesign == .default) { fontDesign = .default }
+                        FilterChip(title: "Serif", isSelected: fontDesign == .serif) { fontDesign = .serif }
+                        FilterChip(title: "Monospace", isSelected: fontDesign == .monospaced) { fontDesign = .monospaced }
+                    }
+                }
+
+                settingSection("Mode") {
+                    chipRow(ReaderLayoutMode.allCases, label: \.rawValue, isSelected: { $0 == mode }) { mode = $0 }
+                }
+
+                Divider()
+
+                // TODO: Move to the dedicated Player screen once it exists (Phase 4 of
+                // the UI parity plan) — kept here for now so restyling the Reader
+                // toolbar doesn't regress the one working piece of TTS functionality.
+                Button(action: onToggleSpeaking) {
+                    Label(
+                        isSpeaking ? "Stop Reading Aloud" : "Read Aloud",
+                        systemImage: isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
+                    )
+                    .font(LibraVaultTypography.bodyLarge)
+                    .foregroundStyle(LibraVaultColor.primary)
+                }
+            }
+            .padding(LibraVaultSpacing.lg)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .background(LibraVaultColor.surface)
+    }
+
+    @ViewBuilder
+    private func settingSection<Content: View>(_ title: String, value: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+            HStack {
+                Text(title)
+                    .font(LibraVaultTypography.titleMedium)
+                    .foregroundStyle(LibraVaultColor.onSurface)
+                if let value {
+                    Spacer()
+                    Text(value)
+                        .font(LibraVaultTypography.bodyMedium)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                }
+            }
+            content()
+        }
+    }
+
+    private func chipRow<T: Hashable>(_ items: [T], label: @escaping (T) -> String, isSelected: @escaping (T) -> Bool, onSelect: @escaping (T) -> Void) -> some View {
+        HStack(spacing: LibraVaultSpacing.sm) {
+            ForEach(items, id: \.self) { item in
+                FilterChip(title: label(item), isSelected: isSelected(item)) {
+                    onSelect(item)
+                }
+            }
+        }
+    }
+}
+
+#Preview {
+    ReaderSettingsSheet(
+        theme: .constant(.dark),
+        fontSize: .constant(1.0),
+        lineSpacing: .constant(1.4),
+        fontDesign: .constant(.default),
+        mode: .constant(.paginated),
+        isSpeaking: false,
+        onToggleSpeaking: {}
+    )
+}
