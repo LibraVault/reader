@@ -3,8 +3,8 @@ import SwiftUI
 struct ReaderView: View {
     let book: BookItem
 
+    @EnvironmentObject var appState: AppState
     @State private var currentChapter = 1
-    private let totalChapters = 5
 
     @State private var readingTheme: ReadingTheme = .dark
     @State private var fontSize: Double = 1.0
@@ -14,12 +14,12 @@ struct ReaderView: View {
 
     @State private var showSettingsSheet = false
     @State private var showBookmarksSheet = false
-    @State private var isSpeaking = false
 
     @ObservedObject private var bridge = LibravaultDomainBridge.shared
 
     private var colors: LibraVaultColorScheme { .forReadingTheme(readingTheme) }
     private var hasBookmarks: Bool { !(bridge.bookmarks[book.id]?.isEmpty ?? true) }
+    private var isCurrentlyPlayingThisBook: Bool { appState.nowPlayingBook?.id == book.id }
 
     var body: some View {
         Group {
@@ -68,8 +68,8 @@ struct ReaderView: View {
                 lineSpacing: $lineSpacing,
                 fontDesign: $fontDesign,
                 mode: $mode,
-                isSpeaking: isSpeaking,
-                onToggleSpeaking: toggleSpeaking
+                isSpeaking: isCurrentlyPlayingThisBook,
+                onToggleSpeaking: toggleReadAloud
             )
         }
         .sheet(isPresented: $showBookmarksSheet) {
@@ -80,7 +80,7 @@ struct ReaderView: View {
     private var paginatedContent: some View {
         VStack(spacing: 0) {
             ScrollView {
-                Text(sampleChapterContent(chapter: currentChapter))
+                Text(MockChapterContent.text(for: currentChapter))
                     .font(.system(size: 16 * fontSize, design: fontDesign))
                     .lineSpacing(8 * lineSpacing)
                     .foregroundStyle(colors.onBackground)
@@ -95,17 +95,17 @@ struct ReaderView: View {
                 }
                 .disabled(currentChapter <= 1)
 
-                Text("Page \(currentChapter) of \(totalChapters)")
+                Text("Page \(currentChapter) of \(MockChapterContent.count)")
                     .font(LibraVaultTypography.labelMedium)
 
-                ProgressView(value: Double(currentChapter) / Double(totalChapters))
+                ProgressView(value: Double(currentChapter) / Double(MockChapterContent.count))
                     .tint(colors.primary)
                     .frame(maxWidth: .infinity)
 
-                Button(action: { if currentChapter < totalChapters { currentChapter += 1; updateProgress() } }) {
+                Button(action: { if currentChapter < MockChapterContent.count { currentChapter += 1; updateProgress() } }) {
                     Image(systemName: "chevron.right")
                 }
-                .disabled(currentChapter >= totalChapters)
+                .disabled(currentChapter >= MockChapterContent.count)
             }
             .foregroundStyle(colors.onSurfaceVariant)
             .padding(LibraVaultSpacing.lg)
@@ -116,8 +116,8 @@ struct ReaderView: View {
     private var scrollingContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
-                ForEach(1...totalChapters, id: \.self) { chapter in
-                    Text(sampleChapterContent(chapter: chapter))
+                ForEach(1...MockChapterContent.count, id: \.self) { chapter in
+                    Text(MockChapterContent.text(for: chapter))
                         .font(.system(size: 16 * fontSize, design: fontDesign))
                         .lineSpacing(8 * lineSpacing)
                         .foregroundStyle(colors.onBackground)
@@ -146,7 +146,7 @@ struct ReaderView: View {
 
     private func updateProgress() {
         Task {
-            let progress = Double(currentChapter) / Double(totalChapters)
+            let progress = Double(currentChapter) / Double(MockChapterContent.count)
             try? await bridge.updateProgress(bookId: book.id, progress: progress)
         }
     }
@@ -157,25 +157,17 @@ struct ReaderView: View {
         }
     }
 
-    private func toggleSpeaking() {
-        if isSpeaking {
-            isSpeaking = false
-            Task { await bridge.stopSpeaking() }
+    /// "Read Aloud" now hands off to the real Player screen (Phase 4) instead of
+    /// toggling TTS in place — starts shared playback state and asks RootView to
+    /// push PlayerView, the same trigger the mini-player's tap uses.
+    private func toggleReadAloud() {
+        showSettingsSheet = false
+        if isCurrentlyPlayingThisBook {
+            appState.stopPlayback()
         } else {
-            isSpeaking = true
-            Task { try? await bridge.startSpeaking(text: sampleChapterContent(chapter: currentChapter)) }
+            appState.startPlayback(book: book, chapter: currentChapter)
+            appState.shouldNavigateToPlayer = true
         }
-    }
-
-    private func sampleChapterContent(chapter: Int) -> String {
-        let chapters = [
-            "Chapter 1: The Beginning\n\nIt was a bright cold day in April, and the clocks were striking thirteen. The city stretched before them, vast and incomprehensible, full of secrets and mysteries waiting to be discovered.",
-            "Chapter 2: Into the Depths\n\nThey ventured deeper into the ancient library, their footsteps echoing against stone walls. The air grew colder as they descended, and the books seemed to watch their progress with silent judgment.",
-            "Chapter 3: The Discovery\n\nAmong the forgotten volumes, they found it—a manuscript bound in leather, its pages yellowed with age. The words seemed to shimmer, as if alive with their own peculiar power.",
-            "Chapter 4: Revelations\n\nAs they read, the truth began to unfold. Every sentence was a thread, weaving together into a tapestry of understanding. What they had thought was lost was merely hidden, waiting for someone brave enough to seek it.",
-            "Chapter 5: The Choice\n\nNow came the moment of decision. Would they close the book and return to their ordinary lives, or would they follow the path laid out before them, into territories unknown?",
-        ]
-        return chapters[(chapter - 1) % chapters.count]
     }
 }
 
@@ -183,4 +175,5 @@ struct ReaderView: View {
     NavigationStack {
         ReaderView(book: BookItem(id: "1", title: "The Great Gatsby", author: "F. Scott Fitzgerald", progress: 0.35))
     }
+    .environmentObject(AppState())
 }

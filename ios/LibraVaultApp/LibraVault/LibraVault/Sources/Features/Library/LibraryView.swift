@@ -33,56 +33,54 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if appState.isLoading {
-                    ProgressView()
-                } else if filteredBooks.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
-                            if !continueBooks.isEmpty {
-                                continueSection
-                            }
-                            formatFilterChips
-                            librarySection
+        Group {
+            if appState.isLoading {
+                ProgressView()
+            } else if filteredBooks.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                        if !continueBooks.isEmpty {
+                            continueSection
                         }
-                        .padding(LibraVaultSpacing.lg)
+                        formatFilterChips
+                        librarySection
+                    }
+                    .padding(LibraVaultSpacing.lg)
+                }
+            }
+        }
+        .background(LibraVaultColor.background)
+        .navigationTitle("Library")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search title, author")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: LibraVaultSpacing.sm) {
+                    Text("LibraVault")
+                        .font(LibraVaultTypography.headlineSmall)
+                        .foregroundStyle(LibraVaultColor.primary)
+                    if appState.isSupporter {
+                        SupporterBadge()
                     }
                 }
             }
-            .background(LibraVaultColor.background)
-            .navigationTitle("Library")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search title, author")
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: LibraVaultSpacing.sm) {
-                        Text("LibraVault")
-                            .font(LibraVaultTypography.headlineSmall)
-                            .foregroundStyle(LibraVaultColor.primary)
-                        if appState.isSupporter {
-                            SupporterBadge()
-                        }
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { Task { await appState.loadLibrary() } }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: SettingsView()) {
-                        Image(systemName: "gear")
-                    }
-                    .accessibilityIdentifier("libraryToolbar.settingsButton")
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { Task { await appState.loadLibrary() } }) {
+                    Image(systemName: "arrow.clockwise")
                 }
             }
-            .onAppear {
-                Task {
-                    await appState.loadLibrary()
+            ToolbarItem(placement: .navigationBarTrailing) {
+                NavigationLink(destination: SettingsView()) {
+                    Image(systemName: "gear")
                 }
+                .accessibilityIdentifier("libraryToolbar.settingsButton")
+            }
+        }
+        .onAppear {
+            Task {
+                await appState.loadLibrary()
             }
         }
     }
@@ -155,15 +153,17 @@ struct LibraryView: View {
 
 /// Deterministic per-book gradient so covers without real artwork (all of them, until
 /// core:storage cover extraction is wired — see DomainBridge.swift's Phase D TODOs)
-/// stay visually distinct instead of a single flat placeholder color.
-private let generatedCoverPalette: [(Color, Color)] = [
+/// stay visually distinct instead of a single flat placeholder color. Not private:
+/// MiniPlayerBar and PlayerView reuse it so a book's cover tint is consistent
+/// everywhere it appears, not just in the Library grid.
+let generatedCoverPalette: [(Color, Color)] = [
     (LibraVaultPalette.leatherBrown, LibraVaultPalette.leatherDark),
     (LibraVaultPalette.agedBrass, LibraVaultPalette.leatherDark),
     (LibraVaultPalette.warmNeutral400, LibraVaultPalette.warmNeutral700),
     (LibraVaultPalette.leatherLight, LibraVaultPalette.warmNeutral500),
 ]
 
-private func generatedCoverGradient(for book: BookItem) -> LinearGradient {
+func generatedCoverGradient(for book: BookItem) -> LinearGradient {
     // book.id.hashValue is reseeded per process launch (Swift randomizes String hashing
     // for hash-flooding resistance), which would make covers reshuffle colors on every
     // relaunch — sum UTF-8 bytes instead for a value that's actually stable across runs.
@@ -365,6 +365,8 @@ struct BookDetailView: View {
 }
 
 #Preview {
-    LibraryView()
-        .environmentObject(AppState())
+    NavigationStack {
+        LibraryView()
+    }
+    .environmentObject(AppState())
 }

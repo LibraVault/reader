@@ -11,6 +11,46 @@ final class AppState: ObservableObject {
     // rather than showing a badge no license check backs.
     @Published var isSupporter = false
 
+    // MARK: - Playback (mini-player / Player screen)
+
+    @Published private(set) var nowPlayingBook: BookItem?
+    @Published private(set) var nowPlayingChapter = 1
+    @Published private(set) var isPlaying = false
+    @Published var playbackSpeed: Double = 1.0 {
+        didSet {
+            // totalEstimatedSeconds was computed for the old speed at startPlayback/
+            // skipToChapter time — without this, changing speed mid-chapter leaves it
+            // stale, so the scrub bar's "total" stops matching the actual playback
+            // rate and the chapter advances earlier or later than it estimates.
+            // Rescale it (and elapsedSeconds proportionally, to preserve how far
+            // through the chapter the listener actually is) to the new speed.
+            guard nowPlayingBook != nil, totalEstimatedSeconds > 0 else { return }
+            let progressFraction = elapsedSeconds / totalEstimatedSeconds
+            totalEstimatedSeconds = Self.estimateDuration(
+                for: MockChapterContent.text(for: nowPlayingChapter),
+                speed: playbackSpeed
+            )
+            elapsedSeconds = progressFraction * totalEstimatedSeconds
+        }
+    }
+    @Published private(set) var elapsedSeconds: Double = 0
+    @Published private(set) var totalEstimatedSeconds: Double = 0
+    @Published private(set) var sleepTimerRemainingSeconds: Double?
+
+    /// Set by PlayerView's onAppear/onDisappear so the global mini-player can hide
+    /// itself while the full Player screen is already showing the same controls.
+    @Published var isPlayerScreenActive = false
+
+    /// Drives RootView's `.navigationDestination(isPresented:)` for PlayerView.
+    /// Lives here, not as local @State on RootView, because ReaderView — a pushed
+    /// destination several levels deep in the same stack — needs to trigger the same
+    /// push when "Read Aloud" starts playback, and it has no direct access to a
+    /// sibling view's local state.
+    @Published var shouldNavigateToPlayer = false
+
+    private var playbackTimer: Timer?
+    private var sleepTimer: Timer?
+
     private let bridge = LibravaultDomainBridge.shared
 
     init() {
@@ -37,6 +77,129 @@ final class AppState: ObservableObject {
 
     func clearError() {
         error = nil
+    }
+
+    // MARK: - Playback controls
+    //
+    // There's no real audio engine or audiobook file behind this (core:tts is still
+    // Phase D TODOs, per DomainBridge.swift) — TTS start/stop/pause/resume calls are
+    // real, but "elapsed"/"duration" have nothing to measure against. Rather than
+    // fabricate static numbers, elapsedSeconds is a real wall-clock timer and
+    // totalEstimatedSeconds is computed from the chapter's actual word count, so the
+    // scrub bar in PlayerView reflects genuinely changing state instead of a static prop.
+
+    func startPlayback(book: BookItem, chapter: Int = 1) {
+        nowPlayingBook = book
+        nowPlayingChapter = chapter
+        let text = MockChapterContent.text(for: chapter)
+        totalEstimatedSeconds = Self.estimateDuration(for: text, speed: playbackSpeed)
+        elapsedSeconds = 0
+        isPlaying = true
+        Task { try? await bridge.startSpeaking(text: text) }
+        startTimer()
+    }
+
+    func togglePlayback() {
+        guard nowPlayingBook != nil else { return }
+        isPlaying.toggle()
+        if isPlaying {
+            startTimer()
+            Task { await bridge.resumeSpeaking() }
+        } else {
+            stopTimer()
+            Task { await bridge.pauseSpeaking() }
+        }
+    }
+
+    func skipToChapter(_ chapter: Int) {
+        guard let book = nowPlayingBook else { return }
+        let clamped = max(1, min(chapter, MockChapterContent.count))
+        startPlayback(book: book, chapter: clamped)
+    }
+
+    /// Scrub-bar seeking. There's no real audio stream to seek within, but the
+    /// wall-clock elapsed timer can honor a manual position the same way a real
+    /// player would — this isn't cosmetic, dragging the slider genuinely moves
+    /// elapsedSeconds and the next tick continues from there.
+    func seek(to seconds: Double) {
+        guard nowPlayingBook != nil else { return }
+        elapsedSeconds = max(0, min(seconds, totalEstimatedSeconds))
+    }
+
+    func skipForward(seconds: Double = 30) {
+        seek(to: elapsedSeconds + seconds)
+    }
+
+    func skipBackward(seconds: Double = 30) {
+        seek(to: elapsedSeconds - seconds)
+    }
+
+    func stopPlayback() {
+        isPlaying = false
+        nowPlayingBook = nil
+        elapsedSeconds = 0
+        totalEstimatedSeconds = 0
+        stopTimer()
+        cancelSleepTimer()
+        Task { await bridge.stopSpeaking() }
+    }
+
+    func scheduleSleepTimer(minutes: Double) {
+        sleepTimer?.invalidate()
+        sleepTimerRemainingSeconds = minutes * 60
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, var remaining = self.sleepTimerRemainingSeconds else { return }
+                remaining -= 1
+                if remaining <= 0 {
+                    self.cancelSleepTimer()
+                    self.stopPlayback()
+                } else {
+                    self.sleepTimerRemainingSeconds = remaining
+                }
+            }
+        }
+    }
+
+    func cancelSleepTimer() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        sleepTimerRemainingSeconds = nil
+    }
+
+    private func startTimer() {
+        stopTimer()
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tick()
+            }
+        }
+    }
+
+    private func stopTimer() {
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+    }
+
+    private func tick() {
+        guard isPlaying else { return }
+        elapsedSeconds = min(elapsedSeconds + playbackSpeed, totalEstimatedSeconds)
+        if elapsedSeconds >= totalEstimatedSeconds {
+            if nowPlayingChapter < MockChapterContent.count {
+                skipToChapter(nowPlayingChapter + 1)
+            } else {
+                stopPlayback()
+            }
+        }
+    }
+
+    /// ~150 wpm is a common average narration/TTS pace; scaled by playbackSpeed so a
+    /// 2x speed halves the estimated duration, matching what a real speed control
+    /// should do even without a real audio engine behind it.
+    static func estimateDuration(for text: String, speed: Double) -> Double {
+        let wordCount = Double(text.split(separator: " ").count)
+        let effectiveWordsPerMinute = 150.0 * max(speed, 0.1)
+        return max((wordCount / effectiveWordsPerMinute) * 60, 1)
     }
 }
 
