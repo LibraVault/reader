@@ -1,8 +1,10 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var enableLogging = false
+    @State private var isPickingVaultFolder = false
 
     private let skipDurationPresets: [Double] = [10, 15, 30, 45, 60]
 
@@ -24,24 +26,32 @@ struct SettingsView: View {
 
     private var vaultsSection: some View {
         Section {
-            // TODO: Integrate with core:storage for real vault locations — same
-            // Phase D gap as DomainBridge.swift's scanLibrary(vaultPath:) hardcoding
-            // "/Documents".
-            HStack {
-                Image(systemName: "folder.fill")
-                    .foregroundStyle(LibraVaultColor.primary)
-                Text("/Documents")
-                    .foregroundStyle(LibraVaultColor.onSurface)
-                Spacer()
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(LibraVaultColor.primary)
+            ForEach(appState.vaults) { vault in
+                HStack {
+                    Image(systemName: "folder.fill")
+                        .foregroundStyle(LibraVaultColor.primary)
+                    Text(vault.displayName)
+                        .foregroundStyle(LibraVaultColor.onSurface)
+                    Spacer()
+                }
             }
-            Button(action: {}) {
+            .onDelete { offsets in
+                for index in offsets {
+                    appState.removeVault(appState.vaults[index])
+                }
+            }
+
+            Button(action: { isPickingVaultFolder = true }) {
                 Label("Add Vault", systemImage: "plus.circle")
             }
             .foregroundStyle(LibraVaultColor.primary)
         } header: {
             sectionHeader("Vaults")
+        }
+        .fileImporter(isPresented: $isPickingVaultFolder, allowedContentTypes: [.folder]) { result in
+            if case .success(let pickedURL) = result {
+                appState.addVault(pickedURL: pickedURL)
+            }
         }
     }
 

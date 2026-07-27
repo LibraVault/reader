@@ -10,6 +10,8 @@ final class LibraryViewLogicTests: XCTestCase {
         XCTAssertTrue(LibraryFormatFilter.all.matches(.pdf))
         XCTAssertTrue(LibraryFormatFilter.all.matches(.mobi))
         XCTAssertTrue(LibraryFormatFilter.all.matches(.cbz))
+        XCTAssertTrue(LibraryFormatFilter.all.matches(.mp3))
+        XCTAssertTrue(LibraryFormatFilter.all.matches(.m4b))
     }
 
     func testEpubFilterMatchesOnlyEpub() {
@@ -21,6 +23,30 @@ final class LibraryViewLogicTests: XCTestCase {
     func testPdfFilterMatchesOnlyPdf() {
         XCTAssertTrue(LibraryFormatFilter.pdf.matches(.pdf))
         XCTAssertFalse(LibraryFormatFilter.pdf.matches(.epub))
+    }
+
+    func testAudioFilterMatchesOnlyAudioFormats() {
+        for format: MediaFormat in [.mp3, .m4b, .aac, .flac, .ogg, .opus] {
+            XCTAssertTrue(LibraryFormatFilter.audio.matches(format), "\(format) should match the Audio filter")
+        }
+        for format: MediaFormat in [.epub, .pdf, .mobi, .cbz] {
+            XCTAssertFalse(LibraryFormatFilter.audio.matches(format), "\(format) should not match the Audio filter")
+        }
+    }
+
+    // MARK: - MediaFormat.isAudio
+
+    func testIsAudioIsTrueOnlyForAudioFormats() {
+        XCTAssertTrue(MediaFormat.mp3.isAudio)
+        XCTAssertTrue(MediaFormat.m4b.isAudio)
+        XCTAssertTrue(MediaFormat.aac.isAudio)
+        XCTAssertTrue(MediaFormat.flac.isAudio)
+        XCTAssertTrue(MediaFormat.ogg.isAudio)
+        XCTAssertTrue(MediaFormat.opus.isAudio)
+        XCTAssertFalse(MediaFormat.epub.isAudio)
+        XCTAssertFalse(MediaFormat.pdf.isAudio)
+        XCTAssertFalse(MediaFormat.mobi.isAudio)
+        XCTAssertFalse(MediaFormat.cbz.isAudio)
     }
 
     // MARK: - BookItem(from: BookData) threads format through

@@ -13,8 +13,15 @@ final class DomainBridgeTests: XCTestCase {
     }
 
     func testInitializeLoadsMockLibrary() {
-        XCTAssertEqual(bridge.allBooks.count, 5)
+        XCTAssertEqual(bridge.allBooks.count, 7)
         XCTAssertTrue(bridge.allBooks.contains { $0.title == "The Great Gatsby" })
+    }
+
+    func testMockLibraryIncludesAudiobooks() {
+        let audiobooks = bridge.allBooks.filter { $0.format.isAudio }
+        XCTAssertEqual(audiobooks.count, 2)
+        XCTAssertTrue(audiobooks.contains { $0.title == "The Hobbit" && $0.format == .m4b })
+        XCTAssertTrue(audiobooks.contains { $0.title == "Sapiens: A Brief History of Humankind" && $0.format == .mp3 })
     }
 
     func testLoadBookReturnsMatchingBook() async throws {

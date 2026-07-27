@@ -226,6 +226,24 @@ class LibravaultDomainBridge: ObservableObject {
                 highlights: [],
                 bookmarks: []
             ),
+            BookData(
+                id: "6",
+                title: "The Hobbit",
+                author: "J.R.R. Tolkien",
+                format: .m4b,
+                progress: 0.12,
+                highlights: [],
+                bookmarks: []
+            ),
+            BookData(
+                id: "7",
+                title: "Sapiens: A Brief History of Humankind",
+                author: "Yuval Noah Harari",
+                format: .mp3,
+                progress: 0.0,
+                highlights: [],
+                bookmarks: []
+            ),
         ]
     }
 }
@@ -247,6 +265,22 @@ enum MediaFormat: Equatable {
     case epub
     case mobi
     case cbz
+    case mp3
+    case m4b
+    case aac
+    case flac
+    case ogg
+    case opus
+
+    /// Mirrors core:domain's `MediaFormat.isAudio()` (Models.kt) — used to split the
+    /// Library grid into books vs. audiobooks and to detect audio files during a
+    /// vault scan (see LibraryFileScanner).
+    var isAudio: Bool {
+        switch self {
+        case .mp3, .m4b, .aac, .flac, .ogg, .opus: return true
+        case .pdf, .epub, .mobi, .cbz: return false
+        }
+    }
 }
 
 struct Highlight: Identifiable {
