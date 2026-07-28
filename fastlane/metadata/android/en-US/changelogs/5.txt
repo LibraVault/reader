@@ -1,0 +1,1 @@
+Pocket-TTS: on-device text-to-speech via sherpa-onnx, fully offline after model download. No network access during narration.
