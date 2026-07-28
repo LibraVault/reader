@@ -10,8 +10,9 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
  * Registered as `libravault.kmp.library` (see convention/build.gradle.kts). Not yet applied to
  * any module — this only fixes the dangling plugin ID (the class this registration pointed at
  * didn't exist). Converting an actual module (starting with core:domain) to multiplatform is
- * follow-up work; see memory note on the java.time.Instant -> kotlinx-datetime migration that
- * blocks it (Models.kt and friends aren't commonMain-compatible as-is).
+ * follow-up work, blocked on replacing java.time.Instant with kotlinx-datetime's Instant first
+ * (core:domain's model classes aren't commonMain-compatible as-is, and that swap ripples into
+ * core:database, core:logger, feature:reader, and feature:player too).
  */
 class KotlinMultiplatformLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
