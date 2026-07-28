@@ -63,12 +63,25 @@ final class AppState: ObservableObject {
     /// sibling view's local state.
     @Published var shouldNavigateToPlayer = false
 
+    // MARK: - Vaults
+    //
+    // Real (non-mock) folder locations the user has granted access to via Settings'
+    // "Add Vault" picker — the iOS counterpart to Android's Storage Access Framework
+    // vault list. Persisted across launches through a security-scoped bookmark; see
+    // Vault.swift. Genuinely scanned for book/audiobook files (LibraryFileScanner),
+    // unlike the mock library below which stands in for the still-unwired Phase D
+    // core:domain/core:storage KMP integration (DomainBridge.swift).
+    @Published private(set) var vaults: [Vault] = []
+
     private var playbackTimer: Timer?
     private var sleepTimer: Timer?
 
     private let bridge = LibravaultDomainBridge.shared
+    private let vaultPersistence: VaultPersistence
 
-    init() {
+    init(vaultPersistence: VaultPersistence = VaultPersistence()) {
+        self.vaultPersistence = vaultPersistence
+        vaults = vaultPersistence.loadVaults()
         Task {
             try? await bridge.initialize()
             books = bridge.allBooks.map { BookItem(from: $0) }
@@ -80,13 +93,48 @@ final class AppState: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let libraryBooks = try await bridge.scanLibrary(vaultPath: "/Documents")
-            books = libraryBooks.map { BookItem(from: $0) }
+            let mockBooks = try await bridge.scanLibrary(vaultPath: "/Documents")
+            let vaultBooks = scanVaults()
+            books = (mockBooks + vaultBooks).map { BookItem(from: $0) }
             bridge.log("Loaded \(books.count) books from library", tag: "Library")
         } catch let err as DomainError {
             error = AppError.libraryLoadFailed(err.localizedDescription)
         } catch {
             self.error = AppError.libraryLoadFailed(error.localizedDescription)
+        }
+    }
+
+    /// Adds a folder picked via Settings' `.fileImporter` as a new vault, persists it,
+    /// and immediately rescans so its contents show up in the Library grid without
+    /// requiring a manual refresh.
+    ///
+    /// Dedupes by resolved path — picking the same folder twice (easy to do, since
+    /// it's the natural place to browse back to) would otherwise double up every file
+    /// in it in the Library grid, since each vault gets its own UUID and scans
+    /// independently. Mirrors AddVaultFolderUseCase's URI dedup on the Android side.
+    func addVault(pickedURL: URL) {
+        guard let vault = try? vaultPersistence.makeVault(from: pickedURL) else {
+            error = AppError.storageAccessDenied
+            return
+        }
+        guard !vaults.contains(where: { vaultPersistence.resolvedURL(for: $0)?.path == pickedURL.path }) else {
+            return
+        }
+        vaults.append(vault)
+        vaultPersistence.save(vaults)
+        Task { await loadLibrary() }
+    }
+
+    func removeVault(_ vault: Vault) {
+        vaults.removeAll { $0.id == vault.id }
+        vaultPersistence.save(vaults)
+        Task { await loadLibrary() }
+    }
+
+    private func scanVaults() -> [BookData] {
+        vaults.flatMap { vault -> [BookData] in
+            guard let resolvedURL = vaultPersistence.resolvedURL(for: vault) else { return [] }
+            return LibraryFileScanner.scan(vault: vault, resolvedURL: resolvedURL)
         }
     }
 

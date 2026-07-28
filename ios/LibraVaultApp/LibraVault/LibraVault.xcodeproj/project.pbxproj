@@ -14,8 +14,6 @@
 		D44C1303301358E400ADEF59 /* DomainBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F9301358E400ADEF59 /* DomainBridge.swift */; };
 		D44C1304301358E400ADEF59 /* KmpTypeMappings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12FA301358E400ADEF59 /* KmpTypeMappings.swift */; };
 		D44C1305301358E400ADEF59 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F6301358E400ADEF59 /* SettingsView.swift */; };
-		D44C13093013592700ADEF59 /* LibraVaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C13073013592700ADEF59 /* LibraVaultTests.swift */; };
-		D44C130A3013592700ADEF59 /* DomainBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C13063013592700ADEF59 /* DomainBridgeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,8 +44,6 @@
 		D44C12F9301358E400ADEF59 /* DomainBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainBridge.swift; sourceTree = "<group>"; };
 		D44C12FA301358E400ADEF59 /* KmpTypeMappings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KmpTypeMappings.swift; sourceTree = "<group>"; };
 		D44C12FC301358E400ADEF59 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
-		D44C13063013592700ADEF59 /* DomainBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainBridgeTests.swift; sourceTree = "<group>"; };
-		D44C13073013592700ADEF59 /* LibraVaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraVaultTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -109,7 +105,6 @@
 		D44C12A2301355A900ADEF59 = {
 			isa = PBXGroup;
 			children = (
-				D44C13083013592700ADEF59 /* LibraVaultTests */,
 				D44C12FE301358E400ADEF59 /* Sources */,
 				D44C12AD301355AA00ADEF59 /* LibraVault */,
 				D44C12BE301355B600ADEF59 /* LibraVaultTests */,
@@ -197,15 +192,6 @@
 			);
 			name = Sources;
 			path = LibraVault/Sources;
-			sourceTree = "<group>";
-		};
-		D44C13083013592700ADEF59 /* LibraVaultTests */ = {
-			isa = PBXGroup;
-			children = (
-				D44C13063013592700ADEF59 /* DomainBridgeTests.swift */,
-				D44C13073013592700ADEF59 /* LibraVaultTests.swift */,
-			);
-			path = LibraVaultTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -366,8 +352,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D44C13093013592700ADEF59 /* LibraVaultTests.swift in Sources */,
-				D44C130A3013592700ADEF59 /* DomainBridgeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

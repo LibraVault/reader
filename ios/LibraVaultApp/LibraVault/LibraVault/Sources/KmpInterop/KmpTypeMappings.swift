@@ -216,6 +216,12 @@ func mapMediaFormat(_ format: MediaFormat) -> MediaFormatSwift {
     case .pdf: return .pdf
     case .mobi: return .pdf  // treat as PDF fallback
     case .cbz: return .pdf   // treat as PDF fallback
+    case .mp3: return .mp3
+    case .m4b: return .m4b
+    case .aac: return .aac
+    case .flac: return .flac
+    case .ogg: return .ogg
+    case .opus: return .opus
     }
 }
 
