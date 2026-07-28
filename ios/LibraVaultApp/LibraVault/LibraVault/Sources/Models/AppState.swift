@@ -107,9 +107,17 @@ final class AppState: ObservableObject {
     /// Adds a folder picked via Settings' `.fileImporter` as a new vault, persists it,
     /// and immediately rescans so its contents show up in the Library grid without
     /// requiring a manual refresh.
+    ///
+    /// Dedupes by resolved path — picking the same folder twice (easy to do, since
+    /// it's the natural place to browse back to) would otherwise double up every file
+    /// in it in the Library grid, since each vault gets its own UUID and scans
+    /// independently. Mirrors AddVaultFolderUseCase's URI dedup on the Android side.
     func addVault(pickedURL: URL) {
         guard let vault = try? vaultPersistence.makeVault(from: pickedURL) else {
             error = AppError.storageAccessDenied
+            return
+        }
+        guard !vaults.contains(where: { vaultPersistence.resolvedURL(for: $0)?.path == pickedURL.path }) else {
             return
         }
         vaults.append(vault)

@@ -36,6 +36,20 @@ final class AppStateVaultTests: XCTestCase {
         XCTAssertEqual(state.vaults.first?.displayName, folder.lastPathComponent)
     }
 
+    /// Regression guard: picking the same folder twice must not double-add it — the
+    /// natural place to browse to for a second "Add Vault" tap is the same folder you
+    /// just picked, and without this, every file in it would show up twice in the grid.
+    func testAddingTheSameFolderTwiceDoesNotDuplicateTheVault() throws {
+        let state = AppState(vaultPersistence: makeIsolatedPersistence())
+        let folder = try makeTempVaultFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        state.addVault(pickedURL: folder)
+        state.addVault(pickedURL: folder)
+
+        XCTAssertEqual(state.vaults.count, 1)
+    }
+
     func testRemoveVaultRemovesItFromTheList() throws {
         let state = AppState(vaultPersistence: makeIsolatedPersistence())
         let folder = try makeTempVaultFolder()
