@@ -74,9 +74,18 @@ Builds:
     scanignore:
       - gradle/wrapper/gradle-wrapper.jar
 
+  - versionName: 0.4.1-alpha
+    versionCode: 6
+    commit: v0.4.1-alpha
+    subdir: app
+    gradle:
+      - fdroid
+    scanignore:
+      - gradle/wrapper/gradle-wrapper.jar
+
 AllowedAPKSigningKeys: 581050c87af0031ee426db330b3f9e4b4a19877ade3350c960f54182a5367c7a
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.4.0-alpha
-CurrentVersionCode: 5
+CurrentVersion: 0.4.1-alpha
+CurrentVersionCode: 6

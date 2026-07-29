@@ -1,0 +1,1 @@
+Fix: Library "All items" now shows as a scrollable grid on Android instead of a sideways-scrolling row.
