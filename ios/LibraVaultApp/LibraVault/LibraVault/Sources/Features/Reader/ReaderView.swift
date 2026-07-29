@@ -87,15 +87,27 @@ struct ReaderView: View {
 
     private var paginatedContent: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                Text(MockChapterContent.text(for: currentChapter))
-                    .font(.system(size: 16 * fontSize, design: fontDesign))
-                    .lineSpacing(8 * lineSpacing)
-                    .foregroundStyle(colors.onBackground)
-                    .padding(LibraVaultSpacing.lg)
-                    .textSelection(.enabled)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    Text(MockChapterContent.text(for: currentChapter))
+                        .font(.system(size: 16 * fontSize, design: fontDesign))
+                        .lineSpacing(8 * lineSpacing)
+                        .foregroundStyle(colors.onBackground)
+                        .padding(LibraVaultSpacing.lg)
+                        .textSelection(.enabled)
+                        .id(currentChapter)
+                }
+                .frame(maxHeight: .infinity)
+                // The ScrollView keeps its offset across content swaps, so without this
+                // the < > buttons land the next chapter's text at the previous scroll
+                // position instead of the top — reported as janky page-to-page scrolling
+                // on Mac (Catalyst), where the trackpad makes the leftover offset obvious.
+                .onChange(of: currentChapter) { _, newChapter in
+                    withAnimation {
+                        scrollProxy.scrollTo(newChapter, anchor: .top)
+                    }
+                }
             }
-            .frame(maxHeight: .infinity)
 
             HStack(spacing: LibraVaultSpacing.lg) {
                 Button(action: { if currentChapter > 1 { currentChapter -= 1; updateProgress() } }) {
