@@ -73,7 +73,7 @@ class PlayBillingProGate(context: Context) : IProGate, PurchasesUpdatedListener 
             .setProductType(BillingClient.ProductType.INAPP)
             .build()
         val result = billingClient.queryPurchasesAsync(params)
-        _isPro.value = result.purchasesList.any { it.isProPurchase() }
+        _isPro.value = result.purchasesList.any { isProPurchase(it) }
         // Pre-fetch product details so the purchase sheet opens instantly
         fetchProductDetails()
     }
@@ -104,7 +104,7 @@ class PlayBillingProGate(context: Context) : IProGate, PurchasesUpdatedListener 
 
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {
         if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-            val hasPro = purchases?.any { it.isProPurchase() } == true
+            val hasPro = purchases?.any { isProPurchase(it) } == true
             if (hasPro) {
                 _isPro.value = true
                 purchases?.forEach { purchase ->
@@ -153,11 +153,11 @@ class PlayBillingProGate(context: Context) : IProGate, PurchasesUpdatedListener 
         proProductDetails = result.productDetailsList?.firstOrNull()
     }
 
-    private fun Purchase.isProPurchase() =
-        products.contains(PRODUCT_ID) && purchaseState == Purchase.PurchaseState.PURCHASED
-
     companion object {
         /** Must match the product ID in Play Console → Monetise → In-app products. */
         const val PRODUCT_ID = "libravault_pro"
+
+        internal fun isProPurchase(purchase: Purchase) =
+            purchase.products.contains(PRODUCT_ID) && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
     }
 }

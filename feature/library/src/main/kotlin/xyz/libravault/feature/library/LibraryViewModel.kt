@@ -259,6 +259,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun clearSearch() {
+        searchJob?.cancel()
         _searchQuery.value   = ""
         _searchResults.value = null
     }
@@ -423,7 +424,7 @@ class LibraryViewModel @Inject constructor(
  * the result interleaves them so the freshest item from either list comes
  * first. Duplicates (same item appearing in both lists) are removed.
  */
-private fun interleaveByRecency(
+internal fun interleaveByRecency(
     reading: List<LibraryItem>,
     listening: List<LibraryItem>,
 ): List<LibraryItem> {
@@ -431,11 +432,12 @@ private fun interleaveByRecency(
     val out = ArrayList<LibraryItem>(reading.size + listening.size)
     var i = 0
     var j = 0
+    var preferReading = true
     while (i < reading.size || j < listening.size) {
         val takeReading = when {
             i >= reading.size -> false
             j >= listening.size -> true
-            else -> true  // Both have items — alternate to interleave
+            else -> preferReading  // Both have items — alternate to interleave
         }
         if (takeReading) {
             val item = reading[i++]
@@ -444,6 +446,7 @@ private fun interleaveByRecency(
             val item = listening[j++]
             if (seen.add(item.id)) out += item
         }
+        preferReading = !preferReading
     }
     return out
 }
