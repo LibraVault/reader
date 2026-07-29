@@ -24,6 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -307,43 +311,57 @@ fun LibraryScreen(
                     onRescan = viewModel::refresh,
                 )
             } else {
-                LazyColumn(
+                // Single scrolling surface: a vertically-scrollable adaptive grid whose headers,
+                // chips, and the horizontally-scrolling "Continue" row are full-width items that
+                // span every column. This mirrors the iOS LazyVGrid-in-a-ScrollView layout instead
+                // of nesting a horizontally-scrolling row per section.
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = Dimens.coverWidth),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = Dimens.spaceXxl),
+                    contentPadding = PaddingValues(
+                        start = Dimens.spaceLg,
+                        end = Dimens.spaceLg,
+                        bottom = Dimens.spaceXxl,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
                 ) {
+                    val fullSpan: (androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope.() -> GridItemSpan) =
+                        { GridItemSpan(maxLineSpan) }
 
                     // ── Continue cards — horizontally scrollable row of fixed-width covers ──────
                     val continueItems = state.continueItems
                     if (continueItems.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "Continue",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
-                            )
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
-                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
-                            ) {
-                                items(continueItems, key = { it.id }) { item ->
-                                    ContinueCard(
-                                        item    = item,
-                                        onClick = {
-                                            if (viewModel.validateItem(item)) onItemClick(item)
-                                            else viewModel.showStaleMessage()
-                                        },
-                                        modifier = Modifier.width(Dimens.coverWidth),
-                                    )
+                        item(span = fullSpan) {
+                            Column {
+                                Text(
+                                    text = "Continue",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(vertical = Dimens.spaceSm),
+                                )
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
+                                ) {
+                                    items(continueItems, key = { it.id }) { item ->
+                                        ContinueCard(
+                                            item    = item,
+                                            onClick = {
+                                                if (viewModel.validateItem(item)) onItemClick(item)
+                                                else viewModel.showStaleMessage()
+                                            },
+                                            modifier = Modifier.width(Dimens.coverWidth),
+                                        )
+                                    }
                                 }
+                                Spacer(Modifier.height(Dimens.spaceLg))
                             }
-                            Spacer(Modifier.height(Dimens.spaceLg))
                         }
                     }
 
                     // ── Vault filter chips (only when not already filtered) ────
                     if (state.vaults.size > 1 && state.selectedVault == null && state.searchResults == null) {
-                        item {
+                        item(span = fullSpan) {
                             VaultFilterChips(
                                 vaults = state.vaults,
                                 selectedVaultId = state.selectedVault?.id,
@@ -355,145 +373,113 @@ fun LibraryScreen(
 
                     // ── Format filter chips (always visible outside search) ────
                     if (state.searchResults == null) {
-                        item {
-                            FormatFilterRow(
-                                currentFilter   = state.formatFilter,
-                                onFilterChanged = viewModel::onFormatFilterChanged,
-                            )
-                            Spacer(Modifier.height(Dimens.spaceXs))
+                        item(span = fullSpan) {
+                            Column {
+                                FormatFilterRow(
+                                    currentFilter   = state.formatFilter,
+                                    onFilterChanged = viewModel::onFormatFilterChanged,
+                                    contentPadding  = PaddingValues(vertical = Dimens.spaceXs),
+                                )
+                                Spacer(Modifier.height(Dimens.spaceXs))
+                            }
                         }
                     }
 
                     // ── Library content ──────────────────────────────────────────
                     if (state.searchResults != null) {
-                        // Search results view — flat list
+                        // Search results view — same adaptive grid as the rest of the library
                         val items = state.searchResults!!
-                        item {
+                        item(span = fullSpan) {
                             SectionHeader("Results for \"${state.searchQuery}\"")
                         }
-                        item {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
-                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
-                            ) {
-                                items(items, key = { it.id }) { item ->
-                                    LibraryItemCard(
-                                        item = item,
-                                        onClick = {
-                                            if (viewModel.validateItem(item)) onItemClick(item)
-                                            else viewModel.showStaleMessage()
-                                        },
-                                    )
-                                }
-                            }
+                        items(items, key = { it.id }) { item ->
+                            LibraryItemCard(
+                                item = item,
+                                onClick = {
+                                    if (viewModel.validateItem(item)) onItemClick(item)
+                                    else viewModel.showStaleMessage()
+                                },
+                            )
                         }
                     } else if (state.selectedVault != null) {
                         // Single vault view — vaultGroupedItems is already format-filtered by ViewModel
-                        val selected = state.selectedVault ?: return@LazyColumn
+                        val selected = state.selectedVault ?: return@LazyVerticalGrid
                         val vaultItems = viewModel.vaultFilteredItems(
                             state.vaultGroupedItems,
                             selected.id,
                         )
-                        item { SectionHeader("All items") }
-                        item {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
-                                horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
-                            ) {
-                                items(vaultItems, key = { it.id }) { item ->
-                                    LibraryItemCard(
-                                        item = item,
-                                        onClick = {
-                                            if (viewModel.validateItem(item)) onItemClick(item)
-                                            else viewModel.showStaleMessage()
-                                        },
-                                    )
-                                }
-                            }
+                        item(span = fullSpan) { SectionHeader("All items") }
+                        items(vaultItems, key = { it.id }) { item ->
+                            LibraryItemCard(
+                                item = item,
+                                onClick = {
+                                    if (viewModel.validateItem(item)) onItemClick(item)
+                                    else viewModel.showStaleMessage()
+                                },
+                            )
                         }
                     } else if (state.formatFilter == null) {
                         // All formats: separate Books and Audio sections so neither is hidden
                         val allBooks = state.allItems.filter { !it.format.isAudio() }
                         val allAudio = state.allItems.filter { it.format.isAudio() }
                         if (allBooks.isNotEmpty()) {
-                            item(key = "section_books_header") {
+                            item(key = "section_books_header", span = fullSpan) {
                                 LibrarySectionHeader(
                                     title = "Reading",
                                     count = allBooks.size,
                                     onViewAll = { viewModel.onFormatFilterChanged("BOOK") },
                                 )
                             }
-                            item(key = "section_books_row") {
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
-                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
-                                ) {
-                                    items(allBooks, key = { it.id }) { item ->
-                                        LibraryItemCard(
-                                            item = item,
-                                            onClick = {
-                                                if (viewModel.validateItem(item)) onItemClick(item)
-                                                else viewModel.showStaleMessage()
-                                            },
-                                        )
-                                    }
-                                }
+                            items(allBooks, key = { it.id }) { item ->
+                                LibraryItemCard(
+                                    item = item,
+                                    onClick = {
+                                        if (viewModel.validateItem(item)) onItemClick(item)
+                                        else viewModel.showStaleMessage()
+                                    },
+                                )
                             }
-                            item(key = "section_books_spacer") { Spacer(Modifier.height(Dimens.spaceSm)) }
+                            item(key = "section_books_spacer", span = fullSpan) { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
                         if (allAudio.isNotEmpty()) {
-                            item(key = "section_audio_header") {
+                            item(key = "section_audio_header", span = fullSpan) {
                                 LibrarySectionHeader(
                                     title = "Listening",
                                     count = allAudio.size,
                                     onViewAll = { viewModel.onFormatFilterChanged("AUDIO") },
                                 )
                             }
-                            item(key = "section_audio_row") {
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
-                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
-                                ) {
-                                    items(allAudio, key = { it.id }) { item ->
-                                        LibraryItemCard(
-                                            item = item,
-                                            onClick = {
-                                                if (viewModel.validateItem(item)) onItemClick(item)
-                                                else viewModel.showStaleMessage()
-                                            },
-                                        )
-                                    }
-                                }
+                            items(allAudio, key = { it.id }) { item ->
+                                LibraryItemCard(
+                                    item = item,
+                                    onClick = {
+                                        if (viewModel.validateItem(item)) onItemClick(item)
+                                        else viewModel.showStaleMessage()
+                                    },
+                                )
                             }
-                            item(key = "section_audio_spacer") { Spacer(Modifier.height(Dimens.spaceSm)) }
+                            item(key = "section_audio_spacer", span = fullSpan) { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
                     } else {
-                        // Format filter active: per-vault rows (already filtered by ViewModel)
+                        // Format filter active: per-vault sections (already filtered by ViewModel)
                         state.vaultGroupedItems.forEach { (vault, vaultItems) ->
                             if (vaultItems.isEmpty()) return@forEach
-                            item(key = "${vault.id}_header") {
+                            item(key = "${vault.id}_header", span = fullSpan) {
                                 VaultSectionHeader(
                                     vault = vault,
                                     onClick = { viewModel.selectVault(vault.id) },
                                 )
                             }
-                            item(key = "${vault.id}_row") {
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
-                                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
-                                ) {
-                                    items(vaultItems, key = { it.id }) { item ->
-                                        LibraryItemCard(
-                                            item = item,
-                                            onClick = {
-                                                if (viewModel.validateItem(item)) onItemClick(item)
-                                                else viewModel.showStaleMessage()
-                                            },
-                                        )
-                                    }
-                                }
+                            items(vaultItems, key = { it.id }) { item ->
+                                LibraryItemCard(
+                                    item = item,
+                                    onClick = {
+                                        if (viewModel.validateItem(item)) onItemClick(item)
+                                        else viewModel.showStaleMessage()
+                                    },
+                                )
                             }
-                            item(key = "${vault.id}_spacer") { Spacer(Modifier.height(Dimens.spaceSm)) }
+                            item(key = "${vault.id}_spacer", span = fullSpan) { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
                     }
                 }
@@ -662,7 +648,6 @@ private fun VaultFilterChips(
     onShowAll: () -> Unit,
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = Dimens.spaceLg),
         horizontalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
     ) {
         item {
@@ -694,7 +679,7 @@ private fun VaultSectionHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
+            .padding(vertical = Dimens.spaceSm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -830,7 +815,7 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(horizontal = Dimens.spaceLg, vertical = Dimens.spaceSm),
+        modifier = Modifier.padding(vertical = Dimens.spaceSm),
     )
 }
 
@@ -839,7 +824,7 @@ private fun LibrarySectionHeader(title: String, count: Int, onViewAll: () -> Uni
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = Dimens.spaceLg, end = Dimens.spaceXs, top = Dimens.spaceSm, bottom = Dimens.spaceXs),
+            .padding(top = Dimens.spaceSm, bottom = Dimens.spaceXs),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -941,7 +926,7 @@ private fun ContinueCard(
 @Composable
 private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.width(Dimens.coverWidth).clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
@@ -1003,9 +988,10 @@ private fun List<LibraryItem>.applyFormatFilter(filter: String?): List<LibraryIt
 private fun FormatFilterRow(
     currentFilter: String?,
     onFilterChanged: (String?) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(horizontal = Dimens.spaceLg, vertical = Dimens.spaceXs),
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = Dimens.spaceLg, vertical = Dimens.spaceXs),
+        contentPadding = contentPadding,
         horizontalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
     ) {
         item {
