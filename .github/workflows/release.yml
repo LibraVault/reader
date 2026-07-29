@@ -53,6 +53,9 @@ jobs:
         with:
           files: app/build/outputs/apk/fdroid/release/*.apk
           generate_release_notes: true
+          # Every tag currently cuts an alpha; mark all releases as pre-release
+          # until this project ships a stable line.
+          prerelease: true
 
       # Clean up signing material — never leave keys on the runner
       - name: Clean up signing
