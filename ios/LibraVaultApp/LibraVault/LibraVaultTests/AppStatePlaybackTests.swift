@@ -4,6 +4,15 @@ import XCTest
 @MainActor
 final class AppStatePlaybackTests: XCTestCase {
 
+    // Isolated from the real UserDefaults.standard — AppState persists
+    // defaultPlaybackSpeed/defaultReadingTheme/skipDurationSeconds now, so without
+    // this, one test's `state.defaultPlaybackSpeed = 2.5` leaks into every other
+    // test in this file that constructs a plain AppState() expecting the compiled
+    // default of 1.0 (same reasoning as AppStateSettingsTests/AppStateVaultTests).
+    private func makeIsolatedPersistence() -> UserPreferencesPersistence {
+        UserPreferencesPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.\(UUID().uuidString)")!)
+    }
+
     // MARK: - estimateDuration
 
     func testEstimateDurationScalesInverselyWithSpeed() {
@@ -20,7 +29,7 @@ final class AppStatePlaybackTests: XCTestCase {
     // MARK: - startPlayback / togglePlayback
 
     func testStartPlaybackSetsNowPlayingState() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"), chapter: 2)
 
         XCTAssertEqual(state.nowPlayingBook?.id, "1")
@@ -31,7 +40,7 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testChangingSpeedMidPlaybackRecomputesDurationAndPreservesProgress() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         let originalTotal = state.totalEstimatedSeconds
         state.seek(to: originalTotal / 2)
@@ -52,7 +61,7 @@ final class AppStatePlaybackTests: XCTestCase {
     // playing in the background, which is exactly the bug this was written to catch.
 
     func testStartingANewBookSeedsSpeedFromTheDefault() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.defaultPlaybackSpeed = 1.5
 
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
@@ -61,7 +70,7 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testAdvancingChapterOfTheSameBookDoesNotResetSpeedToDefault() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.defaultPlaybackSpeed = 1.0
         let book = BookItem(id: "1", title: "T", author: "A")
         state.startPlayback(book: book)
@@ -73,7 +82,7 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testStartingADifferentBookReSeedsFromTheDefault() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.defaultPlaybackSpeed = 1.0
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         state.playbackSpeed = 2.0 // bumped up for book 1
@@ -84,7 +93,7 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testChangingDefaultPlaybackSpeedDoesNotAffectAnAlreadyPlayingBook() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         state.playbackSpeed = 1.75
 
@@ -94,14 +103,14 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testChangingSpeedWithoutActivePlaybackDoesNothing() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.playbackSpeed = 2.0
         XCTAssertNil(state.nowPlayingBook)
         XCTAssertEqual(state.totalEstimatedSeconds, 0)
     }
 
     func testTogglePlaybackFlipsIsPlaying() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         XCTAssertTrue(state.isPlaying)
 
@@ -113,7 +122,7 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testTogglePlaybackDoesNothingWithoutNowPlayingBook() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.togglePlayback()
         XCTAssertFalse(state.isPlaying)
     }
@@ -121,7 +130,7 @@ final class AppStatePlaybackTests: XCTestCase {
     // MARK: - skipToChapter
 
     func testSkipToChapterClampsToValidRange() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
 
         state.skipToChapter(999)
@@ -132,7 +141,7 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testSkipToChapterResetsElapsedSeconds() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         state.seek(to: 50)
 
@@ -145,7 +154,7 @@ final class AppStatePlaybackTests: XCTestCase {
     // MARK: - seek / skipForward / skipBackward
 
     func testSeekClampsToValidRange() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         let total = state.totalEstimatedSeconds
 
@@ -156,22 +165,27 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(state.elapsedSeconds, total)
     }
 
+    // MockChapterContent's chapter 1 is ~34 words — at the default 1.0x speed
+    // that's only ~13.6s of estimated duration (see AppState.estimateDuration), so
+    // seek/skip targets here have to stay well under that ceiling instead of the
+    // arbitrary 100s/130s this test used to assert against (which seek() would
+    // always clamp down to totalEstimatedSeconds, well short of 130).
     func testSkipForwardAndBackwardMoveElapsedSeconds() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
-        state.seek(to: 100)
+        state.seek(to: 5)
 
-        state.skipForward(seconds: 30)
-        XCTAssertEqual(state.elapsedSeconds, 130, accuracy: 0.01)
+        state.skipForward(seconds: 3)
+        XCTAssertEqual(state.elapsedSeconds, 8, accuracy: 0.01)
 
-        state.skipBackward(seconds: 50)
-        XCTAssertEqual(state.elapsedSeconds, 80, accuracy: 0.01)
+        state.skipBackward(seconds: 2)
+        XCTAssertEqual(state.elapsedSeconds, 6, accuracy: 0.01)
     }
 
     // MARK: - stopPlayback
 
     func testStopPlaybackClearsState() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
 
         state.stopPlayback()
@@ -185,13 +199,13 @@ final class AppStatePlaybackTests: XCTestCase {
     // MARK: - Sleep timer
 
     func testScheduleSleepTimerSetsRemainingSeconds() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.scheduleSleepTimer(minutes: 5)
         XCTAssertEqual(state.sleepTimerRemainingSeconds, 300)
     }
 
     func testCancelSleepTimerClearsRemainingSeconds() {
-        let state = AppState()
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.scheduleSleepTimer(minutes: 5)
         state.cancelSleepTimer()
         XCTAssertNil(state.sleepTimerRemainingSeconds)

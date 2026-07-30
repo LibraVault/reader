@@ -44,17 +44,21 @@ final class AppStateSettingsTests: XCTestCase {
     /// Regression guard for the actual wiring, not just the property: Settings'
     /// "Skip duration" chips are only meaningful if Player's transport buttons
     /// genuinely read this value rather than a hardcoded 30s (see PlayerView.swift).
+    ///
+    /// MockChapterContent's chapter 1 is ~34 words — at the default 1.0x speed
+    /// that's only ~13.6s of estimated duration (see AppState.estimateDuration), so
+    /// seek/skip targets here have to stay well under that ceiling.
     func testSkipDurationFeedsSkipForwardAndBackward() {
         let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
-        state.seek(to: 100)
-        state.skipDurationSeconds = 15
+        state.seek(to: 5)
+        state.skipDurationSeconds = 3
 
         state.skipForward(seconds: state.skipDurationSeconds)
-        XCTAssertEqual(state.elapsedSeconds, 115, accuracy: 0.01)
+        XCTAssertEqual(state.elapsedSeconds, 8, accuracy: 0.01)
 
         state.skipBackward(seconds: state.skipDurationSeconds)
-        XCTAssertEqual(state.elapsedSeconds, 100, accuracy: 0.01)
+        XCTAssertEqual(state.elapsedSeconds, 5, accuracy: 0.01)
     }
 
     /// Regression guard for the actual bug being fixed: these three settings used to
