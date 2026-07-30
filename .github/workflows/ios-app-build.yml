@@ -56,7 +56,6 @@ jobs:
             -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
             CODE_SIGNING_ALLOWED=NO
-        continue-on-error: true
 
       - name: Upload Test Results
         if: always()
@@ -101,7 +100,6 @@ jobs:
           ./gradlew :core:domain:test \
                     :core:tts:test \
                     :core:logger:test -q
-        continue-on-error: true
 
       - name: Upload Test Results
         if: always()
