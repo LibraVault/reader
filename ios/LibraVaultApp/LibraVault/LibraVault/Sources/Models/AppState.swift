@@ -14,9 +14,14 @@ final class AppState: ObservableObject {
     // MARK: - Settings (Reading / Playback defaults)
 
     /// Applied when ReaderView opens a book — see ReaderView's `.task` modifier.
-    @Published var defaultReadingTheme: ReadingTheme = .dark
+    /// Persisted via userPreferencesPersistence — see the didSet below.
+    @Published var defaultReadingTheme: ReadingTheme = .dark {
+        didSet { userPreferencesPersistence.save(readingTheme: defaultReadingTheme) }
+    }
     /// Read by PlayerView's skip-back/skip-forward buttons instead of a hardcoded 30.
-    @Published var skipDurationSeconds: Double = 30
+    @Published var skipDurationSeconds: Double = 30 {
+        didSet { userPreferencesPersistence.save(skipDurationSeconds: skipDurationSeconds) }
+    }
     /// The Settings-configured preference a *new* listening session starts at —
     /// deliberately not the same property as the live `playbackSpeed` below. Android
     /// keeps these separate (prefs.defaultPlaybackSpeed vs. the live SpeedPickerSheet
@@ -24,7 +29,9 @@ final class AppState: ObservableObject {
     /// speed" in Settings visibly changes the pace of whatever's already playing in
     /// the background mini-player, which isn't what a "default for next time" setting
     /// should do. See startPlayback's use of this.
-    @Published var defaultPlaybackSpeed: Double = 1.0
+    @Published var defaultPlaybackSpeed: Double = 1.0 {
+        didSet { userPreferencesPersistence.save(playbackSpeed: defaultPlaybackSpeed) }
+    }
 
     // MARK: - Playback (mini-player / Player screen)
 
@@ -65,12 +72,13 @@ final class AppState: ObservableObject {
 
     // MARK: - Vaults
     //
-    // Real (non-mock) folder locations the user has granted access to via Settings'
-    // "Add Vault" picker — the iOS counterpart to Android's Storage Access Framework
-    // vault list. Persisted across launches through a security-scoped bookmark; see
-    // Vault.swift. Genuinely scanned for book/audiobook files (LibraryFileScanner),
-    // unlike the mock library below which stands in for the still-unwired Phase D
-    // core:domain/core:storage KMP integration (DomainBridge.swift).
+    // Folder locations the user has granted access to via Settings' "Add Vault"
+    // picker — the iOS counterpart to Android's Storage Access Framework vault list.
+    // Persisted across launches through a security-scoped bookmark; see Vault.swift.
+    // Genuinely scanned for book/audiobook files (LibraryFileScanner). Once any vault
+    // exists, `books` below is real vault content ONLY — DomainBridge's small demo
+    // library (see its header comment) is shown solely as a first-launch preview
+    // before a vault has ever been added, never mixed in alongside real books.
     @Published private(set) var vaults: [Vault] = []
 
     private var playbackTimer: Timer?
@@ -78,13 +86,21 @@ final class AppState: ObservableObject {
 
     private let bridge = LibravaultDomainBridge.shared
     private let vaultPersistence: VaultPersistence
+    private let userPreferencesPersistence: UserPreferencesPersistence
 
-    init(vaultPersistence: VaultPersistence = VaultPersistence()) {
+    init(
+        vaultPersistence: VaultPersistence = VaultPersistence(),
+        userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence()
+    ) {
         self.vaultPersistence = vaultPersistence
+        self.userPreferencesPersistence = userPreferencesPersistence
         vaults = vaultPersistence.loadVaults()
+        defaultReadingTheme = userPreferencesPersistence.loadReadingTheme()
+        defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
+        skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
         Task {
             try? await bridge.initialize()
-            books = bridge.allBooks.map { BookItem(from: $0) }
+            await loadLibrary()
         }
     }
 
@@ -92,16 +108,15 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        do {
-            let mockBooks = try await bridge.scanLibrary(vaultPath: "/Documents")
-            let vaultBooks = scanVaults()
-            books = (mockBooks + vaultBooks).map { BookItem(from: $0) }
-            bridge.log("Loaded \(books.count) books from library", tag: "Library")
-        } catch let err as DomainError {
-            error = AppError.libraryLoadFailed(err.localizedDescription)
-        } catch {
-            self.error = AppError.libraryLoadFailed(error.localizedDescription)
+        if vaults.isEmpty {
+            // No real vault configured yet — show the bridge's small demo library as a
+            // first-launch preview rather than a plain empty screen. The moment a vault
+            // is added, this branch never runs again: see the `else`.
+            books = ((try? await bridge.scanLibrary(vaultPath: "/Documents")) ?? []).map { BookItem(from: $0) }
+        } else {
+            books = scanVaults().map { BookItem(from: $0) }
         }
+        bridge.log("Loaded \(books.count) books from library", tag: "Library")
     }
 
     /// Adds a folder picked via Settings' `.fileImporter` as a new vault, persists it,
@@ -144,8 +159,8 @@ final class AppState: ObservableObject {
 
     // MARK: - Playback controls
     //
-    // There's no real audio engine or audiobook file behind this (core:tts is still
-    // Phase D TODOs, per DomainBridge.swift) — TTS start/stop/pause/resume calls are
+    // There's no real audio engine or audiobook file behind this (TTSEngineBridge in
+    // DomainBridge.swift is still a no-op) — TTS start/stop/pause/resume calls are
     // real, but "elapsed"/"duration" have nothing to measure against. Rather than
     // fabricate static numbers, elapsedSeconds is a real wall-clock timer and
     // totalEstimatedSeconds is computed from the chapter's actual word count, so the

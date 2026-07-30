@@ -3,10 +3,16 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
-    @State private var enableLogging = false
     @State private var isPickingVaultFolder = false
+    @State private var loggingEnabled: Bool
+    private let logStore = LibraVaultLogStore()
 
     private let skipDurationPresets: [Double] = [10, 15, 30, 45, 60]
+
+    init() {
+        let store = LibraVaultLogStore()
+        _loggingEnabled = State(initialValue: store.isEnabled)
+    }
 
     var body: some View {
         Form {
@@ -120,10 +126,12 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         Section {
-            Toggle("Local crash logging", isOn: $enableLogging)
+            Toggle("Local crash logging", isOn: $loggingEnabled)
                 .tint(LibraVaultColor.primary)
-            // TODO: Integrate with core:logger
-            if enableLogging {
+                .onChange(of: loggingEnabled) { _, newValue in
+                    logStore.isEnabled = newValue
+                }
+            if loggingEnabled {
                 NavigationLink(destination: LogViewerView()) {
                     Text("View Logs")
                 }
@@ -184,8 +192,8 @@ struct SettingsView: View {
 }
 
 struct LogViewerView: View {
-    @State private var logs: String = "[Phase B: Log viewer ready for Phase C integration with core:logger]"
-    @State private var isLoading = false
+    private let logStore = LibraVaultLogStore()
+    @State private var logs: String = ""
 
     var body: some View {
         VStack {
@@ -216,7 +224,10 @@ struct LogViewerView: View {
             .padding()
 
             HStack(spacing: 12) {
-                Button(action: { logs = "" }) {
+                Button(action: {
+                    logStore.clearLogs()
+                    refreshLogs()
+                }) {
                     Label("Clear", systemImage: "trash")
                         .font(.caption)
                 }
@@ -233,24 +244,11 @@ struct LogViewerView: View {
             .padding()
         }
         .navigationTitle("Logs")
+        .onAppear { refreshLogs() }
     }
 
     private func refreshLogs() {
-        logs = """
-        [LibraVault Diagnostic Logs]
-        Version: 3.0.0-alpha
-        Platform: iOS 17+
-
-        [Phase B] Library initialized with mock data
-        [Phase B] Domain bridge ready for Phase C KMP integration
-        [Phase B] Log viewer functional - Phase C will integrate core:logger
-
-        Phase C TODO:
-        - Integrate actual core:logger for persistent logging
-        - Wire up TTS state tracking
-        - Add database access logging
-        - Implement real file I/O logging
-        """
+        logs = logStore.readLogs()
     }
 
     private func shareLogs() {

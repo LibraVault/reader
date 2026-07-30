@@ -1,23 +1,27 @@
 import Foundation
 
 // MARK: - KMP Domain Bridge
-// Provides Swift-friendly wrappers around Kotlin Multiplatform domain code
+// Provides Swift-friendly wrappers around what was meant to become Kotlin
+// Multiplatform domain code. No KMP framework is actually linked into the iOS app
+// (see docs/iOS-TESTFLIGHT-RELEASE-PROCESS.md) — bookmark/highlight/progress state
+// below is genuine Swift-native logic (now persisted, see initialize()), not a KMP
+// call. `allBooks` is a small hardcoded demo library, NOT mixed into a user's real
+// library — AppState.loadLibrary() only falls back to it when no vault has been
+// configured yet (a first-launch preview), and switches over to real
+// LibraryFileScanner-scanned files the moment a vault is added. It also backs the UI
+// test suite's navigation fixture (see LibraVaultUITests.openReaderForMockingbird).
 //
-// Phase B: Mock data implementation (100% functional UI)
-// Phase D: Real KMP framework integration point
-//
-// KMP Modules (build with: ./gradlew -f kmp-ios-build.gradle.kts :buildIosFrameworks):
+// KMP Modules referenced by the original Phase D plan (never built):
 // - core:domain      → LibravaultDomainKmp (UseCases for library/reading)
 // - core:tts         → TtsEngineKmp (text-to-speech)
 // - core:logger      → LibravaultLoggerKmp (diagnostic logging)
 // - core:storage     → StorageManagerKmp (file access)
 // - core:licensing   → ProGateKmp (license/pro features)
 //
-// Phase D TODO:
-// 1. Link XCFrameworks from build/XCFrameworks/ in Package.swift
-// 2. Replace MockLibrary with actual GetLibraryUseCase calls
-// 3. Wire TTS to core:tts framework
-// 4. Connect logging to core:logger framework
+// Still open:
+// 1. Wire TTS to a real engine (AVSpeechSynthesizer as a Swift-native stand-in, or
+//    core:tts if/when the KMP chain unblocks)
+// 2. Real audio-file playback (AVFoundation)
 
 @MainActor
 class LibravaultDomainBridge: ObservableObject {
@@ -31,11 +35,11 @@ class LibravaultDomainBridge: ObservableObject {
     private var logger: LoggerBridge?
     private var ttsEngine: TTSEngineBridge?
     private var isInitialized = false
+    private let persistence: ReadingDataPersistence
 
-    // Phase D: KMP framework holders (will be populated when frameworks linked)
-    // private var kmpDomain: LibravaultDomainKmp?
-    // private var kmpTts: TtsEngineKmp?
-    // private var kmpLogger: LibravaultLoggerKmp?
+    init(persistence: ReadingDataPersistence = ReadingDataPersistence()) {
+        self.persistence = persistence
+    }
 
     // MARK: - Initialization
     func initialize() async throws {
@@ -49,30 +53,19 @@ class LibravaultDomainBridge: ObservableObject {
         try await ttsEngine?.initialize()
         logger?.d(tag: "Bridge", message: "TTS engine initialized")
 
-        // Phase D: Initialize KMP frameworks here
-        // try initializeKmpFrameworks()
-
-        // Phase B: Load mock library data (remove in Phase D when using real KMP)
+        bookmarks = persistence.loadBookmarks()
+        highlights = persistence.loadHighlights()
+        progress = persistence.loadProgress()
         loadMockLibrary()
 
         isInitialized = true
         logger?.d(tag: "Bridge", message: "Domain bridge fully initialized")
     }
 
-    // Phase D: Will initialize actual KMP frameworks
-    // private func initializeKmpFrameworks() throws {
-    //     // Import KMP frameworks from build/XCFrameworks/
-    //     // Initialize domain, logging, TTS engines
-    //     // Load actual library via GetLibraryUseCase
-    // }
-
-    // MARK: - Library Operations
+    // MARK: - Library Operations (demo/preview library — see the header comment above)
     func scanLibrary(vaultPath: String) async throws -> [BookData] {
         guard isInitialized else { throw DomainError.notInitialized }
         logger?.d(tag: "Library", message: "Scanning vault: \(vaultPath)")
-
-        // Phase B: Return cached mock library
-        // Phase C: Call core:domain ScanVaultUseCase and cache result
         return allBooks
     }
 
@@ -84,8 +77,6 @@ class LibravaultDomainBridge: ObservableObject {
         }
 
         logger?.d(tag: "Reader", message: "Loading book: \(book.title)")
-
-        // Phase C: Call core:domain GetLibraryItemUseCase
         return book
     }
 
@@ -94,9 +85,8 @@ class LibravaultDomainBridge: ObservableObject {
         guard isInitialized else { throw DomainError.notInitialized }
 
         self.progress[bookId] = progress
+        persistence.save(progress: self.progress)
         logger?.d(tag: "Progress", message: "Updated \(bookId) to \(Int(progress * 100))%")
-
-        // Phase C: Call core:domain SaveReadingProgressUseCase
     }
 
     func addHighlight(bookId: String, position: String, text: String, color: String = "FFFF00") async throws {
@@ -115,10 +105,9 @@ class LibravaultDomainBridge: ObservableObject {
             highlights[bookId] = []
         }
         highlights[bookId]?.append(highlight)
+        persistence.save(highlights: highlights)
 
         logger?.d(tag: "Highlights", message: "Added highlight to \(bookId)")
-
-        // Phase C: Call core:domain AddHighlightUseCase
     }
 
     func addBookmark(bookId: String, position: String) async throws {
@@ -135,10 +124,9 @@ class LibravaultDomainBridge: ObservableObject {
             bookmarks[bookId] = []
         }
         bookmarks[bookId]?.append(bookmark)
+        persistence.save(bookmarks: bookmarks)
 
         logger?.d(tag: "Bookmarks", message: "Added bookmark to \(bookId)")
-
-        // Phase C: Call core:domain AddBookmarkUseCase
     }
 
     func updateBookmarkNote(bookId: String, bookmarkId: String, note: String) async throws {
@@ -148,10 +136,9 @@ class LibravaultDomainBridge: ObservableObject {
             throw DomainError.bookNotFound(bookmarkId)
         }
         bookmarks[bookId]?[index].note = note.isEmpty ? nil : note
+        persistence.save(bookmarks: bookmarks)
 
         logger?.d(tag: "Bookmarks", message: "Updated note on bookmark \(bookmarkId)")
-
-        // Phase C: Call core:domain UpdateBookmarkUseCase
     }
 
     // MARK: - Logger Integration
@@ -178,72 +165,18 @@ class LibravaultDomainBridge: ObservableObject {
         await ttsEngine?.resume()
     }
 
-    // MARK: - Mock Data (Phase B)
+    // MARK: - Demo/preview library
+    //
+    // Shown only until the user configures a real vault — see AppState.loadLibrary().
     private func loadMockLibrary() {
         allBooks = [
-            BookData(
-                id: "1",
-                title: "The Great Gatsby",
-                author: "F. Scott Fitzgerald",
-                format: .epub,
-                progress: 0.35,
-                highlights: [],
-                bookmarks: []
-            ),
-            BookData(
-                id: "2",
-                title: "1984",
-                author: "George Orwell",
-                format: .pdf,
-                progress: 0.67,
-                highlights: [],
-                bookmarks: []
-            ),
-            BookData(
-                id: "3",
-                title: "To Kill a Mockingbird",
-                author: "Harper Lee",
-                format: .epub,
-                progress: 0.0,
-                highlights: [],
-                bookmarks: []
-            ),
-            BookData(
-                id: "4",
-                title: "Pride and Prejudice",
-                author: "Jane Austen",
-                format: .epub,
-                progress: 0.42,
-                highlights: [],
-                bookmarks: []
-            ),
-            BookData(
-                id: "5",
-                title: "Brave New World",
-                author: "Aldous Huxley",
-                format: .pdf,
-                progress: 0.28,
-                highlights: [],
-                bookmarks: []
-            ),
-            BookData(
-                id: "6",
-                title: "The Hobbit",
-                author: "J.R.R. Tolkien",
-                format: .m4b,
-                progress: 0.12,
-                highlights: [],
-                bookmarks: []
-            ),
-            BookData(
-                id: "7",
-                title: "Sapiens: A Brief History of Humankind",
-                author: "Yuval Noah Harari",
-                format: .mp3,
-                progress: 0.0,
-                highlights: [],
-                bookmarks: []
-            ),
+            BookData(id: "1", title: "The Great Gatsby", author: "F. Scott Fitzgerald", format: .epub, progress: 0.35),
+            BookData(id: "2", title: "1984", author: "George Orwell", format: .pdf, progress: 0.67),
+            BookData(id: "3", title: "To Kill a Mockingbird", author: "Harper Lee", format: .epub, progress: 0.0),
+            BookData(id: "4", title: "Pride and Prejudice", author: "Jane Austen", format: .epub, progress: 0.42),
+            BookData(id: "5", title: "Brave New World", author: "Aldous Huxley", format: .pdf, progress: 0.28),
+            BookData(id: "6", title: "The Hobbit", author: "J.R.R. Tolkien", format: .m4b, progress: 0.12),
+            BookData(id: "7", title: "Sapiens: A Brief History of Humankind", author: "Yuval Noah Harari", format: .mp3, progress: 0.0),
         ]
     }
 }
@@ -283,71 +216,55 @@ enum MediaFormat: Equatable {
     }
 }
 
-struct Highlight: Identifiable {
+struct Highlight: Identifiable, Codable {
     let id: String
     let position: String
     let text: String
     let colorHex: String
-    let note: String?
+    var note: String?
     let createdAt: Date
 }
 
-struct Bookmark: Identifiable {
+struct Bookmark: Identifiable, Codable {
     let id: String
     let position: String
     var note: String?
     let createdAt: Date
 }
 
-// MARK: - KMP Wrapper Classes
-
-class DomainUseCases {
-    // Holds references to Kotlin use cases
-    // TODO: Initialize with core:domain KMP classes
-}
+// MARK: - Bridge helper classes
 
 class LoggerBridge {
-    // Wraps core:logger expect/actual implementation
-    func initialize() async {
-        // TODO: Initialize core:logger
+    private let store: LibraVaultLogStore
+
+    init(store: LibraVaultLogStore = LibraVaultLogStore()) {
+        self.store = store
     }
 
+    func initialize() async {}
+
     func d(tag: String, message: String) {
-        // TODO: Call core:logger.d()
         print("[\(tag)] \(message)")
+        store.write(level: "D", tag: tag, message: message)
     }
 
     func e(tag: String, message: String, error: Error? = nil) {
-        // TODO: Call core:logger.e()
-        if let error = error {
-            print("[\(tag)] ERROR: \(message) - \(error)")
-        } else {
-            print("[\(tag)] ERROR: \(message)")
-        }
+        let fullMessage = error.map { "\(message) - \($0)" } ?? message
+        print("[\(tag)] ERROR: \(fullMessage)")
+        store.write(level: "E", tag: tag, message: fullMessage)
     }
 }
 
+// TTS is currently a no-op: neither core:tts (blocked on the KMP chain) nor a
+// Swift-native engine (e.g. AVSpeechSynthesizer) is wired up yet. startSpeaking/
+// stopSpeaking/etc. all genuinely reach this class — see AppState.swift's playback
+// controls — they just don't produce audio.
 class TTSEngineBridge {
-    // Wraps core:tts expect/actual implementation
-    func initialize() async throws {
-        // TODO: Initialize core:tts engine
-    }
-
-    func speak(text: String) async {
-        // TODO: Call core:tts.speak()
-    }
-
-    func stop() async {
-        // TODO: Call core:tts.stop()
-    }
-
-    func pause() async {
-        // TODO: Call core:tts.pause()
-    }
-
-    func resume() async {
-        // TODO: Call core:tts.resume()
-    }
+    func initialize() async throws {}
+    func speak(text: String) async {}
+    func stop() async {}
+    func pause() async {}
+    func resume() async {}
 }
 
 // MARK: - Errors

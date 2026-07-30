@@ -93,6 +93,32 @@ final class AppStateVaultTests: XCTestCase {
         XCTAssertTrue(state.books.contains { $0.title == "MyAudiobook" && $0.format == .mp3 })
     }
 
+    /// Regression guard for the actual bug being fixed: `loadLibrary()` used to always
+    /// mix 7 hardcoded demo books into `books` alongside anything real — every tester
+    /// who added a real vault still saw fake titles permanently, forever. Once a vault
+    /// exists, the demo library (DomainBridge.loadMockLibrary) must never appear again.
+    func testLoadLibraryNeverMixesMockDemoBooksIntoARealVault() async throws {
+        let persistence = makeIsolatedPersistence()
+        let folder = try makeTempVaultFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("MyAudiobook.mp3"))
+
+        let state = AppState(vaultPersistence: persistence)
+        state.addVault(pickedURL: folder)
+        await state.loadLibrary()
+
+        XCTAssertEqual(state.books.count, 1)
+        XCTAssertFalse(state.books.contains { $0.title == "The Great Gatsby" })
+    }
+
+    /// The demo library is a first-launch preview, not a permanent fallback — this is
+    /// what LibraVaultUITests' navigation fixture (openReaderForMockingbird) relies on.
+    func testLoadLibraryShowsDemoLibraryWhenNoVaultsAreAdded() async throws {
+        let state = AppState(vaultPersistence: makeIsolatedPersistence())
+        await state.loadLibrary()
+        XCTAssertTrue(state.books.contains { $0.title == "To Kill a Mockingbird" })
+    }
+
     func testRemovingAVaultDropsItsBooksFromTheLibrary() async throws {
         let persistence = makeIsolatedPersistence()
         let folder = try makeTempVaultFolder()
