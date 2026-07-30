@@ -216,7 +216,7 @@ enum MediaFormat: Equatable {
     }
 }
 
-struct Highlight: Identifiable, Codable {
+struct Highlight: Identifiable, Codable, Equatable {
     let id: String
     let position: String
     let text: String
@@ -225,7 +225,7 @@ struct Highlight: Identifiable, Codable {
     let createdAt: Date
 }
 
-struct Bookmark: Identifiable, Codable {
+struct Bookmark: Identifiable, Codable, Equatable {
     let id: String
     let position: String
     var note: String?
