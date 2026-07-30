@@ -209,6 +209,17 @@ final class LibraVaultUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
     }
 
+    /// Settings is a Form long enough that "Support Development" (its last section)
+    /// sits below the fold on the simulator's screen — waitForExistence doesn't
+    /// scroll a SwiftUI Form/List into view on its own, so a swipe is needed first.
+    private func scrollDownUntilVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 6) {
+        var attempts = 0
+        while !element.exists && attempts < maxSwipes {
+            app.swipeUp()
+            attempts += 1
+        }
+    }
+
     @MainActor
     func testSettingsShowsAllSevenSections() throws {
         let app = XCUIApplication()
@@ -218,8 +229,11 @@ final class LibraVaultUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Reading"].exists)
         XCTAssertTrue(app.staticTexts["Playback"].exists)
         XCTAssertTrue(app.staticTexts["Privacy & Diagnostics"].exists)
+
+        let supportDevelopment = app.staticTexts["Support Development"]
+        scrollDownUntilVisible(supportDevelopment, in: app)
         XCTAssertTrue(app.staticTexts["About"].exists)
-        XCTAssertTrue(app.staticTexts["Support Development"].exists)
+        XCTAssertTrue(supportDevelopment.exists)
 
         // Deliberately omitted (see SettingsView.swift's comments): no iOS equivalent
         // for Material You dynamic color, and no real cover cache to clear yet.
@@ -256,7 +270,9 @@ final class LibraVaultUITests: XCTestCase {
         let app = XCUIApplication()
         openSettings(in: app)
 
-        XCTAssertTrue(app.staticTexts["Support Development"].waitForExistence(timeout: 5))
+        let supportDevelopment = app.staticTexts["Support Development"]
+        scrollDownUntilVisible(supportDevelopment, in: app)
+        XCTAssertTrue(supportDevelopment.exists)
         // Android's Support Development has a real BTCPay-verified donate flow; iOS
         // has none yet, so there must be no button implying one — see
         // SettingsView.swift's supportSection comment.
