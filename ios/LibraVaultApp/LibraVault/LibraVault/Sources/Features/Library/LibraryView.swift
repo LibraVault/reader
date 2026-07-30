@@ -281,6 +281,8 @@ struct BookCoverView: View {
 struct BookDetailView: View {
     let book: BookItem
     @State private var isLoading = false
+    @State private var showBookmarksSheet = false
+    @State private var showHighlightsSheet = false
 
     var body: some View {
         ScrollView {
@@ -338,7 +340,7 @@ struct BookDetailView: View {
                         }
                         .accessibilityIdentifier("bookDetail.continueReadingButton")
 
-                        Button(action: {}) {
+                        Button(action: { showBookmarksSheet = true }) {
                             HStack {
                                 Image(systemName: "bookmark")
                                 Text("View Bookmarks")
@@ -351,7 +353,7 @@ struct BookDetailView: View {
                             .cornerRadius(8)
                         }
 
-                        Button(action: {}) {
+                        Button(action: { showHighlightsSheet = true }) {
                             HStack {
                                 Image(systemName: "highlighter")
                                 Text("View Highlights")
@@ -371,6 +373,12 @@ struct BookDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showBookmarksSheet) {
+            BookmarksSheet(bookId: book.id)
+        }
+        .sheet(isPresented: $showHighlightsSheet) {
+            HighlightsSheet(bookId: book.id)
+        }
     }
 }
 

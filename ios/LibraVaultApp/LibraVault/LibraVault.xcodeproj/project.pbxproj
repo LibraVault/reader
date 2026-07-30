@@ -12,7 +12,6 @@
 		D44C1301301358E400ADEF59 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F2301358E400ADEF59 /* LibraryView.swift */; };
 		D44C1302301358E400ADEF59 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12FC301358E400ADEF59 /* AppState.swift */; };
 		D44C1303301358E400ADEF59 /* DomainBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F9301358E400ADEF59 /* DomainBridge.swift */; };
-		D44C1304301358E400ADEF59 /* KmpTypeMappings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12FA301358E400ADEF59 /* KmpTypeMappings.swift */; };
 		D44C1305301358E400ADEF59 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F6301358E400ADEF59 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
@@ -42,7 +41,6 @@
 		D44C12F4301358E400ADEF59 /* ReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderView.swift; sourceTree = "<group>"; };
 		D44C12F6301358E400ADEF59 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D44C12F9301358E400ADEF59 /* DomainBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainBridge.swift; sourceTree = "<group>"; };
-		D44C12FA301358E400ADEF59 /* KmpTypeMappings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KmpTypeMappings.swift; sourceTree = "<group>"; };
 		D44C12FC301358E400ADEF59 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -169,7 +167,6 @@
 			isa = PBXGroup;
 			children = (
 				D44C12F9301358E400ADEF59 /* DomainBridge.swift */,
-				D44C12FA301358E400ADEF59 /* KmpTypeMappings.swift */,
 			);
 			path = KmpInterop;
 			sourceTree = "<group>";
@@ -343,7 +340,6 @@
 				D44C1301301358E400ADEF59 /* LibraryView.swift in Sources */,
 				D44C1302301358E400ADEF59 /* AppState.swift in Sources */,
 				D44C1303301358E400ADEF59 /* DomainBridge.swift in Sources */,
-				D44C1304301358E400ADEF59 /* KmpTypeMappings.swift in Sources */,
 				D44C1305301358E400ADEF59 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

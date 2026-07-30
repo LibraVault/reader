@@ -98,3 +98,53 @@ final class DomainBridgeTests: XCTestCase {
         XCTAssertEqual(bridge.progress["3"], 0.75)
     }
 }
+
+/// Regression coverage for the actual bug being fixed: bookmarks/highlights/progress
+/// used to be pure in-memory state on the shared singleton — genuinely lost on every
+/// relaunch even though the UI presents them as saved. Uses isolated
+/// ReadingDataPersistence (not the shared singleton's real UserDefaults.standard) so a
+/// fresh LibravaultDomainBridge instance stands in for "the app relaunched."
+@MainActor
+final class DomainBridgePersistenceTests: XCTestCase {
+
+    private func makeIsolatedPersistence() -> ReadingDataPersistence {
+        ReadingDataPersistence(defaults: UserDefaults(suiteName: "DomainBridgePersistenceTests.\(UUID().uuidString)")!)
+    }
+
+    func testBookmarksPersistAcrossBridgeInstances() async throws {
+        let persistence = makeIsolatedPersistence()
+        let first = LibravaultDomainBridge(persistence: persistence)
+        try await first.initialize()
+        try await first.addBookmark(bookId: "1", position: "chapter-3")
+
+        let reloaded = LibravaultDomainBridge(persistence: persistence)
+        try await reloaded.initialize()
+
+        XCTAssertEqual(reloaded.bookmarks["1"]?.count, 1)
+        XCTAssertEqual(reloaded.bookmarks["1"]?.first?.position, "chapter-3")
+    }
+
+    func testHighlightsPersistAcrossBridgeInstances() async throws {
+        let persistence = makeIsolatedPersistence()
+        let first = LibravaultDomainBridge(persistence: persistence)
+        try await first.initialize()
+        try await first.addHighlight(bookId: "1", position: "para-2", text: "notable quote")
+
+        let reloaded = LibravaultDomainBridge(persistence: persistence)
+        try await reloaded.initialize()
+
+        XCTAssertEqual(reloaded.highlights["1"]?.first?.text, "notable quote")
+    }
+
+    func testProgressPersistsAcrossBridgeInstances() async throws {
+        let persistence = makeIsolatedPersistence()
+        let first = LibravaultDomainBridge(persistence: persistence)
+        try await first.initialize()
+        try await first.updateProgress(bookId: "3", progress: 0.75)
+
+        let reloaded = LibravaultDomainBridge(persistence: persistence)
+        try await reloaded.initialize()
+
+        XCTAssertEqual(reloaded.progress["3"], 0.75)
+    }
+}
