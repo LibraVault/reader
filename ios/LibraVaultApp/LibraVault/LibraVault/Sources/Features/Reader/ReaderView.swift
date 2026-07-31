@@ -5,6 +5,10 @@ struct ReaderView: View {
 
     @EnvironmentObject var appState: AppState
     @State private var currentChapter = 1
+    /// Real chapters for formats with a parser wired up (EPUB so far) — nil (not "not
+    /// loaded yet" but "not available") falls back to MockChapterContent, matching
+    /// the behavior for every format without a real parser yet.
+    @State private var realChapters: [BookChapter]?
 
     @State private var readingTheme: ReadingTheme = .dark
     @State private var fontSize: Double = 1.0
@@ -82,14 +86,36 @@ struct ReaderView: View {
         // clobbered by revisits.
         .task {
             readingTheme = appState.defaultReadingTheme
+            loadRealContentIfAvailable()
         }
+    }
+
+    /// Real content is loaded synchronously on the main thread deliberately —
+    /// `NSAttributedString`'s HTML parsing (inside EPUBParser) requires it. For
+    /// typical book sizes this is fast enough not to need a background hop; a very
+    /// large file could cause a brief hitch, which is an acceptable tradeoff over the
+    /// complexity of a thread-safe async EPUB pipeline for a first pass.
+    private func loadRealContentIfAvailable() {
+        guard let chapters = try? BookContentProvider.chapters(for: book), !chapters.isEmpty else { return }
+        realChapters = chapters
+    }
+
+    private var chapterCount: Int {
+        realChapters?.count ?? MockChapterContent.count
+    }
+
+    private func chapterText(for index: Int) -> String {
+        if let realChapters, !realChapters.isEmpty {
+            return realChapters[(index - 1) % realChapters.count].text
+        }
+        return MockChapterContent.text(for: index)
     }
 
     private var paginatedContent: some View {
         VStack(spacing: 0) {
             ScrollViewReader { scrollProxy in
                 ScrollView {
-                    Text(MockChapterContent.text(for: currentChapter))
+                    Text(chapterText(for: currentChapter))
                         .font(.system(size: 16 * fontSize, design: fontDesign))
                         .lineSpacing(8 * lineSpacing)
                         .foregroundStyle(colors.onBackground)
@@ -115,17 +141,17 @@ struct ReaderView: View {
                 }
                 .disabled(currentChapter <= 1)
 
-                Text("Page \(currentChapter) of \(MockChapterContent.count)")
+                Text("Page \(currentChapter) of \(chapterCount)")
                     .font(LibraVaultTypography.labelMedium)
 
-                ProgressView(value: Double(currentChapter) / Double(MockChapterContent.count))
+                ProgressView(value: Double(currentChapter) / Double(chapterCount))
                     .tint(colors.primary)
                     .frame(maxWidth: .infinity)
 
-                Button(action: { if currentChapter < MockChapterContent.count { currentChapter += 1; updateProgress() } }) {
+                Button(action: { if currentChapter < chapterCount { currentChapter += 1; updateProgress() } }) {
                     Image(systemName: "chevron.right")
                 }
-                .disabled(currentChapter >= MockChapterContent.count)
+                .disabled(currentChapter >= chapterCount)
             }
             .foregroundStyle(colors.onSurfaceVariant)
             .padding(LibraVaultSpacing.lg)
@@ -136,8 +162,8 @@ struct ReaderView: View {
     private var scrollingContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
-                ForEach(1...MockChapterContent.count, id: \.self) { chapter in
-                    Text(MockChapterContent.text(for: chapter))
+                ForEach(1...chapterCount, id: \.self) { chapter in
+                    Text(chapterText(for: chapter))
                         .font(.system(size: 16 * fontSize, design: fontDesign))
                         .lineSpacing(8 * lineSpacing)
                         .foregroundStyle(colors.onBackground)
@@ -150,7 +176,7 @@ struct ReaderView: View {
 
     private func updateProgress() {
         Task {
-            let progress = Double(currentChapter) / Double(MockChapterContent.count)
+            let progress = Double(currentChapter) / Double(chapterCount)
             try? await bridge.updateProgress(bookId: book.id, progress: progress)
         }
     }
