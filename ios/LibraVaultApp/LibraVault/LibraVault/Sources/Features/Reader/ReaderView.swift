@@ -5,13 +5,16 @@ struct ReaderView: View {
 
     @EnvironmentObject var appState: AppState
     @State private var currentChapter = 1
-    /// Real chapters for formats with a parser wired up (EPUB, PDF) — nil (not "not
-    /// loaded yet" but "not available") falls back to MockChapterContent, which only
-    /// happens for a real parser failing on a malformed file (see
-    /// loadRealContentIfAvailable); a format with no parser at all shows
-    /// `unsupportedFormatContent` instead of falling back.
-    @State private var realChapters: [BookChapter]?
-    @State private var isUnsupportedFormat = false
+    /// Real chapters for formats with a parser wired up (EPUB, PDF). nil until
+    /// `loadContent()` resolves — briefly renders `loadingContent` — then stays nil
+    /// permanently if loading failed, in which case `unavailableReason` explains why.
+    @State private var chapters: [BookChapter]?
+    @State private var unavailableReason: UnavailableReason?
+
+    private enum UnavailableReason {
+        case unsupportedFormat
+        case loadFailed
+    }
 
     @State private var readingTheme: ReadingTheme = .dark
     @State private var fontSize: Double = 1.0
@@ -30,13 +33,15 @@ struct ReaderView: View {
 
     var body: some View {
         Group {
-            if isUnsupportedFormat {
-                unsupportedFormatContent
-            } else {
+            if let unavailableReason {
+                unavailableContent(reason: unavailableReason)
+            } else if let chapters, !chapters.isEmpty {
                 switch mode {
                 case .paginated: paginatedContent
                 case .scrolling: scrollingContent
                 }
+            } else {
+                loadingContent
             }
         }
         .background(colors.background)
@@ -93,38 +98,37 @@ struct ReaderView: View {
         // clobbered by revisits.
         .task {
             readingTheme = appState.defaultReadingTheme
-            loadRealContentIfAvailable()
+            loadContent()
         }
     }
 
-    /// Real content is loaded synchronously on the main thread deliberately —
+    /// Content is loaded synchronously on the main thread deliberately —
     /// `NSAttributedString`'s HTML parsing (inside EPUBParser) requires it. For
     /// typical book sizes this is fast enough not to need a background hop; a very
     /// large file could cause a brief hitch, which is an acceptable tradeoff over the
     /// complexity of a thread-safe async EPUB pipeline for a first pass.
-    private func loadRealContentIfAvailable() {
+    private func loadContent() {
         do {
-            let chapters = try BookContentProvider.chapters(for: book)
-            if !chapters.isEmpty { realChapters = chapters }
+            let loaded = try BookContentProvider.chapters(for: book)
+            guard !loaded.isEmpty else {
+                unavailableReason = .loadFailed
+                return
+            }
+            chapters = loaded
         } catch BookContentProvider.ContentError.unsupportedFormat {
-            isUnsupportedFormat = true
+            unavailableReason = .unsupportedFormat
         } catch {
             // A format with a real parser (EPUB/PDF) failed for some other reason —
-            // malformed file, vault no longer resolvable, etc. Fall back to the
-            // legacy placeholder rather than showing an error for what might be a
-            // transient/edge-case failure.
+            // malformed file, vault no longer resolvable, etc.
+            unavailableReason = .loadFailed
         }
     }
 
-    private var chapterCount: Int {
-        realChapters?.count ?? MockChapterContent.count
-    }
+    private var chapterCount: Int { chapters?.count ?? 0 }
 
     private func chapterText(for index: Int) -> String {
-        if let realChapters, !realChapters.isEmpty {
-            return realChapters[(index - 1) % realChapters.count].text
-        }
-        return MockChapterContent.text(for: index)
+        guard let chapters, !chapters.isEmpty else { return "" }
+        return chapters[(index - 1) % chapters.count].text
     }
 
     private var paginatedContent: some View {
@@ -175,21 +179,6 @@ struct ReaderView: View {
         }
     }
 
-    private var unsupportedFormatContent: some View {
-        VStack(spacing: LibraVaultSpacing.lg) {
-            Image(systemName: "doc.questionmark")
-                .font(.system(size: 48))
-                .foregroundStyle(colors.onSurfaceVariant)
-            Text("Format Not Yet Supported")
-                .font(LibraVaultTypography.headlineSmall)
-                .foregroundStyle(colors.onBackground)
-            Text("This book's format can't be read here yet.")
-                .font(LibraVaultTypography.bodyMedium)
-                .foregroundStyle(colors.onSurfaceVariant)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
     private var scrollingContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
@@ -203,6 +192,30 @@ struct ReaderView: View {
             .padding(LibraVaultSpacing.lg)
             .textSelection(.enabled)
         }
+    }
+
+    private var loadingContent: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func unavailableContent(reason: UnavailableReason) -> some View {
+        VStack(spacing: LibraVaultSpacing.lg) {
+            Image(systemName: reason == .unsupportedFormat ? "doc.questionmark" : "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(colors.onSurfaceVariant)
+            Text(reason == .unsupportedFormat ? "Format Not Yet Supported" : "Couldn't Open This Book")
+                .font(LibraVaultTypography.headlineSmall)
+                .foregroundStyle(colors.onBackground)
+            Text(
+                reason == .unsupportedFormat
+                    ? "This book's format can't be read here yet."
+                    : "The file couldn't be read. It may have been moved, deleted, or is corrupted."
+            )
+            .font(LibraVaultTypography.bodyMedium)
+            .foregroundStyle(colors.onSurfaceVariant)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func updateProgress() {

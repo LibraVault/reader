@@ -5,10 +5,9 @@ struct BookChapter {
     let text: String
 }
 
-/// Loads real chapter content for a book from its backing file, replacing
-/// MockChapterContent for formats with a real parser wired up (EPUB, PDF — mobi/cbz/
-/// audio throw `.unsupportedFormat` so callers can show an honest "not supported"
-/// state instead of falling back to fake content). Re-resolves the vault's
+/// Loads real chapter content for a book from its backing file — the only source of
+/// reading content in the app (EPUB, PDF; mobi/cbz/audio throw `.unsupportedFormat`
+/// so callers can show an honest "not supported" state). Re-resolves the vault's
 /// security-scoped bookmark around the read, since LibraryFileScanner only holds
 /// scope briefly during the scan itself, not for the lifetime of the app.
 enum BookContentProvider {
