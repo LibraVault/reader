@@ -45,7 +45,9 @@ enum LibraryFileScanner {
                 id: "vault:\(vault.id):\(fileURL.path)",
                 title: title,
                 author: "",
-                format: format
+                format: format,
+                fileURL: fileURL,
+                vaultId: vault.id
             ))
         }
         return results
