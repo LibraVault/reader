@@ -18,11 +18,17 @@ final class AppStatePlaybackTests: XCTestCase {
         VaultPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.Vaults.\(UUID().uuidString)")!)
     }
 
-    /// A real, single-chapter EPUB inside a real vault folder, registered with
-    /// `vaultPersistence` — lets startPlayback's `BookContentProvider.chapters(for:
-    /// vaultPersistence:)` call actually resolve and parse it, the same way it would
-    /// for a book scanned from a real vault.
-    private func makeRealEPUBBook(vaultPersistence: VaultPersistence) throws -> BookItem {
+    /// A real EPUB inside a real vault folder, registered with `vaultPersistence` —
+    /// lets startPlayback's `BookContentProvider.chapters(for:vaultPersistence:)` call
+    /// actually resolve and parse it, the same way it would for a book scanned from a
+    /// real vault. Defaults to a single short chapter; pass `chapterBodies` for
+    /// multi-chapter fixtures or ones with enough real words that
+    /// `estimateDuration`'s 1-second floor doesn't swallow speed/seek math (see
+    /// `longChapterHTML` below).
+    private func makeRealEPUBBook(
+        vaultPersistence: VaultPersistence,
+        chapterBodies: [String] = ["<h1>Only Chapter</h1><p>Real playback text.</p>"]
+    ) throws -> BookItem {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStatePlaybackTests-\(UUID().uuidString)")
         // The epub gets zipped from sourceDir, then moved into vaultFolder — both are
         // siblings under tempDir, never nested inside each other, so zipItem never
@@ -44,16 +50,22 @@ final class AppStatePlaybackTests: XCTestCase {
         </container>
         """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
 
+        let manifestItems = chapterBodies.indices
+            .map { "<item id=\"chap\($0)\" href=\"chap\($0).xhtml\" media-type=\"application/xhtml+xml\"/>" }
+            .joined()
+        let spineItems = chapterBodies.indices.map { "<itemref idref=\"chap\($0)\"/>" }.joined()
         try """
         <?xml version="1.0"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
-          <manifest><item id="chap0" href="chap0.xhtml" media-type="application/xhtml+xml"/></manifest>
-          <spine><itemref idref="chap0"/></spine>
+          <manifest>\(manifestItems)</manifest>
+          <spine>\(spineItems)</spine>
         </package>
         """.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
-        try "<html><body><h1>Only Chapter</h1><p>Real playback text.</p></body></html>"
-            .write(to: oebpsDir.appendingPathComponent("chap0.xhtml"), atomically: true, encoding: .utf8)
+        for (index, body) in chapterBodies.enumerated() {
+            try "<html><body>\(body)</body></html>"
+                .write(to: oebpsDir.appendingPathComponent("chap\(index).xhtml"), atomically: true, encoding: .utf8)
+        }
 
         let finalEpubURL = vaultFolder.appendingPathComponent("Fixture.epub")
         try FileManager().zipItem(at: sourceDir, to: finalEpubURL, shouldKeepParent: false)
@@ -69,6 +81,14 @@ final class AppStatePlaybackTests: XCTestCase {
             fileURL: finalEpubURL,
             vaultId: vault.id
         )
+    }
+
+    /// 200 real words is comfortably above estimateDuration's 1-second floor at every
+    /// speed these tests use (80s at 1x, 40s at 2x) — long enough that speed-scaling
+    /// and seek-position math actually has room to be meaningfully asserted on,
+    /// unlike a short fixture that floors to a constant 1 second regardless of speed.
+    private func longChapterHTML(title: String) -> String {
+        "<h1>\(title)</h1><p>\(Array(repeating: "word", count: 200).joined(separator: " "))</p>"
     }
 
     // MARK: - estimateDuration
@@ -106,9 +126,6 @@ final class AppStatePlaybackTests: XCTestCase {
 
         state.startPlayback(book: book)
 
-        // The fixture has exactly 1 real chapter — MockChapterContent has 5 — so this
-        // only passes if startPlayback actually parsed the real file instead of
-        // falling back.
         XCTAssertEqual(state.nowPlayingChapterCount, 1)
         XCTAssertEqual(state.nowPlayingChapterTitles, ["Only Chapter"])
     }
@@ -121,12 +138,14 @@ final class AppStatePlaybackTests: XCTestCase {
 
         state.skipToChapter(999)
 
-        XCTAssertEqual(state.nowPlayingChapter, 1, "the fixture only has 1 real chapter, unlike MockChapterContent's 5")
+        XCTAssertEqual(state.nowPlayingChapter, 1, "the fixture only has 1 real chapter")
     }
 
-    func testChangingSpeedMidPlaybackRecomputesDurationAndPreservesProgress() {
-        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
-        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+    func testChangingSpeedMidPlaybackRecomputesDurationAndPreservesProgress() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence, chapterBodies: [longChapterHTML(title: "Chapter One")])
+        state.startPlayback(book: book)
         let originalTotal = state.totalEstimatedSeconds
         state.seek(to: originalTotal / 2)
 
@@ -214,20 +233,31 @@ final class AppStatePlaybackTests: XCTestCase {
 
     // MARK: - skipToChapter
 
-    func testSkipToChapterClampsToValidRange() {
-        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
-        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+    private func makeThreeChapterEPUBBook(vaultPersistence: VaultPersistence) throws -> BookItem {
+        try makeRealEPUBBook(
+            vaultPersistence: vaultPersistence,
+            chapterBodies: (1...3).map { longChapterHTML(title: "Chapter \($0)") }
+        )
+    }
+
+    func testSkipToChapterClampsToValidRange() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeThreeChapterEPUBBook(vaultPersistence: vaultPersistence)
+        state.startPlayback(book: book)
 
         state.skipToChapter(999)
-        XCTAssertEqual(state.nowPlayingChapter, MockChapterContent.count)
+        XCTAssertEqual(state.nowPlayingChapter, 3)
 
         state.skipToChapter(-5)
         XCTAssertEqual(state.nowPlayingChapter, 1)
     }
 
-    func testSkipToChapterResetsElapsedSeconds() {
-        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
-        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+    func testSkipToChapterResetsElapsedSeconds() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeThreeChapterEPUBBook(vaultPersistence: vaultPersistence)
+        state.startPlayback(book: book)
         state.seek(to: 50)
 
         state.skipToChapter(3)
@@ -250,14 +280,16 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(state.elapsedSeconds, total)
     }
 
-    // MockChapterContent's chapter 1 is ~34 words — at the default 1.0x speed
-    // that's only ~13.6s of estimated duration (see AppState.estimateDuration), so
-    // seek/skip targets here have to stay well under that ceiling instead of the
-    // arbitrary 100s/130s this test used to assert against (which seek() would
-    // always clamp down to totalEstimatedSeconds, well short of 130).
-    func testSkipForwardAndBackwardMoveElapsedSeconds() {
-        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
-        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+    // The fixture's 200-word chapter is ~80s of estimated duration at the default
+    // 1.0x speed (see AppState.estimateDuration/longChapterHTML), so seek/skip
+    // targets here have room to stay well under that ceiling — a short/empty-text
+    // book would floor totalEstimatedSeconds to exactly 1 second and clamp every
+    // seek in this test down to that, defeating the point of the assertions.
+    func testSkipForwardAndBackwardMoveElapsedSeconds() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence, chapterBodies: [longChapterHTML(title: "Chapter One")])
+        state.startPlayback(book: book)
         state.seek(to: 5)
 
         state.skipForward(seconds: 3)

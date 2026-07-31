@@ -75,38 +75,35 @@ final class AppState: ObservableObject {
     private var activeAudioVaultURL: URL?
 
     /// Real chapters for the book currently loaded into the player, when its format
-    /// has a parser (EPUB/PDF) and parsing succeeded — nil falls back to
-    /// MockChapterContent, same "not available" (not "not loaded yet") meaning as
-    /// ReaderView's realChapters. Loaded once per book in startPlayback, not on every
-    /// chapter skip within the same book. Never populated for audio books — see
-    /// nowPlayingChapterCount/Titles below.
+    /// has a parser (EPUB/PDF) and parsing succeeded. Loaded once per book in
+    /// startPlayback, not on every chapter skip within the same book. Never populated
+    /// for audio books — see nowPlayingChapterCount/Titles below. Stays nil (0
+    /// chapters, no text) if loading failed — in practice unreachable in normal usage
+    /// since ReaderView won't offer "Read Aloud" for a book it couldn't itself load
+    /// (see its own unavailableContent state), but chapterText/nowPlayingChapterCount
+    /// degrade safely rather than crash if ever reached with nothing loaded.
     private var nowPlayingChapters: [BookChapter]?
 
     /// Audiobooks are always 1 "chapter" for now (see AudioPlaybackEngine's doc
     /// comment on why real embedded chapter markers aren't extracted yet) — real
     /// skip-forward/backward seeking is the primary navigation for those regardless.
     var nowPlayingChapterCount: Int {
-        guard let nowPlayingBook else { return MockChapterContent.count }
+        guard let nowPlayingBook else { return 0 }
         if nowPlayingBook.format.isAudio { return 1 }
-        return nowPlayingChapters?.count ?? MockChapterContent.count
+        return nowPlayingChapters?.count ?? 0
     }
 
-    /// Titles for the chapters sheet — real chapter titles when available, the book's
-    /// own title for a (single-chapter) audiobook, else MockChapterContent's.
+    /// Titles for the chapters sheet — real chapter titles for text books, the book's
+    /// own title for a (single-chapter) audiobook.
     var nowPlayingChapterTitles: [String] {
-        guard let nowPlayingBook else {
-            return (1...MockChapterContent.count).map { MockChapterContent.title(for: $0) }
-        }
+        guard let nowPlayingBook else { return [] }
         if nowPlayingBook.format.isAudio { return [nowPlayingBook.title] }
-        if let nowPlayingChapters { return nowPlayingChapters.map(\.title) }
-        return (1...MockChapterContent.count).map { MockChapterContent.title(for: $0) }
+        return nowPlayingChapters?.map(\.title) ?? []
     }
 
     private func chapterText(for chapter: Int) -> String {
-        if let nowPlayingChapters, !nowPlayingChapters.isEmpty {
-            return nowPlayingChapters[(chapter - 1) % nowPlayingChapters.count].text
-        }
-        return MockChapterContent.text(for: chapter)
+        guard let nowPlayingChapters, !nowPlayingChapters.isEmpty else { return "" }
+        return nowPlayingChapters[(chapter - 1) % nowPlayingChapters.count].text
     }
 
     /// Set by PlayerView's onAppear/onDisappear so the global mini-player can hide

@@ -252,8 +252,8 @@ struct BookCoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
             // Title lives in the caption below, not overlaid here — matches Android's
-            // actual behavior for books with real title metadata (every current mock
-            // book): the cover shows artwork with no text, title appears once beneath it.
+            // actual behavior for books with real title metadata: the cover shows
+            // artwork with no text, title appears once beneath it.
             RoundedRectangle(cornerRadius: LibraVaultRadius.cover)
                 .fill(generatedCoverGradient(for: book))
                 .aspectRatio(LibraVaultSpacing.coverAspect, contentMode: .fit)
