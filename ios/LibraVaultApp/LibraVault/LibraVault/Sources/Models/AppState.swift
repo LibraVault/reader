@@ -40,13 +40,20 @@ final class AppState: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published var playbackSpeed: Double = 1.0 {
         didSet {
-            // totalEstimatedSeconds was computed for the old speed at startPlayback/
-            // skipToChapter time — without this, changing speed mid-chapter leaves it
-            // stale, so the scrub bar's "total" stops matching the actual playback
-            // rate and the chapter advances earlier or later than it estimates.
-            // Rescale it (and elapsedSeconds proportionally, to preserve how far
-            // through the chapter the listener actually is) to the new speed.
-            guard nowPlayingBook != nil, totalEstimatedSeconds > 0 else { return }
+            guard let book = nowPlayingBook else { return }
+            if book.format.isAudio {
+                // Real audio: the engine's own currentTime/duration already reflect
+                // reality, nothing to recompute — just apply the new rate live.
+                audioEngine.setRate(Float(playbackSpeed))
+                return
+            }
+            // TTS/text: totalEstimatedSeconds was computed for the old speed at
+            // startPlayback/skipToChapter time — without this, changing speed
+            // mid-chapter leaves it stale, so the scrub bar's "total" stops matching
+            // the estimated rate and the chapter advances earlier or later than it
+            // estimates. Rescale it (and elapsedSeconds proportionally, to preserve
+            // how far through the chapter the listener actually is) to the new speed.
+            guard totalEstimatedSeconds > 0 else { return }
             let progressFraction = elapsedSeconds / totalEstimatedSeconds
             totalEstimatedSeconds = Self.estimateDuration(
                 for: chapterText(for: nowPlayingChapter),
@@ -59,18 +66,38 @@ final class AppState: ObservableObject {
     @Published private(set) var totalEstimatedSeconds: Double = 0
     @Published private(set) var sleepTimerRemainingSeconds: Double?
 
+    private let audioEngine = AudioPlaybackEngine()
+    /// The vault whose security-scoped bookmark is held open for as long as an
+    /// audiobook is playing — unlike BookContentProvider's EPUB/PDF reads (which read
+    /// the whole file upfront and can release scope immediately), AVAudioPlayer reads
+    /// from the file for the duration of playback, so scope has to stay open until
+    /// playback actually stops.
+    private var activeAudioVaultURL: URL?
+
     /// Real chapters for the book currently loaded into the player, when its format
     /// has a parser (EPUB/PDF) and parsing succeeded — nil falls back to
     /// MockChapterContent, same "not available" (not "not loaded yet") meaning as
     /// ReaderView's realChapters. Loaded once per book in startPlayback, not on every
-    /// chapter skip within the same book.
+    /// chapter skip within the same book. Never populated for audio books — see
+    /// nowPlayingChapterCount/Titles below.
     private var nowPlayingChapters: [BookChapter]?
 
-    var nowPlayingChapterCount: Int { nowPlayingChapters?.count ?? MockChapterContent.count }
+    /// Audiobooks are always 1 "chapter" for now (see AudioPlaybackEngine's doc
+    /// comment on why real embedded chapter markers aren't extracted yet) — real
+    /// skip-forward/backward seeking is the primary navigation for those regardless.
+    var nowPlayingChapterCount: Int {
+        guard let nowPlayingBook else { return MockChapterContent.count }
+        if nowPlayingBook.format.isAudio { return 1 }
+        return nowPlayingChapters?.count ?? MockChapterContent.count
+    }
 
-    /// Titles for the chapters sheet — real chapter titles when available, else
-    /// MockChapterContent's.
+    /// Titles for the chapters sheet — real chapter titles when available, the book's
+    /// own title for a (single-chapter) audiobook, else MockChapterContent's.
     var nowPlayingChapterTitles: [String] {
+        guard let nowPlayingBook else {
+            return (1...MockChapterContent.count).map { MockChapterContent.title(for: $0) }
+        }
+        if nowPlayingBook.format.isAudio { return [nowPlayingBook.title] }
         if let nowPlayingChapters { return nowPlayingChapters.map(\.title) }
         return (1...MockChapterContent.count).map { MockChapterContent.title(for: $0) }
     }
@@ -123,6 +150,19 @@ final class AppState: ObservableObject {
         defaultReadingTheme = userPreferencesPersistence.loadReadingTheme()
         defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
+
+        audioEngine.onProgress = { [weak self] elapsed, duration in
+            Task { @MainActor [weak self] in
+                self?.elapsedSeconds = elapsed
+                self?.totalEstimatedSeconds = duration
+            }
+        }
+        audioEngine.onFinished = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.stopPlayback()
+            }
+        }
+
         Task {
             try? await bridge.initialize()
             await loadLibrary()
@@ -177,38 +217,88 @@ final class AppState: ObservableObject {
 
     // MARK: - Playback controls
     //
-    // There's no real audio engine/file for audiobooks yet (a later phase gives
-    // audio-format books their own real playback destination) — but TTS itself is
-    // real (AVSpeechSynthesizer, see DomainBridge.swift's TTSEngineBridge), speaking
-    // whatever chapterText(for:) returns. "Elapsed"/"duration" still have no audio
-    // stream to measure against, so elapsedSeconds stays a real wall-clock timer and
-    // totalEstimatedSeconds a word-count estimate, same as before — they just now
-    // estimate against real chapter text instead of always the mock story.
+    // Two real backends, chosen by book.format.isAudio: audio-format books play their
+    // real file through AudioPlaybackEngine (AVAudioPlayer); text-format books are
+    // narrated through real TTS (AVSpeechSynthesizer, see DomainBridge.swift's
+    // TTSEngineBridge) against chapterText(for:), with elapsedSeconds/
+    // totalEstimatedSeconds driven by a wall-clock timer and a word-count estimate,
+    // since there's no real audio stream to measure against for synthesized speech.
 
     func startPlayback(book: BookItem, chapter: Int = 1) {
-        // Only reset to the preference / reload chapters when this is genuinely a new
-        // listening session (a different book) — skipToChapter also routes through
-        // here to advance chapters of the *same* book, and shouldn't stomp a speed
-        // the listener just adjusted mid-session back to the default, or re-parse the
-        // book's file on every single chapter change.
-        if nowPlayingBook?.id != book.id {
+        let isNewSession = nowPlayingBook?.id != book.id
+        if isNewSession {
+            // Only reset to the preference / tear down the previous session's engine
+            // when this is genuinely a new listening session (a different book) —
+            // skipToChapter also routes through here to advance chapters of the
+            // *same* book, and shouldn't stomp a speed the listener just adjusted
+            // mid-session back to the default, restart audio from 0, or re-parse the
+            // book's file on every single chapter change.
             playbackSpeed = defaultPlaybackSpeed
-            nowPlayingChapters = try? BookContentProvider.chapters(for: book, vaultPersistence: vaultPersistence)
+            stopTimer()
+            audioEngine.stop()
+            releaseActiveAudioVaultAccess()
+            nowPlayingChapters = book.format.isAudio
+                ? nil
+                : try? BookContentProvider.chapters(for: book, vaultPersistence: vaultPersistence)
         }
         nowPlayingBook = book
-        nowPlayingChapter = chapter
-        let text = chapterText(for: chapter)
-        totalEstimatedSeconds = Self.estimateDuration(for: text, speed: playbackSpeed)
-        elapsedSeconds = 0
+        nowPlayingChapter = book.format.isAudio ? 1 : chapter
         isPlaying = true
-        Task { try? await bridge.startSpeaking(text: text, rate: playbackSpeed) }
-        startTimer()
+
+        if book.format.isAudio {
+            if isNewSession {
+                startAudioPlayback(book: book)
+            } else {
+                audioEngine.resume()
+            }
+        } else {
+            let text = chapterText(for: nowPlayingChapter)
+            totalEstimatedSeconds = Self.estimateDuration(for: text, speed: playbackSpeed)
+            elapsedSeconds = 0
+            Task { try? await bridge.startSpeaking(text: text, rate: playbackSpeed) }
+            startTimer()
+        }
+    }
+
+    /// Resolves the book's vault, opens the security-scoped bookmark for the
+    /// duration of playback (see activeAudioVaultURL's doc comment), and starts the
+    /// engine. Silently gives up on any failure (missing file reference, unresolvable
+    /// vault, unplayable file) — there's no real error-reporting path for playback
+    /// failures yet, so this at least doesn't leave `isPlaying` lying about state.
+    private func startAudioPlayback(book: BookItem) {
+        guard let fileURL = book.fileURL, let vaultId = book.vaultId,
+              let vault = vaultPersistence.loadVaults().first(where: { $0.id == vaultId }),
+              let resolvedVaultURL = vaultPersistence.resolvedURL(for: vault) else {
+            isPlaying = false
+            nowPlayingBook = nil
+            return
+        }
+
+        let didStartAccessing = resolvedVaultURL.startAccessingSecurityScopedResource()
+        activeAudioVaultURL = didStartAccessing ? resolvedVaultURL : nil
+
+        do {
+            try audioEngine.play(fileURL: fileURL, rate: Float(playbackSpeed))
+            elapsedSeconds = 0
+            totalEstimatedSeconds = audioEngine.duration
+        } catch {
+            isPlaying = false
+            nowPlayingBook = nil
+            releaseActiveAudioVaultAccess()
+        }
+    }
+
+    private func releaseActiveAudioVaultAccess() {
+        activeAudioVaultURL?.stopAccessingSecurityScopedResource()
+        activeAudioVaultURL = nil
     }
 
     func togglePlayback() {
-        guard nowPlayingBook != nil else { return }
+        guard let book = nowPlayingBook else { return }
         isPlaying.toggle()
-        if isPlaying {
+        if book.format.isAudio {
+            if isPlaying { audioEngine.resume() } else { audioEngine.pause() }
+        } else if isPlaying {
             startTimer()
             Task { await bridge.resumeSpeaking() }
         } else {
@@ -223,13 +313,17 @@ final class AppState: ObservableObject {
         startPlayback(book: book, chapter: clamped)
     }
 
-    /// Scrub-bar seeking. There's no real audio stream to seek within, but the
-    /// wall-clock elapsed timer can honor a manual position the same way a real
-    /// player would — this isn't cosmetic, dragging the slider genuinely moves
-    /// elapsedSeconds and the next tick continues from there.
+    /// Scrub-bar seeking. For audio books this is a genuine seek within the real
+    /// file; for TTS/text books there's still no real audio stream to seek within,
+    /// but the wall-clock elapsed timer honors a manual position the same way a real
+    /// player would.
     func seek(to seconds: Double) {
-        guard nowPlayingBook != nil else { return }
-        elapsedSeconds = max(0, min(seconds, totalEstimatedSeconds))
+        guard let book = nowPlayingBook else { return }
+        let clamped = max(0, min(seconds, totalEstimatedSeconds))
+        elapsedSeconds = clamped
+        if book.format.isAudio {
+            audioEngine.elapsed = clamped
+        }
     }
 
     func skipForward(seconds: Double = 30) {
@@ -247,6 +341,8 @@ final class AppState: ObservableObject {
         totalEstimatedSeconds = 0
         stopTimer()
         cancelSleepTimer()
+        audioEngine.stop()
+        releaseActiveAudioVaultAccess()
         Task { await bridge.stopSpeaking() }
     }
 
