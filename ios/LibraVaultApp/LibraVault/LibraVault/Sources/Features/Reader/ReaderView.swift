@@ -5,10 +5,13 @@ struct ReaderView: View {
 
     @EnvironmentObject var appState: AppState
     @State private var currentChapter = 1
-    /// Real chapters for formats with a parser wired up (EPUB so far) — nil (not "not
-    /// loaded yet" but "not available") falls back to MockChapterContent, matching
-    /// the behavior for every format without a real parser yet.
+    /// Real chapters for formats with a parser wired up (EPUB, PDF) — nil (not "not
+    /// loaded yet" but "not available") falls back to MockChapterContent, which only
+    /// happens for a real parser failing on a malformed file (see
+    /// loadRealContentIfAvailable); a format with no parser at all shows
+    /// `unsupportedFormatContent` instead of falling back.
     @State private var realChapters: [BookChapter]?
+    @State private var isUnsupportedFormat = false
 
     @State private var readingTheme: ReadingTheme = .dark
     @State private var fontSize: Double = 1.0
@@ -27,9 +30,13 @@ struct ReaderView: View {
 
     var body: some View {
         Group {
-            switch mode {
-            case .paginated: paginatedContent
-            case .scrolling: scrollingContent
+            if isUnsupportedFormat {
+                unsupportedFormatContent
+            } else {
+                switch mode {
+                case .paginated: paginatedContent
+                case .scrolling: scrollingContent
+                }
             }
         }
         .background(colors.background)
@@ -96,8 +103,17 @@ struct ReaderView: View {
     /// large file could cause a brief hitch, which is an acceptable tradeoff over the
     /// complexity of a thread-safe async EPUB pipeline for a first pass.
     private func loadRealContentIfAvailable() {
-        guard let chapters = try? BookContentProvider.chapters(for: book), !chapters.isEmpty else { return }
-        realChapters = chapters
+        do {
+            let chapters = try BookContentProvider.chapters(for: book)
+            if !chapters.isEmpty { realChapters = chapters }
+        } catch BookContentProvider.ContentError.unsupportedFormat {
+            isUnsupportedFormat = true
+        } catch {
+            // A format with a real parser (EPUB/PDF) failed for some other reason —
+            // malformed file, vault no longer resolvable, etc. Fall back to the
+            // legacy placeholder rather than showing an error for what might be a
+            // transient/edge-case failure.
+        }
     }
 
     private var chapterCount: Int {
@@ -157,6 +173,21 @@ struct ReaderView: View {
             .padding(LibraVaultSpacing.lg)
             .background(colors.surface)
         }
+    }
+
+    private var unsupportedFormatContent: some View {
+        VStack(spacing: LibraVaultSpacing.lg) {
+            Image(systemName: "doc.questionmark")
+                .font(.system(size: 48))
+                .foregroundStyle(colors.onSurfaceVariant)
+            Text("Format Not Yet Supported")
+                .font(LibraVaultTypography.headlineSmall)
+                .foregroundStyle(colors.onBackground)
+            Text("This book's format can't be read here yet.")
+                .font(LibraVaultTypography.bodyMedium)
+                .foregroundStyle(colors.onSurfaceVariant)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var scrollingContent: some View {

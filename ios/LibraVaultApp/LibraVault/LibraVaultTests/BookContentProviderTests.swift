@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import ZIPFoundation
 @testable import LibraVault
 
@@ -82,8 +83,66 @@ final class BookContentProviderTests: XCTestCase {
         XCTAssertTrue(chapters[0].text.contains("Real chapter text."))
     }
 
-    func testChaptersThrowsUnsupportedFormatForNonEPUB() {
-        let book = BookItem(id: "1", title: "T", author: "A", format: .pdf, fileURL: URL(fileURLWithPath: "/tmp/x.pdf"), vaultId: "v1")
+    /// A real, single-page PDF (drawn via UIGraphicsPDFRenderer, the standard Apple
+    /// PDF-authoring API) placed inside a real vault folder, mirroring
+    /// makeVaultAndBook's EPUB setup — proves the .pdf branch of the format switch
+    /// actually reaches PDFParser, not just that other formats are rejected.
+    private func makePDFVaultAndBook(persistence: VaultPersistence) throws -> (vault: Vault, book: BookItem) {
+        let vaultFolder = tempDir.appendingPathComponent("pdf-vault-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
+
+        let pdfURL = vaultFolder.appendingPathComponent("Fixture.pdf")
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
+        try renderer.writePDF(to: pdfURL) { context in
+            context.beginPage()
+            ("Real PDF page text." as NSString).draw(
+                at: CGPoint(x: 20, y: 20),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 18)]
+            )
+        }
+
+        let vault = try persistence.makeVault(from: vaultFolder)
+        persistence.save([vault])
+
+        let book = BookItem(
+            id: "vault:\(vault.id):\(pdfURL.path)",
+            title: "Fixture",
+            author: "",
+            format: .pdf,
+            fileURL: pdfURL,
+            vaultId: vault.id
+        )
+        return (vault, book)
+    }
+
+    func testChaptersReturnsRealParsedContentForPDF() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makePDFVaultAndBook(persistence: persistence)
+
+        let chapters = try BookContentProvider.chapters(for: book, vaultPersistence: persistence)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertTrue(chapters[0].text.contains("Real PDF page text."))
+    }
+
+    func testChaptersThrowsUnsupportedFormatForMobi() {
+        let book = BookItem(id: "1", title: "T", author: "A", format: .mobi, fileURL: URL(fileURLWithPath: "/tmp/x.mobi"), vaultId: "v1")
+
+        XCTAssertThrowsError(try BookContentProvider.chapters(for: book, vaultPersistence: makeIsolatedPersistence())) { error in
+            XCTAssertEqual(error as? BookContentProvider.ContentError, .unsupportedFormat)
+        }
+    }
+
+    func testChaptersThrowsUnsupportedFormatForCbz() {
+        let book = BookItem(id: "1", title: "T", author: "A", format: .cbz, fileURL: URL(fileURLWithPath: "/tmp/x.cbz"), vaultId: "v1")
+
+        XCTAssertThrowsError(try BookContentProvider.chapters(for: book, vaultPersistence: makeIsolatedPersistence())) { error in
+            XCTAssertEqual(error as? BookContentProvider.ContentError, .unsupportedFormat)
+        }
+    }
+
+    func testChaptersThrowsUnsupportedFormatForAudio() {
+        let book = BookItem(id: "1", title: "T", author: "A", format: .mp3, fileURL: URL(fileURLWithPath: "/tmp/x.mp3"), vaultId: "v1")
 
         XCTAssertThrowsError(try BookContentProvider.chapters(for: book, vaultPersistence: makeIsolatedPersistence())) { error in
             XCTAssertEqual(error as? BookContentProvider.ContentError, .unsupportedFormat)
