@@ -49,7 +49,7 @@ final class AppState: ObservableObject {
             guard nowPlayingBook != nil, totalEstimatedSeconds > 0 else { return }
             let progressFraction = elapsedSeconds / totalEstimatedSeconds
             totalEstimatedSeconds = Self.estimateDuration(
-                for: MockChapterContent.text(for: nowPlayingChapter),
+                for: chapterText(for: nowPlayingChapter),
                 speed: playbackSpeed
             )
             elapsedSeconds = progressFraction * totalEstimatedSeconds
@@ -58,6 +58,29 @@ final class AppState: ObservableObject {
     @Published private(set) var elapsedSeconds: Double = 0
     @Published private(set) var totalEstimatedSeconds: Double = 0
     @Published private(set) var sleepTimerRemainingSeconds: Double?
+
+    /// Real chapters for the book currently loaded into the player, when its format
+    /// has a parser (EPUB/PDF) and parsing succeeded — nil falls back to
+    /// MockChapterContent, same "not available" (not "not loaded yet") meaning as
+    /// ReaderView's realChapters. Loaded once per book in startPlayback, not on every
+    /// chapter skip within the same book.
+    private var nowPlayingChapters: [BookChapter]?
+
+    var nowPlayingChapterCount: Int { nowPlayingChapters?.count ?? MockChapterContent.count }
+
+    /// Titles for the chapters sheet — real chapter titles when available, else
+    /// MockChapterContent's.
+    var nowPlayingChapterTitles: [String] {
+        if let nowPlayingChapters { return nowPlayingChapters.map(\.title) }
+        return (1...MockChapterContent.count).map { MockChapterContent.title(for: $0) }
+    }
+
+    private func chapterText(for chapter: Int) -> String {
+        if let nowPlayingChapters, !nowPlayingChapters.isEmpty {
+            return nowPlayingChapters[(chapter - 1) % nowPlayingChapters.count].text
+        }
+        return MockChapterContent.text(for: chapter)
+    }
 
     /// Set by PlayerView's onAppear/onDisappear so the global mini-player can hide
     /// itself while the full Player screen is already showing the same controls.
@@ -154,28 +177,31 @@ final class AppState: ObservableObject {
 
     // MARK: - Playback controls
     //
-    // There's no real audio engine or audiobook file behind this (TTSEngineBridge in
-    // DomainBridge.swift is still a no-op) — TTS start/stop/pause/resume calls are
-    // real, but "elapsed"/"duration" have nothing to measure against. Rather than
-    // fabricate static numbers, elapsedSeconds is a real wall-clock timer and
-    // totalEstimatedSeconds is computed from the chapter's actual word count, so the
-    // scrub bar in PlayerView reflects genuinely changing state instead of a static prop.
+    // There's no real audio engine/file for audiobooks yet (a later phase gives
+    // audio-format books their own real playback destination) — but TTS itself is
+    // real (AVSpeechSynthesizer, see DomainBridge.swift's TTSEngineBridge), speaking
+    // whatever chapterText(for:) returns. "Elapsed"/"duration" still have no audio
+    // stream to measure against, so elapsedSeconds stays a real wall-clock timer and
+    // totalEstimatedSeconds a word-count estimate, same as before — they just now
+    // estimate against real chapter text instead of always the mock story.
 
     func startPlayback(book: BookItem, chapter: Int = 1) {
-        // Only reset to the preference when this is genuinely a new listening session
-        // (a different book) — skipToChapter also routes through here to advance
-        // chapters of the *same* book, and shouldn't stomp a speed the listener just
-        // adjusted mid-session back to the default.
+        // Only reset to the preference / reload chapters when this is genuinely a new
+        // listening session (a different book) — skipToChapter also routes through
+        // here to advance chapters of the *same* book, and shouldn't stomp a speed
+        // the listener just adjusted mid-session back to the default, or re-parse the
+        // book's file on every single chapter change.
         if nowPlayingBook?.id != book.id {
             playbackSpeed = defaultPlaybackSpeed
+            nowPlayingChapters = try? BookContentProvider.chapters(for: book, vaultPersistence: vaultPersistence)
         }
         nowPlayingBook = book
         nowPlayingChapter = chapter
-        let text = MockChapterContent.text(for: chapter)
+        let text = chapterText(for: chapter)
         totalEstimatedSeconds = Self.estimateDuration(for: text, speed: playbackSpeed)
         elapsedSeconds = 0
         isPlaying = true
-        Task { try? await bridge.startSpeaking(text: text) }
+        Task { try? await bridge.startSpeaking(text: text, rate: playbackSpeed) }
         startTimer()
     }
 
@@ -193,7 +219,7 @@ final class AppState: ObservableObject {
 
     func skipToChapter(_ chapter: Int) {
         guard let book = nowPlayingBook else { return }
-        let clamped = max(1, min(chapter, MockChapterContent.count))
+        let clamped = max(1, min(chapter, nowPlayingChapterCount))
         startPlayback(book: book, chapter: clamped)
     }
 
@@ -265,7 +291,7 @@ final class AppState: ObservableObject {
         guard isPlaying else { return }
         elapsedSeconds = min(elapsedSeconds + playbackSpeed, totalEstimatedSeconds)
         if elapsedSeconds >= totalEstimatedSeconds {
-            if nowPlayingChapter < MockChapterContent.count {
+            if nowPlayingChapter < nowPlayingChapterCount {
                 skipToChapter(nowPlayingChapter + 1)
             } else {
                 stopPlayback()

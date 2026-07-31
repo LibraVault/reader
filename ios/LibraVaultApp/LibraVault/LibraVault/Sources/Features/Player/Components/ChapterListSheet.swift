@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// Mirrors Android's ChapterListSheet (feature/player/components).
+/// Mirrors Android's ChapterListSheet (feature/player/components). Chapter titles are
+/// passed in rather than read from MockChapterContent directly, so the sheet shows
+/// real chapters for books with one (see AppState.nowPlayingChapterTitles).
 struct ChapterListSheet: View {
     let currentChapter: Int
+    let chapterTitles: [String]
     let onSelect: (Int) -> Void
 
     var body: some View {
@@ -12,10 +15,10 @@ struct ChapterListSheet: View {
                 .foregroundStyle(LibraVaultColor.onSurface)
                 .padding(LibraVaultSpacing.lg)
 
-            List(1...MockChapterContent.count, id: \.self) { chapter in
+            List(1...chapterTitles.count, id: \.self) { chapter in
                 Button(action: { onSelect(chapter) }) {
                     HStack {
-                        Text(MockChapterContent.title(for: chapter))
+                        Text(chapterTitles[chapter - 1])
                             .font(LibraVaultTypography.bodyMedium)
                             .foregroundStyle(LibraVaultColor.onSurface)
                         Spacer()
@@ -37,5 +40,5 @@ struct ChapterListSheet: View {
 }
 
 #Preview {
-    ChapterListSheet(currentChapter: 2, onSelect: { _ in })
+    ChapterListSheet(currentChapter: 2, chapterTitles: ["Chapter 1", "Chapter 2", "Chapter 3"], onSelect: { _ in })
 }

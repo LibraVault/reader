@@ -1,4 +1,5 @@
 import XCTest
+import ZIPFoundation
 @testable import LibraVault
 
 @MainActor
@@ -11,6 +12,63 @@ final class AppStatePlaybackTests: XCTestCase {
     // default of 1.0 (same reasoning as AppStateSettingsTests/AppStateVaultTests).
     private func makeIsolatedPersistence() -> UserPreferencesPersistence {
         UserPreferencesPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.\(UUID().uuidString)")!)
+    }
+
+    private func makeIsolatedVaultPersistence() -> VaultPersistence {
+        VaultPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.Vaults.\(UUID().uuidString)")!)
+    }
+
+    /// A real, single-chapter EPUB inside a real vault folder, registered with
+    /// `vaultPersistence` — lets startPlayback's `BookContentProvider.chapters(for:
+    /// vaultPersistence:)` call actually resolve and parse it, the same way it would
+    /// for a book scanned from a real vault.
+    private func makeRealEPUBBook(vaultPersistence: VaultPersistence) throws -> BookItem {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStatePlaybackTests-\(UUID().uuidString)")
+        // The epub gets zipped from sourceDir, then moved into vaultFolder — both are
+        // siblings under tempDir, never nested inside each other, so zipItem never
+        // tries to archive the very file it's in the middle of writing.
+        let sourceDir = tempDir.appendingPathComponent("source", isDirectory: true)
+        let vaultFolder = tempDir.appendingPathComponent("vault", isDirectory: true)
+        let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
+        let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
+        try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
+
+        try """
+        <?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>
+        """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        try """
+        <?xml version="1.0"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+          <manifest><item id="chap0" href="chap0.xhtml" media-type="application/xhtml+xml"/></manifest>
+          <spine><itemref idref="chap0"/></spine>
+        </package>
+        """.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+        try "<html><body><h1>Only Chapter</h1><p>Real playback text.</p></body></html>"
+            .write(to: oebpsDir.appendingPathComponent("chap0.xhtml"), atomically: true, encoding: .utf8)
+
+        let finalEpubURL = vaultFolder.appendingPathComponent("Fixture.epub")
+        try FileManager().zipItem(at: sourceDir, to: finalEpubURL, shouldKeepParent: false)
+
+        let vault = try vaultPersistence.makeVault(from: vaultFolder)
+        vaultPersistence.save([vault])
+
+        return BookItem(
+            id: "vault:\(vault.id):\(finalEpubURL.path)",
+            title: "Fixture",
+            author: "",
+            format: .epub,
+            fileURL: finalEpubURL,
+            vaultId: vault.id
+        )
     }
 
     // MARK: - estimateDuration
@@ -37,6 +95,33 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertTrue(state.isPlaying)
         XCTAssertEqual(state.elapsedSeconds, 0)
         XCTAssertGreaterThan(state.totalEstimatedSeconds, 0)
+    }
+
+    // MARK: - Real chapter content (EPUB/PDF via BookContentProvider)
+
+    func testStartPlaybackUsesRealChaptersForARealEPUB() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+
+        state.startPlayback(book: book)
+
+        // The fixture has exactly 1 real chapter — MockChapterContent has 5 — so this
+        // only passes if startPlayback actually parsed the real file instead of
+        // falling back.
+        XCTAssertEqual(state.nowPlayingChapterCount, 1)
+        XCTAssertEqual(state.nowPlayingChapterTitles, ["Only Chapter"])
+    }
+
+    func testSkipToChapterClampsToRealChapterCountForARealEPUB() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+        state.startPlayback(book: book)
+
+        state.skipToChapter(999)
+
+        XCTAssertEqual(state.nowPlayingChapter, 1, "the fixture only has 1 real chapter, unlike MockChapterContent's 5")
     }
 
     func testChangingSpeedMidPlaybackRecomputesDurationAndPreservesProgress() {
