@@ -80,7 +80,7 @@ struct PlayerView: View {
                     Button(action: { appState.skipToChapter(appState.nowPlayingChapter + 1) }) {
                         Image(systemName: "forward.end.fill")
                     }
-                    .disabled(appState.nowPlayingChapter >= MockChapterContent.count)
+                    .disabled(appState.nowPlayingChapter >= appState.nowPlayingChapterCount)
                 }
                 .font(.system(size: 28))
                 .foregroundStyle(LibraVaultColor.onBackground)
@@ -130,10 +130,14 @@ struct PlayerView: View {
             }
         }
         .sheet(isPresented: $showChaptersSheet) {
-            ChapterListSheet(currentChapter: appState.nowPlayingChapter, onSelect: {
-                appState.skipToChapter($0)
-                showChaptersSheet = false
-            })
+            ChapterListSheet(
+                currentChapter: appState.nowPlayingChapter,
+                chapterTitles: appState.nowPlayingChapterTitles,
+                onSelect: {
+                    appState.skipToChapter($0)
+                    showChaptersSheet = false
+                }
+            )
         }
         .sheet(isPresented: $showSleepTimerSheet) {
             SleepTimerSheet(

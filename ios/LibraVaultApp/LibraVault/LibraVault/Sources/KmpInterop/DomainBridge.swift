@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 // MARK: - KMP Domain Bridge
@@ -17,9 +18,8 @@ import Foundation
 // - core:licensing   → ProGateKmp (license/pro features)
 //
 // Still open:
-// 1. Wire TTS to a real engine (AVSpeechSynthesizer as a Swift-native stand-in, or
-//    core:tts if/when the KMP chain unblocks)
-// 2. Real audio-file playback (AVFoundation)
+// 1. Real audio-file playback for audiobooks (AVFoundation) — TTS (below) now
+//    genuinely speaks, but audio-format books aren't routed to a real player yet.
 
 @MainActor
 class LibravaultDomainBridge: ObservableObject {
@@ -125,10 +125,10 @@ class LibravaultDomainBridge: ObservableObject {
     }
 
     // MARK: - TTS Integration
-    func startSpeaking(text: String) async throws {
+    func startSpeaking(text: String, rate: Double = 1.0) async throws {
         guard ttsEngine != nil else { throw DomainError.notInitialized }
         logger?.d(tag: "TTS", message: "Starting speech: \(text.prefix(50))...")
-        await ttsEngine?.speak(text: text)
+        await ttsEngine?.speak(text: text, rate: rate)
     }
 
     func stopSpeaking() async {
@@ -223,16 +223,64 @@ class LoggerBridge {
     }
 }
 
-// TTS is currently a no-op: neither core:tts (blocked on the KMP chain) nor a
-// Swift-native engine (e.g. AVSpeechSynthesizer) is wired up yet. startSpeaking/
-// stopSpeaking/etc. all genuinely reach this class — see AppState.swift's playback
-// controls — they just don't produce audio.
+// Real text-to-speech via AVSpeechSynthesizer (core:tts is still blocked on the KMP
+// chain — see the header comment above). startSpeaking/stopSpeaking/etc. reach this
+// class from AppState.swift's playback controls.
 class TTSEngineBridge {
-    func initialize() async throws {}
-    func speak(text: String) async {}
-    func stop() async {}
-    func pause() async {}
-    func resume() async {}
+    private let synthesizer = AVSpeechSynthesizer()
+
+    /// `xcodebuild test`'s CI Simulator has no real audio hardware, and
+    /// AVAudioSession activation / AVSpeechSynthesizer there was confirmed (two
+    /// consecutive ~30-minute CI timeouts) to hang indefinitely — almost certainly the
+    /// debugger `xcodebuild test` attaches getting stuck on an XPC call to the
+    /// Simulator's audio daemon. Real apps never set this env var; only the XCTest
+    /// test host process does, so this only short-circuits automated test runs, not
+    /// real usage (manual Simulator/device runs, TestFlight, App Store).
+    private static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    func initialize() async throws {
+        guard !Self.isRunningUnderXCTest else { return }
+        // .spokenAudio is the mode Apple documents for narration/TTS apps — lets
+        // speech play even with the silent switch on, which a plain default session
+        // wouldn't guarantee. try? because failing to configure the session shouldn't
+        // block the rest of app initialization over a non-critical audio nicety.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    func speak(text: String, rate: Double) async {
+        guard !Self.isRunningUnderXCTest, !text.isEmpty else { return }
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = Self.scaledRate(for: rate)
+        synthesizer.stopSpeaking(at: .immediate)
+        synthesizer.speak(utterance)
+    }
+
+    func stop() async {
+        guard !Self.isRunningUnderXCTest else { return }
+        synthesizer.stopSpeaking(at: .immediate)
+    }
+
+    func pause() async {
+        guard !Self.isRunningUnderXCTest else { return }
+        synthesizer.pauseSpeaking(at: .word)
+    }
+
+    func resume() async {
+        guard !Self.isRunningUnderXCTest else { return }
+        synthesizer.continueSpeaking()
+    }
+
+    /// `AVSpeechUtterance.rate` is a 0...1 fraction of a fixed maximum, not a
+    /// multiplier — anchor `speed == 1.0` (LibraVault's "normal" speed) at Apple's
+    /// documented default rate and scale from there, so 2x/0.5x still feel
+    /// proportionally faster/slower instead of landing on an arbitrary fixed rate.
+    static func scaledRate(for speed: Double) -> Float {
+        let scaled = AVSpeechUtteranceDefaultSpeechRate * Float(speed)
+        return min(max(scaled, AVSpeechUtteranceMinimumSpeechRate), AVSpeechUtteranceMaximumSpeechRate)
+    }
 }
 
 // MARK: - Errors
