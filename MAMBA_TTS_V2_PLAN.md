@@ -165,6 +165,36 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 - [ ] Battery consumption reasonable (no regression vs. v1)
 - [ ] iOS: Works on iPhone 12+ (simulator + real device)
 
+## F-Droid Distribution Feasibility (Researched 2026-07-28)
+
+Pocket-TTS (v1.0, sherpa-onnx) is currently Play-flavor only. Two objections were raised against bringing it — or a future Mamba v2 model — to the F-Droid flavor. Research into F-Droid's actual policy and a real precedent app softened both:
+
+### Objection 1: Prebuilt native binary (`sherpa-onnx-android.aar`)
+
+`core/tts` currently references a **committed, pre-compiled AAR** (`third-party/sherpa-onnx/sherpa-onnx-android.aar`, ~9.6MB, contains compiled `.so` libraries) rather than compiling it from source as part of the Gradle build graph. F-Droid's build servers compile from source with no network access, and generally reject prebuilt binary blobs.
+
+**Precedent found**: [SherpaTTS](https://f-droid.org/packages/org.woheller69.ttsengine/) ([source](https://github.com/woheller69/ttsengine)) — an F-Droid-listed app built on the *same* sherpa-onnx/Next-gen Kaldi engine — ships an F-Droid build recipe with a `scanignore` directive on `app/src/main/assets`. That directive is how maintainers tell F-Droid's automated binary scanner "this has been manually reviewed, don't flag it" — strong evidence F-Droid tolerates a prebuilt-binary-with-review approach for native TTS libraries in practice, not just a from-scratch NDK/CMake compile. (Not fully confirmed: couldn't verify from public metadata alone whether they compile from source anyway — worth direct confirmation before relying on this.)
+
+### Objection 2: Model download requires network access
+
+The fdroid flavor manifest explicitly strips `INTERNET` permission (`tools:node="remove"`) as a self-imposed "zero network, ever" guarantee. Pocket-TTS's first-run model download needs one real network fetch.
+
+**Precedent found**: SherpaTTS requests `INTERNET` permission and downloads its voice model from Hugging Face on first launch — F-Droid does **not** reject this. It surfaces an **Anti-Feature: NonFreeNet** badge ("depends on a non-free network service") in the client, and the app runs fully offline after that one-time download. This is exactly Pocket-TTS's existing behavior.
+
+**Conclusion**: This is not an F-Droid policy blocker — it's our own product choice. The "no network, ever" invariant is something we set for ourselves, not something F-Droid requires.
+
+### Implication for this plan
+
+If/when a Mamba v2 model ships, F-Droid distribution (with an `Anti-Feature: NonFreeNet` flag for the initial model fetch, and a `scanignore`-style native library exception) is more realistic than originally assessed. Options going forward:
+
+1. **Keep current split** (Play: Pocket-TTS, F-Droid: system TTS only) — status quo, zero-network purity preserved on F-Droid.
+2. **Offer Mamba v2 (or sherpa-onnx) on F-Droid too**, accepting the `NonFreeNet` anti-feature flag, following SherpaTTS's precedent. Would need:
+   - Wiring the AAR/native library build into the actual Gradle build graph (or confirming `scanignore` + manual review is sufficient, per SherpaTTS precedent)
+   - Re-adding `INTERNET` permission to the fdroid manifest (scoped to model-download use only)
+   - Deciding whether Mamba v2's smaller model size (10-30M params vs. sherpa-onnx's ~120MB) makes bundling the model **directly in the APK** feasible instead of downloading — this would avoid the network permission entirely, sidestepping objection 2 altogether. Still would need the model committed into the git tree at the tagged release commit (F-Droid never fetches GitHub Release assets), with the practical repo-size tradeoff that implies.
+
+This is a product decision, not yet made — captured here for the v2 planning discussion, not committed to.
+
 ## Open Questions & Research
 
 1. **Model architecture**: How to best compress Mamba for 12-30M params without quality loss?
@@ -174,6 +204,7 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 5. **Multiple languages**: How to adapt for non-English e-books?
 6. **Fine-tuning**: Can we fine-tune a pre-trained Mamba model vs. training from scratch?
 7. **iOS CoreML**: Does CoreML export preserve model quality? What's the inference speed on iPhone?
+8. **F-Droid distribution**: Confirm directly with F-Droid (forum/IRC) whether SherpaTTS compiles its native library from source or relies on `scanignore` for a prebuilt binary — determines how much Gradle build-graph work is needed before F-Droid inclusion is viable. See "F-Droid Distribution Feasibility" section above.
 
 ## Risks & Mitigation
 
@@ -218,6 +249,6 @@ if (BuildConfig.FLAVOR == "play" && mambaTtsEnabled) {
 ---
 
 **Created**: 2026-07-21  
-**Last Updated**: 2026-07-21  
+**Last Updated**: 2026-07-28  
 **Owner**: @Rob  
 **Status**: Backlog (post-v1.0)
