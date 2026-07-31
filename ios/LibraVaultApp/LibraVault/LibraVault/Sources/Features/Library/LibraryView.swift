@@ -280,6 +280,7 @@ struct BookCoverView: View {
 
 struct BookDetailView: View {
     let book: BookItem
+    @EnvironmentObject var appState: AppState
     @State private var isLoading = false
     @State private var showBookmarksSheet = false
     @State private var showHighlightsSheet = false
@@ -326,19 +327,42 @@ struct BookDetailView: View {
 
                     // Action buttons
                     VStack(spacing: 12) {
-                        NavigationLink(destination: ReaderView(book: book)) {
-                            HStack {
-                                Image(systemName: "book")
-                                Text("Continue Reading")
-                                Spacer()
-                                Image(systemName: "chevron.right")
+                        // Audio-format books have no real reading UI (ReaderView is
+                        // text-only — see its unsupportedFormatContent) — route
+                        // straight to the real Player instead, the same way
+                        // ReaderView's "Read Aloud" does for text books.
+                        if book.format.isAudio {
+                            Button(action: {
+                                appState.startPlayback(book: book)
+                                appState.shouldNavigateToPlayer = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "headphones")
+                                    Text("Continue Listening")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                }
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.blue)
+                                .cornerRadius(8)
                             }
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.blue)
-                            .cornerRadius(8)
+                            .accessibilityIdentifier("bookDetail.continueReadingButton")
+                        } else {
+                            NavigationLink(destination: ReaderView(book: book)) {
+                                HStack {
+                                    Image(systemName: "book")
+                                    Text("Continue Reading")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                }
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                            }
+                            .accessibilityIdentifier("bookDetail.continueReadingButton")
                         }
-                        .accessibilityIdentifier("bookDetail.continueReadingButton")
 
                         Button(action: { showBookmarksSheet = true }) {
                             HStack {
