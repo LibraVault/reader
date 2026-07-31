@@ -229,7 +229,19 @@ class LoggerBridge {
 class TTSEngineBridge {
     private let synthesizer = AVSpeechSynthesizer()
 
+    /// `xcodebuild test`'s CI Simulator has no real audio hardware, and
+    /// AVAudioSession activation / AVSpeechSynthesizer there was confirmed (two
+    /// consecutive ~30-minute CI timeouts) to hang indefinitely — almost certainly the
+    /// debugger `xcodebuild test` attaches getting stuck on an XPC call to the
+    /// Simulator's audio daemon. Real apps never set this env var; only the XCTest
+    /// test host process does, so this only short-circuits automated test runs, not
+    /// real usage (manual Simulator/device runs, TestFlight, App Store).
+    private static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     func initialize() async throws {
+        guard !Self.isRunningUnderXCTest else { return }
         // .spokenAudio is the mode Apple documents for narration/TTS apps — lets
         // speech play even with the silent switch on, which a plain default session
         // wouldn't guarantee. try? because failing to configure the session shouldn't
@@ -239,7 +251,7 @@ class TTSEngineBridge {
     }
 
     func speak(text: String, rate: Double) async {
-        guard !text.isEmpty else { return }
+        guard !Self.isRunningUnderXCTest, !text.isEmpty else { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = Self.scaledRate(for: rate)
         synthesizer.stopSpeaking(at: .immediate)
@@ -247,14 +259,17 @@ class TTSEngineBridge {
     }
 
     func stop() async {
+        guard !Self.isRunningUnderXCTest else { return }
         synthesizer.stopSpeaking(at: .immediate)
     }
 
     func pause() async {
+        guard !Self.isRunningUnderXCTest else { return }
         synthesizer.pauseSpeaking(at: .word)
     }
 
     func resume() async {
+        guard !Self.isRunningUnderXCTest else { return }
         synthesizer.continueSpeaking()
     }
 
