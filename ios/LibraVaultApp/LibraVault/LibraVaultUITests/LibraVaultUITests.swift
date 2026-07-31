@@ -22,10 +22,20 @@ final class LibraVaultUITests: XCTestCase {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
+    /// Every test needs a real (non-mock) book to navigate against. The launch
+    /// argument tells the app to bootstrap a vault backed by a file it writes into
+    /// its own sandbox — see UITestFixtures.swift — instead of relying on any
+    /// hardcoded library.
+    private func makeApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestFixtureVault"]
+        return app
+    }
+
     @MainActor
     func testExample() throws {
         // UI tests must launch the application that they test.
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launch()
 
         // Use XCTAssert and related functions to verify your tests produce the correct results.
@@ -36,7 +46,7 @@ final class LibraVaultUITests: XCTestCase {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.
             measure(metrics: [XCTApplicationLaunchMetric()]) {
-                XCUIApplication().launch()
+                self.makeApp().launch()
             }
         }
     }
@@ -50,7 +60,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testNoBottomTabBar() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launch()
 
         XCTAssertFalse(app.tabBars.firstMatch.waitForExistence(timeout: 2))
@@ -58,7 +68,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testSettingsIsReachableFromLibraryToolbar() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launch()
 
         let settingsButton = app.buttons["libraryToolbar.settingsButton"]
@@ -72,7 +82,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testFormatFilterChipsExist() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launch()
 
         XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5))
@@ -82,15 +92,11 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testSelectingPdfFilterHidesEpubOnlyBook() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launch()
 
-        // "To Kill a Mockingbird" (EPUB, 0% progress) is the one mock book that never
-        // appears in the Continue row (see DomainBridge.swift's loadMockLibrary()), so
-        // it's the only unambiguous choice for a "does it disappear" assertion — every
-        // other mock book has progress > 0 and would still be visible via Continue
-        // regardless of the format filter, which is correct behavior (Continue isn't
-        // filtered — matches Android, where the Continue row is filter-independent).
+        // "To Kill a Mockingbird" is the fixture vault's only book — a freshly scanned
+        // file always starts at 0% progress, so it never shows in the Continue row.
         XCTAssertTrue(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 5))
 
         app.buttons["PDF"].tap()
@@ -100,8 +106,8 @@ final class LibraVaultUITests: XCTestCase {
 
     // MARK: - Reader screen parity (Phase 3 of the Android/iOS UI parity plan)
     //
-    // All three navigate via "To Kill a Mockingbird" specifically — it's the one mock
-    // book with 0% progress, so its title appears exactly once on the Library screen
+    // All three navigate via "To Kill a Mockingbird" — the fixture vault's only book,
+    // at 0% progress, so its title appears exactly once on the Library screen
     // (Continue-row books show their title twice: once there, once in the grid), which
     // is what a single-match staticTexts[...] query needs to avoid an ambiguous-match
     // failure. See testSelectingPdfFilterHidesEpubOnlyBook above for the same reasoning.
@@ -118,7 +124,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testReaderToolbarControlsExist() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openReaderForMockingbird(in: app)
 
         XCTAssertTrue(app.buttons["reader.themeButton"].waitForExistence(timeout: 5))
@@ -129,7 +135,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testBookmarksSheetShowsAddedBookmark() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openReaderForMockingbird(in: app)
 
         let addBookmarkButton = app.buttons["reader.addBookmarkButton"]
@@ -146,7 +152,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testReaderSettingsSheetShowsThemeAndModeOptions() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openReaderForMockingbird(in: app)
 
         let settingsButton = app.buttons["reader.settingsButton"]
@@ -165,7 +171,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testReadAloudNavigatesToPlayer() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openReaderForMockingbird(in: app)
 
         let settingsButton = app.buttons["reader.settingsButton"]
@@ -183,7 +189,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testPlayerChaptersSheetShowsAllChapters() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openReaderForMockingbird(in: app)
 
         app.buttons["reader.settingsButton"].tap()
@@ -222,7 +228,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testSettingsShowsAllSevenSections() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openSettings(in: app)
 
         XCTAssertTrue(app.staticTexts["Vaults"].waitForExistence(timeout: 5))
@@ -243,7 +249,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testSettingsReadingSectionShowsThemeChips() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openSettings(in: app)
 
         XCTAssertTrue(app.staticTexts["Default theme"].waitForExistence(timeout: 5))
@@ -254,7 +260,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testSettingsPlaybackSectionShowsSpeedAndSkipControls() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openSettings(in: app)
 
         XCTAssertTrue(app.staticTexts["Default speed"].waitForExistence(timeout: 5))
@@ -267,7 +273,7 @@ final class LibraVaultUITests: XCTestCase {
 
     @MainActor
     func testSettingsHasNoNonFunctionalDonateButton() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         openSettings(in: app)
 
         let supportDevelopment = app.staticTexts["Support Development"]

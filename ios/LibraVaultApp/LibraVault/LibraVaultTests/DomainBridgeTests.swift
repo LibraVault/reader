@@ -12,41 +12,6 @@ final class DomainBridgeTests: XCTestCase {
         try await bridge.initialize()
     }
 
-    func testInitializeLoadsMockLibrary() {
-        XCTAssertEqual(bridge.allBooks.count, 7)
-        XCTAssertTrue(bridge.allBooks.contains { $0.title == "The Great Gatsby" })
-    }
-
-    func testMockLibraryIncludesAudiobooks() {
-        let audiobooks = bridge.allBooks.filter { $0.format.isAudio }
-        XCTAssertEqual(audiobooks.count, 2)
-        XCTAssertTrue(audiobooks.contains { $0.title == "The Hobbit" && $0.format == .m4b })
-        XCTAssertTrue(audiobooks.contains { $0.title == "Sapiens: A Brief History of Humankind" && $0.format == .mp3 })
-    }
-
-    func testLoadBookReturnsMatchingBook() async throws {
-        let book = try await bridge.loadBook(id: "2")
-        XCTAssertEqual(book.title, "1984")
-        XCTAssertEqual(book.author, "George Orwell")
-    }
-
-    func testScanLibraryReturnsAllBooks() async throws {
-        let scanned = try await bridge.scanLibrary(vaultPath: "/Documents")
-        XCTAssertEqual(scanned.count, bridge.allBooks.count)
-        XCTAssertEqual(Set(scanned.map(\.id)), Set(bridge.allBooks.map(\.id)))
-    }
-
-    func testLoadBookThrowsForUnknownId() async {
-        do {
-            _ = try await bridge.loadBook(id: "does-not-exist")
-            XCTFail("Expected DomainError.bookNotFound to be thrown")
-        } catch DomainError.bookNotFound(let id) {
-            XCTAssertEqual(id, "does-not-exist")
-        } catch {
-            XCTFail("Expected DomainError.bookNotFound, got \(error)")
-        }
-    }
-
     func testAddBookmarkAppendsBookmark() async throws {
         let before = bridge.bookmarks["1"]?.count ?? 0
         try await bridge.addBookmark(bookId: "1", position: "chapter-3")

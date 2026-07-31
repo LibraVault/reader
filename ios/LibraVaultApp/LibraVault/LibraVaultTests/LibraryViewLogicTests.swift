@@ -99,9 +99,9 @@ final class LibraryViewLogicTests: XCTestCase {
     }
 
     func testCoverPaletteIndexDiffersForDifferentIds() {
-        // Not a hard guarantee for arbitrary ids (a collision is possible), but the
-        // actual mock library's 5 ids (see DomainBridge.swift) should spread across
-        // more than one slot — otherwise every book in the grid looks the same.
+        // Not a hard guarantee for arbitrary ids (a collision is possible), but a
+        // handful of simple sequential ids should spread across more than one slot —
+        // otherwise every book in the grid looks the same.
         let ids = ["1", "2", "3", "4", "5"]
         let indices = Set(ids.map { generatedCoverPaletteIndex(for: BookItem(id: $0, title: "T", author: "A")) })
         XCTAssertGreaterThan(indices.count, 1)

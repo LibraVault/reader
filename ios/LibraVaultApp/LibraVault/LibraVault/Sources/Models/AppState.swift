@@ -75,10 +75,9 @@ final class AppState: ObservableObject {
     // Folder locations the user has granted access to via Settings' "Add Vault"
     // picker — the iOS counterpart to Android's Storage Access Framework vault list.
     // Persisted across launches through a security-scoped bookmark; see Vault.swift.
-    // Genuinely scanned for book/audiobook files (LibraryFileScanner). Once any vault
-    // exists, `books` below is real vault content ONLY — DomainBridge's small demo
-    // library (see its header comment) is shown solely as a first-launch preview
-    // before a vault has ever been added, never mixed in alongside real books.
+    // Genuinely scanned for book/audiobook files (LibraryFileScanner). `books` below
+    // is always real vault content — an empty `vaults` list means an empty library,
+    // not a fallback/demo one.
     @Published private(set) var vaults: [Vault] = []
 
     private var playbackTimer: Timer?
@@ -94,6 +93,9 @@ final class AppState: ObservableObject {
     ) {
         self.vaultPersistence = vaultPersistence
         self.userPreferencesPersistence = userPreferencesPersistence
+        #if DEBUG
+        UITestFixtures.ensureVault(persistence: vaultPersistence)
+        #endif
         vaults = vaultPersistence.loadVaults()
         defaultReadingTheme = userPreferencesPersistence.loadReadingTheme()
         defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
@@ -108,14 +110,7 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        if vaults.isEmpty {
-            // No real vault configured yet — show the bridge's small demo library as a
-            // first-launch preview rather than a plain empty screen. The moment a vault
-            // is added, this branch never runs again: see the `else`.
-            books = ((try? await bridge.scanLibrary(vaultPath: "/Documents")) ?? []).map { BookItem(from: $0) }
-        } else {
-            books = scanVaults().map { BookItem(from: $0) }
-        }
+        books = scanVaults().map { BookItem(from: $0) }
         bridge.log("Loaded \(books.count) books from library", tag: "Library")
     }
 
@@ -295,14 +290,21 @@ struct BookItem: Identifiable {
     let format: MediaFormat
     let coverUrl: String?
     var progress: Double
+    /// The real file this book was scanned from, and the vault it belongs to — needed
+    /// to reopen the book for content parsing/playback. Nil for books not backed by a
+    /// real vault scan (e.g. constructed directly in tests/previews).
+    let fileURL: URL?
+    let vaultId: String?
 
-    init(id: String, title: String, author: String, format: MediaFormat = .epub, coverUrl: String? = nil, progress: Double = 0.0) {
+    init(id: String, title: String, author: String, format: MediaFormat = .epub, coverUrl: String? = nil, progress: Double = 0.0, fileURL: URL? = nil, vaultId: String? = nil) {
         self.id = id
         self.title = title
         self.author = author
         self.format = format
         self.coverUrl = coverUrl
         self.progress = progress
+        self.fileURL = fileURL
+        self.vaultId = vaultId
     }
 
     init(from bookData: BookData) {
@@ -312,6 +314,8 @@ struct BookItem: Identifiable {
         self.format = bookData.format
         self.coverUrl = nil
         self.progress = bookData.progress
+        self.fileURL = bookData.fileURL
+        self.vaultId = bookData.vaultId
     }
 }
 

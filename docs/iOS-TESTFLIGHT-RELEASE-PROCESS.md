@@ -4,7 +4,7 @@
 
 ## What this actually is
 
-LibraVault iOS builds and uploads to TestFlight entirely through GitHub Actions — no local Mac build is required for a release. The app currently ships with **mock library data** (5 sample books hardcoded in `LibravaultDomainBridge.loadMockLibrary()`); there is no real Kotlin domain-layer integration yet.
+LibraVault iOS builds and uploads to TestFlight entirely through GitHub Actions — no local Mac build is required for a release. The library is real vault-scanned data only (`LibraryFileScanner`) — the hardcoded demo library that used to back a no-vault first launch has been removed. There is no real Kotlin domain-layer integration yet; real EPUB/PDF/audio content parsing (chapter text, TTS, audiobook playback) is tracked separately — see the "Remove mockup books from the iOS app" plan.
 
 Two workflows, both in `.github/workflows/`:
 
@@ -93,16 +93,16 @@ Once Apple finishes processing (15–30 min after upload):
 
 ## Known limitations of the current build
 
-- **Mock data only.** No real KMP `core:domain` integration — see "Relationship to the Phase D KMP docs" below.
+- **No real KMP `core:domain` integration.** The library itself is real vault-scanned data, but chapter/page content, TTS, and audiobook playback are not yet backed by real parsing — see "Relationship to the Phase D KMP docs" below.
 - **App icon is a placeholder.** Upscaled from the Android launcher icon (192×192 → 1024×1024) to satisfy Apple's dimension requirement; replace with a real high-resolution source before any public release.
 - **`ios-app-build.yml`'s unit test step uses `continue-on-error: true`** — a failing test won't fail the PR check yet. Tighten this once there's a larger, more stable test suite.
 
 ## Relationship to the Phase D KMP docs
 
-Several other docs in this repo (`PHASES-SUMMARY.md`, `phase-d-kmp-swift-integration.md`, `PHASE-D-IMPLEMENTATION-GUIDE.md`, `v3-ios-ci-setup.md`) describe a **different, more ambitious architecture**: building Kotlin Multiplatform code into real `.xcframework` bundles (`LibravaultDomain.xcframework`, etc.) and linking them into the iOS app via SwiftPM binary targets, replacing the mock data with real Kotlin domain logic. That work:
+Several other docs in this repo (`PHASES-SUMMARY.md`, `phase-d-kmp-swift-integration.md`, `PHASE-D-IMPLEMENTATION-GUIDE.md`, `v3-ios-ci-setup.md`) describe a **different, more ambitious architecture**: building Kotlin Multiplatform code into real `.xcframework` bundles (`LibravaultDomain.xcframework`, etc.) and linking them into the iOS app via SwiftPM binary targets. That work:
 
 - Was planned in detail but **never started** — no `build-xcframeworks.gradle.kts` exists anywhere in the repo despite being referenced by name in three of those docs
 - Is unrelated to how TestFlight distribution actually got solved — this doc's pipeline uses a plain Xcode App target with hand-written Swift, no KMP frameworks involved at all
-- May still be a real future goal (real data instead of 5 mock books), but should be scoped and estimated fresh against the current codebase rather than trusting those docs' effort estimates, which were written before this session's discovery that even the basic "does an app target exist" question was unresolved
+- May still be a real future goal, but should be scoped and estimated fresh against the current codebase rather than trusting those docs' effort estimates, which were written before this session's discovery that even the basic "does an app target exist" question was unresolved. Real content parsing (EPUB/PDF/audio) is being built natively in Swift instead — see the "Remove mockup books from the iOS app" plan — so this KMP path is not currently on the critical path for that work.
 
 Those four docs have been marked with a status-correction banner pointing here rather than deleted, since the Phase D KMP-linking idea itself may still be worth pursuing later.

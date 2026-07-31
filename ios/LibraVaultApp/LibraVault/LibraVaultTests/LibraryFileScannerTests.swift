@@ -68,4 +68,18 @@ final class LibraryFileScannerTests: XCTestCase {
         XCTAssertEqual(results.count, 1)
         XCTAssertTrue(results[0].id.hasPrefix("vault:vault-42:"))
     }
+
+    /// `fileURL`/`vaultId` are what later reopen the real file for content parsing
+    /// and playback — a scan that only produces filename/format metadata is useless
+    /// for anything beyond the Library grid.
+    func testScanPopulatesFileURLAndVaultId() throws {
+        try write("Book.epub")
+        let namedVault = Vault(id: "vault-42", displayName: "Test", bookmarkData: Data())
+
+        let results = LibraryFileScanner.scan(vault: namedVault, resolvedURL: tempDir)
+
+        let book = try XCTUnwrap(results.first)
+        XCTAssertEqual(book.vaultId, "vault-42")
+        XCTAssertEqual(book.fileURL?.lastPathComponent, "Book.epub")
+    }
 }

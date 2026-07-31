@@ -5,11 +5,9 @@ import Foundation
 // Multiplatform domain code. No KMP framework is actually linked into the iOS app
 // (see docs/iOS-TESTFLIGHT-RELEASE-PROCESS.md) — bookmark/highlight/progress state
 // below is genuine Swift-native logic (now persisted, see initialize()), not a KMP
-// call. `allBooks` is a small hardcoded demo library, NOT mixed into a user's real
-// library — AppState.loadLibrary() only falls back to it when no vault has been
-// configured yet (a first-launch preview), and switches over to real
-// LibraryFileScanner-scanned files the moment a vault is added. It also backs the UI
-// test suite's navigation fixture (see LibraVaultUITests.openReaderForMockingbird).
+// call. Library scanning is real: AppState.loadLibrary() always sources `books` from
+// LibraryFileScanner against the user's real vaults — there is no demo/fallback
+// library here anymore.
 //
 // KMP Modules referenced by the original Phase D plan (never built):
 // - core:domain      → LibravaultDomainKmp (UseCases for library/reading)
@@ -27,7 +25,6 @@ import Foundation
 class LibravaultDomainBridge: ObservableObject {
     static let shared = LibravaultDomainBridge()
 
-    @Published var allBooks: [BookData] = []
     @Published var highlights: [String: [Highlight]] = [:]
     @Published var bookmarks: [String: [Bookmark]] = [:]
     @Published var progress: [String: Double] = [:]
@@ -56,28 +53,9 @@ class LibravaultDomainBridge: ObservableObject {
         bookmarks = persistence.loadBookmarks()
         highlights = persistence.loadHighlights()
         progress = persistence.loadProgress()
-        loadMockLibrary()
 
         isInitialized = true
         logger?.d(tag: "Bridge", message: "Domain bridge fully initialized")
-    }
-
-    // MARK: - Library Operations (demo/preview library — see the header comment above)
-    func scanLibrary(vaultPath: String) async throws -> [BookData] {
-        guard isInitialized else { throw DomainError.notInitialized }
-        logger?.d(tag: "Library", message: "Scanning vault: \(vaultPath)")
-        return allBooks
-    }
-
-    func loadBook(id: String) async throws -> BookData {
-        guard isInitialized else { throw DomainError.notInitialized }
-
-        guard let book = allBooks.first(where: { $0.id == id }) else {
-            throw DomainError.bookNotFound(id)
-        }
-
-        logger?.d(tag: "Reader", message: "Loading book: \(book.title)")
-        return book
     }
 
     // MARK: - Reading Operations
@@ -164,21 +142,6 @@ class LibravaultDomainBridge: ObservableObject {
     func resumeSpeaking() async {
         await ttsEngine?.resume()
     }
-
-    // MARK: - Demo/preview library
-    //
-    // Shown only until the user configures a real vault — see AppState.loadLibrary().
-    private func loadMockLibrary() {
-        allBooks = [
-            BookData(id: "1", title: "The Great Gatsby", author: "F. Scott Fitzgerald", format: .epub, progress: 0.35),
-            BookData(id: "2", title: "1984", author: "George Orwell", format: .pdf, progress: 0.67),
-            BookData(id: "3", title: "To Kill a Mockingbird", author: "Harper Lee", format: .epub, progress: 0.0),
-            BookData(id: "4", title: "Pride and Prejudice", author: "Jane Austen", format: .epub, progress: 0.42),
-            BookData(id: "5", title: "Brave New World", author: "Aldous Huxley", format: .pdf, progress: 0.28),
-            BookData(id: "6", title: "The Hobbit", author: "J.R.R. Tolkien", format: .m4b, progress: 0.12),
-            BookData(id: "7", title: "Sapiens: A Brief History of Humankind", author: "Yuval Noah Harari", format: .mp3, progress: 0.0),
-        ]
-    }
 }
 
 // MARK: - Swift-friendly Models (mapped from Kotlin)
@@ -191,6 +154,11 @@ struct BookData: Identifiable {
     var progress: Double = 0.0
     var highlights: [Highlight] = []
     var bookmarks: [Bookmark] = []
+    /// The real file this book was scanned from, and the vault it belongs to.
+    /// Populated for every real vault scan (see LibraryFileScanner) — optional only
+    /// because a handful of tests/previews construct a `BookData` without one.
+    var fileURL: URL? = nil
+    var vaultId: String? = nil
 }
 
 enum MediaFormat: Equatable {
