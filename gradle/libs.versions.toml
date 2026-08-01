@@ -24,6 +24,7 @@ mockk               = "1.13.11"
 turbine             = "1.1.0"
 compose-test        = "1.6.7"
 bouncycastle        = "1.84"
+kxml2               = "2.3.0"
 
 [libraries]
 # AndroidX core
@@ -91,6 +92,10 @@ mockk                           = { group = "io.mockk",                  name = 
 coroutines-test                 = { group = "org.jetbrains.kotlinx",     name = "kotlinx-coroutines-test",     version.ref = "coroutines" }
 turbine                         = { group = "app.cash.turbine",          name = "turbine",                     version.ref = "turbine" }
 robolectric                     = { group = "org.robolectric",           name = "robolectric",                 version = "4.12.2" }
+# JVM-side org.xmlpull.v1 implementation — lets XmlPullParserFactory.newInstance()
+# resolve on plain JVM unit tests (Android's real impl isn't on the JVM classpath;
+# AGP's mockable android.jar stubs the framework classes but not this pure-Java one).
+kxml2                            = { group = "net.sf.kxml",              name = "kxml2",                       version.ref = "kxml2" }
 
 # Testing — Compose UI (requires JUnit 4 runner — Google limitation)
 compose-ui-test-junit4          = { group = "androidx.compose.ui",       name = "ui-test-junit4",              version.ref = "compose-test" }
