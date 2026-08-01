@@ -44,6 +44,18 @@ class MediaFormatTest {
         assertEquals(MediaFormat.AAC, MediaFormat.fromMimeOrName("audio/aac", "track.aac"))
 
     @Test
+    fun `detects Markdown by mime type`() =
+        assertEquals(MediaFormat.MARKDOWN, MediaFormat.fromMimeOrName("text/markdown", "notes.md"))
+
+    @Test
+    fun `detects Markdown by md extension`() =
+        assertEquals(MediaFormat.MARKDOWN, MediaFormat.fromMimeOrName("application/octet-stream", "notes.md"))
+
+    @Test
+    fun `detects Markdown by markdown extension`() =
+        assertEquals(MediaFormat.MARKDOWN, MediaFormat.fromMimeOrName("application/octet-stream", "notes.markdown"))
+
+    @Test
     fun `returns null for unsupported format`() =
         assertNull(MediaFormat.fromMimeOrName("video/mp4", "video.mp4"))
 

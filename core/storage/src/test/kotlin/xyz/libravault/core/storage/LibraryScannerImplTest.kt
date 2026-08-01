@@ -174,6 +174,35 @@ class LibraryScannerImplTest {
         assertFalse(scanner.needsEnrichment(item))
     }
 
+    // ── Markdown (no Phase 2 enrichment — title is extracted synchronously) ──
+
+    @Test
+    fun `markdown stub is never enriched, even when it looks unenriched`() {
+        // Markdown never gets a cover or duration, so if this gate matched the
+        // EPUB PDF shape (coverArtPath == null && author == "Unknown") it would
+        // fire forever and re-read every markdown file on every future scan.
+        val item = libraryItem(
+            format       = MediaFormat.MARKDOWN,
+            coverArtPath = null,
+            author       = "Unknown",
+        )
+
+        assertFalse(scanner.needsEnrichment(item))
+    }
+
+    @Test
+    fun `markdown item never has a cover path in practice, so the defensive check stays inert`() {
+        // Markdown items never set coverArtPath, so this is really pinning that
+        // a null cover doesn't accidentally trip the "regardless of format"
+        // defensive re-enrichment check below the format gate.
+        val item = libraryItem(
+            format       = MediaFormat.MARKDOWN,
+            coverArtPath = null,
+        )
+
+        assertFalse(scanner.needsEnrichment(item))
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private fun libraryItem(
