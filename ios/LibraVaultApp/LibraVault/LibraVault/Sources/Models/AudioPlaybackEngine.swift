@@ -1,6 +1,25 @@
 import AVFoundation
 import Foundation
 
+/// The surface of AudioPlaybackEngine that AppState depends on — lets tests inject a
+/// fake that never touches AVAudioPlayer/AVAudioSession. Real AVFoundation calls hang
+/// in the CI Simulator (see AudioPlaybackEngineTests' own doc comment), so AppState's
+/// audio-format playback branch can't be exercised in tests without this seam.
+protocol AudioPlaybackEngineProtocol: AnyObject {
+    var onProgress: ((_ elapsed: Double, _ duration: Double) -> Void)? { get set }
+    var onFinished: (() -> Void)? { get set }
+    var isPlaying: Bool { get }
+    var duration: Double { get }
+    var elapsed: Double { get set }
+
+    func load(fileURL: URL, rate: Float) throws
+    func play(fileURL: URL, rate: Float) throws
+    func setRate(_ rate: Float)
+    func pause()
+    func resume()
+    func stop()
+}
+
 /// Real audio-file playback for audiobook-format books, replacing the previous
 /// TTS-narrates-fake-text simulation. Wraps AVAudioPlayer directly rather than
 /// AVPlayer/AVPlayerItem — audiobook files are local, already-downloaded files (no
@@ -12,7 +31,7 @@ import Foundation
 /// a real future refinement, not a mock-content concern (skip-forward/backward
 /// already does genuine seeking within the file, which is the primary way listeners
 /// navigate an audiobook day to day).
-final class AudioPlaybackEngine: NSObject {
+final class AudioPlaybackEngine: NSObject, AudioPlaybackEngineProtocol {
     private var player: AVAudioPlayer?
     private var progressTimer: Timer?
 
