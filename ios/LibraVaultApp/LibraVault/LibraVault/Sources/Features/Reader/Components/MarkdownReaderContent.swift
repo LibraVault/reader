@@ -116,6 +116,7 @@ private struct MarkdownBlockView: View {
         case let .heading(level, text):
             runsText(text, baseSize: headingSize(for: level))
                 .fontWeight(.bold)
+                .lineSpacing(8 * lineSpacing)
                 .foregroundStyle(colors.onBackground)
 
         case let .paragraph(text):
