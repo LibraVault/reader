@@ -62,14 +62,18 @@ jobs:
             > firebase-key.json
 
       - name: Distribute to Firebase App Distribution
+        env:
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          TESTER_GROUPS: ${{ inputs.groups }}
         run: |
           APK_PATH=$(find app/build/outputs/apk/play/release -name "*.apk" | head -1)
           echo "Distributing $APK_PATH"
 
           npx --yes firebase-tools@13.29.1 appdistribution:distribute "$APK_PATH" \
-            --app "${{ secrets.FIREBASE_APP_ID }}" \
-            --groups "${{ inputs.groups }}" \
-            --release-notes "${{ inputs.release_notes }}" \
+            --app "$FIREBASE_APP_ID" \
+            --groups "$TESTER_GROUPS" \
+            --release-notes "$RELEASE_NOTES" \
             --credential-file firebase-key.json
 
           echo "✅ Uploaded to Firebase App Distribution"

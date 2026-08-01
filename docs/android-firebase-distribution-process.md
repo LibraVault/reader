@@ -61,8 +61,8 @@ gh secret list --repo LibraVault/reader
    ```bash
    npx --yes firebase-tools@13.29.1 appdistribution:distribute "$APK_PATH" \
      --app "$FIREBASE_APP_ID" \
-     --groups "$groups" \
-     --release-notes "$release_notes" \
+     --groups "$TESTER_GROUPS" \
+     --release-notes "$RELEASE_NOTES" \
      --credential-file firebase-key.json
    ```
 6. Upload the APK as a build artifact (30-day retention).
