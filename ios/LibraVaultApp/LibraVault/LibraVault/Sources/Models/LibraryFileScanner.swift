@@ -11,6 +11,8 @@ enum LibraryFileScanner {
     static let extensionFormats: [String: MediaFormat] = [
         "epub": .epub,
         "pdf": .pdf,
+        "md": .markdown,
+        "markdown": .markdown,
         "mobi": .mobi,
         "cbz": .cbz,
         "mp3": .mp3,

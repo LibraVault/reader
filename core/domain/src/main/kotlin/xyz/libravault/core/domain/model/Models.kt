@@ -3,7 +3,7 @@ package xyz.libravault.core.domain.model
 import java.time.Instant
 
 enum class MediaFormat {
-    EPUB, PDF, MP3, M4B, OGG, FLAC, OPUS, AAC;
+    EPUB, PDF, MARKDOWN, MP3, M4B, OGG, FLAC, OPUS, AAC;
 
     fun isAudio() = this in setOf(MP3, M4B, OGG, FLAC, OPUS, AAC)
 }
@@ -35,6 +35,7 @@ data class ReadingProgress(
     val itemId: Long,
     val positionCfi: String? = null,    // EPUB CFI
     val pageIndex: Int? = null,         // PDF page
+    val markdownScrollOffset: Int? = null, // Markdown scroll offset (px)
     val lastReadAt: Instant = Instant.now(),
 )
 

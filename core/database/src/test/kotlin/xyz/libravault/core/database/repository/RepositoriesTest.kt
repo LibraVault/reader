@@ -125,7 +125,7 @@ class ProgressRepositoryImplTest {
     @Test
     fun `getReadingProgress maps epoch millis to Instant`() = runTest {
         coEvery { dao.getReadingProgress(1) } returns ReadingProgressEntity(
-            itemId = 1, positionCfi = "epubcfi(/6/4)", pageIndex = null, lastReadAt = 1_700_000_000_000,
+            itemId = 1, positionCfi = "epubcfi(/6/4)", pageIndex = null, markdownScrollOffset = null, lastReadAt = 1_700_000_000_000,
         )
 
         val progress = repository.getReadingProgress(1)

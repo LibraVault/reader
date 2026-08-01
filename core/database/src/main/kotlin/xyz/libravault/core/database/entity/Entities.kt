@@ -84,6 +84,7 @@ data class ReadingProgressEntity(
     @PrimaryKey val itemId: Long,
     val positionCfi: String?,
     val pageIndex: Int?,
+    val markdownScrollOffset: Int?,
     val lastReadAt: Long,
 )
 

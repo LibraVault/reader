@@ -56,8 +56,9 @@ class MetadataExtractor @Inject constructor(
                     MediaFormat.FLAC,
                     MediaFormat.OPUS,
                     MediaFormat.AAC  -> extractAudio(file)
-                    MediaFormat.EPUB -> extractEpub(file)
-                    MediaFormat.PDF  -> extractPdf(file)
+                    MediaFormat.EPUB     -> extractEpub(file)
+                    MediaFormat.PDF      -> extractPdf(file)
+                    MediaFormat.MARKDOWN -> extractMarkdown(file)
                 }
             }.getOrElse { e ->
                 logger.e(TAG, "Failed to extract metadata from ${file.displayName}", e)
@@ -280,6 +281,50 @@ class MetadataExtractor @Inject constructor(
                 coverArtPath = coverPath,
             )
         }
+    }
+
+    // ── Markdown (H1 / YAML front-matter title) ──────────────────────────────
+
+    private suspend fun extractMarkdown(file: ScannedFile): ExtractedMetadata {
+        val text = context.contentResolver.openInputStream(file.uri)
+            ?.use { it.bufferedReader().readText() }
+            ?: return fallback(file)
+
+        return ExtractedMetadata(
+            title  = extractMarkdownTitle(text) ?: file.displayName.substringBeforeLast('.'),
+            author = UNKNOWN,
+        )
+    }
+
+    /**
+     * Title precedence per the Markdown viewer PRD: first `# H1`, else YAML
+     * front matter's `title:` field, else null (caller falls back to filename).
+     */
+    internal fun extractMarkdownTitle(text: String): String? {
+        val (frontMatter, body) = splitFrontMatter(text)
+
+        val h1 = body.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() }
+            ?.takeIf { it.startsWith("# ") }
+            ?.removePrefix("#")
+            ?.trim()
+        if (!h1.isNullOrBlank()) return h1
+
+        return frontMatter?.let {
+            Regex("""^title:\s*["']?(.+?)["']?\s*$""", RegexOption.MULTILINE)
+                .find(it)?.groupValues?.get(1)?.takeIf(String::isNotBlank)
+        }
+    }
+
+    /** Splits a leading `---\n...\n---` YAML block from the rest of the document. */
+    private fun splitFrontMatter(text: String): Pair<String?, String> {
+        if (!text.startsWith("---")) return null to text
+        val end = text.indexOf("\n---", startIndex = 3)
+        if (end == -1) return null to text
+        val frontMatter = text.substring(3, end)
+        val bodyStart = text.indexOf('\n', end + 4).let { if (it == -1) text.length else it + 1 }
+        return frontMatter to text.substring(minOf(bodyStart, text.length))
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -18,7 +18,8 @@ class MediaFormatTest {
             MediaFormat.OPUS,
             MediaFormat.AAC -> assertTrue(format.isAudio(), "$format should be audio")
             MediaFormat.EPUB,
-            MediaFormat.PDF -> assertFalse(format.isAudio(), "$format should not be audio")
+            MediaFormat.PDF,
+            MediaFormat.MARKDOWN -> assertFalse(format.isAudio(), "$format should not be audio")
         }
     }
 }

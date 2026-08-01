@@ -187,17 +187,19 @@ private fun LibraryItem.toEntity() = LibraryItemEntity(
 )
 
 private fun ReadingProgressEntity.toDomain() = ReadingProgress(
-    itemId       = itemId,
-    positionCfi  = positionCfi,
-    pageIndex    = pageIndex,
-    lastReadAt   = Instant.ofEpochMilli(lastReadAt),
+    itemId               = itemId,
+    positionCfi          = positionCfi,
+    pageIndex            = pageIndex,
+    markdownScrollOffset = markdownScrollOffset,
+    lastReadAt           = Instant.ofEpochMilli(lastReadAt),
 )
 
 private fun ReadingProgress.toEntity() = ReadingProgressEntity(
-    itemId      = itemId,
-    positionCfi = positionCfi,
-    pageIndex   = pageIndex,
-    lastReadAt  = lastReadAt.toEpochMilli(),
+    itemId               = itemId,
+    positionCfi          = positionCfi,
+    pageIndex            = pageIndex,
+    markdownScrollOffset = markdownScrollOffset,
+    lastReadAt           = lastReadAt.toEpochMilli(),
 )
 
 private fun ListeningProgressEntity.toDomain() = ListeningProgress(

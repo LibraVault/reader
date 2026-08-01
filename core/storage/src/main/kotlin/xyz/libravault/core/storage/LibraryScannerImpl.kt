@@ -101,11 +101,22 @@ class LibraryScannerImpl @Inject constructor(
                 if (path !in existingPaths) {
                     runCatching {
                         val domainFormat = scannedFile.format.toDomain()
+                        // Markdown title extraction (H1 / front matter) is a cheap text
+                        // read, unlike EPUB's zip/XML parse or PDF's PdfRenderer — so it
+                        // runs inline here rather than being deferred to Phase 2. This
+                        // also lets needsEnrichment() skip MARKDOWN entirely: markdown
+                        // never gets a cover or duration, so a Phase-2-deferred title
+                        // extraction would leave the enrichment gate permanently true
+                        // and re-read every markdown file on every future scan.
+                        val title = if (domainFormat == MediaFormat.MARKDOWN) {
+                            metadataExtractor.extract(scannedFile).title
+                        } else {
+                            scannedFile.displayName.substringBeforeLast('.')
+                        }
                         val stub = LibraryItem(
                             vaultFolderId = vaultId,
                             filePath      = path,
-                            title         = scannedFile.displayName
-                                .substringBeforeLast('.'),
+                            title         = title,
                             author        = "Unknown",
                             format        = domainFormat,
                         )
@@ -185,6 +196,9 @@ class LibraryScannerImpl @Inject constructor(
             MediaFormat.OPUS, MediaFormat.AAC -> item.durationMs == null
             MediaFormat.EPUB, MediaFormat.PDF  -> item.coverArtPath == null &&
                     item.author == "Unknown"
+            // Title is extracted synchronously at stub-insert time (see scan()) since
+            // it's cheap for a text file — there's nothing left for Phase 2 to enrich.
+            MediaFormat.MARKDOWN -> false
         }
         if (formatGateFires) return true
 
@@ -260,25 +274,27 @@ class LibraryScannerImpl @Inject constructor(
 // ── Format mapping ────────────────────────────────────────────────────────────
 
 private fun StorageFormat.toDomain() = when (this) {
-    StorageFormat.EPUB  -> MediaFormat.EPUB
-    StorageFormat.PDF   -> MediaFormat.PDF
-    StorageFormat.MP3   -> MediaFormat.MP3
-    StorageFormat.M4B   -> MediaFormat.M4B
-    StorageFormat.OGG   -> MediaFormat.OGG
-    StorageFormat.FLAC  -> MediaFormat.FLAC
-    StorageFormat.OPUS  -> MediaFormat.OPUS
-    StorageFormat.AAC   -> MediaFormat.AAC
+    StorageFormat.EPUB     -> MediaFormat.EPUB
+    StorageFormat.PDF      -> MediaFormat.PDF
+    StorageFormat.MARKDOWN -> MediaFormat.MARKDOWN
+    StorageFormat.MP3      -> MediaFormat.MP3
+    StorageFormat.M4B      -> MediaFormat.M4B
+    StorageFormat.OGG      -> MediaFormat.OGG
+    StorageFormat.FLAC     -> MediaFormat.FLAC
+    StorageFormat.OPUS     -> MediaFormat.OPUS
+    StorageFormat.AAC      -> MediaFormat.AAC
 }
 
 private fun MediaFormat.toStorage() = when (this) {
-    MediaFormat.EPUB  -> StorageFormat.EPUB
-    MediaFormat.PDF   -> StorageFormat.PDF
-    MediaFormat.MP3   -> StorageFormat.MP3
-    MediaFormat.M4B   -> StorageFormat.M4B
-    MediaFormat.OGG   -> StorageFormat.OGG
-    MediaFormat.FLAC  -> StorageFormat.FLAC
-    MediaFormat.OPUS  -> StorageFormat.OPUS
-    MediaFormat.AAC   -> StorageFormat.AAC
+    MediaFormat.EPUB     -> StorageFormat.EPUB
+    MediaFormat.PDF      -> StorageFormat.PDF
+    MediaFormat.MARKDOWN -> StorageFormat.MARKDOWN
+    MediaFormat.MP3      -> StorageFormat.MP3
+    MediaFormat.M4B      -> StorageFormat.M4B
+    MediaFormat.OGG      -> StorageFormat.OGG
+    MediaFormat.FLAC     -> StorageFormat.FLAC
+    MediaFormat.OPUS     -> StorageFormat.OPUS
+    MediaFormat.AAC      -> StorageFormat.AAC
 }
 
 // ── Hilt binding ──────────────────────────────────────────────────────────────

@@ -37,6 +37,18 @@ final class LibraryFileScannerTests: XCTestCase {
         XCTAssertTrue(results.contains { $0.title == "Novel" && $0.format == .m4b })
     }
 
+    func testScanFindsMarkdownFilesByBothExtensions() throws {
+        try write("Notes.md")
+        try write("LongForm.markdown")
+
+        let results = LibraryFileScanner.scan(vault: vault, resolvedURL: tempDir)
+
+        XCTAssertEqual(results.count, 2)
+        XCTAssertTrue(results.contains { $0.title == "Notes" && $0.format == .markdown })
+        XCTAssertTrue(results.contains { $0.title == "LongForm" && $0.format == .markdown })
+        XCTAssertTrue(results.allSatisfy { !$0.format.isAudio })
+    }
+
     func testScanIgnoresUnrecognizedExtensions() throws {
         try write("readme.txt")
         try write("cover.jpg")

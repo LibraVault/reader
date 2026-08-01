@@ -164,6 +164,7 @@ struct BookData: Identifiable {
 enum MediaFormat: Equatable {
     case pdf
     case epub
+    case markdown
     case mobi
     case cbz
     case mp3
@@ -179,7 +180,7 @@ enum MediaFormat: Equatable {
     var isAudio: Bool {
         switch self {
         case .mp3, .m4b, .aac, .flac, .ogg, .opus: return true
-        case .pdf, .epub, .mobi, .cbz: return false
+        case .pdf, .epub, .markdown, .mobi, .cbz: return false
         }
     }
 }

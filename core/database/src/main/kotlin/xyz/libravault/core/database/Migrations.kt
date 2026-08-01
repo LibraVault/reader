@@ -101,3 +101,17 @@ val MIGRATION_4_5 = Migration(4, 5) { db ->
         db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `note` TEXT")
     }
 }
+
+/**
+ * Migration from v5→v6: adds markdownScrollOffset to reading_progress.
+ *
+ * v6 schema (Markdown viewer):
+ *  - adds nullable `markdownScrollOffset` INTEGER column to `reading_progress`,
+ *    storing the scroll position (px) for Markdown documents — same table used
+ *    by EPUB's `positionCfi` and PDF's `pageIndex`.
+ */
+val MIGRATION_5_6 = Migration(5, 6) { db ->
+    db.execSQL(
+        "ALTER TABLE `reading_progress` ADD COLUMN `markdownScrollOffset` INTEGER"
+    )
+}

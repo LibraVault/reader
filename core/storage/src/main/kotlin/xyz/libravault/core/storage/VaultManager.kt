@@ -97,7 +97,13 @@ class VaultManager @Inject constructor(
                         traverseDirectory(treeUri, docId, results, remainingDepth = remainingDepth - 1)
 
                     else -> {
-                        val format = MediaFormat.fromMimeOrName(mime, name) ?: return@use
+                        // NOTE: must be `continue` (skip this file, keep scanning the
+                        // directory), not `return@use` — the latter is a non-local return
+                        // from the enclosing `cursor.use { }` lambda, which wraps this
+                        // entire while loop. It would silently abort scanning of every
+                        // remaining file in this directory the moment one unrecognized
+                        // file (e.g. a cover.jpg, a README.txt) is encountered.
+                        val format = MediaFormat.fromMimeOrName(mime, name) ?: continue
                         val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                         results += ScannedFile(
                             uri = fileUri,
