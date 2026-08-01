@@ -167,4 +167,78 @@ final class BookContentProviderTests: XCTestCase {
             XCTAssertEqual(error as? BookContentProvider.ContentError, .vaultUnavailable)
         }
     }
+
+    // MARK: - markdownSource / markdownAssetData
+
+    /// A vault folder containing a Markdown file plus a sibling image and a
+    /// subfolder image, mirroring the real relative-reference scenarios
+    /// MarkdownAssetResolver's Android counterpart is tested against.
+    private func makeMarkdownVaultAndBook(persistence: VaultPersistence) throws -> (vault: Vault, book: BookItem) {
+        let vaultFolder = tempDir.appendingPathComponent("md-vault-\(UUID().uuidString)", isDirectory: true)
+        let imagesDir = vaultFolder.appendingPathComponent("images", isDirectory: true)
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+
+        let markdownURL = vaultFolder.appendingPathComponent("notes.md")
+        try "# Title\n\n![](./sibling.png)\n\n![](images/nested.png)".write(to: markdownURL, atomically: true, encoding: .utf8)
+        try Data([0x01, 0x02, 0x03]).write(to: vaultFolder.appendingPathComponent("sibling.png"))
+        try Data([0x04, 0x05]).write(to: imagesDir.appendingPathComponent("nested.png"))
+
+        let vault = try persistence.makeVault(from: vaultFolder)
+        persistence.save([vault])
+
+        let book = BookItem(
+            id: "vault:\(vault.id):\(markdownURL.path)",
+            title: "notes",
+            author: "",
+            format: .markdown,
+            fileURL: markdownURL,
+            vaultId: vault.id
+        )
+        return (vault, book)
+    }
+
+    func testMarkdownSourceReturnsRealFileContent() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeMarkdownVaultAndBook(persistence: persistence)
+
+        let source = try BookContentProvider.markdownSource(for: book, vaultPersistence: persistence)
+
+        XCTAssertTrue(source.contains("# Title"))
+    }
+
+    func testMarkdownAssetDataResolvesASiblingFile() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeMarkdownVaultAndBook(persistence: persistence)
+
+        let data = try BookContentProvider.markdownAssetData(for: book, relativePath: "./sibling.png", vaultPersistence: persistence)
+
+        XCTAssertEqual(data, Data([0x01, 0x02, 0x03]))
+    }
+
+    func testMarkdownAssetDataResolvesANestedSubfolderFile() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeMarkdownVaultAndBook(persistence: persistence)
+
+        let data = try BookContentProvider.markdownAssetData(for: book, relativePath: "images/nested.png", vaultPersistence: persistence)
+
+        XCTAssertEqual(data, Data([0x04, 0x05]))
+    }
+
+    func testMarkdownAssetDataThrowsForAMissingFile() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeMarkdownVaultAndBook(persistence: persistence)
+
+        XCTAssertThrowsError(try BookContentProvider.markdownAssetData(for: book, relativePath: "missing.png", vaultPersistence: persistence))
+    }
+
+    func testMarkdownAssetDataRejectsHttpUrls() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeMarkdownVaultAndBook(persistence: persistence)
+
+        XCTAssertThrowsError(
+            try BookContentProvider.markdownAssetData(for: book, relativePath: "https://example.com/img.png", vaultPersistence: persistence)
+        ) { error in
+            XCTAssertEqual(error as? BookContentProvider.ContentError, .unsupportedFormat)
+        }
+    }
 }

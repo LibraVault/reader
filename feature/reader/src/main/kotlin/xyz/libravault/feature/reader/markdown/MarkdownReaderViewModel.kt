@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.storage.MarkdownAssetResolver
 import javax.inject.Inject
 
 /**
@@ -21,6 +22,8 @@ import javax.inject.Inject
  *
  * Responsibilities:
  *  - Read the Markdown file at a SAF [Uri] into a [String] and expose it as a [StateFlow].
+ *  - Resolve the file's parent [androidx.documentfile.provider.DocumentFile] (for
+ *    relative image loading) once per load, alongside the text read.
  *
  * Deliberately separate from [xyz.libravault.feature.reader.ReaderViewModel], mirroring
  * [xyz.libravault.feature.reader.epub.EpubReaderViewModel]'s split: the parent handles
@@ -31,6 +34,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MarkdownReaderViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val assetResolver: MarkdownAssetResolver,
     private val logger: LibravaultLogger,
 ) : ViewModel() {
 
@@ -39,14 +43,16 @@ class MarkdownReaderViewModel @Inject constructor(
 
     /**
      * Reads the Markdown file at [uri]. Idempotent — if the same URI is already
-     * loaded (or loading), does nothing.
+     * loaded (or loading), does nothing. [vaultTreeUri] is the item's vault folder
+     * (null for items with no vault association, e.g. opened via external intent) —
+     * used to resolve the file's parent directory for relative image loading.
      *
      * Returns the launched [Job] so tests can `.join()` it — the body hops onto a
      * real [Dispatchers.IO] thread for the file read, which `runTest`'s virtual
      * scheduler can't wait for automatically since it isn't a child of the test's
      * own coroutine scope.
      */
-    fun load(uri: Uri): Job {
+    fun load(uri: Uri, vaultTreeUri: Uri? = null): Job {
         val current = _state.value
         if (current is MarkdownPublicationState.Ready && current.uri == uri) return Job().apply { complete() }
         if (current is MarkdownPublicationState.Loading) return Job().apply { complete() }
@@ -57,7 +63,10 @@ class MarkdownReaderViewModel @Inject constructor(
             val text = withContext(Dispatchers.IO) { readText(uri) }
             _state.value = if (text != null) {
                 logger.i(TAG, "Loaded Markdown file: $uri (${text.length} chars)")
-                MarkdownPublicationState.Ready(uri, text)
+                val parentDirectory = vaultTreeUri?.let {
+                    withContext(Dispatchers.IO) { assetResolver.findParentDirectory(it, uri) }
+                }
+                MarkdownPublicationState.Ready(uri, text, parentDirectory)
             } else {
                 logger.e(TAG, "Failed to read Markdown file: $uri")
                 MarkdownPublicationState.Error("Couldn't read this file.")

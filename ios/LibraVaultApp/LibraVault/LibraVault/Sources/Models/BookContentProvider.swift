@@ -42,6 +42,32 @@ enum BookContentProvider {
         }
     }
 
+    /// Resolves a relative image reference (`./img.png`, `images/pic.jpg`,
+    /// `../shared/x.png`) against the Markdown file's own location and reads its
+    /// bytes — called eagerly once per image at document-load time (see
+    /// ReaderView.loadContent), not lazily during rendering, since the security-scoped
+    /// access this needs is only held open for the duration of this call, not for the
+    /// lifetime of the view. Never resolves absolute http(s) URLs — LibraVault is
+    /// offline-first and doesn't request the `INTERNET`-equivalent network entitlement.
+    static func markdownAssetData(
+        for book: BookItem,
+        relativePath: String,
+        vaultPersistence: VaultPersistence = VaultPersistence()
+    ) throws -> Data {
+        guard book.format == .markdown else {
+            throw ContentError.unsupportedFormat
+        }
+        if relativePath.lowercased().hasPrefix("http://") || relativePath.lowercased().hasPrefix("https://") {
+            throw ContentError.unsupportedFormat
+        }
+        return try withSecurityScopedAccess(for: book, vaultPersistence: vaultPersistence) { fileURL in
+            guard let resolvedURL = URL(string: relativePath, relativeTo: fileURL)?.standardizedFileURL else {
+                throw ContentError.missingFileReference
+            }
+            return try Data(contentsOf: resolvedURL)
+        }
+    }
+
     /// Resolves the book's vault security-scoped bookmark and holds the scope open
     /// for the duration of `body`. Shared by chapters(for:) and markdownSource(for:)
     /// since both need the same "resolve vault → start scope → read file" sequence.

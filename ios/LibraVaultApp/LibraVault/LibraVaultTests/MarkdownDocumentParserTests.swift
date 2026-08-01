@@ -102,6 +102,31 @@ final class MarkdownDocumentParserTests: XCTestCase {
         XCTAssertEqual(MarkdownDocumentParser.parse(""), [])
     }
 
+    // MARK: - Images
+
+    func testStandaloneImageParsesAsAnImageBlock() {
+        let blocks = MarkdownDocumentParser.parse("![a cat](./cat.png)")
+
+        XCTAssertEqual(blocks, [.image(url: "./cat.png", altText: "a cat")])
+    }
+
+    func testStandaloneImageWithNoAltTextHasAnEmptyAltText() {
+        let blocks = MarkdownDocumentParser.parse("![](./cat.png)")
+
+        XCTAssertEqual(blocks, [.image(url: "./cat.png", altText: "")])
+    }
+
+    func testImageInlineAlongsideTextIsNotExtractedAsAnImageBlock() {
+        // Deliberately not special-cased for v1 — falls through to plain alt text
+        // like any other unhandled inline node, rather than an .image block.
+        let blocks = MarkdownDocumentParser.parse("Some text ![a cat](./cat.png) more text")
+
+        XCTAssertEqual(blocks.count, 1)
+        guard case .paragraph? = blocks.first else {
+            return XCTFail("expected a paragraph, not an image block, for a mixed-content line")
+        }
+    }
+
     // MARK: - extractToc
 
     func testExtractTocFindsHeadingsAtTheirTopLevelBlockIndex() {

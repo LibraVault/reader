@@ -12,6 +12,12 @@ struct ReaderView: View {
     /// Parsed Markdown blocks — populated by loadContent() instead of `chapters`
     /// when book.format == .markdown. See MarkdownDocumentParser.
     @State private var markdownBlocks: [MarkdownBlock]?
+    /// Resolved image bytes for this Markdown file's `.image` blocks, keyed by the
+    /// raw (unresolved) reference string as written in the source. Loaded eagerly in
+    /// loadContent() — see BookContentProvider.markdownAssetData for why this can't
+    /// happen lazily during rendering (needs the vault's security-scoped access,
+    /// which is only held open for the duration of that one call).
+    @State private var markdownImages: [String: Data] = [:]
     @State private var unavailableReason: UnavailableReason?
 
     private enum UnavailableReason {
@@ -156,7 +162,9 @@ struct ReaderView: View {
         if book.format == .markdown {
             do {
                 let source = try BookContentProvider.markdownSource(for: book)
-                markdownBlocks = MarkdownDocumentParser.parse(source)
+                let blocks = MarkdownDocumentParser.parse(source)
+                markdownBlocks = blocks
+                loadMarkdownImages(for: blocks)
             } catch BookContentProvider.ContentError.unsupportedFormat {
                 unavailableReason = .unsupportedFormat
             } catch {
@@ -179,6 +187,22 @@ struct ReaderView: View {
             // malformed file, vault no longer resolvable, etc.
             unavailableReason = .loadFailed
         }
+    }
+
+    /// Resolves and reads every `.image` block's bytes up front — see markdownImages'
+    /// doc comment for why this can't happen lazily during rendering. A single image
+    /// that fails to resolve (moved/deleted file, malformed reference) is skipped, not
+    /// treated as a whole-document load failure — MarkdownBlockView shows a broken-
+    /// image placeholder for any url missing from the dictionary.
+    private func loadMarkdownImages(for blocks: [MarkdownBlock]) {
+        var images: [String: Data] = [:]
+        for block in blocks {
+            guard case let .image(url, _) = block, images[url] == nil else { continue }
+            if let data = try? BookContentProvider.markdownAssetData(for: book, relativePath: url) {
+                images[url] = data
+            }
+        }
+        markdownImages = images
     }
 
     private var chapterCount: Int { chapters?.count ?? 0 }
@@ -254,6 +278,7 @@ struct ReaderView: View {
     private func markdownContent(_ blocks: [MarkdownBlock]) -> some View {
         MarkdownReaderContent(
             blocks: blocks,
+            images: markdownImages,
             colors: colors,
             fontSize: fontSize,
             lineSpacing: lineSpacing,

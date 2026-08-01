@@ -1,6 +1,7 @@
 package xyz.libravault.core.domain.usecase
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import xyz.libravault.core.domain.model.Collection
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.ListeningProgress
@@ -38,6 +39,14 @@ class ObserveVaultsUseCase @Inject constructor(
     private val vaultRepository: VaultRepository,
 ) {
     operator fun invoke(): Flow<List<VaultFolder>> = vaultRepository.observeVaults()
+}
+
+/** One-shot vault lookup by id — used by the Markdown reader to resolve relative image paths. */
+class GetVaultFolderUseCase @Inject constructor(
+    private val vaultRepository: VaultRepository,
+) {
+    suspend operator fun invoke(vaultId: Long): VaultFolder? =
+        vaultRepository.observeVaults().first().find { it.id == vaultId }
 }
 
 class GetLibraryUseCase @Inject constructor(

@@ -3,8 +3,10 @@ package xyz.libravault.feature.reader.markdown
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.storage.MarkdownAssetResolver
 
 class MarkdownReaderViewModelTest {
 
@@ -23,6 +26,7 @@ class MarkdownReaderViewModelTest {
     private val context = mockk<Context>(relaxed = true) {
         every { contentResolver } returns resolver
     }
+    private val assetResolver = mockk<MarkdownAssetResolver>(relaxed = true)
     private val logger = mockk<LibravaultLogger>(relaxed = true)
 
     @BeforeEach
@@ -35,7 +39,7 @@ class MarkdownReaderViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = MarkdownReaderViewModel(context, logger)
+    private fun viewModel() = MarkdownReaderViewModel(context, assetResolver, logger)
 
     @Test
     fun `load reads file content into Ready state`() = runTest {
@@ -102,5 +106,37 @@ class MarkdownReaderViewModelTest {
         vm.load(uri).join()
 
         assertTrue(vm.state.value is MarkdownPublicationState.Ready)
+    }
+
+    // ── vaultTreeUri / asset parent directory resolution ──────────────────────
+
+    @Test
+    fun `load with a vaultTreeUri resolves and stores the asset parent directory`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        val vaultTreeUri = mockk<Uri>(relaxed = true)
+        val parentDirectory = mockk<DocumentFile>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns "content".byteInputStream()
+        every { assetResolver.findParentDirectory(vaultTreeUri, uri) } returns parentDirectory
+
+        val vm = viewModel()
+        vm.load(uri, vaultTreeUri).join()
+
+        val state = vm.state.value
+        assertTrue(state is MarkdownPublicationState.Ready)
+        assertEquals(parentDirectory, (state as MarkdownPublicationState.Ready).assetParentDirectory)
+    }
+
+    @Test
+    fun `load without a vaultTreeUri never consults the asset resolver`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns "content".byteInputStream()
+
+        val vm = viewModel()
+        vm.load(uri, vaultTreeUri = null).join()
+
+        val state = vm.state.value
+        assertTrue(state is MarkdownPublicationState.Ready)
+        assertEquals(null, (state as MarkdownPublicationState.Ready).assetParentDirectory)
+        verify(exactly = 0) { assetResolver.findParentDirectory(any(), any()) }
     }
 }
