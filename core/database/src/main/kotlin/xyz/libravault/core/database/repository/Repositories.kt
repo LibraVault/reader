@@ -291,11 +291,11 @@ class CollectionRepositoryImpl @Inject constructor(
 ) : xyz.libravault.core.domain.repository.CollectionRepository {
 
     override fun observeAll(): kotlinx.coroutines.flow.Flow<List<xyz.libravault.core.domain.model.Collection>> =
-        dao.observeAll().map { list -> list.map { it.toDomain(dao) } }
+        dao.observeAll().map { list -> list.map { it.toDomain() } }
 
     override suspend fun getById(id: Long): xyz.libravault.core.domain.model.Collection? {
         val entity = dao.getById(id) ?: return null
-        return entity.toDomain(dao)
+        return entity.toDomain()
     }
 
     override suspend fun create(
@@ -345,17 +345,13 @@ class CollectionRepositoryImpl @Inject constructor(
 
 // ── Mappers (Collection) ─────────────────────────────────────────────────────
 
-private suspend fun xyz.libravault.core.database.entity.CollectionEntity.toDomain(
-    dao: xyz.libravault.core.database.dao.CollectionDao,
-): xyz.libravault.core.domain.model.Collection {
-    val itemIds = dao.getItemIds(id)
-    return xyz.libravault.core.domain.model.Collection(
+private fun xyz.libravault.core.database.entity.CollectionEntity.toDomain() =
+    xyz.libravault.core.domain.model.Collection(
         id = id,
         name = name,
         createdAt = java.time.Instant.ofEpochMilli(createdAt),
         updatedAt = java.time.Instant.ofEpochMilli(updatedAt),
     )
-}
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

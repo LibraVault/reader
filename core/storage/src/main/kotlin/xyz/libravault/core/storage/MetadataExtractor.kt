@@ -43,6 +43,7 @@ class MetadataExtractor @Inject constructor(
     companion object {
         private const val TAG = "MetadataExtractor"
         private const val UNKNOWN = "Unknown"
+        private const val DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
     }
 
     suspend fun extract(file: ScannedFile): ExtractedMetadata =
@@ -178,8 +179,14 @@ class MetadataExtractor @Inject constructor(
             when (parser.eventType) {
                 XmlPullParser.START_TAG -> when (parser.name) {
                     "metadata" -> inMetadata = true
-                    "dc:title"   -> if (inMetadata) title  = parser.nextText()
-                    "dc:creator" -> if (inMetadata) author = parser.nextText()
+                    // The parser is namespace-aware, so a <dc:title> element's
+                    // name here is just "title" — the "dc" prefix is stripped
+                    // off into parser.prefix/parser.namespace separately, not
+                    // part of .name. Match on the resolved namespace URI
+                    // rather than the prefix (a document is free to bind any
+                    // prefix to Dublin Core, "dc" is only a convention).
+                    "title"   -> if (inMetadata && parser.namespace == DC_NAMESPACE) title  = parser.nextText()
+                    "creator" -> if (inMetadata && parser.namespace == DC_NAMESPACE) author = parser.nextText()
 
                     // Calibre series metadata
                     "meta" -> if (inMetadata) {

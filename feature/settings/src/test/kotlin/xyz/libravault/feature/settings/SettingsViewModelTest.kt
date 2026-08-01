@@ -78,6 +78,7 @@ class SettingsViewModelTest {
         every { prefsRepo.update(any()) }   just Runs
         every { observeVaults() }           returns vaultsFlow
         every { scanVaultsUseCase() }        returns flowOf(ScanProgress.Completed(0))
+        every { supporterRepository.getPendingInvoiceId() } returns null
     }
 
     @AfterEach

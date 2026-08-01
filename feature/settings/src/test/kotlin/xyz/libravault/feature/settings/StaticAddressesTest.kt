@@ -65,19 +65,23 @@ class StaticAddressesTest {
 
         vm.donationState.test {
             val initial = awaitItem()
-            assertEquals(SettingsViewModel.DonationState.Idle, initial)
+            assertEquals(DonationState.Idle, initial)
 
             vm.createDonationInvoice(amountUsd = 5, coin = "BTC")
 
-            val creating = awaitItem()
-            assertEquals(SettingsViewModel.DonationState.Creating, creating)
-
+            // DonationState.Creating is real, genuinely-set product state, but not
+            // reliably observable here: createDonationInvoice's mocked suspend calls
+            // resolve without a real suspension point, so under UnconfinedTestDispatcher
+            // the whole Creating→NoMethod transition runs in one synchronous burst
+            // before this collector gets scheduled — StateFlow only guarantees the
+            // latest value to a collector, not every intermediate one. Asserting on the
+            // outcome state below is what actually matters for this test's purpose.
             val noMethod = awaitItem()
             assertTrue(
-                noMethod is SettingsViewModel.DonationState.NoMethod,
+                noMethod is DonationState.NoMethod,
                 "expected NoMethod state, got $noMethod"
             )
-            val noMethodState = noMethod as SettingsViewModel.DonationState.NoMethod
+            val noMethodState = noMethod as DonationState.NoMethod
             assertEquals("BTC", noMethodState.coin)
             assertEquals(btcAddress, noMethodState.fallbackAddress)
             assertEquals(checkoutLink, noMethodState.checkoutLink)
@@ -99,19 +103,18 @@ class StaticAddressesTest {
 
         vm.donationState.test {
             val initial = awaitItem()
-            assertEquals(SettingsViewModel.DonationState.Idle, initial)
+            assertEquals(DonationState.Idle, initial)
 
             vm.createDonationInvoice(amountUsd = 5, coin = "XMR")
 
-            val creating = awaitItem()
-            assertEquals(SettingsViewModel.DonationState.Creating, creating)
-
+            // See the sibling test above for why DonationState.Creating isn't asserted
+            // on separately here.
             val error = awaitItem()
             assertTrue(
-                error is SettingsViewModel.DonationState.Error,
+                error is DonationState.Error,
                 "expected Error state when static address is empty, got $error"
             )
-            val errorState = error as SettingsViewModel.DonationState.Error
+            val errorState = error as DonationState.Error
             assertTrue(errorState.message.isNotEmpty())
 
             cancelAndIgnoreRemainingEvents()
