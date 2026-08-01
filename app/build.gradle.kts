@@ -4,6 +4,7 @@ import java.util.Properties
 plugins {
     id("libravault.android.application")
     id("libravault.android.hilt")
+    id("de.mannodermaus.android-junit5")
 }
 
 // ── Signing ───────────────────────────────────────────────────────────────────
@@ -204,4 +205,7 @@ dependencies {
 
     // Compose tooling (debug only)
     debugImplementation(libs.compose.ui.tooling)
+
+    testImplementation(libs.bundles.testing.jvm)
+    testRuntimeOnly(libs.junit5.engine)
 }
