@@ -1,0 +1,96 @@
+name: Android Firebase Distribution
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes for testers"
+        required: false
+        default: "Beta build via GitHub Actions"
+      groups:
+        description: "Firebase tester group(s), comma-separated"
+        required: false
+        default: "testers"
+
+concurrency:
+  group: android-firebase-distribution-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-distribute:
+    name: Build & Distribute to Firebase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Same pattern as release.yml: decode the base64-encoded keystore and
+      # write keystore.properties so the existing signing config in
+      # app/build.gradle.kts picks it up directly. No new signing secrets —
+      # this reuses the keystore that already signs the F-Droid release APK.
+      - name: Set up signing
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 --decode \
+            > app/libravault-release.keystore
+          printf 'storeFile=libravault-release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${{ secrets.KEYSTORE_PASSWORD }}" \
+            "${{ secrets.KEY_ALIAS }}" \
+            "${{ secrets.KEY_PASSWORD }}" \
+            > keystore.properties
+
+      - name: Build Play release APK
+        run: ./gradlew assemblePlayRelease
+
+      # Decoded only for the duration of the upload step below, then removed.
+      - name: Set up Firebase credentials
+        run: |
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" | base64 --decode \
+            > firebase-key.json
+
+      - name: Distribute to Firebase App Distribution
+        env:
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          TESTER_GROUPS: ${{ inputs.groups }}
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/play/release -name "*.apk" | head -1)
+          echo "Distributing $APK_PATH"
+
+          npx --yes firebase-tools@13.29.1 appdistribution:distribute "$APK_PATH" \
+            --app "$FIREBASE_APP_ID" \
+            --groups "$TESTER_GROUPS" \
+            --release-notes "$RELEASE_NOTES" \
+            --credential-file firebase-key.json
+
+          echo "✅ Uploaded to Firebase App Distribution"
+
+      - name: Upload build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-play-release-${{ github.run_number }}
+          path: app/build/outputs/apk/play/release/*.apk
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # Clean up signing and Firebase material — never leave keys on the runner
+      - name: Clean up secrets
+        if: always()
+        run: |
+          rm -f app/libravault-release.keystore
+          rm -f keystore.properties
+          rm -f firebase-key.json

@@ -29,6 +29,9 @@ captures/
 *.keystore
 keystore.properties
 
+# Firebase service account key — NEVER commit
+firebase-key.json
+
 # Pro license private seed (NEVER commit; see tools/README.md)
 libravault_pro_private.hex
 tools/*.private
