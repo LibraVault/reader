@@ -218,6 +218,7 @@ More sponsoring and donation options are in the works.
 
 - **F-Droid** — free, full feature set, reproducible builds
 - **GitHub Releases** — signed APK on every version tag
+- **Firebase App Distribution** — beta builds for testers, triggered manually via GitHub Actions (see [docs/android-firebase-distribution-process.md](docs/android-firebase-distribution-process.md))
 - **Obtanium** — planned
 - **Google Play** — planned
 
