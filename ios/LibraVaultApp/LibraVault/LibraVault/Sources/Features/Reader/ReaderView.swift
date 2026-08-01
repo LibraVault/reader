@@ -9,6 +9,9 @@ struct ReaderView: View {
     /// `loadContent()` resolves — briefly renders `loadingContent` — then stays nil
     /// permanently if loading failed, in which case `unavailableReason` explains why.
     @State private var chapters: [BookChapter]?
+    /// Parsed Markdown blocks — populated by loadContent() instead of `chapters`
+    /// when book.format == .markdown. See MarkdownDocumentParser.
+    @State private var markdownBlocks: [MarkdownBlock]?
     @State private var unavailableReason: UnavailableReason?
 
     private enum UnavailableReason {
@@ -25,6 +28,13 @@ struct ReaderView: View {
     @State private var showSettingsSheet = false
     @State private var showBookmarksSheet = false
 
+    /// Live scroll fraction for Markdown, updated on every scroll tick (cheap,
+    /// no I/O) but only persisted via updateMarkdownProgress() on `.onDisappear` —
+    /// writing to UserDefaults on every scroll pixel would be wasteful, and EPUB/PDF
+    /// elsewhere in this reader only persist at similarly discrete checkpoints
+    /// (page-turn taps), not continuously.
+    @State private var markdownScrollFraction: Double = 0
+
     @ObservedObject private var bridge = LibravaultDomainBridge.shared
 
     private var colors: LibraVaultColorScheme { .forReadingTheme(readingTheme) }
@@ -35,6 +45,12 @@ struct ReaderView: View {
         Group {
             if let unavailableReason {
                 unavailableContent(reason: unavailableReason)
+            } else if book.format == .markdown {
+                if let markdownBlocks {
+                    markdownContent(markdownBlocks)
+                } else {
+                    loadingContent
+                }
             } else if let chapters, !chapters.isEmpty {
                 switch mode {
                 case .paginated: paginatedContent
@@ -100,6 +116,11 @@ struct ReaderView: View {
             readingTheme = appState.defaultReadingTheme
             loadContent()
         }
+        .onDisappear {
+            if book.format == .markdown {
+                updateMarkdownProgress()
+            }
+        }
     }
 
     /// Content is loaded synchronously on the main thread deliberately —
@@ -108,6 +129,18 @@ struct ReaderView: View {
     /// large file could cause a brief hitch, which is an acceptable tradeoff over the
     /// complexity of a thread-safe async EPUB pipeline for a first pass.
     private func loadContent() {
+        if book.format == .markdown {
+            do {
+                let source = try BookContentProvider.markdownSource(for: book)
+                markdownBlocks = MarkdownDocumentParser.parse(source)
+            } catch BookContentProvider.ContentError.unsupportedFormat {
+                unavailableReason = .unsupportedFormat
+            } catch {
+                unavailableReason = .loadFailed
+            }
+            return
+        }
+
         do {
             let loaded = try BookContentProvider.chapters(for: book)
             guard !loaded.isEmpty else {
@@ -194,6 +227,18 @@ struct ReaderView: View {
         }
     }
 
+    private func markdownContent(_ blocks: [MarkdownBlock]) -> some View {
+        MarkdownReaderContent(
+            blocks: blocks,
+            colors: colors,
+            fontSize: fontSize,
+            lineSpacing: lineSpacing,
+            fontDesign: fontDesign,
+            initialScrollFraction: bridge.progress[book.id] ?? 0,
+            onScrollFractionChanged: { markdownScrollFraction = $0 }
+        )
+    }
+
     private var loadingContent: some View {
         ProgressView()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -225,9 +270,18 @@ struct ReaderView: View {
         }
     }
 
+    private func updateMarkdownProgress() {
+        Task {
+            try? await bridge.updateProgress(bookId: book.id, progress: markdownScrollFraction)
+        }
+    }
+
     private func addBookmark() {
         Task {
-            try? await bridge.addBookmark(bookId: book.id, position: "Chapter \(currentChapter)")
+            let position = book.format == .markdown
+                ? "scroll:\(markdownScrollFraction)"
+                : "Chapter \(currentChapter)"
+            try? await bridge.addBookmark(bookId: book.id, position: position)
         }
     }
 

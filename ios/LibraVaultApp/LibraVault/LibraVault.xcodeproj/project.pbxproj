@@ -212,6 +212,7 @@
 			name = LibraVault;
 			packageProductDependencies = (
 				D44C15E805DA846A32C3BB81 /* ZIPFoundation */,
+				34FF9CE9F404E45310FD174A /* Markdown */,
 			);
 			productName = LibraVault;
 			productReference = D44C12AB301355AA00ADEF59 /* LibraVault.app */;
@@ -236,6 +237,7 @@
 			name = LibraVaultTests;
 			packageProductDependencies = (
 				D44C15A4C123B1612DD272D1 /* ZIPFoundation */,
+				576F20146C70697F5098A60C /* Markdown */,
 			);
 			productName = LibraVaultTests;
 			productReference = D44C12BB301355B600ADEF59 /* LibraVaultTests.xctest */;
@@ -298,6 +300,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D44C1530877432D1026706D7 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				EA50CEEF3EC2384A08541077 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D44C12AC301355AA00ADEF59 /* Products */;
@@ -687,6 +690,14 @@
 				minimumVersion = 0.9.20;
 			};
 		};
+		EA50CEEF3EC2384A08541077 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = branch;
+				branch = main;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -699,6 +710,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D44C1530877432D1026706D7 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		34FF9CE9F404E45310FD174A /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA50CEEF3EC2384A08541077 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
+		};
+		576F20146C70697F5098A60C /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA50CEEF3EC2384A08541077 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

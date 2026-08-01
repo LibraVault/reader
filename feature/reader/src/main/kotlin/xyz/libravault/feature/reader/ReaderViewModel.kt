@@ -152,6 +152,16 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** Called by the Markdown renderer on scroll position change (px). */
+    fun onMarkdownScrollChanged(offset: Int) {
+        val id = itemId ?: return
+        val newProgress = ReadingProgress(itemId = id, markdownScrollOffset = offset, lastReadAt = Instant.now())
+        _uiState.value = _uiState.value.copy(progress = newProgress)
+        viewModelScope.launch {
+            saveProgress(newProgress)
+        }
+    }
+
     // ── Toolbar ──────────────────────────────────────────────────────────────
 
     /** Tap centre-third of screen to toggle toolbar. */
