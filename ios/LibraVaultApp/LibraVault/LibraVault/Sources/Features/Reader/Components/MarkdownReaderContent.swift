@@ -29,6 +29,10 @@ struct MarkdownReaderContent: View {
     /// 0...1 fraction of the way through `blocks`, restored from saved progress.
     let initialScrollFraction: Double
     let onScrollFractionChanged: (Double) -> Void
+    /// One-shot scroll target set when the user taps a TOC entry — a top-level index
+    /// into `blocks` (see MarkdownTocEntry.blockIndex), not a scroll fraction.
+    var scrollToBlockIndex: Int? = nil
+    var onBlockScrollConsumed: () -> Void = {}
 
     @State private var contentHeight: CGFloat = 0
     @State private var viewportHeight: CGFloat = 0
@@ -84,6 +88,17 @@ struct MarkdownReaderContent: View {
                     blocks.count - 1
                 )
                 scrollProxy.scrollTo(targetIndex, anchor: .top)
+            }
+            // TOC navigation: by the time a user can tap a TOC entry this view is
+            // already on screen (the TOC button lives in ReaderView's own toolbar),
+            // so no "wait for layout" dance is needed here — same one-shot shape as
+            // scrollToOffset/onScrollConsumed on the Android side.
+            .onChange(of: scrollToBlockIndex) { _, newIndex in
+                guard let newIndex else { return }
+                withAnimation {
+                    scrollProxy.scrollTo(newIndex, anchor: .top)
+                }
+                onBlockScrollConsumed()
             }
         }
     }

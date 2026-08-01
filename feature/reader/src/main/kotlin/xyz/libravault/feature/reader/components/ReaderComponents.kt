@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Delete
@@ -61,6 +62,7 @@ import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.feature.reader.FontFamily
 import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.ScrollMode
+import xyz.libravault.feature.reader.markdown.toc.TocEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,6 +75,7 @@ fun ReaderTopBar(
     onShowBookmarks: () -> Unit,
     onSettings: () -> Unit,
     showFontControls: Boolean = true,
+    onShowToc: (() -> Unit)? = null,
 ) {
     TopAppBar(
         title = {
@@ -104,6 +107,11 @@ fun ReaderTopBar(
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                     )
+                }
+            }
+            onShowToc?.let { showToc ->
+                IconButton(onClick = showToc, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Table of contents")
                 }
             }
             IconButton(onClick = onAddBookmark, modifier = Modifier.size(38.dp)) {
@@ -235,8 +243,9 @@ fun ReaderSettingsSheet(
 }
 
 private fun positionRefSortKey(ref: String): Long = when {
-    ref.startsWith("ms:")   -> ref.removePrefix("ms:").toLongOrNull() ?: Long.MAX_VALUE
-    ref.startsWith("page:") -> (ref.removePrefix("page:").toIntOrNull() ?: Int.MAX_VALUE).toLong()
+    ref.startsWith("ms:")     -> ref.removePrefix("ms:").toLongOrNull() ?: Long.MAX_VALUE
+    ref.startsWith("page:")   -> (ref.removePrefix("page:").toIntOrNull() ?: Int.MAX_VALUE).toLong()
+    ref.startsWith("scroll:") -> ref.removePrefix("scroll:").toLongOrNull() ?: Long.MAX_VALUE
     ref.startsWith("{")     -> runCatching {
         val locs = JSONObject(ref).optJSONObject("locations")
         val prog = locs?.optDouble("totalProgression", -1.0)?.takeIf { it >= 0 }
@@ -254,6 +263,7 @@ private fun formatBookmarkLabel(positionRef: String): String = when {
     positionRef.startsWith("page:") ->
         positionRef.removePrefix("page:").toIntOrNull()
             ?.let { "Page ${it + 1}" } ?: positionRef
+    positionRef.startsWith("scroll:") -> "Scroll position"
     positionRef.startsWith("{") -> runCatching {
         val json = JSONObject(positionRef)
         val title = json.optString("title").takeIf { it.isNotBlank() }
@@ -401,6 +411,72 @@ fun BookmarksSheet(
                             }
                         }
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+/**
+ * Table of contents sheet for the Markdown reader — the first TOC UI in the app
+ * (neither EPUB nor PDF has one). Mirrors [BookmarksSheet]'s `ModalBottomSheet`
+ * pattern; indentation reflects each entry's heading level (H1..H6).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MarkdownTocSheet(
+    entries: List<TocEntry>,
+    onEntryClick: (TocEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Contents",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+
+            if (entries.isEmpty()) {
+                Text(
+                    text = "No headings found in this document.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp),
+                )
+            } else {
+                LazyColumn {
+                    items(entries, key = { it.sectionIndex }) { entry ->
+                        Text(
+                            text = entry.title,
+                            style = when (entry.level) {
+                                1 -> MaterialTheme.typography.titleMedium
+                                2 -> MaterialTheme.typography.titleSmall
+                                else -> MaterialTheme.typography.bodyMedium
+                            },
+                            fontWeight = if (entry.level == 1) FontWeight.Medium else FontWeight.Normal,
+                            color = if (entry.level <= 2) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onEntryClick(entry) }
+                                .padding(
+                                    start = 24.dp + 16.dp * (entry.level - 1),
+                                    end = 24.dp,
+                                    top = 12.dp,
+                                    bottom = 12.dp,
+                                ),
+                        )
                     }
                 }
             }

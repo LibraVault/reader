@@ -56,11 +56,13 @@ import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.components.BookmarksSheet
+import xyz.libravault.feature.reader.components.MarkdownTocSheet
 import xyz.libravault.feature.reader.components.ReaderSettingsSheet
 import xyz.libravault.feature.reader.components.ReaderTopBar
 import xyz.libravault.feature.reader.epub.EpubReaderScreen
 import xyz.libravault.feature.reader.epub.EpubReaderViewModel
 import xyz.libravault.feature.reader.markdown.MarkdownReaderScreen
+import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
 
 // Height reserved at the bottom of the reader content for the bottom bars.
@@ -96,6 +98,14 @@ fun ReaderScreen(
     }
     // Shared scroll-to-offset channel between BookmarksSheet and MarkdownReaderScreen.
     val pendingMarkdownScrollOffset = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<Int?>(null)
+    }
+    // TOC for the currently-open Markdown file, and a one-shot scroll-to-section
+    // channel between MarkdownTocSheet and MarkdownReaderScreen.
+    val markdownToc = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<List<TocEntry>>(emptyList())
+    }
+    val pendingMarkdownSectionIndex = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
     }
 
@@ -212,6 +222,9 @@ fun ReaderScreen(
                                         settings         = state.settings,
                                         onScrollChanged  = viewModel::onMarkdownScrollChanged,
                                         onCentreTap      = viewModel::onCentreTap,
+                                        onTocExtracted   = { markdownToc.value = it },
+                                        scrollToSectionIndex   = pendingMarkdownSectionIndex.value,
+                                        onSectionScrollConsumed = { pendingMarkdownSectionIndex.value = null },
                                     )
                                 }
 
@@ -248,9 +261,22 @@ fun ReaderScreen(
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
+                                onShowToc       = if (item.format == MediaFormat.MARKDOWN) viewModel::showToc else null,
                             )
                         }
                     }
+                }
+
+                // ── TOC sheet (Markdown only) ─────────────────────────────────
+                if (state.showTocSheet) {
+                    MarkdownTocSheet(
+                        entries      = markdownToc.value,
+                        onEntryClick = { entry ->
+                            pendingMarkdownSectionIndex.value = entry.sectionIndex
+                            viewModel.hideToc()
+                        },
+                        onDismiss    = viewModel::hideToc,
+                    )
                 }
 
                 // ── Settings sheet ────────────────────────────────────────────
