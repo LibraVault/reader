@@ -47,6 +47,16 @@ dependencies {
     // AndroidX PDF Viewer — PDF rendering (API 31+, confirmed stable for v1)
     implementation("androidx.pdf:pdf-viewer:1.0.0-alpha04")
 
+    // Markdown rendering — Compose-native CommonMark renderer. Chosen over Markwon
+    // (TextView/AndroidView-based) since this codebase is Compose throughout; wraps
+    // commonmark-java, whose AST we also reuse for TOC extraction. Pinned to 0.28.0
+    // (pre-0.30.0) deliberately — later releases require Kotlin >= 2.1's metadata
+    // format, incompatible with this project's Kotlin 2.0.0. That also means no GFM
+    // tables yet (added in 0.30.0) — dropped from v1 on both platforms for the same
+    // reason iOS dropped them (see feature/reader/markdown/MarkdownReaderScreen.kt);
+    // revisit once a Kotlin bump is deliberately reviewed on its own.
+    implementation(libs.markdown.renderer.m3)
+
     // Fragment interop for hosting Readium EpubNavigatorFragment inside Compose
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("androidx.fragment:fragment-compose:1.8.1")

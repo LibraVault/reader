@@ -60,6 +60,7 @@ import xyz.libravault.feature.reader.components.ReaderSettingsSheet
 import xyz.libravault.feature.reader.components.ReaderTopBar
 import xyz.libravault.feature.reader.epub.EpubReaderScreen
 import xyz.libravault.feature.reader.epub.EpubReaderViewModel
+import xyz.libravault.feature.reader.markdown.MarkdownReaderScreen
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
 
 // Height reserved at the bottom of the reader content for the bottom bars.
@@ -91,6 +92,10 @@ fun ReaderScreen(
 
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     val pendingPdfPage = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<Int?>(null)
+    }
+    // Shared scroll-to-offset channel between BookmarksSheet and MarkdownReaderScreen.
+    val pendingMarkdownScrollOffset = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
     }
 
@@ -198,6 +203,18 @@ fun ReaderScreen(
                                     )
                                 }
 
+                                MediaFormat.MARKDOWN -> {
+                                    MarkdownReaderScreen(
+                                        fileUri          = uri,
+                                        initialScrollOffset = state.progress?.markdownScrollOffset,
+                                        scrollToOffset   = pendingMarkdownScrollOffset.value,
+                                        onScrollConsumed = { pendingMarkdownScrollOffset.value = null },
+                                        settings         = state.settings,
+                                        onScrollChanged  = viewModel::onMarkdownScrollChanged,
+                                        onCentreTap      = viewModel::onCentreTap,
+                                    )
+                                }
+
                                 else -> {
                                     ErrorScreen("This format opens in the player.", onBack)
                                 }
@@ -222,6 +239,8 @@ fun ReaderScreen(
                                     val ref: String? = when (item.format) {
                                         MediaFormat.PDF ->
                                             "page:${state.progress?.pageIndex ?: 0}"
+                                        MediaFormat.MARKDOWN ->
+                                            "scroll:${state.progress?.markdownScrollOffset ?: 0}"
                                         else ->
                                             state.progress?.positionCfi ?: currentLocatorJson
                                     }
@@ -259,6 +278,13 @@ fun ReaderScreen(
                                         .removePrefix("page:")
                                         .toIntOrNull()
                                         ?.let { pendingPdfPage.value = it }
+                                    viewModel.hideBookmarks()
+                                }
+                                bookmark.positionRef.startsWith("scroll:") -> {
+                                    bookmark.positionRef
+                                        .removePrefix("scroll:")
+                                        .toIntOrNull()
+                                        ?.let { pendingMarkdownScrollOffset.value = it }
                                     viewModel.hideBookmarks()
                                 }
                                 else -> {
