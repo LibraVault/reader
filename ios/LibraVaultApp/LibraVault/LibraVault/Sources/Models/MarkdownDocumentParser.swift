@@ -21,6 +21,16 @@ enum MarkdownBlock: Equatable {
     case unorderedList(items: [[MarkdownBlock]])
     case orderedList(items: [[MarkdownBlock]], start: Int)
     case thematicBreak
+    /// A paragraph containing only a single image (`![alt](./img.png)` on its own
+    /// line) — the common case for a relative image reference. `url` is the raw,
+    /// unresolved reference exactly as written in the source; resolving it against
+    /// the file's location and loading the bytes happens separately (see
+    /// BookContentProvider.markdownAssetData and ReaderView.loadContent), since that
+    /// needs the vault's security-scoped access, which this pure parsing layer has no
+    /// knowledge of. An image referenced inline alongside other text in a paragraph
+    /// is not extracted specially — it falls through to plain alt-text like any other
+    /// unhandled inline node (see BlockBuilder.walk's `default` case).
+    case image(url: String, altText: String)
 }
 
 /// Parses raw Markdown text into a flat list of [MarkdownBlock] using
@@ -73,7 +83,12 @@ private struct BlockBuilder: MarkupVisitor {
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> [MarkdownBlock] {
-        [.paragraph(text: inlineRuns(for: paragraph))]
+        let children = Array(paragraph.children)
+        if children.count == 1, let image = children[0] as? Markdown.Image {
+            let altText = image.children.compactMap { ($0 as? Markdown.Text)?.string }.joined()
+            return [.image(url: image.source ?? "", altText: altText)]
+        }
+        return [.paragraph(text: inlineRuns(for: paragraph))]
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> [MarkdownBlock] {

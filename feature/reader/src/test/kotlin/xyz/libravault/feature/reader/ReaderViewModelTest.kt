@@ -36,6 +36,7 @@ import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.domain.usecase.DeleteHighlightUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
 import xyz.libravault.core.domain.usecase.GetReadingProgressUseCase
+import xyz.libravault.core.domain.usecase.GetVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
@@ -65,6 +66,7 @@ class ReaderViewModelTest {
     )
 
     private val getItem            = mockk<GetLibraryItemUseCase>()
+    private val getVaultFolder     = mockk<GetVaultFolderUseCase>(relaxed = true)
     private val openFile           = mockk<xyz.libravault.core.storage.usecase.OpenFileUseCase>(relaxed = true)
     private val getProgress        = mockk<GetReadingProgressUseCase>()
     private val saveProgress       = mockk<SaveReadingProgressUseCase>(relaxed = true)
@@ -126,6 +128,7 @@ class ReaderViewModelTest {
         return ReaderViewModel(
             savedStateHandle    = SavedStateHandle(mapOf("itemId" to itemId)),
             getItem             = getItem,
+            getVaultFolder      = getVaultFolder,
             openFile            = openFile,
             getProgress         = getProgress,
             saveProgress        = saveProgress,
@@ -168,6 +171,7 @@ class ReaderViewModelTest {
         val vm = ReaderViewModel(
             savedStateHandle    = SavedStateHandle(mapOf("itemId" to 99L)),
             getItem             = getItem,
+            getVaultFolder      = getVaultFolder,
             openFile            = openFile,
             getProgress         = getProgress,
             saveProgress        = saveProgress,

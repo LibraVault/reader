@@ -25,6 +25,7 @@ import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.domain.usecase.UpdateBookmarkNoteUseCase
 import xyz.libravault.core.domain.usecase.DeleteHighlightUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryItemUseCase
+import xyz.libravault.core.domain.usecase.GetVaultFolderUseCase
 import xyz.libravault.core.storage.usecase.OpenFileUseCase
 import xyz.libravault.core.domain.usecase.GetReadingProgressUseCase
 import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
@@ -49,12 +50,17 @@ data class ReaderUiState(
     val showTocSheet: Boolean       = false,
     /** Set briefly after a bookmark is added; the screen shows a confirmation toast. */
     val lastAddedBookmarkId: Long?  = null,
+    /** The item's vault folder SAF tree URI — used by the Markdown reader to resolve
+     *  relative image references (see MarkdownAssetResolver). Null for items opened
+     *  via an external intent (no vault association) or non-Markdown formats. */
+    val vaultTreeUri: android.net.Uri? = null,
 )
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getItem: GetLibraryItemUseCase,
+    private val getVaultFolder: GetVaultFolderUseCase,
     private val openFile: OpenFileUseCase,
     private val getProgress: GetReadingProgressUseCase,
     private val saveProgress: SaveReadingProgressUseCase,
@@ -103,10 +109,16 @@ class ReaderViewModel @Inject constructor(
                     return@launch
                 }
                 val progress = getProgress(itemId)
+                val vaultTreeUri = if (item.format == xyz.libravault.core.domain.model.MediaFormat.MARKDOWN) {
+                    getVaultFolder(item.vaultFolderId)?.uri?.let { android.net.Uri.parse(it) }
+                } else {
+                    null
+                }
                 _uiState.value = _uiState.value.copy(
-                    item      = item,
-                    progress  = progress,
-                    isLoading = false,
+                    item        = item,
+                    progress    = progress,
+                    isLoading   = false,
+                    vaultTreeUri = vaultTreeUri,
                 )
                 logger.i("Reader", "Opened from library: ${item.title}")
             } else {

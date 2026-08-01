@@ -225,6 +225,7 @@ fun ReaderScreen(
                                         onTocExtracted   = { markdownToc.value = it },
                                         scrollToSectionIndex   = pendingMarkdownSectionIndex.value,
                                         onSectionScrollConsumed = { pendingMarkdownSectionIndex.value = null },
+                                        vaultTreeUri     = state.vaultTreeUri,
                                     )
                                 }
 

@@ -57,6 +57,11 @@ dependencies {
     // revisit once a Kotlin bump is deliberately reviewed on its own.
     implementation(libs.markdown.renderer.m3)
 
+    // DocumentFile — walks the SAF vault tree to resolve a Markdown file's relative
+    // image references (MarkdownAssetResolver lives in core:storage; the resolved
+    // DocumentFile/Uri types are used directly here too).
+    implementation(libs.androidx.documentfile)
+
     // Fragment interop for hosting Readium EpubNavigatorFragment inside Compose
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("androidx.fragment:fragment-compose:1.8.1")

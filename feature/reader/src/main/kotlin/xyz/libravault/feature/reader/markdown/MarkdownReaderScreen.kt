@@ -35,14 +35,17 @@ import kotlin.math.roundToInt
 
 /**
  * Markdown viewer — v1: renders CommonMark via [com.mikepenz.markdown.m3.Markdown],
- * the Compose-native renderer. No relative-image resolution yet (phase 5). Typography
- * (font family/size/line-spacing) is adapted from [ReaderSettings] via
- * [rememberMarkdownTypography]; reading-theme colors (light/dark/sepia) already flow
- * through automatically from [xyz.libravault.core.ui.theme.LibravaultTheme]'s
- * `MaterialTheme.colorScheme`, which wraps this whole screen in ReaderScreen.kt — no
- * separate color adapter needed. GFM tables are not yet supported — the renderer is
- * pinned to a pre-0.30.0 release for Kotlin 2.0.0 compatibility (see
- * feature/reader/build.gradle.kts); same fast-follow gap as the iOS viewer.
+ * the Compose-native renderer. Relative image references (`![](./img.png)`) resolve
+ * via [CoilMarkdownImageTransformer] against the file's vault-relative location (see
+ * [xyz.libravault.core.storage.MarkdownAssetResolver]); remote http(s) URLs are never
+ * loaded — LibraVault is offline-first. Typography (font family/size/line-spacing) is
+ * adapted from [ReaderSettings] via [rememberMarkdownTypography]; reading-theme colors
+ * (light/dark/sepia) already flow through automatically from
+ * [xyz.libravault.core.ui.theme.LibravaultTheme]'s `MaterialTheme.colorScheme`, which
+ * wraps this whole screen in ReaderScreen.kt — no separate color adapter needed. GFM
+ * tables are not yet supported — the renderer is pinned to a pre-0.30.0 release for
+ * Kotlin 2.0.0 compatibility (see feature/reader/build.gradle.kts); same fast-follow
+ * gap as the iOS viewer.
  *
  * Renders one [com.mikepenz.markdown.m3.Markdown] call per [MarkdownTocExtractor]
  * section (rather than one call for the whole document) so each heading's on-screen
@@ -63,6 +66,9 @@ import kotlin.math.roundToInt
  * @param scrollToSectionIndex One-shot scroll target set when the user taps a TOC entry —
  *                             a [TocEntry.sectionIndex], not a raw pixel offset.
  * @param onSectionScrollConsumed Called once [scrollToSectionIndex] has been applied.
+ * @param vaultTreeUri         The item's vault folder SAF tree URI, for resolving relative
+ *                             image references (see MarkdownAssetResolver) — null if the
+ *                             item has no vault association (opened via external intent).
  */
 @Composable
 fun MarkdownReaderScreen(
@@ -76,9 +82,10 @@ fun MarkdownReaderScreen(
     onTocExtracted: (List<TocEntry>) -> Unit = {},
     scrollToSectionIndex: Int? = null,
     onSectionScrollConsumed: () -> Unit = {},
+    vaultTreeUri: Uri? = null,
     viewModel: MarkdownReaderViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(fileUri) { viewModel.load(fileUri) }
+    LaunchedEffect(fileUri, vaultTreeUri) { viewModel.load(fileUri, vaultTreeUri) }
     val state by viewModel.state.collectAsState()
 
     when (val current = state) {
@@ -102,6 +109,9 @@ fun MarkdownReaderScreen(
 
         is MarkdownPublicationState.Ready -> {
             val typography = rememberMarkdownTypography(settings)
+            val imageTransformer = remember(current.assetParentDirectory) {
+                CoilMarkdownImageTransformer(current.assetParentDirectory)
+            }
             val sections = remember(current.text) { MarkdownTocExtractor.extractSections(current.text) }
             LaunchedEffect(sections) {
                 onTocExtracted(sections.mapNotNull { it.heading })
@@ -163,7 +173,11 @@ fun MarkdownReaderScreen(
                                     sectionOffsets[index] = coordinates.positionInParent().y.roundToInt()
                                 },
                         ) {
-                            Markdown(content = section.text, typography = typography)
+                            Markdown(
+                                content = section.text,
+                                typography = typography,
+                                imageTransformer = imageTransformer,
+                            )
                         }
                     }
                 }

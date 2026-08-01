@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Reports the Markdown content's scroll offset (relative to its own top) up through
 /// a SwiftUI preference, using the standard GeometryReader-in-background idiom —
@@ -22,6 +23,10 @@ private struct MarkdownScrollOffsetKey: PreferenceKey {
 /// reader — not a pixel-exact scroll offset.
 struct MarkdownReaderContent: View {
     let blocks: [MarkdownBlock]
+    /// Resolved image bytes for `.image` blocks, keyed by their raw (unresolved)
+    /// reference string — see ReaderView.markdownImages for why this is loaded
+    /// eagerly rather than resolved here.
+    let images: [String: Data]
     let colors: LibraVaultColorScheme
     let fontSize: Double
     let lineSpacing: Double
@@ -45,6 +50,7 @@ struct MarkdownReaderContent: View {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                         MarkdownBlockView(
                             block: block,
+                            images: images,
                             colors: colors,
                             fontSize: fontSize,
                             lineSpacing: lineSpacing,
@@ -106,6 +112,7 @@ struct MarkdownReaderContent: View {
 
 private struct MarkdownBlockView: View {
     let block: MarkdownBlock
+    let images: [String: Data]
     let colors: LibraVaultColorScheme
     let fontSize: Double
     let lineSpacing: Double
@@ -141,7 +148,7 @@ private struct MarkdownBlockView: View {
                 VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { _, nested in
                         MarkdownBlockView(
-                            block: nested, colors: colors, fontSize: fontSize,
+                            block: nested, images: images, colors: colors, fontSize: fontSize,
                             lineSpacing: lineSpacing, fontDesign: fontDesign
                         )
                     }
@@ -164,6 +171,29 @@ private struct MarkdownBlockView: View {
 
         case .thematicBreak:
             Divider()
+
+        case let .image(url, altText):
+            if let data = images[url], let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+            } else {
+                VStack(spacing: LibraVaultSpacing.xs) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 32))
+                        .foregroundStyle(colors.onSurfaceVariant)
+                    if !altText.isEmpty {
+                        Text(altText)
+                            .font(.system(size: 14 * fontSize, design: fontDesign))
+                            .foregroundStyle(colors.onSurfaceVariant)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(LibraVaultSpacing.lg)
+                .background(colors.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
         }
     }
 
@@ -175,7 +205,7 @@ private struct MarkdownBlockView: View {
             VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     MarkdownBlockView(
-                        block: block, colors: colors, fontSize: fontSize,
+                        block: block, images: images, colors: colors, fontSize: fontSize,
                         lineSpacing: lineSpacing, fontDesign: fontDesign
                     )
                 }
