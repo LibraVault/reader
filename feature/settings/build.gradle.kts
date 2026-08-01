@@ -29,13 +29,10 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 
     // SettingsViewModelTest constructs ~12 MockK mocks per test plus mocks
-    // Uri.parse statically, which inflates Metaspace. 2g wasn't enough once
-    // this module's flavor-dimensioned tests actually started running in CI
-    // (see jvm-tests.yml's history — they were silently skipped before) —
-    // testFdroidDebugUnitTest died with a real java.lang.OutOfMemoryError:
-    // Java heap space in the GitHub Actions runner. Bumped to 3g.
+    // Uri.parse statically, which inflates Metaspace. Bump the heap so the
+    // runner doesn't OOM at classload time.
     tasks.withType<Test>().configureEach {
-        maxHeapSize = "3g"
+        maxHeapSize = "2g"
         jvmArgs("-XX:MaxMetaspaceSize=768m")
     }
 }
