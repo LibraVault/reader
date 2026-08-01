@@ -101,4 +101,39 @@ final class MarkdownDocumentParserTests: XCTestCase {
     func testEmptyDocumentReturnsNoBlocks() {
         XCTAssertEqual(MarkdownDocumentParser.parse(""), [])
     }
+
+    // MARK: - extractToc
+
+    func testExtractTocFindsHeadingsAtTheirTopLevelBlockIndex() {
+        let blocks = MarkdownDocumentParser.parse("# One\nbody\n## Two\nbody\n### Three")
+        let toc = MarkdownDocumentParser.extractToc(from: blocks)
+
+        XCTAssertEqual(toc.map(\.title), ["One", "Two", "Three"])
+        XCTAssertEqual(toc.map(\.level), [1, 2, 3])
+        // Each entry's blockIndex must point back at the exact heading block it names —
+        // this is what MarkdownReaderContent's ScrollViewReader.scrollTo(blockIndex:)
+        // relies on.
+        for entry in toc {
+            guard case let .heading(level, text)? = blocks[safe: entry.blockIndex] else {
+                return XCTFail("blockIndex \(entry.blockIndex) should point at a heading block")
+            }
+            XCTAssertEqual(level, entry.level)
+            XCTAssertEqual(text.map(\.text).joined(), entry.title)
+        }
+    }
+
+    func testExtractTocIgnoresNonHeadingBlocks() {
+        let blocks = MarkdownDocumentParser.parse("Just a paragraph.\n\n- a list item")
+        XCTAssertTrue(MarkdownDocumentParser.extractToc(from: blocks).isEmpty)
+    }
+
+    func testExtractTocOnEmptyDocumentIsEmpty() {
+        XCTAssertTrue(MarkdownDocumentParser.extractToc(from: []).isEmpty)
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
 }

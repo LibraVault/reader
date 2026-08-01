@@ -28,14 +28,36 @@ enum MarkdownBlock: Equatable {
 ///
 /// v1 scope: headings, paragraphs (with bold/italic/inline-code runs), code blocks,
 /// block quotes, ordered/unordered lists, thematic breaks. GFM tables are recognized
-/// by the parser but rendered as a placeholder — swift-markdown-ui (the mature
-/// SwiftUI table renderer) is in maintenance mode with no released successor yet,
-/// so real table rendering on iOS is a deliberate fast-follow, not a v1 blocker.
+/// by the parser but rendered as a placeholder — real table rendering is a deliberate
+/// fast-follow on both platforms (Android's renderer is likewise pinned to a
+/// pre-table release for Kotlin-version-compatibility reasons), not a v1 blocker.
 enum MarkdownDocumentParser {
     static func parse(_ source: String) -> [MarkdownBlock] {
         let document = Document(parsing: source)
         var builder = BlockBuilder()
         return builder.visit(document)
+    }
+}
+
+/// One heading found in a document, plus the index of the top-level [MarkdownBlock]
+/// it corresponds to — mirrors Android's `TocEntry`/`sectionIndex` shape, but here the
+/// index is directly a `blocks` array position rather than a synthesized section
+/// index, since MarkdownReaderContent already renders one block per array element.
+struct MarkdownTocEntry: Equatable, Identifiable {
+    let level: Int
+    let title: String
+    let blockIndex: Int
+
+    var id: Int { blockIndex }
+}
+
+extension MarkdownDocumentParser {
+    static func extractToc(from blocks: [MarkdownBlock]) -> [MarkdownTocEntry] {
+        blocks.enumerated().compactMap { index, block in
+            guard case let .heading(level, runs) = block else { return nil }
+            let title = runs.map(\.text).joined()
+            return MarkdownTocEntry(level: level, title: title, blockIndex: index)
+        }
     }
 }
 

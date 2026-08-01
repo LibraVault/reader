@@ -27,6 +27,15 @@ struct ReaderView: View {
 
     @State private var showSettingsSheet = false
     @State private var showBookmarksSheet = false
+    @State private var showTocSheet = false
+    /// One-shot scroll target set when the user taps a TOC entry — consumed by
+    /// MarkdownReaderContent's onBlockScrollConsumed.
+    @State private var pendingTocBlockIndex: Int?
+
+    private var markdownToc: [MarkdownTocEntry] {
+        guard let markdownBlocks else { return [] }
+        return MarkdownDocumentParser.extractToc(from: markdownBlocks)
+    }
 
     /// Live scroll fraction for Markdown, updated on every scroll tick (cheap,
     /// no I/O) but only persisted via updateMarkdownProgress() on `.onDisappear` —
@@ -71,6 +80,15 @@ struct ReaderView: View {
                 }
                 .accessibilityIdentifier("reader.themeButton")
             }
+            if book.format == .markdown {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showTocSheet = true }) {
+                        Image(systemName: "list.bullet")
+                            .foregroundStyle(colors.onBackground)
+                    }
+                    .accessibilityIdentifier("reader.tocButton")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: addBookmark) {
                     Image(systemName: "bookmark.badge.plus")
@@ -106,6 +124,12 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showBookmarksSheet) {
             BookmarksSheet(bookId: book.id)
+        }
+        .sheet(isPresented: $showTocSheet) {
+            MarkdownTocSheet(entries: markdownToc) { entry in
+                pendingTocBlockIndex = entry.blockIndex
+                showTocSheet = false
+            }
         }
         // @EnvironmentObject isn't available at init time, so the Settings-configured
         // default can't be this @State var's initial value directly — apply it once
@@ -235,7 +259,9 @@ struct ReaderView: View {
             lineSpacing: lineSpacing,
             fontDesign: fontDesign,
             initialScrollFraction: bridge.progress[book.id] ?? 0,
-            onScrollFractionChanged: { markdownScrollFraction = $0 }
+            onScrollFractionChanged: { markdownScrollFraction = $0 },
+            scrollToBlockIndex: pendingTocBlockIndex,
+            onBlockScrollConsumed: { pendingTocBlockIndex = nil }
         )
     }
 

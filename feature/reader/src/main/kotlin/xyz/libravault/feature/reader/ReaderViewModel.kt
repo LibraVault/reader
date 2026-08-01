@@ -46,6 +46,7 @@ data class ReaderUiState(
     val showToolbar: Boolean        = true,
     val showSettingsSheet: Boolean  = false,
     val showBookmarksSheet: Boolean = false,
+    val showTocSheet: Boolean       = false,
     /** Set briefly after a bookmark is added; the screen shows a confirmation toast. */
     val lastAddedBookmarkId: Long?  = null,
 )
@@ -213,6 +214,11 @@ class ReaderViewModel @Inject constructor(
 
     fun showBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = true) }
     fun hideBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = false) }
+
+    // ── TOC (Markdown only) ───────────────────────────────────────────────────
+
+    fun showToc() { _uiState.value = _uiState.value.copy(showTocSheet = true) }
+    fun hideToc() { _uiState.value = _uiState.value.copy(showTocSheet = false) }
 
     fun addBookmark(positionRef: String, label: String? = null) {
         val id = itemId ?: return
