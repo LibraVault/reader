@@ -168,10 +168,11 @@ final class AppStateAudioPlaybackTests: XCTestCase {
         let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
         let book = try makeAudioBook(vaultPersistence: vaultPersistence)
         state.startPlayback(book: book)
+        let stopCountAfterStarting = engine.stopCallCount // startPlayback itself calls stop() once, as a defensive reset before play(), for any new session
 
         state.stopPlayback()
 
-        XCTAssertEqual(engine.stopCallCount, 1)
+        XCTAssertEqual(engine.stopCallCount, stopCountAfterStarting + 1)
         XCTAssertNil(state.nowPlayingBook)
     }
 
