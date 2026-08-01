@@ -16,5 +16,6 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation(libs.bundles.testing.jvm)
+    testImplementation(libs.kxml2)
     testRuntimeOnly(libs.junit5.engine)
 }

@@ -66,7 +66,7 @@ final class AppState: ObservableObject {
     @Published private(set) var totalEstimatedSeconds: Double = 0
     @Published private(set) var sleepTimerRemainingSeconds: Double?
 
-    private let audioEngine = AudioPlaybackEngine()
+    private let audioEngine: AudioPlaybackEngineProtocol
     /// The vault whose security-scoped bookmark is held open for as long as an
     /// audiobook is playing — unlike BookContentProvider's EPUB/PDF reads (which read
     /// the whole file upfront and can release scope immediately), AVAudioPlayer reads
@@ -136,10 +136,12 @@ final class AppState: ObservableObject {
 
     init(
         vaultPersistence: VaultPersistence = VaultPersistence(),
-        userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence()
+        userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence(),
+        audioEngine: AudioPlaybackEngineProtocol = AudioPlaybackEngine()
     ) {
         self.vaultPersistence = vaultPersistence
         self.userPreferencesPersistence = userPreferencesPersistence
+        self.audioEngine = audioEngine
         #if DEBUG
         UITestFixtures.ensureVault(persistence: vaultPersistence)
         #endif
