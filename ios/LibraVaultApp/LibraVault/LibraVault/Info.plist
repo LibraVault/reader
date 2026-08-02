@@ -6,5 +6,7 @@
 	<array>
 		<string>Lora.ttf</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
