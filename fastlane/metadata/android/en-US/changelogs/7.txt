@@ -1,0 +1,1 @@
+Fix: lockscreen and Quick-Settings media controls for audiobooks now show all 5 controls (Previous, skip back, play/pause, skip forward, Next), matching the in-app player.
