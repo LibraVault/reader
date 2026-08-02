@@ -2,7 +2,6 @@ package xyz.libravault.core.tts
 
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,9 +16,8 @@ private const val TAG = "TtsEngineProvider"
 class TtsEngineProvider @Inject constructor(
     private val factory: TtsEngineFactory,
     private val preferences: TtsPreferences,
+    private val scope: CoroutineScope,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Default)
-
     private val _engine = MutableStateFlow<TtsEngine>(factory.create(TtsEngineType.ANDROID))
     val engine: StateFlow<TtsEngine> = _engine.asStateFlow()
 

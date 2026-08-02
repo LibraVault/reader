@@ -1,66 +1,54 @@
 #!/bin/bash
 set -e
 
-# sherpa-onnx Android AAR build script
+# Builds third-party/sherpa-onnx/sherpa-onnx-android.aar from sherpa-onnx's
+# own prebuilt GitHub Release binaries - NOT compiled from source.
+#
+# Earlier versions of this script tried to build via NDK/CMake against
+# android/SherpaOnnxTtsEngine, which produces an APK (a demo app), not a
+# library AAR - see AAR_RESOLUTION.md for why that path was abandoned.
+# sherpa-onnx doesn't publish to Maven Central either. It does publish
+# prebuilt per-ABI .so libraries directly on GitHub Releases, which this
+# script downloads and repackages into a minimal AAR (just the native
+# libraries under jni/<abi>/ - no compiled classes; the JNI Kotlin wrapper
+# is vendored as source at
+# core/tts/src/main/kotlin/xyz/libravault/core/tts/pocket/sherpa/Tts.kt).
+#
+# Only arm64-v8a is packaged, matching this project's single-ABI scope.
+
 SHERPA_ONNX_VERSION="v1.13.4"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-BUILD_DIR="${SCRIPT_DIR}/build"
-REPO_URL="https://github.com/k2-fsa/sherpa-onnx.git"
+WORK_DIR="${SCRIPT_DIR}/build"
+RELEASE_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/${SHERPA_ONNX_VERSION}/sherpa-onnx-${SHERPA_ONNX_VERSION}-android.tar.bz2"
 
-# Check prerequisites
-if [ -z "$ANDROID_NDK" ]; then
-    echo "Error: ANDROID_NDK environment variable not set"
-    echo "Set it to your Android NDK installation path"
+if ! command -v zip &> /dev/null; then
+    echo "Error: zip not found. Install zip." >&2
     exit 1
 fi
 
-if ! command -v cmake &> /dev/null; then
-    echo "Error: cmake not found. Install CMake 3.21+"
-    exit 1
-fi
+rm -rf "${WORK_DIR}"
+mkdir -p "${WORK_DIR}/jni/arm64-v8a"
+cd "${WORK_DIR}"
 
-echo "Building sherpa-onnx ${SHERPA_ONNX_VERSION} for Android..."
-echo "NDK: $ANDROID_NDK"
+echo "Downloading sherpa-onnx ${SHERPA_ONNX_VERSION} Android release..."
+curl -sL -o release.tar.bz2 "${RELEASE_URL}"
+tar xjf release.tar.bz2
 
-# Clone repo if needed
-if [ ! -d "${BUILD_DIR}/sherpa-onnx" ]; then
-    echo "Cloning sherpa-onnx..."
-    mkdir -p "${BUILD_DIR}"
-    cd "${BUILD_DIR}"
-    git clone "${REPO_URL}"
-    cd sherpa-onnx
-    git checkout "${SHERPA_ONNX_VERSION}"
-else
-    echo "sherpa-onnx repo already exists at ${BUILD_DIR}/sherpa-onnx"
-    cd "${BUILD_DIR}/sherpa-onnx"
-fi
+cp jniLibs/arm64-v8a/*.so "jni/arm64-v8a/"
 
-# Build AAR for arm64-v8a
-echo "Building AAR..."
-cd android/SherpaOnnxTtsEngine
-
-# Use gradlew to build
-if [ ! -f "gradlew" ]; then
-    echo "Error: gradlew not found in android/SherpaOnnxTtsEngine"
-    exit 1
-fi
-
-# Set up local.properties for the build
-cat > local.properties <<EOF
-sdk.dir=${ANDROID_SDK_ROOT:-$HOME/android-sdk}
-ndk.dir=${ANDROID_NDK}
+cat > AndroidManifest.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.k2fsa.sherpa.onnx">
+</manifest>
 EOF
 
-# Build release AAR
-./gradlew --stacktrace assembleRelease -DANDROID_NDK="${ANDROID_NDK}" -DANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/android-sdk}"
+# AAR spec expects a classes.jar even when there are no compiled classes to ship.
+mkdir -p empty_jar_src
+( cd empty_jar_src && jar cf ../classes.jar . )
 
-# Find the built AAR
-BUILT_AAR=$(find . -name "*release.aar" -type f | head -1)
-if [ -z "$BUILT_AAR" ]; then
-    echo "Error: Could not find built AAR"
-    exit 1
-fi
+zip -r -q sherpa-onnx-android.aar AndroidManifest.xml classes.jar jni
+cp sherpa-onnx-android.aar "${SCRIPT_DIR}/sherpa-onnx-android.aar"
 
-# Copy to output location
-cp "${BUILT_AAR}" "${SCRIPT_DIR}/sherpa-onnx-android.aar"
 echo "✓ Built AAR: ${SCRIPT_DIR}/sherpa-onnx-android.aar"
+echo "  Verify with: ./gradlew :core:tts:assembleDebug"

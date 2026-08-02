@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import xyz.libravault.core.tts.BuildConfig
 import java.io.File
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -27,28 +28,34 @@ class PocketModelManager @Inject constructor(
     private val modelDir: File
         get() = File(context.filesDir, MODEL_DIR_NAME)
 
-    fun ensureModelAvailable(modelUrl: String, expectedSha256: String): Flow<ModelStatus> = flow {
+    /**
+     * Downloads and extracts the bundled Pocket TTS voice model if it isn't
+     * already present, using the URL/checksum baked in at build time
+     * (see core/tts/build.gradle.kts). Safe to call every time the engine
+     * initializes - a valid on-disk copy short-circuits straight to [ModelStatus.Ready].
+     */
+    fun ensureModelAvailable(): Flow<ModelStatus> = flow {
         emit(ModelStatus.Idle)
 
-        // Check if model already exists with correct hash
-        if (isModelValid(expectedSha256)) {
+        if (isModelValid()) {
             Log.d(TAG, "Model already available at ${modelDir.absolutePath}")
             emit(ModelStatus.Ready(modelDir.absolutePath))
             return@flow
         }
 
+        val expectedSha256 = BuildConfig.POCKET_TTS_MODEL_SHA256
+
         try {
+            modelDir.deleteRecursively()
             modelDir.mkdirs()
-            val tempFile = File(modelDir, "model.tar.gz.tmp")
+            val tempFile = File(modelDir, "model.tar.bz2.tmp")
 
             emit(ModelStatus.Downloading(0f))
 
-            // Download with progress tracking
-            downloadFile(modelUrl, tempFile) { progress ->
+            downloadFile(BuildConfig.POCKET_TTS_MODEL_URL, tempFile) { progress ->
                 Log.d(TAG, "Download progress: $progress")
             }
 
-            // Verify checksum
             val actualSha256 = calculateSha256(tempFile)
             if (actualSha256 != expectedSha256) {
                 tempFile.delete()
@@ -58,9 +65,12 @@ class PocketModelManager @Inject constructor(
 
             emit(ModelStatus.Downloading(1.0f))
 
-            // Extract tarball
-            extractTarGz(tempFile, modelDir)
+            extractTarBz2(tempFile, modelDir)
             tempFile.delete()
+
+            // Record the verified hash so isModelValid() recognizes this
+            // install on future launches without re-downloading.
+            File(modelDir, "sha256.txt").writeText(expectedSha256)
 
             Log.d(TAG, "Model ready at ${modelDir.absolutePath}")
             emit(ModelStatus.Ready(modelDir.absolutePath))
@@ -70,10 +80,10 @@ class PocketModelManager @Inject constructor(
         }
     }
 
-    private fun isModelValid(expectedSha256: String): Boolean {
+    /** True if a verified copy of the current build's model is already on disk. */
+    fun isModelValid(): Boolean {
         if (!modelDir.exists() || !modelDir.isDirectory) return false
 
-        // Check if essential model files exist and hash matches
         val modelFiles = modelDir.listFiles() ?: return false
         if (modelFiles.isEmpty()) return false
 
@@ -81,13 +91,15 @@ class PocketModelManager @Inject constructor(
         if (!hashFile.exists()) return false
 
         return try {
-            val storedHash = hashFile.readText().trim()
-            storedHash == expectedSha256
+            hashFile.readText().trim() == BuildConfig.POCKET_TTS_MODEL_SHA256
         } catch (e: Exception) {
             Log.e(TAG, "Could not read hash file: ${e.message}")
             false
         }
     }
+
+    /** Absolute path to the extracted model directory, or null if not ready yet. */
+    fun modelPathIfReady(): String? = if (isModelValid()) modelDir.absolutePath else null
 
     private suspend fun downloadFile(url: String, destination: File, onProgress: (Float) -> Unit) {
         try {
@@ -133,21 +145,33 @@ class PocketModelManager @Inject constructor(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun extractTarGz(tarFile: File, destination: File) {
+    /**
+     * Extracts a .tar.bz2 archive, stripping the single top-level directory
+     * every sherpa-onnx model release wraps its files in (e.g.
+     * `vits-piper-en_US-ljspeech-medium-int8/model.onnx` -> `model.onnx`)
+     * so callers can reference files directly under [modelDir].
+     */
+    /** Package-visible so the strip/extract logic can be unit-tested with a small fixture archive. */
+    internal fun extractTarBz2(archiveFile: File, destination: File) {
         try {
-            val gzipInputStream = java.util.zip.GZIPInputStream(tarFile.inputStream())
-            val tarInputStream = org.apache.commons.compress.archivers.tar.TarArchiveInputStream(gzipInputStream)
+            val bzip2InputStream = org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream(
+                archiveFile.inputStream(),
+            )
+            val tarInputStream = org.apache.commons.compress.archivers.tar.TarArchiveInputStream(bzip2InputStream)
 
             var entry = tarInputStream.nextTarEntry
             while (entry != null) {
-                val entryFile = File(destination, entry.name)
+                val strippedName = entry.name.substringAfter('/', missingDelimiterValue = "")
+                if (strippedName.isNotEmpty()) {
+                    val entryFile = File(destination, strippedName)
 
-                if (entry.isDirectory) {
-                    entryFile.mkdirs()
-                } else {
-                    entryFile.parentFile?.mkdirs()
-                    entryFile.outputStream().use { output ->
-                        tarInputStream.copyTo(output)
+                    if (entry.isDirectory) {
+                        entryFile.mkdirs()
+                    } else {
+                        entryFile.parentFile?.mkdirs()
+                        entryFile.outputStream().use { output ->
+                            tarInputStream.copyTo(output)
+                        }
                     }
                 }
 
@@ -155,9 +179,9 @@ class PocketModelManager @Inject constructor(
             }
 
             tarInputStream.close()
-            gzipInputStream.close()
+            bzip2InputStream.close()
 
-            Log.d(TAG, "Extracted ${tarFile.name} to ${destination.absolutePath}")
+            Log.d(TAG, "Extracted ${archiveFile.name} to ${destination.absolutePath}")
         } catch (e: Exception) {
             Log.e(TAG, "Extraction error: ${e.message}", e)
             throw Exception("Failed to extract model: ${e.message}", e)

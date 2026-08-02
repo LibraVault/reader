@@ -1,5 +1,30 @@
 # Pocket-TTS Implementation Progress
 
+## v1 status: RESOLVED (Android)
+
+The AAR blocker and TODOs below are closed out. `PocketTtsEngine` now runs
+real sherpa-onnx synthesis end to end:
+
+- `sherpa-onnx-android.aar` is real (prebuilt `.so` libraries downloaded from
+  sherpa-onnx's GitHub Releases, not the earlier hand-written stub) - see
+  `third-party/sherpa-onnx/AAR_RESOLUTION.md`.
+- `PocketModelManager` downloads and extracts a real voice model (Piper VITS,
+  public-domain LJSpeech voice - see `SHERPA_ONNX_SETUP.md` for the licensing
+  reasoning), fixing two real bugs along the way: it was pointed at the wrong
+  URL (the engine tarball, not a voice model) and used the wrong archive
+  codec (gzip instead of the bzip2 sherpa-onnx actually ships).
+- `PocketVoiceCatalog` was reworked from its original WAV-voice-cloning
+  design (built around sherpa-onnx's own "Pocket TTS" model family, which
+  turned out to be CC-BY-NC - non-commercial only, can't ship in this app) to
+  describe the single bundled VITS voice instead.
+- `PocketTtsEngine.initialize()/speak()/setSpeechRate()` call the real
+  `OfflineTts` API (vendored as `core/tts/.../pocket/sherpa/Tts.kt`).
+
+**Not done**: iOS has no Pocket TTS equivalent yet (separate follow-up -
+sherpa-onnx does publish a prebuilt iOS xcframework, so it's feasible, but
+needs its own scoping). Manual on-device testing (the architecture is real
+now, but nobody has heard it actually speak on a physical device yet).
+
 ## Completed ✅
 
 ### Step 1: Build Infrastructure & Dependencies
@@ -144,7 +169,7 @@
 - `settings.gradle.kts` (modified for JitPack, then reverted)
 - `third-party/sherpa-onnx/build-aar.sh` (new)
 - `third-party/sherpa-onnx/BUILD.md` (new)
-- `third-party/sherpa-onnx/sherpa-onnx-android.aar` (stub)
+- `third-party/sherpa-onnx/sherpa-onnx-android.aar` (real, built from sherpa-onnx's prebuilt release binaries)
 - `SHERPA_ONNX_SETUP.md` (new, developer guide)
 - `.kilo/plans/1783324829228-pocket-tts-reader-plan.md` (ref from kilocode)
 
@@ -152,16 +177,23 @@
 
 **Immediate** (Priority):
 1. ✅ Implement steps 5–9 (all architecture layers complete)
-2. Resolve sherpa-onnx AAR build issue
-3. Add missing dependencies (DataStore, HTTP client)
-4. Wire TODO items (model download, voice assets, etc.)
+2. ✅ Resolve sherpa-onnx AAR build issue
+3. ✅ Add missing dependencies (DataStore, HTTP client)
+4. ✅ Wire TODO items (model download, real synthesis calls)
 
 **Then**:
-1. Full integration testing on device
+1. Full integration testing on a real device (nothing has exercised this on
+   actual hardware yet - JVM unit tests can't cross the JNI boundary)
 2. Handle edge cases (network errors, low disk space)
-3. Settings UI polish & testing
+3. Settings UI polish & testing (`TtsSettingsSection`'s download-progress UI
+   is still a static placeholder - `PocketModelManager.ensureModelAvailable()`
+   is real now and ready to wire up)
 
 **Finally**:
-1. Documentation updates (README, in-app licenses)
-2. CI/CD integration for AAR builds
+1. Documentation updates (README, in-app licenses - the Piper/LJSpeech and
+   sherpa-onnx Apache-2.0 attributions should surface somewhere user-facing)
+2. CI/CD integration for AAR builds (`build-aar.sh` is fast now - a few
+   seconds, no NDK - reasonable to run in CI instead of only committing the
+   AAR, if reproducible-build concerns ever call for it)
 3. Performance optimization (model caching, lazy loading)
+4. iOS Pocket TTS parity (separate follow-up - see "v1 status" above)

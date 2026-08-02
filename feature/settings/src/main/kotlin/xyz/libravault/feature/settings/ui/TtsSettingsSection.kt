@@ -139,7 +139,7 @@ private fun PocketTtsModelSection(modelManager: PocketModelManager) {
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = "~120 MB (first use only)",
+            text = "~21 MB (first use only)",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
         )

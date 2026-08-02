@@ -1,49 +1,40 @@
-# Building sherpa-onnx for Android
+# Building third-party/sherpa-onnx/sherpa-onnx-android.aar
 
-This directory contains the build infrastructure for compiling sherpa-onnx's Android AAR locally.
-
-## Prerequisites
-
-- Android NDK (tested with r26)
-- CMake (3.21+)
-- Python 3 (for sherpa-onnx build scripts)
-- Git
-
-Set environment variables:
-```bash
-export ANDROID_NDK=/path/to/android-ndk
-export CMAKE=/path/to/cmake
-```
-
-Or configure via `local.properties` in the root of the repo.
+This directory holds the native engine binaries Pocket TTS runs on. They are
+**downloaded prebuilt from sherpa-onnx's own GitHub Releases**, not compiled
+from source locally — see `AAR_RESOLUTION.md` for why.
 
 ## Building
 
-Run the build script:
 ```bash
 ./build-aar.sh
 ```
 
-This will:
-1. Clone sherpa-onnx (if not already present)
-2. Build the Android AAR for arm64-v8a
-3. Output to `sherpa-onnx-android.aar`
+Requires only `curl`, `tar`, `zip`, and `jar` (all standard). No Android
+NDK/CMake/SDK needed for this step. Output:
 
-## Output
-
-The built AAR will be at:
 ```
 third-party/sherpa-onnx/sherpa-onnx-android.aar
 ```
 
-This is automatically referenced by `core:tts` in its build.gradle.kts.
+Downloads `sherpa-onnx-vX.Y.Z-android.tar.bz2` (~45 MB), extracts the
+`arm64-v8a` `.so` libraries, and repackages them into a minimal AAR
+(`jni/arm64-v8a/*.so` + an empty `classes.jar`). Takes a few seconds.
 
-## Updating sherpa-onnx version
+## Verifying
 
-Edit `SHERPA_ONNX_VERSION` in `build-aar.sh` and rebuild.
+```bash
+./gradlew :core:tts:assembleDebug
+```
 
-## Notes
+## Updating the sherpa-onnx version
 
-- Build time: ~10-15 minutes on a modern machine
-- Output size: ~50 MB (uncompressed)
-- The AAR is self-contained and includes all necessary native libraries
+Edit `SHERPA_ONNX_VERSION` in `build-aar.sh` and rebuild. Check
+https://github.com/k2-fsa/sherpa-onnx/releases for available versions and
+confirm the `android.tar.bz2` asset exists for that tag.
+
+## The voice model is separate
+
+This AAR only contains the engine (inference runtime). The voice model
+itself is downloaded on-device at runtime by `PocketModelManager`, from the
+URL/checksum in `core/tts/build.gradle.kts` — see `SHERPA_ONNX_SETUP.md`.
