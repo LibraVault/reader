@@ -21,9 +21,11 @@ android {
     // Pocket TTS bundles exactly one voice: a Piper VITS model trained from
     // scratch on the public-domain LJSpeech dataset. This was chosen over
     // sherpa-onnx's own "Pocket TTS" model family (CC-BY-NC, non-commercial
-    // only - can't ship in a paid app) and over other Piper voices like
-    // lessac/amy (finetuned from a Blizzard-2013-licensed voice whose license
-    // also forbids commercial use). See SHERPA_ONNX_SETUP.md.
+    // use only) and over other Piper voices like lessac/amy (finetuned from a
+    // Blizzard-2013-licensed voice whose license also forbids commercial use).
+    // Picking a permissively-licensed voice avoids ever having to revisit
+    // this once LibraVault's Pro-tier/licensing infrastructure (already in
+    // the codebase, not yet launched) goes live. See SHERPA_ONNX_SETUP.md.
     val pocketTtsModelUrl = "\"https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2\""
     val pocketTtsModelSha256 = "\"24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b\""
 

@@ -72,3 +72,10 @@ xcuserdata/
 *.xcuserstate
 DerivedData/
 *.xcscmblueprint
+
+# Pocket TTS iOS build-time dependencies - fetched by
+# third-party/sherpa-onnx/setup-ios.sh, not committed (~230MB combined,
+# see SHERPA_ONNX_SETUP.md for why).
+/third-party/sherpa-onnx/ios/
+/third-party/sherpa-onnx/build-ios/
+/ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel/

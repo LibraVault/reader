@@ -32,6 +32,19 @@ final class AppState: ObservableObject {
     @Published var defaultPlaybackSpeed: Double = 1.0 {
         didSet { userPreferencesPersistence.save(playbackSpeed: defaultPlaybackSpeed) }
     }
+    /// Mirrors Android's Settings > Text-to-Speech engine picker
+    /// (TtsSettingsSection.kt). Defaults to `.system` in `bridge.initialize()`
+    /// regardless of this saved value - only switched to Pocket TTS here,
+    /// after load, so a corrupt/missing bundled model (see
+    /// PocketModelManager) degrades to system voice instead of leaving
+    /// speech silently broken on launch.
+    @Published var ttsEngineType: TTSEngineType = .system {
+        didSet {
+            guard ttsEngineType != oldValue else { return }
+            userPreferencesPersistence.save(ttsEngineType: ttsEngineType)
+            Task { await bridge.switchTTSEngine(to: ttsEngineType) }
+        }
+    }
 
     // MARK: - Playback (mini-player / Player screen)
 
@@ -149,6 +162,7 @@ final class AppState: ObservableObject {
         defaultReadingTheme = userPreferencesPersistence.loadReadingTheme()
         defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
+        ttsEngineType = userPreferencesPersistence.loadTTSEngineType()
 
         audioEngine.onProgress = { [weak self] elapsed, duration in
             Task { @MainActor [weak self] in

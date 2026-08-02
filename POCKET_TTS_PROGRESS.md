@@ -1,10 +1,13 @@
 # Pocket-TTS Implementation Progress
 
-## v1 status: RESOLVED (Android)
+## v1 status: RESOLVED (Android + iOS)
 
-The AAR blocker and TODOs below are closed out. `PocketTtsEngine` now runs
-real sherpa-onnx synthesis end to end:
+The AAR blocker and TODOs below are closed out on Android, and iOS now has a
+Pocket TTS engine of its own for the first time. `PocketTtsEngine`
+(Android) / `PocketTTSEngine` (iOS) both run real sherpa-onnx synthesis
+end to end:
 
+**Android**:
 - `sherpa-onnx-android.aar` is real (prebuilt `.so` libraries downloaded from
   sherpa-onnx's GitHub Releases, not the earlier hand-written stub) - see
   `third-party/sherpa-onnx/AAR_RESOLUTION.md`.
@@ -20,10 +23,28 @@ real sherpa-onnx synthesis end to end:
 - `PocketTtsEngine.initialize()/speak()/setSpeechRate()` call the real
   `OfflineTts` API (vendored as `core/tts/.../pocket/sherpa/Tts.kt`).
 
-**Not done**: iOS has no Pocket TTS equivalent yet (separate follow-up -
-sherpa-onnx does publish a prebuilt iOS xcframework, so it's feasible, but
-needs its own scoping). Manual on-device testing (the architecture is real
-now, but nobody has heard it actually speak on a physical device yet).
+**iOS** (new):
+- `PocketTTSEngine.swift` wraps the same sherpa-onnx C API (vendored as
+  `Sources/KmpInterop/PocketTTS/SherpaOnnx.swift`) via a bridging header,
+  streaming generated audio through `AVAudioEngine`/`AVAudioPlayerNode`.
+- Two static xcframeworks (sherpa-onnx + its onnxruntime dependency) are
+  fetched at build time by `third-party/sherpa-onnx/setup-ios.sh`, not
+  committed (~230MB combined) - see `SHERPA_ONNX_SETUP.md`.
+- The same voice model (same URL/checksum, same licensing reasoning) is
+  bundled into the app at build time rather than downloaded on first use
+  like Android - `Foundation` has no tar/bzip2 support, and the only
+  on-device alternative uses a private Apple API. See
+  `SHERPA_ONNX_SETUP.md`'s "iOS: why the model is bundled" section.
+- `TTSEngineProtocol` gives both `TTSEngineBridge` (system voice) and
+  `PocketTTSEngine` a shared shape; `AppState.ttsEngineType` (persisted,
+  Settings > Text-to-Speech) drives `LibravaultDomainBridge.switchTTSEngine(to:)`,
+  mirroring Android's `TtsEngineProvider`.
+
+**Not done**: manual on-device testing on either platform (the architecture
+is real now on both, but nobody has heard either one actually speak on
+physical hardware yet - this PR's Android verification was full unit-test +
+APK-assembly level, and iOS's was CI-build-level, not a live device/simulator
+run with audio).
 
 ## Completed ✅
 
@@ -196,4 +217,5 @@ now, but nobody has heard it actually speak on a physical device yet).
    seconds, no NDK - reasonable to run in CI instead of only committing the
    AAR, if reproducible-build concerns ever call for it)
 3. Performance optimization (model caching, lazy loading)
-4. iOS Pocket TTS parity (separate follow-up - see "v1 status" above)
+4. ✅ iOS Pocket TTS parity (see "v1 status" above) - still needs real
+   on-device audio verification, same as Android

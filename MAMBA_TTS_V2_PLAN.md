@@ -50,6 +50,52 @@ Text Input → Phoneme Converter → Mamba Backbone (12-30M)
    - Target audio ignores these (continuous playback)
    - Model learns zero-audio mapping for skip tokens
 
+### Backbone candidate: Zamba2 (added 2026-08-02, not yet decided)
+
+The "Mamba Backbone" above was written generically ("plain Mamba1/Mamba2").
+[Zyphra's Zamba2](https://github.com/Zyphra/Zamba2) is a more specific,
+concrete candidate worth evaluating before committing to an architecture:
+a hybrid of Mamba2 state-space blocks with two **shared** transformer
+attention blocks interleaved in an ABAB pattern (LoRA-projected per-layer
+MLPs keep the shared-block parameter cost down). Zyphra's own numbers show
+its advantage is largest at the 1.2B-2.7B parameter range, with near-linear
+prefill and a fixed-size recurrent state (no growing KV cache) driving
+roughly an order-of-magnitude lower time-to-first-token on long prompts
+(tested at 32k tokens).
+
+**Why it's worth a look**: if a small amount of attention meaningfully
+improves quality/coherence over a pure-SSM backbone (the usual reason to
+hybridize), Zamba2's specific recipe — sharing the attention blocks across
+the depth of the network instead of repeating them per layer — is a
+parameter-efficient way to get that benefit without abandoning Mamba's
+efficiency for the bulk of the network.
+
+**Why it's not a slam dunk, and needs real evaluation before adopting**:
+- Zamba2 is a general **language model** architecture (chat/completion),
+  not a TTS model — adopting it means the same "swap Transformer-for-SSM in
+  a TTS architecture" exercise this plan already describes for plain Mamba,
+  just with Zamba2's specific block recipe. No existing TTS work using
+  Zamba2 as a backbone was found during this research pass.
+- Zamba2's published advantage (order-of-magnitude lower TTFT) is measured
+  on **long-context prefill** (32k tokens) — LibraVault's actual workload is
+  short TTS inputs (a sentence/paragraph per `speak()` call, matching
+  `EpubTextPreprocessor`'s chunking), where a growing KV cache was never
+  going to be the bottleneck anyway. The scenario Zamba2 is optimized for
+  may just not apply here.
+- The plan's target size (12-30M params) is roughly **two orders of
+  magnitude smaller** than Zamba2's smallest published model (1.2B). Whether
+  the hybrid-attention benefit (or even the architecture's basic
+  training/inference characteristics) holds up at that much smaller scale is
+  an open question, not something to assume from Zyphra's published results.
+
+**Recommended next step, if/when this plan is picked up**: run a small,
+cheap ablation before committing — train comparably-sized (12-30M) pure-Mamba2
+and Zamba2-style hybrid backbones on the same small dataset slice, compare
+quality and on-device inference latency directly, rather than assuming
+Zamba2's large-model numbers transfer down. This is a half-day-to-day-scale
+experiment, not a reason to block starting the rest of the plan (data
+preparation, tokenizer choice) on architecture bake-off first.
+
 ## Data Preparation
 
 ### Dataset Strategy
@@ -232,6 +278,7 @@ This is a product decision, not yet made — captured here for the v2 planning d
 ## References & Resources
 
 - **Mamba**: https://github.com/state-spaces/mamba
+- **Zamba2** (candidate hybrid backbone, see "Backbone candidate" above): https://github.com/Zyphra/Zamba2
 - **SpeechTokenizer**: https://github.com/zhangxinyu-xyz/SpeechTokenizer
 - **HiFi-GAN**: https://github.com/jik876/hifi-gan
 - **MeloVC (Community TTS)**: https://huggingface.co/shichaog/MeloVC
@@ -249,6 +296,6 @@ This is a product decision, not yet made — captured here for the v2 planning d
 ---
 
 **Created**: 2026-07-21  
-**Last Updated**: 2026-07-28  
+**Last Updated**: 2026-08-02 (added Zamba2 backbone candidate evaluation)  
 **Owner**: @Rob  
 **Status**: Backlog (post-v1.0)

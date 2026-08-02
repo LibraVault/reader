@@ -14,6 +14,7 @@ struct UserPreferencesPersistence {
         static let readingTheme = "xyz.libravault.defaultReadingTheme"
         static let playbackSpeed = "xyz.libravault.defaultPlaybackSpeed"
         static let skipDurationSeconds = "xyz.libravault.skipDurationSeconds"
+        static let ttsEngineType = "xyz.libravault.ttsEngineType"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -51,5 +52,16 @@ struct UserPreferencesPersistence {
 
     func save(skipDurationSeconds: Double) {
         defaults.set(skipDurationSeconds, forKey: Key.skipDurationSeconds)
+    }
+
+    func loadTTSEngineType() -> TTSEngineType {
+        guard let raw = defaults.string(forKey: Key.ttsEngineType), let type = TTSEngineType(rawValue: raw) else {
+            return .system
+        }
+        return type
+    }
+
+    func save(ttsEngineType: TTSEngineType) {
+        defaults.set(ttsEngineType.rawValue, forKey: Key.ttsEngineType)
     }
 }
