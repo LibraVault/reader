@@ -122,8 +122,14 @@ struct PlayerView: View {
                 }
             }
         }
-        .onAppear { appState.isPlayerScreenActive = true }
-        .onDisappear { appState.isPlayerScreenActive = false }
+        .onAppear {
+            appState.isPlayerScreenActive = true
+            OrientationManager.lock(to: .portrait)
+        }
+        .onDisappear {
+            appState.isPlayerScreenActive = false
+            OrientationManager.lock(to: .allButUpsideDown)
+        }
         .sheet(isPresented: $showBookmarksSheet) {
             if let book {
                 BookmarksSheet(bookId: book.id)
