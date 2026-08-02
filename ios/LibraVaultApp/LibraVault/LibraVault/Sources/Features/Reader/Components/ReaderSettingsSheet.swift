@@ -17,6 +17,10 @@ struct ReaderSettingsSheet: View {
     @Binding var mode: ReaderLayoutMode
     let isSpeaking: Bool
     let onToggleSpeaking: () -> Void
+    /// False for PDF — a rendered PDF page is a fixed image of the book's real
+    /// layout, so text size/line spacing/font family have nothing to apply to.
+    /// Mirrors Android's ReaderSettingsSheet(showFontControls:).
+    var showFontControls: Bool = true
 
     var body: some View {
         ScrollView {
@@ -29,21 +33,23 @@ struct ReaderSettingsSheet: View {
                     chipRow(ReadingTheme.allCases, label: \.label, isSelected: { $0 == theme }) { theme = $0 }
                 }
 
-                settingSection("Text size", value: "\(Int(fontSize * 100))%") {
-                    Slider(value: $fontSize, in: 0.8...1.5, step: 0.1)
-                        .tint(LibraVaultColor.primary)
-                }
+                if showFontControls {
+                    settingSection("Text size", value: "\(Int(fontSize * 100))%") {
+                        Slider(value: $fontSize, in: 0.8...1.5, step: 0.1)
+                            .tint(LibraVaultColor.primary)
+                    }
 
-                settingSection("Line spacing", value: String(format: "%.1f×", lineSpacing)) {
-                    Slider(value: $lineSpacing, in: 1.0...2.0, step: 0.1)
-                        .tint(LibraVaultColor.primary)
-                }
+                    settingSection("Line spacing", value: String(format: "%.1f×", lineSpacing)) {
+                        Slider(value: $lineSpacing, in: 1.0...2.0, step: 0.1)
+                            .tint(LibraVaultColor.primary)
+                    }
 
-                settingSection("Font") {
-                    HStack(spacing: LibraVaultSpacing.sm) {
-                        FilterChip(title: "System", isSelected: fontDesign == .default) { fontDesign = .default }
-                        FilterChip(title: "Serif", isSelected: fontDesign == .serif) { fontDesign = .serif }
-                        FilterChip(title: "Monospace", isSelected: fontDesign == .monospaced) { fontDesign = .monospaced }
+                    settingSection("Font") {
+                        HStack(spacing: LibraVaultSpacing.sm) {
+                            FilterChip(title: "System", isSelected: fontDesign == .default) { fontDesign = .default }
+                            FilterChip(title: "Serif", isSelected: fontDesign == .serif) { fontDesign = .serif }
+                            FilterChip(title: "Monospace", isSelected: fontDesign == .monospaced) { fontDesign = .monospaced }
+                        }
                     }
                 }
 

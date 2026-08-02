@@ -1,14 +1,27 @@
 import SwiftUI
+import PDFKit
 
 struct ReaderView: View {
     let book: BookItem
 
     @EnvironmentObject var appState: AppState
     @State private var currentChapter = 1
-    /// Real chapters for formats with a parser wired up (EPUB, PDF). nil until
-    /// `loadContent()` resolves — briefly renders `loadingContent` — then stays nil
-    /// permanently if loading failed, in which case `unavailableReason` explains why.
+    /// Real chapters for formats with a parser wired up (EPUB only — PDF used to
+    /// share this reflowed-text path too, see PDFReaderContent's doc comment for why
+    /// that changed). nil until `loadContent()` resolves — briefly renders
+    /// `loadingContent` — then stays nil permanently if loading failed, in which case
+    /// `unavailableReason` explains why.
     @State private var chapters: [BookChapter]?
+    /// Real PDF document for on-screen page rendering — populated by loadContent()
+    /// instead of `chapters` when book.format == .pdf. See PDFReaderContent.
+    @State private var pdfDocument: PDFDocument?
+    /// Releases the vault security scope BookContentProvider.openPDFDocument started
+    /// — must run exactly once, in onDisappear, since PDFKit reads lazily from disk
+    /// for as long as pdfDocument is being displayed (see that function's doc
+    /// comment).
+    @State private var pdfEndAccess: (() -> Void)?
+    /// 0-based, matching PDFKit's own page indexing (PDFDocument.page(at:)).
+    @State private var pdfCurrentPageIndex = 0
     /// Parsed Markdown blocks — populated by loadContent() instead of `chapters`
     /// when book.format == .markdown. See MarkdownDocumentParser.
     @State private var markdownBlocks: [MarkdownBlock]?
@@ -63,6 +76,12 @@ struct ReaderView: View {
             } else if book.format == .markdown {
                 if let markdownBlocks {
                     markdownContent(markdownBlocks)
+                } else {
+                    loadingContent
+                }
+            } else if book.format == .pdf {
+                if let pdfDocument {
+                    pdfContent(pdfDocument)
                 } else {
                     loadingContent
                 }
@@ -125,7 +144,8 @@ struct ReaderView: View {
                 fontDesign: $fontDesign,
                 mode: $mode,
                 isSpeaking: isCurrentlyPlayingThisBook,
-                onToggleSpeaking: toggleReadAloud
+                onToggleSpeaking: toggleReadAloud,
+                showFontControls: book.format != .pdf
             )
         }
         .sheet(isPresented: $showBookmarksSheet) {
@@ -149,6 +169,9 @@ struct ReaderView: View {
         .onDisappear {
             if book.format == .markdown {
                 updateMarkdownProgress()
+            } else if book.format == .pdf {
+                pdfEndAccess?()
+                pdfEndAccess = nil
             }
         }
     }
@@ -173,6 +196,24 @@ struct ReaderView: View {
             return
         }
 
+        if book.format == .pdf {
+            do {
+                let (document, endAccess) = try BookContentProvider.openPDFDocument(for: book)
+                pdfDocument = document
+                pdfEndAccess = endAccess
+                let savedFraction = bridge.progress[book.id] ?? 0
+                let lastPageIndex = document.pageCount - 1
+                let restoredIndex = Int((savedFraction * Double(lastPageIndex)).rounded())
+                pdfCurrentPageIndex = max(0, min(restoredIndex, lastPageIndex))
+            } catch {
+                // book.format == .pdf here, so openPDFDocument's own unsupportedFormat
+                // guard can't fire — any failure is a real load problem (malformed
+                // file, vault no longer resolvable, empty/corrupt document).
+                unavailableReason = .loadFailed
+            }
+            return
+        }
+
         do {
             let loaded = try BookContentProvider.chapters(for: book)
             guard !loaded.isEmpty else {
@@ -183,7 +224,7 @@ struct ReaderView: View {
         } catch BookContentProvider.ContentError.unsupportedFormat {
             unavailableReason = .unsupportedFormat
         } catch {
-            // A format with a real parser (EPUB/PDF) failed for some other reason —
+            // A format with a real parser (EPUB) failed for some other reason —
             // malformed file, vault no longer resolvable, etc.
             unavailableReason = .loadFailed
         }
@@ -275,6 +316,47 @@ struct ReaderView: View {
         }
     }
 
+    /// Real PDF page rendering via PDFKit — see PDFReaderContent's doc comment for
+    /// why this exists instead of routing PDFs through the same extracted-text
+    /// `chapters`/paginatedContent path EPUB uses. The bottom bar mirrors
+    /// paginatedContent's, kept visible in both layout modes (unlike EPUB's
+    /// scrollingContent, which has none) since PDFKit reports a real current page
+    /// even while continuously scrolling.
+    private func pdfContent(_ document: PDFDocument) -> some View {
+        VStack(spacing: 0) {
+            PDFReaderContent(
+                document: document,
+                mode: mode,
+                currentPageIndex: $pdfCurrentPageIndex,
+                backgroundColor: UIColor(colors.background)
+            )
+            .frame(maxHeight: .infinity)
+            .onChange(of: pdfCurrentPageIndex) { _, _ in updatePDFProgress() }
+
+            HStack(spacing: LibraVaultSpacing.lg) {
+                Button(action: { if pdfCurrentPageIndex > 0 { pdfCurrentPageIndex -= 1 } }) {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(pdfCurrentPageIndex <= 0)
+
+                Text("Page \(pdfCurrentPageIndex + 1) of \(document.pageCount)")
+                    .font(LibraVaultTypography.labelMedium)
+
+                ProgressView(value: Double(pdfCurrentPageIndex), total: Double(max(document.pageCount - 1, 1)))
+                    .tint(colors.primary)
+                    .frame(maxWidth: .infinity)
+
+                Button(action: { if pdfCurrentPageIndex < document.pageCount - 1 { pdfCurrentPageIndex += 1 } }) {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(pdfCurrentPageIndex >= document.pageCount - 1)
+            }
+            .foregroundStyle(colors.onSurfaceVariant)
+            .padding(LibraVaultSpacing.lg)
+            .background(colors.surface)
+        }
+    }
+
     private func markdownContent(_ blocks: [MarkdownBlock]) -> some View {
         MarkdownReaderContent(
             blocks: blocks,
@@ -327,24 +409,39 @@ struct ReaderView: View {
         }
     }
 
+    private func updatePDFProgress() {
+        guard let pdfDocument, pdfDocument.pageCount > 1 else { return }
+        Task {
+            let progress = Double(pdfCurrentPageIndex) / Double(pdfDocument.pageCount - 1)
+            try? await bridge.updateProgress(bookId: book.id, progress: progress)
+        }
+    }
+
     private func addBookmark() {
         Task {
-            let position = book.format == .markdown
-                ? "scroll:\(markdownScrollFraction)"
-                : "Chapter \(currentChapter)"
+            let position: String
+            switch book.format {
+            case .markdown: position = "scroll:\(markdownScrollFraction)"
+            case .pdf: position = "Page \(pdfCurrentPageIndex + 1)"
+            default: position = "Chapter \(currentChapter)"
+            }
             try? await bridge.addBookmark(bookId: book.id, position: position)
         }
     }
 
     /// "Read Aloud" now hands off to the real Player screen (Phase 4) instead of
     /// toggling TTS in place — starts shared playback state and asks RootView to
-    /// push PlayerView, the same trigger the mini-player's tap uses.
+    /// push PlayerView, the same trigger the mini-player's tap uses. For PDF,
+    /// AppState.startPlayback's `chapter` parameter means "PDF page number" (it loads
+    /// one BookChapter per page via PDFParser under the hood), so it takes
+    /// pdfCurrentPageIndex there instead of the EPUB-only `currentChapter` state.
     private func toggleReadAloud() {
         showSettingsSheet = false
         if isCurrentlyPlayingThisBook {
             appState.stopPlayback()
         } else {
-            appState.startPlayback(book: book, chapter: currentChapter)
+            let chapter = book.format == .pdf ? pdfCurrentPageIndex + 1 : currentChapter
+            appState.startPlayback(book: book, chapter: chapter)
             appState.shouldNavigateToPlayer = true
         }
     }

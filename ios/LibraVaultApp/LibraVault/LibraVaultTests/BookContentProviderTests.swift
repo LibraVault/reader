@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import PDFKit
 import ZIPFoundation
 @testable import LibraVault
 
@@ -123,6 +124,84 @@ final class BookContentProviderTests: XCTestCase {
 
         XCTAssertEqual(chapters.count, 1)
         XCTAssertTrue(chapters[0].text.contains("Real PDF page text."))
+    }
+
+    // MARK: - openPDFDocument
+
+    /// Proves the real page-rendering path (PDFReaderContent's PDFKit PDFView) can
+    /// actually open a vault PDF and read pages back through it — the regression this
+    /// guards against is PDFs silently falling back to the extracted-text reflow path
+    /// (BookContentProvider.chapters/PDFParser) that used to be the *only* on-screen
+    /// PDF experience on iOS.
+    func testOpenPDFDocumentReturnsARealReadableDocument() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makePDFVaultAndBook(persistence: persistence)
+
+        let (document, endAccess) = try BookContentProvider.openPDFDocument(for: book, vaultPersistence: persistence)
+        defer { endAccess() }
+
+        XCTAssertEqual(document.pageCount, 1)
+        XCTAssertNotNil(document.page(at: 0))
+    }
+
+    /// The vault's security scope must still be open immediately after
+    /// openPDFDocument returns — PDFKit reads page data lazily, not upfront like
+    /// chapters(for:) — so a page opened *after* return must still be fully readable
+    /// (PDFPage.string, which requires the file's data) until endAccess() is called.
+    func testOpenPDFDocumentKeepsVaultAccessOpenUntilEndAccessIsCalled() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makePDFVaultAndBook(persistence: persistence)
+
+        let (document, endAccess) = try BookContentProvider.openPDFDocument(for: book, vaultPersistence: persistence)
+
+        let text = document.page(at: 0)?.string
+        XCTAssertEqual(text?.contains("Real PDF page text."), true)
+
+        endAccess()
+    }
+
+    func testOpenPDFDocumentThrowsUnsupportedFormatForNonPDF() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, epubBook) = try makeVaultAndBook(persistence: persistence)
+
+        XCTAssertThrowsError(try BookContentProvider.openPDFDocument(for: epubBook, vaultPersistence: persistence)) { error in
+            XCTAssertEqual(error as? BookContentProvider.ContentError, .unsupportedFormat)
+        }
+    }
+
+    func testOpenPDFDocumentThrowsMissingFileReferenceWhenFileURLIsNil() {
+        let book = BookItem(id: "1", title: "T", author: "A", format: .pdf)
+
+        XCTAssertThrowsError(try BookContentProvider.openPDFDocument(for: book, vaultPersistence: makeIsolatedPersistence())) { error in
+            XCTAssertEqual(error as? BookContentProvider.ContentError, .missingFileReference)
+        }
+    }
+
+    func testOpenPDFDocumentThrowsVaultUnavailableWhenVaultIsNotPersisted() {
+        let book = BookItem(
+            id: "1", title: "T", author: "A", format: .pdf,
+            fileURL: URL(fileURLWithPath: "/tmp/x.pdf"), vaultId: "does-not-exist"
+        )
+
+        XCTAssertThrowsError(try BookContentProvider.openPDFDocument(for: book, vaultPersistence: makeIsolatedPersistence())) { error in
+            XCTAssertEqual(error as? BookContentProvider.ContentError, .vaultUnavailable)
+        }
+    }
+
+    func testOpenPDFDocumentThrowsInvalidDocumentForMalformedFile() throws {
+        let persistence = makeIsolatedPersistence()
+        let vaultFolder = tempDir.appendingPathComponent("bad-pdf-vault-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
+        let pdfURL = vaultFolder.appendingPathComponent("not-a-pdf.pdf")
+        try Data("this is not a pdf".utf8).write(to: pdfURL)
+
+        let vault = try persistence.makeVault(from: vaultFolder)
+        persistence.save([vault])
+        let book = BookItem(id: "1", title: "T", author: "A", format: .pdf, fileURL: pdfURL, vaultId: vault.id)
+
+        XCTAssertThrowsError(try BookContentProvider.openPDFDocument(for: book, vaultPersistence: persistence)) { error in
+            XCTAssertEqual(error as? PDFParser.ParseError, .invalidDocument)
+        }
     }
 
     func testChaptersThrowsUnsupportedFormatForMobi() {

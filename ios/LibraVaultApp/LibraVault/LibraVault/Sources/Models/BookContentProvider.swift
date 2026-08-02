@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 struct BookChapter {
     let title: String
@@ -68,6 +69,38 @@ enum BookContentProvider {
         }
     }
 
+    /// Opens a PDF for on-screen page rendering (PDFReaderContent's PDFView), not text
+    /// extraction — unlike chapters(for:)/markdownSource(for:), which read a file's
+    /// full content upfront and can release the vault's security scope immediately,
+    /// PDFKit's PDFView lazily rereads page data from disk as the user pages/scrolls,
+    /// so scope must stay open for as long as the reader is displaying the document.
+    /// Returns the opened document plus an `endAccess` closure the caller must invoke
+    /// exactly once (e.g. ReaderView's onDisappear) to release that held-open scope.
+    static func openPDFDocument(
+        for book: BookItem,
+        vaultPersistence: VaultPersistence = VaultPersistence()
+    ) throws -> (document: PDFDocument, endAccess: () -> Void) {
+        guard book.format == .pdf else {
+            throw ContentError.unsupportedFormat
+        }
+        let (fileURL, vaultURL) = try resolveFileAndVaultURL(for: book, vaultPersistence: vaultPersistence)
+
+        let didStartAccessing = vaultURL.startAccessingSecurityScopedResource()
+        let endAccess: () -> Void = {
+            if didStartAccessing { vaultURL.stopAccessingSecurityScopedResource() }
+        }
+
+        guard let document = PDFDocument(url: fileURL) else {
+            endAccess()
+            throw PDFParser.ParseError.invalidDocument
+        }
+        guard document.pageCount > 0 else {
+            endAccess()
+            throw PDFParser.ParseError.emptyDocument
+        }
+        return (document, endAccess)
+    }
+
     /// Resolves the book's vault security-scoped bookmark and holds the scope open
     /// for the duration of `body`. Shared by chapters(for:) and markdownSource(for:)
     /// since both need the same "resolve vault → start scope → read file" sequence.
@@ -76,6 +109,21 @@ enum BookContentProvider {
         vaultPersistence: VaultPersistence,
         _ body: (URL) throws -> T
     ) throws -> T {
+        let (fileURL, vaultURL) = try resolveFileAndVaultURL(for: book, vaultPersistence: vaultPersistence)
+
+        let didStartAccessing = vaultURL.startAccessingSecurityScopedResource()
+        defer { if didStartAccessing { vaultURL.stopAccessingSecurityScopedResource() } }
+
+        return try body(fileURL)
+    }
+
+    /// Shared by withSecurityScopedAccess and openPDFDocument — the latter can't use
+    /// withSecurityScopedAccess's own scope handling since it needs the scope to
+    /// outlive this call, not just the body closure.
+    private static func resolveFileAndVaultURL(
+        for book: BookItem,
+        vaultPersistence: VaultPersistence
+    ) throws -> (fileURL: URL, vaultURL: URL) {
         guard let fileURL = book.fileURL, let vaultId = book.vaultId else {
             throw ContentError.missingFileReference
         }
@@ -83,10 +131,6 @@ enum BookContentProvider {
               let resolvedVaultURL = vaultPersistence.resolvedURL(for: vault) else {
             throw ContentError.vaultUnavailable
         }
-
-        let didStartAccessing = resolvedVaultURL.startAccessingSecurityScopedResource()
-        defer { if didStartAccessing { resolvedVaultURL.stopAccessingSecurityScopedResource() } }
-
-        return try body(fileURL)
+        return (fileURL, resolvedVaultURL)
     }
 }
