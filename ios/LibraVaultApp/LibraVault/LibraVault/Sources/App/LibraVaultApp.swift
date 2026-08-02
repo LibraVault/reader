@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct LibraVaultApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState()
 
     var body: some Scene {
