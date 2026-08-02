@@ -81,6 +81,22 @@ jobs:
           echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Using build number: $BUILD_NUMBER"
 
+      # Pocket TTS's native frameworks + bundled voice model (~230MB combined)
+      # aren't committed to git - see SHERPA_ONNX_SETUP.md. Same step as
+      # ios-app-build.yml's CI job; this workflow archives independently and
+      # needs it too, or "Build & Archive" fails with "There is no XCFramework
+      # found at .../third-party/sherpa-onnx/ios/sherpa-onnx.xcframework".
+      - name: Cache Pocket TTS iOS dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            third-party/sherpa-onnx/ios
+            ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel
+          key: pocket-tts-ios-${{ hashFiles('third-party/sherpa-onnx/setup-ios.sh') }}
+
+      - name: Fetch Pocket TTS iOS dependencies
+        run: ./third-party/sherpa-onnx/setup-ios.sh
+
       - name: Build & Archive
         run: |
           # Deliberately NOT passing CODE_SIGN_STYLE/CODE_SIGN_IDENTITY/
