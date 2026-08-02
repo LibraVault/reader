@@ -25,10 +25,10 @@ import xyz.libravault.feature.player.R
  *
  * - **Lockscreen / Quick-Settings tile (Android 13+)**: populated by [LibravaultMediaCallback]
  *   via [MediaSession.Callback.onConnect]. See that class for the full rationale. The
- *   callback publishes a 3-button strip `[−seek | PlayPause | +seek]` to
- *   `MediaSession.customLayout` and populates `availablePlayerCommands` with all standard
- *   commands (minus prev/next media items), so the system tile shows the standard-actions
- *   bitmask `[<<, ▶, >>]` plus the 3 custom actions as `PlaybackStateCompat.customActions`.
+ *   callback publishes a 5-button strip `[Prev | −seek | PlayPause | +seek | Next]` to
+ *   `MediaSession.customLayout` as `PlaybackStateCompat.customActions`, and removes the
+ *   overlapping standard commands from `availablePlayerCommands` so the system tile doesn't
+ *   also derive duplicate standard-actions buttons for the same controls.
  *
  * - **Skip duration**: read from [SkipDurationPreference] at service-create time and
  *   passed into [LibravaultMediaCallback] so the ±seek tile buttons embed the correct

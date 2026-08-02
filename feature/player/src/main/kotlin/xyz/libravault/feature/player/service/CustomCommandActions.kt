@@ -14,8 +14,8 @@ package xyz.libravault.feature.player.service
  * `commandCode == COMMAND_CODE_CUSTOM` — see `PlayerWrapper.createPlaybackStateCompat`
  * in Media3 1.3.1 (filter verified via `javap` of the AAR). Player-command buttons are
  * filtered out before they reach the platform notification, so they never appear on the
- * system tile. Using custom commands lets us publish [−seek | PlayPause | +seek] to both
- * the notification and the system tile.
+ * system tile. Using custom commands lets us publish [Prev | −seek | PlayPause | +seek | Next]
+ * to both the notification and the system tile.
  *
  * Stability: changing any value here would break cached lockscreen notifications until
  * the app is fully restarted. Treat as part of the public API of [LibravaultMediaCallback].
@@ -42,6 +42,22 @@ internal object CustomCommandActions {
      * bounds-checks the target.
      */
     const val SEEK_BY = PREFIX + "SEEK_BY"
+
+    /**
+     * Tap target: jump to the previous item. No extras — dispatches straight to
+     * [androidx.media3.common.Player.seekToPrevious], which restarts the current
+     * (single) audiobook track when more than a few seconds in, or is a no-op
+     * otherwise. There is no playlist to move to for a single-item audiobook.
+     */
+    const val PREVIOUS = PREFIX + "PREVIOUS"
+
+    /**
+     * Tap target: jump to the next item. No extras — dispatches straight to
+     * [androidx.media3.common.Player.seekToNext], which is a no-op for a
+     * single-item audiobook (no next track to move to). Published anyway so the
+     * system tile carries the same five-button shape as the in-app mini-player.
+     */
+    const val NEXT = PREFIX + "NEXT"
 
     /** Bundle key for the signed seek offset in milliseconds (see [SEEK_BY]). */
     const val EXTRA_OFFSET_MS = "offsetMs"

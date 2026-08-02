@@ -75,6 +75,32 @@ class LibravaultMediaCallbackDispatchTest {
     }
 
     @Test
+    fun `PREVIOUS dispatches to seekToPrevious`() {
+        val player = mockk<ExoPlayer>(relaxed = true)
+
+        val result = callback(player)
+            .onCustomCommand(session, controller, SessionCommand(CustomCommandActions.PREVIOUS, android.os.Bundle()), android.os.Bundle())
+            .get()
+
+        assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
+        verify(exactly = 1) { player.seekToPrevious() }
+        verify(exactly = 0) { player.seekToNext() }
+    }
+
+    @Test
+    fun `NEXT dispatches to seekToNext`() {
+        val player = mockk<ExoPlayer>(relaxed = true)
+
+        val result = callback(player)
+            .onCustomCommand(session, controller, SessionCommand(CustomCommandActions.NEXT, android.os.Bundle()), android.os.Bundle())
+            .get()
+
+        assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
+        verify(exactly = 1) { player.seekToNext() }
+        verify(exactly = 0) { player.seekToPrevious() }
+    }
+
+    @Test
     fun `unknown custom action is rejected without touching the player`() {
         val player = mockk<ExoPlayer>(relaxed = true)
 
