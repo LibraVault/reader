@@ -31,23 +31,29 @@ import com.google.common.util.concurrent.ListenableFuture
  *
  * For each connecting controller, `onConnect` returns a `ConnectionResult` whose:
  * - `availableSessionCommands` starts from
- *   [MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS] and adds the two
- *   custom action strings defined in [CustomCommandActions] (`PLAY_PAUSE` and `SEEK_BY`).
- *   Without this base, Media3's `PlayerWrapper.createPlaybackStateCompat` filter
- *   (`sessionCommand != null AND sessionCommand.commandCode == COMMAND_CODE_CUSTOM AND
+ *   [MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS] and adds the four
+ *   custom action strings defined in [CustomCommandActions] (`PLAY_PAUSE`, `SEEK_BY`,
+ *   `PREVIOUS`, `NEXT`). Without this base, Media3's `PlayerWrapper.createPlaybackStateCompat`
+ *   filter (`sessionCommand != null AND sessionCommand.commandCode == COMMAND_CODE_CUSTOM AND
  *   isEnabled(button, availableSessionCommands, availablePlayerCommands)`) rejects all
  *   session-command buttons on the system tile.
- * - `availablePlayerCommands` is the full Player.Commands set with
- *   [Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM] and [Player.COMMAND_SEEK_TO_PREVIOUS]
- *   **removed** (single-item audiobook playlists have no prev/next concept — AntennaPod does
- *   the same with their podcast episodes). The standard-actions bitmask the system tile
- *   reads from is auto-derived from these commands, so the user-visible `[<<, ▶, >>]` are
- *   produced by `PlayerWrapper.createPlaybackStateCompat`'s `convertCommandToPlaybackStateActions`
- *   for [Player.COMMAND_SEEK_BACK] / [Player.COMMAND_PLAY_PAUSE] /
- *   [Player.COMMAND_SEEK_FORWARD].
- * - `customLayout` is the three-button strip built by
- *   [buildStandardStrip] ([−seek | PlayPause | +seek]). These buttons reach
- *   `PlaybackStateCompat.customActions` (via the filter above) on the system tile.
+ * - `availablePlayerCommands` is the full Player.Commands set with every command we publish
+ *   ourselves as a custom button removed: [Player.COMMAND_SEEK_BACK],
+ *   [Player.COMMAND_SEEK_FORWARD], [Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM],
+ *   [Player.COMMAND_SEEK_TO_PREVIOUS], [Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM], and
+ *   [Player.COMMAND_SEEK_TO_NEXT]. Leaving these in `availablePlayerCommands` would make
+ *   `PlayerWrapper.createPlaybackStateCompat` *also* derive standard `ACTION_REWIND` /
+ *   `ACTION_FAST_FORWARD` / `ACTION_SKIP_TO_PREVIOUS` / `ACTION_SKIP_TO_NEXT` bits from the
+ *   standard-actions bitmask, duplicating the five custom buttons below on a tile that only
+ *   has room for five slots. [Player.COMMAND_PLAY_PAUSE] is kept, since the system tile's
+ *   central glyph is driven by `PlaybackStateCompat.state`, not by a separate action slot.
+ * - `customLayout` is the five-button strip built by [buildStandardStrip]
+ *   ([Prev | −seek | PlayPause | +seek | Next]). These buttons reach
+ *   `PlaybackStateCompat.customActions` (via the filter above) on the system tile. Prev/Next
+ *   dispatch straight to [Player.seekToPrevious] / [Player.seekToNext] — for a single-item
+ *   audiobook, Prev restarts the current track (or is a no-op right at the start) and Next is
+ *   always a no-op, matching how those two controls already behave in the in-app player when
+ *   there is nothing to skip to.
  *
  * [antenna]: https://github.com/AntennaPod/AntennaPod/blob/develop/playback/service/src/main/java/de/danoeh/antennapod/playback/service/internal/MediaLibrarySessionCallback.java
  */
@@ -68,7 +74,7 @@ internal class LibravaultMediaCallback(
         )
         // `DEFAULT_SESSION_AND_LIBRARY_COMMANDS` provides a baseline set of session commands
         // that the system already trusts (including COMMAND_PLAY_PAUSE and similar).
-        // Building `availableSessionCommands` from scratch with only our 2 custom actions
+        // Building `availableSessionCommands` from scratch with only our 4 custom actions
         // would leave the standard playback actions unavailable to the controller, which
         // causes PlaybackStateCompat to omit standard transport actions like SEEK_BACK /
         // SEEK_FORWARD — leaving the user with the broken 2-button layout the system has
@@ -80,18 +86,25 @@ internal class LibravaultMediaCallback(
                 // SEEK_BY has the same action string for both ±seek directions; we only
                 // need to advertise it once.
                 .add(SessionCommand(CustomCommandActions.SEEK_BY, Bundle.EMPTY))
+                .add(SessionCommand(CustomCommandActions.PREVIOUS, Bundle.EMPTY))
+                .add(SessionCommand(CustomCommandActions.NEXT, Bundle.EMPTY))
                 .build()
 
         // Populate the Player.Commands bitmask used by PlayerWrapper.createPlaybackStateCompat
         // to auto-derive the standard-actions bitmask (ACTION_PLAY_PAUSE, ACTION_REWIND,
         // ACTION_FAST_FORWARD, etc.). `addAllCommands()` is the Media3 1.3.1 equivalent of
-        // AntennaPod's `addAllCommands()` on Media3 1.9. We then *remove* Prev/Next because
-        // single-track audiobooks don't have prev/next media items and we don't want the
-        // system tile to show a phantom button.
+        // AntennaPod's `addAllCommands()` on Media3 1.9. We then *remove* every command we
+        // publish ourselves as a custom button in `customLayout` — leaving them in would make
+        // the system tile derive standard actions for the same controls, duplicating our
+        // five custom buttons on a tile that only has room for five slots.
         val playerCommands = Player.Commands.Builder()
             .addAllCommands()
+            .remove(Player.COMMAND_SEEK_BACK)
+            .remove(Player.COMMAND_SEEK_FORWARD)
             .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
             .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+            .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            .remove(Player.COMMAND_SEEK_TO_NEXT)
             .build()
 
         val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -101,6 +114,9 @@ internal class LibravaultMediaCallback(
                 buildStandardStrip(
                     seekStepMs = seekStepMs,
                     displayNames = StripDisplayNames(
+                        previous = context.getString(
+                            androidx.media3.session.R.string.media3_controls_seek_to_previous_description,
+                        ),
                         back = context.getString(
                             androidx.media3.session.R.string.media3_controls_seek_back_description,
                         ),
@@ -110,6 +126,9 @@ internal class LibravaultMediaCallback(
                         forward = context.getString(
                             androidx.media3.session.R.string.media3_controls_seek_forward_description,
                         ),
+                        next = context.getString(
+                            androidx.media3.session.R.string.media3_controls_seek_to_next_description,
+                        ),
                     ),
                 ),
             )
@@ -117,7 +136,7 @@ internal class LibravaultMediaCallback(
         Log.i(
             TAG,
             "onConnect: returning Accepted; sessionCommands.size=${sessionCommands.commands.size} " +
-                "playerCommands.size=${playerCommands.size()} customLayout.size=3 seekStepMs=$seekStepMs",
+                "playerCommands.size=${playerCommands.size()} customLayout.size=5 seekStepMs=$seekStepMs",
         )
         return result
     }
@@ -146,6 +165,8 @@ internal class LibravaultMediaCallback(
      * from [CustomCommandActions.EXTRA_OFFSET_MS] in the [SessionCommand]'s extras bundle
      * (seeded by [buildStandardStrip] from the user's `defaultSkipDurationSec` preference)
      * and applied via [Player.seekTo] after [SeekClamp.clamp] bounds-checks the target.
+     * Prev/Next route straight to [Player.seekToPrevious] / [Player.seekToNext], which are
+     * safe no-ops (or a track restart, for Prev) on the single-item audiobook timeline.
      */
     private fun dispatch(command: SessionCommand): SessionResult {
         when (command.customAction) {
@@ -161,6 +182,8 @@ internal class LibravaultMediaCallback(
                 )
                 player.seekTo(target)
             }
+            CustomCommandActions.PREVIOUS -> player.seekToPrevious()
+            CustomCommandActions.NEXT -> player.seekToNext()
             else -> {
                 Log.w(TAG, "onCustomCommand: unknown action=${command.customAction}")
                 return SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
@@ -173,19 +196,21 @@ internal class LibravaultMediaCallback(
         private const val TAG = "LibravaultMediaCallback"
 
         /**
-         * Builds the standard three-button strip in positional order
-         * `[−seek | PlayPause | +seek]` for use with
-         * [MediaSession.ConnectionResult.AcceptedResultBuilder.setCustomLayout].
+         * Builds the standard five-button strip in positional order
+         * `[Prev | −seek | PlayPause | +seek | Next]` for use with
+         * [MediaSession.ConnectionResult.AcceptedResultBuilder.setCustomLayout] — the same
+         * shape as the in-app player's [xyz.libravault.feature.player.components.PlaybackControls]
+         * row.
          *
          * @param seekStepMs signed-offset magnitude embedded in each ±seek button's
          *   [Bundle] (positive for forward, negated for back). Sourced from
          *   [SkipDurationPreference.getSkipDurationMs] in [PlaybackService.onCreate] so
          *   the lockscreen strip honors the user's `defaultSkipDurationSec` setting at
          *   service-create time.
-         * @param displayNames localized display strings for the three buttons, in
-         *   positional order (back / play / forward). Resolved at the call site (which
-         *   has a real [Context]) so this helper stays Context-free and trivially
-         *   unit-testable on the JVM.
+         * @param displayNames localized display strings for the five buttons, in
+         *   positional order (previous / back / play / forward / next). Resolved at the
+         *   call site (which has a real [Context]) so this helper stays Context-free and
+         *   trivially unit-testable on the JVM.
          *
          * Icons are the bitmaps bundled in `androidx.media3.session` 1.3.1
          * (`media3_notification_*`). Display names come from the same module
@@ -195,7 +220,10 @@ internal class LibravaultMediaCallback(
          * Each button is built with [SessionCommand] (with [CustomCommandActions] action
          * strings) so it survives the
          * `PlayerWrapper.createPlaybackStateCompat` filter — see the class KDoc for the
-         * full rationale.
+         * full rationale. Prev/Next are always enabled (matching the original notification
+         * provider's behavior for these two slots) even though they're frequently no-ops on
+         * a single-item audiobook — a stable five-button strip is preferable to one whose
+         * shape changes based on playback state.
          */
         @JvmStatic
         fun buildStandardStrip(
@@ -205,6 +233,14 @@ internal class LibravaultMediaCallback(
             require(seekStepMs > 0L) { "seekStepMs must be positive (got $seekStepMs)" }
             val builder = ImmutableList.builder<CommandButton>()
 
+            builder.add(
+                CommandButton.Builder()
+                    .setSessionCommand(SessionCommand(CustomCommandActions.PREVIOUS, Bundle()))
+                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_to_previous)
+                    .setDisplayName(displayNames.previous)
+                    .setEnabled(true)
+                    .build(),
+            )
             builder.add(
                 CommandButton.Builder()
                     .setSessionCommand(seekByCommand(-seekOffset(seekStepMs)))
@@ -226,6 +262,14 @@ internal class LibravaultMediaCallback(
                     .setSessionCommand(seekByCommand(seekOffset(seekStepMs)))
                     .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_forward)
                     .setDisplayName(displayNames.forward)
+                    .setEnabled(true)
+                    .build(),
+            )
+            builder.add(
+                CommandButton.Builder()
+                    .setSessionCommand(SessionCommand(CustomCommandActions.NEXT, Bundle()))
+                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_to_next)
+                    .setDisplayName(displayNames.next)
                     .setEnabled(true)
                     .build(),
             )
@@ -273,13 +317,15 @@ internal class LibravaultMediaCallback(
             )
 
         /**
-         * Localized display-name strings for the three buttons in
+         * Localized display-name strings for the five buttons in
          * [buildStandardStrip], resolved at the call site.
          */
         data class StripDisplayNames(
+            val previous: String,
             val back: String,
             val play: String,
             val forward: String,
+            val next: String,
         )
     }
 }
