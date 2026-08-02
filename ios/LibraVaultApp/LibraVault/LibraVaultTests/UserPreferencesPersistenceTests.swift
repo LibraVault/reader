@@ -46,4 +46,25 @@ final class UserPreferencesPersistenceTests: XCTestCase {
         UserPreferencesPersistence(defaults: defaults).save(skipDurationSeconds: 15)
         XCTAssertEqual(UserPreferencesPersistence(defaults: defaults).loadSkipDurationSeconds(), 15)
     }
+
+    // MARK: - TTS engine type
+
+    func testLoadTTSEngineTypeDefaultsToSystemWhenNothingSaved() {
+        let persistence = UserPreferencesPersistence(defaults: makeIsolatedDefaults())
+        XCTAssertEqual(persistence.loadTTSEngineType(), .system)
+    }
+
+    func testSaveThenLoadRoundTripsTTSEngineType() {
+        let defaults = makeIsolatedDefaults()
+        UserPreferencesPersistence(defaults: defaults).save(ttsEngineType: .pocket)
+        XCTAssertEqual(UserPreferencesPersistence(defaults: defaults).loadTTSEngineType(), .pocket)
+    }
+
+    func testLoadTTSEngineTypeDefaultsToSystemForAGarbageStoredValue() {
+        // Defensive against a future enum case rename leaving a stale raw
+        // value in a user's UserDefaults - must not crash, must fall back.
+        let defaults = makeIsolatedDefaults()
+        defaults.set("not-a-real-engine", forKey: "xyz.libravault.ttsEngineType")
+        XCTAssertEqual(UserPreferencesPersistence(defaults: defaults).loadTTSEngineType(), .system)
+    }
 }

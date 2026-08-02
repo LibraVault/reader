@@ -13,6 +13,8 @@
 		D44C1302301358E400ADEF59 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12FC301358E400ADEF59 /* AppState.swift */; };
 		D44C1303301358E400ADEF59 /* DomainBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F9301358E400ADEF59 /* DomainBridge.swift */; };
 		D44C1305301358E400ADEF59 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44C12F6301358E400ADEF59 /* SettingsView.swift */; };
+		3EB20AE1B2D5B88C9141A7D6 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 945E5CC4541640FBA071A570 /* sherpa-onnx.xcframework */; };
+		9C5DC8934A331DA73B76EB78 /* onnxruntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 932C151530C394F643023BEA /* onnxruntime.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,6 +44,8 @@
 		D44C12F6301358E400ADEF59 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D44C12F9301358E400ADEF59 /* DomainBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainBridge.swift; sourceTree = "<group>"; };
 		D44C12FC301358E400ADEF59 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		945E5CC4541640FBA071A570 /* sherpa-onnx.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "sherpa-onnx.xcframework"; path = "../../../third-party/sherpa-onnx/ios/sherpa-onnx.xcframework"; sourceTree = "<group>"; };
+		932C151530C394F643023BEA /* onnxruntime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "onnxruntime.xcframework"; path = "../../../third-party/sherpa-onnx/ios/onnxruntime.xcframework"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -80,6 +84,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3EB20AE1B2D5B88C9141A7D6 /* sherpa-onnx.xcframework in Frameworks */,
+				9C5DC8934A331DA73B76EB78 /* onnxruntime.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,8 +113,18 @@
 				D44C12AD301355AA00ADEF59 /* LibraVault */,
 				D44C12BE301355B600ADEF59 /* LibraVaultTests */,
 				D44C12C8301355B600ADEF59 /* LibraVaultUITests */,
+				EF5475F23DE5ECEE0DA12CA7 /* Frameworks */,
 				D44C12AC301355AA00ADEF59 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		EF5475F23DE5ECEE0DA12CA7 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				945E5CC4541640FBA071A570 /* sherpa-onnx.xcframework */,
+				932C151530C394F643023BEA /* onnxruntime.xcframework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		D44C12AC301355AA00ADEF59 /* Products */ = {
@@ -524,9 +540,14 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.libravault.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "LibraVault/SherpaOnnx-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -558,11 +579,16 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.libravault.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = LibraVault;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "LibraVault/SherpaOnnx-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

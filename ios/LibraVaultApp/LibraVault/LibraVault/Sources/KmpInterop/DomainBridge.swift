@@ -30,7 +30,8 @@ class LibravaultDomainBridge: ObservableObject {
     @Published var progress: [String: Double] = [:]
 
     private var logger: LoggerBridge?
-    private var ttsEngine: TTSEngineBridge?
+    private var ttsEngine: TTSEngineProtocol?
+    private var ttsEngineType: TTSEngineType = .system
     private var isInitialized = false
     private let persistence: ReadingDataPersistence
 
@@ -46,9 +47,16 @@ class LibravaultDomainBridge: ObservableObject {
         await logger?.initialize()
         logger?.d(tag: "Bridge", message: "Logger initialized")
 
-        ttsEngine = TTSEngineBridge()
-        try await ttsEngine?.initialize()
-        logger?.d(tag: "Bridge", message: "TTS engine initialized")
+        // Guarded rather than unconditional: AppState's ttsEngineType didSet can
+        // call switchTTSEngine(to:) from its own init before this method's Task
+        // has run (both are @MainActor but scheduling order between separate
+        // Task { } blocks isn't guaranteed) - don't clobber an engine switch
+        // that already landed.
+        if ttsEngine == nil {
+            ttsEngine = TTSEngineBridge()
+            try await ttsEngine?.initialize()
+            logger?.d(tag: "Bridge", message: "TTS engine initialized (system)")
+        }
 
         bookmarks = persistence.loadBookmarks()
         highlights = persistence.loadHighlights()
@@ -56,6 +64,28 @@ class LibravaultDomainBridge: ObservableObject {
 
         isInitialized = true
         logger?.d(tag: "Bridge", message: "Domain bridge fully initialized")
+    }
+
+    /// Swaps the active TTS engine, matching Android's `TtsEngineProvider.switchEngineSync`
+    /// (core/tts/TtsEngineProvider.kt): always starts on the system engine (fast,
+    /// reliable, zero setup) via `initialize()` above, then AppState calls this once
+    /// it's loaded the user's saved preference. A no-op if already on the requested
+    /// engine. On failure (e.g. Pocket TTS's model isn't bundled - see
+    /// PocketModelManager), the previous engine is left in place rather than leaving
+    /// speech broken.
+    func switchTTSEngine(to type: TTSEngineType) async {
+        guard type != ttsEngineType || ttsEngine == nil else { return }
+
+        let newEngine: TTSEngineProtocol = type == .pocket ? PocketTTSEngine() : TTSEngineBridge()
+        do {
+            try await newEngine.initialize()
+            await ttsEngine?.stop()
+            ttsEngine = newEngine
+            ttsEngineType = type
+            logger?.d(tag: "TTS", message: "Switched TTS engine to \(type.rawValue)")
+        } catch {
+            logger?.e(tag: "TTS", message: "Failed to switch TTS engine to \(type.rawValue)", error: error)
+        }
     }
 
     // MARK: - Reading Operations
@@ -227,7 +257,7 @@ class LoggerBridge {
 // Real text-to-speech via AVSpeechSynthesizer (core:tts is still blocked on the KMP
 // chain — see the header comment above). startSpeaking/stopSpeaking/etc. reach this
 // class from AppState.swift's playback controls.
-class TTSEngineBridge {
+class TTSEngineBridge: TTSEngineProtocol {
     private let synthesizer = AVSpeechSynthesizer()
 
     /// `xcodebuild test`'s CI Simulator has no real audio hardware, and

@@ -1,99 +1,44 @@
 package xyz.libravault.core.tts.pocket
 
-import android.content.Context
-import android.util.Log
 import xyz.libravault.core.tts.TtsVoiceInfo
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val TAG = "PocketVoiceCatalog"
-private const val VOICES_DIR_NAME = "pocket-tts/voices"
-private const val DEFAULT_VOICE_ID = "bria"
-
+/**
+ * Describes the voice(s) available once [PocketModelManager] has downloaded
+ * the bundled Pocket TTS model, and the file layout that model was extracted
+ * into (used by [PocketTtsEngine] to build the sherpa-onnx model config).
+ *
+ * v1 ships exactly one voice - a single-speaker Piper VITS model. See
+ * SHERPA_ONNX_SETUP.md for why this specific voice (LJSpeech, public domain)
+ * was chosen over sherpa-onnx's own "Pocket TTS" model family (non-commercial
+ * license) or other Piper voices (several are derived from a voice whose
+ * license also forbids commercial use).
+ */
 @Singleton
 class PocketVoiceCatalog @Inject constructor(
-    private val context: Context,
+    private val modelManager: PocketModelManager,
 ) {
-    private val voicesDir: File
-        get() = File(context.filesDir, VOICES_DIR_NAME)
+    /** Returns the bundled voice once its model has finished downloading, else empty. */
+    fun availableVoices(): List<TtsVoiceInfo> =
+        if (modelManager.isModelValid()) listOf(DEFAULT_VOICE) else emptyList()
 
-    /**
-     * Get available voice prompts from the bundled assets and cached files.
-     * Each voice is a WAV file that serves as a reference for voice cloning.
-     */
-    fun availableVoices(): List<TtsVoiceInfo> {
-        ensureVoicesExist()
+    companion object {
+        const val DEFAULT_VOICE_ID = "en_US-ljspeech-medium"
 
-        val voices = mutableListOf<TtsVoiceInfo>()
-        voicesDir.listFiles()?.forEach { file ->
-            if (file.isFile && file.extension == "wav") {
-                val voiceId = file.nameWithoutExtension
-                voices.add(
-                    TtsVoiceInfo(
-                        id = voiceId,
-                        displayName = formatVoiceName(voiceId),
-                        locale = "en-US",
-                        requiresNetwork = false,
-                    )
-                )
-            }
-        }
+        /** Filenames within [PocketModelManager]'s extracted model directory. */
+        const val MODEL_FILE_NAME = "en_US-ljspeech-medium.onnx"
+        const val TOKENS_FILE_NAME = "tokens.txt"
+        const val DATA_DIR_NAME = "espeak-ng-data"
 
-        return voices.sortedBy { it.displayName }
-    }
+        /** Single-speaker model - always speaker index 0. */
+        const val DEFAULT_SPEAKER_ID = 0
 
-    /**
-     * Get a specific voice's WAV file path.
-     * Returns null if voice not found.
-     */
-    fun getVoicePath(voiceId: String): String? {
-        ensureVoicesExist()
-        val voiceFile = File(voicesDir, "$voiceId.wav")
-        return if (voiceFile.exists()) voiceFile.absolutePath else null
-    }
-
-    private fun ensureVoicesExist() {
-        if (!voicesDir.exists()) {
-            voicesDir.mkdirs()
-            copyBundledVoices()
-        }
-    }
-
-    private fun copyBundledVoices() {
-        try {
-            val assetManager = context.assets
-            val voiceAssets = listOf("bria.wav") // Add more voices as needed
-
-            for (voiceFile in voiceAssets) {
-                val assetPath = "pocket-tts/voices/$voiceFile"
-                val destFile = File(voicesDir, voiceFile)
-
-                try {
-                    assetManager.open(assetPath).use { input ->
-                        destFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    Log.d(TAG, "Copied voice: $voiceFile")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to copy voice $voiceFile: ${e.message}")
-                    // Continue with next voice
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy bundled voices: ${e.message}", e)
-        }
-    }
-
-    private fun formatVoiceName(voiceId: String): String {
-        // Convert snake_case or kebab-case to Title Case
-        return voiceId
-            .replace("-", " ")
-            .replace("_", " ")
-            .split(" ")
-            .joinToString(" ") { word ->
-                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-            }
+        val DEFAULT_VOICE = TtsVoiceInfo(
+            id = DEFAULT_VOICE_ID,
+            displayName = "Ljspeech (English)",
+            locale = "en-US",
+            requiresNetwork = false,
+        )
     }
 }

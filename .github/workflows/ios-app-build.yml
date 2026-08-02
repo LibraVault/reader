@@ -39,6 +39,21 @@ jobs:
         with:
           xcode-version: '26.5'
 
+      # Pocket TTS's native frameworks + bundled voice model (~230MB combined)
+      # aren't committed to git - see SHERPA_ONNX_SETUP.md. Cached across runs
+      # since the pinned versions (sherpa-onnx, onnxruntime, the voice model)
+      # rarely change.
+      - name: Cache Pocket TTS iOS dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            third-party/sherpa-onnx/ios
+            ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel
+          key: pocket-tts-ios-${{ hashFiles('third-party/sherpa-onnx/setup-ios.sh') }}
+
+      - name: Fetch Pocket TTS iOS dependencies
+        run: ./third-party/sherpa-onnx/setup-ios.sh
+
       - name: Build for Simulator
         run: |
           xcodebuild build \

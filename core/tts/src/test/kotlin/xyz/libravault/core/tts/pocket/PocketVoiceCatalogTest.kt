@@ -1,48 +1,45 @@
 package xyz.libravault.core.tts.pocket
 
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class PocketVoiceCatalogTest {
 
     @Test
-    fun `voice name formatting works`() {
-        // Test the formatting logic used by PocketVoiceCatalog
-        val testCases = listOf(
-            "bria" to "Bria",
-            "voice-one" to "Voice One",
-            "my_voice_name" to "My Voice Name",
-            "en_us_female" to "En Us Female",
-        )
-
-        testCases.forEach { (input, expected) ->
-            val formatted = input
-                .replace("-", " ")
-                .replace("_", " ")
-                .split(" ")
-                .joinToString(" ") { word ->
-                    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-                }
-            assertEquals(expected, formatted)
+    fun `availableVoices is empty before the model has finished downloading`() {
+        val modelManager = mockk<PocketModelManager> {
+            every { isModelValid() } returns false
         }
+        val catalog = PocketVoiceCatalog(modelManager)
+
+        assertTrue(catalog.availableVoices().isEmpty())
     }
 
     @Test
-    fun `TtsVoiceInfo created for Pocket voices has requiresNetwork false`() {
-        val voice = xyz.libravault.core.tts.TtsVoiceInfo(
-            id = "bria",
-            displayName = "Bria",
-            locale = "en-US",
-            requiresNetwork = false,
-        )
-        assertEquals(false, voice.requiresNetwork)
+    fun `availableVoices exposes the single bundled voice once the model is ready`() {
+        val modelManager = mockk<PocketModelManager> {
+            every { isModelValid() } returns true
+        }
+        val catalog = PocketVoiceCatalog(modelManager)
+
+        val voices = catalog.availableVoices()
+
+        assertEquals(1, voices.size)
+        assertEquals(PocketVoiceCatalog.DEFAULT_VOICE_ID, voices[0].id)
+        assertFalse(voices[0].requiresNetwork)
     }
 
     @Test
-    fun `default voice ID is bria`() {
-        val defaultVoice = "bria"
-        assertNotNull(defaultVoice)
-        assertEquals("bria", defaultVoice)
+    fun `default voice id is en_US-ljspeech-medium`() {
+        assertEquals("en_US-ljspeech-medium", PocketVoiceCatalog.DEFAULT_VOICE_ID)
+    }
+
+    @Test
+    fun `default speaker id is 0 (single-speaker model)`() {
+        assertEquals(0, PocketVoiceCatalog.DEFAULT_SPEAKER_ID)
     }
 }

@@ -19,6 +19,7 @@ struct SettingsView: View {
             vaultsSection
             readingSection
             playbackSection
+            ttsSection
             // No "Appearance" section: Android's only control there is Material You
             // dynamic color, which has no iOS equivalent — nothing honest to put here.
             privacySection
@@ -119,6 +120,29 @@ struct SettingsView: View {
             .padding(.vertical, LibraVaultSpacing.xs)
         } header: {
             sectionHeader("Playback")
+        }
+    }
+
+    // MARK: - Text-to-Speech
+
+    /// Mirrors Android's TtsSettingsSection (feature/settings/.../ui/TtsSettingsSection.kt).
+    /// Pocket TTS's voice model ships bundled with the app on iOS (unlike Android's
+    /// on-first-use download - see PocketModelManager.swift), so there's no download
+    /// progress UI to show here; picking it just switches the active engine.
+    private var ttsSection: some View {
+        Section {
+            Picker("Voice", selection: $appState.ttsEngineType) {
+                ForEach(TTSEngineType.allCases, id: \.self) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            sectionHeader("Text-to-Speech")
+        } footer: {
+            Text("On-device voice runs fully offline, with no network access.")
+                .font(LibraVaultTypography.bodySmall)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }
     }
 

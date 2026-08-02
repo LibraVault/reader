@@ -15,6 +15,7 @@ enum class TtsEngineType {
 @Singleton
 class TtsEngineFactory @Inject constructor(
     private val androidEngine: AndroidTtsEngine,
+    private val pocketEngine: PocketTtsEngine,
 ) {
     fun create(type: TtsEngineType): TtsEngine {
         return when (type) {
@@ -29,7 +30,7 @@ class TtsEngineFactory @Inject constructor(
                     androidEngine
                 } else {
                     Log.d(TAG, "Using Pocket TTS")
-                    PocketTtsEngine()
+                    pocketEngine
                 }
             }
         }
