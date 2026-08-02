@@ -150,8 +150,10 @@ class PocketModelManager @Inject constructor(
      * every sherpa-onnx model release wraps its files in (e.g.
      * `vits-piper-en_US-ljspeech-medium-int8/model.onnx` -> `model.onnx`)
      * so callers can reference files directly under [modelDir].
+     *
+     * Package-visible so the strip/extract logic can be unit-tested with a
+     * small fixture archive.
      */
-    /** Package-visible so the strip/extract logic can be unit-tested with a small fixture archive. */
     internal fun extractTarBz2(archiveFile: File, destination: File) {
         try {
             val bzip2InputStream = org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream(
