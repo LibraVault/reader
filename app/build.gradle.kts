@@ -42,8 +42,8 @@ android {
 
     defaultConfig {
         applicationId = "xyz.libravault.app"
-        versionCode   = 7
-        versionName   = "0.4.2-alpha"
+        versionCode   = 8
+        versionName   = "0.4.3-alpha"
     }
 
     signingConfigs {
