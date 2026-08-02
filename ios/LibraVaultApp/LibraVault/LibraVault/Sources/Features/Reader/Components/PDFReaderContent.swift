@@ -87,8 +87,13 @@ struct PDFReaderContent: UIViewRepresentable {
                 queue: .main
             ) { [weak view, weak self] _ in
                 guard let self, let view, let document = view.document,
-                      let page = view.currentPage,
-                      let index = document.index(for: page) else { return }
+                      let page = view.currentPage else { return }
+                // PDFDocument.index(for:) returns NSNotFound (not nil) when the page
+                // isn't part of this document — shouldn't happen since `page` just
+                // came from this same `document`'s own currentPage, but guarded
+                // rather than assumed.
+                let index = document.index(for: page)
+                guard index != NSNotFound else { return }
                 self.currentPageIndex.wrappedValue = index
             }
         }
