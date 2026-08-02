@@ -83,16 +83,28 @@ jobs:
 
       - name: Build & Archive
         run: |
+          # Deliberately NOT passing CODE_SIGN_STYLE/CODE_SIGN_IDENTITY/
+          # PROVISIONING_PROFILE_SPECIFIER/DEVELOPMENT_TEAM as xcodebuild CLI
+          # overrides here, even though they're the values this archive needs.
+          # The LibraVault app target's Release config already has all of these
+          # baked in per-target in project.pbxproj (CODE_SIGN_STYLE=Manual,
+          # PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]="LibraVault",
+          # DEVELOPMENT_TEAM[sdk=iphoneos*]=H74LNL8UCG). xcodebuild CLI build
+          # setting overrides apply to every target in the build graph, not just
+          # the scheme's top-level target — with two SwiftPM package product
+          # dependencies now linked (ZIPFoundation + Markdown), that cascaded
+          # onto ZIPFoundation's auto-generated resource-bundle target
+          # ("ZIPFoundation_ZIPFoundation"), which can't carry a provisioning
+          # profile at all and failed archiving with "does not support
+          # provisioning profiles". Per-target project settings don't cascade
+          # like this, so relying on the project's own config (already correct)
+          # avoids the whole class of problem instead of chasing it per package.
           xcodebuild archive \
             -project "$XCODEPROJ" \
             -scheme "$SCHEME" \
             -configuration Release \
             -archivePath build/LibraVault.xcarchive \
             -destination 'generic/platform=iOS' \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_UUID" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
           echo "✅ Archive created (build $BUILD_NUMBER)"
