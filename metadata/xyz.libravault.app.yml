@@ -23,6 +23,10 @@
 #   baseline.prof differ, likely a JDK/AGP/R8 toolchain mismatch). F-Droid
 #   builds and signs with their own key instead. Revisit reproducible builds
 #   as separate follow-up work.
+# - No AllowedAPKSigningKeys field: it only has effect paired with a Binaries
+#   field (verifying a downloaded release APK's signature before comparing it
+#   to the from-source build), so it was dropped as dead config alongside
+#   Binaries — a reviewer suggestion removed it upstream in MR !43520.
 
 Categories:
   - Multimedia
@@ -44,8 +48,6 @@ Builds:
     subdir: app
     gradle:
       - fdroid
-
-AllowedAPKSigningKeys: 581050c87af0031ee426db330b3f9e4b4a19877ade3350c960f54182a5367c7a
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v0\.3\.[0-9]+-alpha$
