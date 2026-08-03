@@ -1,10 +1,8 @@
 # F-Droid recipe for xyz.libravault.app
 #
-# This is a copy of fastlane/metadata/fdroid.yml, placed at the path
-# convention used by gitlab.com/fdroid/fdroiddata (metadata/<applicationId>.yml).
-# The source of truth is fastlane/metadata/fdroid.yml — keep the two in sync.
-# When submitting the MR to fdroiddata, copy this file's content into
-# metadata/xyz.libravault.app.yml in your fork (no header comment needed there).
+# This is a copy of what's submitted at gitlab.com/fdroid/fdroiddata as
+# metadata/xyz.libravault.app.yml (MR !43520). Keep this in sync when the
+# fdroiddata recipe changes.
 #
 # Maintainer notes for F-Droid reviewers:
 # - The app ships a `fdroid` product flavor with a manifest overlay that
@@ -16,59 +14,40 @@
 # - Donation flow: BTC/XMR addresses are shown statically. There is no network
 #   call from the fdroid build, so the in-app "supporter badge" cannot
 #   auto-activate in the F-Droid build. This is intentional for now.
+# - UpdateCheckMode is restricted to the 0.3.x tag line (`^v0\.3\.[0-9]+-alpha$`)
+#   because GitHub already has newer tags (v0.4.0-alpha, v0.4.1-alpha) that are
+#   iOS/Play-Store-focused and not yet verified for the fdroid flavor. Broaden
+#   this pattern when a newer version is ready for F-Droid.
+# - No Binaries field: our GitHub Actions release build does not currently
+#   reproduce byte-for-byte against F-Droid's build environment (classes.dex/
+#   baseline.prof differ, likely a JDK/AGP/R8 toolchain mismatch). F-Droid
+#   builds and signs with their own key instead. Revisit reproducible builds
+#   as separate follow-up work.
 
 Categories:
-  - Reading
   - Multimedia
-
+  - Reading
 License: GPL-3.0-only
-
 WebSite: https://libravault.xyz
 SourceCode: https://github.com/LibraVault/reader
 IssueTracker: https://github.com/LibraVault/reader/issues
 
 AutoName: LibraVault
-Summary: Privacy-first EPUB, PDF, and audiobook reader — no internet, no account
-
-Description: |-
-  LibraVault is a modern media reader for EPUB books, PDF documents, and audiobooks
-  (MP3, M4B, OGG, FLAC, Opus, AAC). It requires no account, holds no internet
-  permission, and uses Scoped Storage so it only ever sees the folders you choose.
-
-  Features:
-  * EPUB rendering via Readium Kotlin Toolkit (full EPUB 3 support)
-  * PDF viewer via native AndroidX PdfRenderer
-  * Audiobook playback with chapter navigation, variable speed (0.5x-3.0x), and
-    sleep timer with per-chapter option and 10-second fade-out
-  * Built-in TTS using Android system voices — no proprietary engine
-  * Background playback with lock-screen and notification controls
-  * Dark, light, and sepia reader themes; adjustable font size and line spacing
-  * Library search by title, author, narrator, or series
-  * Progress saved continuously; last position restored silently on next open
-  * Optional local-only crash logger — never transmitted
-
-  Permissions: FOREGROUND_SERVICE (background audio), POST_NOTIFICATIONS
-  (media controls on Android 13+), and SAF URI grants for folders you choose.
-  READ_EXTERNAL_STORAGE, INTERNET, CAMERA, CONTACTS, and LOCATION are never
-  requested in the F-Droid build. BTC/XMR donation addresses are shown
-  statically; no network calls are made.
 
 RepoType: git
 Repo: https://github.com/LibraVault/reader
 
 Builds:
-  - versionName: 0.1.0-alpha
-    versionCode: 2
-    commit: v0.1.0-alpha
+  - versionName: 0.3.0-alpha
+    versionCode: 4
+    commit: da4927894b957e3132f7464fef86cf9e4e0f80d7
     subdir: app
     gradle:
       - fdroid
-    scanignore:
-      - gradle/wrapper/gradle-wrapper.jar
 
 AllowedAPKSigningKeys: 581050c87af0031ee426db330b3f9e4b4a19877ade3350c960f54182a5367c7a
 
 AutoUpdateMode: Version
-UpdateCheckMode: Tags
-CurrentVersion: 0.1.0-alpha
-CurrentVersionCode: 2
+UpdateCheckMode: Tags ^v0\.3\.[0-9]+-alpha$
+CurrentVersion: 0.3.0-alpha
+CurrentVersionCode: 4
