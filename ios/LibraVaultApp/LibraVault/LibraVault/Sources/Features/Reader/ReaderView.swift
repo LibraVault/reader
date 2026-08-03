@@ -47,6 +47,11 @@ struct ReaderView: View {
     @State private var showSettingsSheet = false
     @State private var showBookmarksSheet = false
     @State private var showTocSheet = false
+    /// Toggled by center-third taps in EPUB/PDF's paginated & scrolling content —
+    /// mirrors Android's ReaderViewModel.onCentreTap, which hides/shows the whole
+    /// toolbar as an immersive-reading toggle. Markdown has no tap zones wired (out
+    /// of scope), so this never flips there and its toolbar stays always-visible.
+    @State private var showToolbar = true
     /// One-shot scroll target set when the user taps a TOC entry — consumed by
     /// MarkdownReaderContent's onBlockScrollConsumed.
     @State private var pendingTocBlockIndex: Int?
@@ -136,6 +141,7 @@ struct ReaderView: View {
                 .accessibilityIdentifier("reader.settingsButton")
             }
         }
+        .toolbar(showToolbar ? .visible : .hidden, for: .navigationBar)
         .sheet(isPresented: $showSettingsSheet) {
             ReaderSettingsSheet(
                 theme: $readingTheme,
@@ -149,7 +155,7 @@ struct ReaderView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) {
-            BookmarksSheet(bookId: book.id)
+            BookmarksSheet(bookId: book.id, onNavigate: { navigateToBookmark($0) })
         }
         .sheet(isPresented: $showTocSheet) {
             MarkdownTocSheet(entries: markdownToc) { entry in
@@ -255,64 +261,100 @@ struct ReaderView: View {
 
     private var paginatedContent: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { scrollProxy in
-                ScrollView {
-                    Text(chapterText(for: currentChapter))
-                        .font(.system(size: 16 * fontSize, design: fontDesign))
-                        .lineSpacing(8 * lineSpacing)
-                        .foregroundStyle(colors.onBackground)
-                        .padding(LibraVaultSpacing.lg)
-                        .textSelection(.enabled)
-                        .id(currentChapter)
-                }
-                .frame(maxHeight: .infinity)
-                // The ScrollView keeps its offset across content swaps, so without this
-                // the < > buttons land the next chapter's text at the previous scroll
-                // position instead of the top — reported as janky page-to-page scrolling
-                // on Mac (Catalyst), where the trackpad makes the leftover offset obvious.
-                .onChange(of: currentChapter) { _, newChapter in
-                    withAnimation {
-                        scrollProxy.scrollTo(newChapter, anchor: .top)
+            GeometryReader { geometry in
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        Text(chapterText(for: currentChapter))
+                            .font(.system(size: 16 * fontSize, design: fontDesign))
+                            .lineSpacing(8 * lineSpacing)
+                            .foregroundStyle(colors.onBackground)
+                            .padding(LibraVaultSpacing.lg)
+                            .textSelection(.enabled)
+                            .id(currentChapter)
                     }
+                    .frame(maxHeight: .infinity)
+                    // The ScrollView keeps its offset across content swaps, so without this
+                    // the < > buttons land the next chapter's text at the previous scroll
+                    // position instead of the top — reported as janky page-to-page scrolling
+                    // on Mac (Catalyst), where the trackpad makes the leftover offset obvious.
+                    .onChange(of: currentChapter) { _, newChapter in
+                        withAnimation {
+                            scrollProxy.scrollTo(newChapter, anchor: .top)
+                        }
+                    }
+                    // Left/right/center tap zones, mirroring Android's Readium
+                    // DirectionalNavigationAdapter (edge taps flip pages) + centre-tap
+                    // toolbar toggle. .simultaneous so long-press text selection above
+                    // still works alongside plain taps.
+                    .simultaneousGesture(
+                        SpatialTapGesture(coordinateSpace: .local).onEnded { value in
+                            handlePaginatedTap(x: value.location.x, width: geometry.size.width)
+                        }
+                    )
                 }
             }
 
-            HStack(spacing: LibraVaultSpacing.lg) {
-                Button(action: { if currentChapter > 1 { currentChapter -= 1; updateProgress() } }) {
-                    Image(systemName: "chevron.left")
+            if showToolbar {
+                HStack(spacing: LibraVaultSpacing.lg) {
+                    Button(action: { if currentChapter > 1 { currentChapter -= 1; updateProgress() } }) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(currentChapter <= 1)
+
+                    Text("Page \(currentChapter) of \(chapterCount)")
+                        .font(LibraVaultTypography.labelMedium)
+
+                    ProgressView(value: Double(currentChapter) / Double(chapterCount))
+                        .tint(colors.primary)
+                        .frame(maxWidth: .infinity)
+
+                    Button(action: { if currentChapter < chapterCount { currentChapter += 1; updateProgress() } }) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(currentChapter >= chapterCount)
                 }
-                .disabled(currentChapter <= 1)
-
-                Text("Page \(currentChapter) of \(chapterCount)")
-                    .font(LibraVaultTypography.labelMedium)
-
-                ProgressView(value: Double(currentChapter) / Double(chapterCount))
-                    .tint(colors.primary)
-                    .frame(maxWidth: .infinity)
-
-                Button(action: { if currentChapter < chapterCount { currentChapter += 1; updateProgress() } }) {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(currentChapter >= chapterCount)
+                .foregroundStyle(colors.onSurfaceVariant)
+                .padding(LibraVaultSpacing.lg)
+                .background(colors.surface)
             }
-            .foregroundStyle(colors.onSurfaceVariant)
-            .padding(LibraVaultSpacing.lg)
-            .background(colors.surface)
         }
     }
 
     private var scrollingContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
-                ForEach(1...chapterCount, id: \.self) { chapter in
-                    Text(chapterText(for: chapter))
-                        .font(.system(size: 16 * fontSize, design: fontDesign))
-                        .lineSpacing(8 * lineSpacing)
-                        .foregroundStyle(colors.onBackground)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                    ForEach(1...chapterCount, id: \.self) { chapter in
+                        Text(chapterText(for: chapter))
+                            .font(.system(size: 16 * fontSize, design: fontDesign))
+                            .lineSpacing(8 * lineSpacing)
+                            .foregroundStyle(colors.onBackground)
+                    }
                 }
+                .padding(LibraVaultSpacing.lg)
+                .textSelection(.enabled)
             }
-            .padding(LibraVaultSpacing.lg)
-            .textSelection(.enabled)
+            // Center-third only — there's no discrete "page" to flip to while
+            // continuously scrolling, matching Android's PdfScrollingView (which is
+            // center-tap-only for the same reason).
+            .simultaneousGesture(
+                SpatialTapGesture(coordinateSpace: .local).onEnded { value in
+                    if ReaderTapZone.classify(x: value.location.x, width: geometry.size.width) == .center {
+                        withAnimation { showToolbar.toggle() }
+                    }
+                }
+            )
+        }
+    }
+
+    private func handlePaginatedTap(x: CGFloat, width: CGFloat) {
+        switch ReaderTapZone.classify(x: x, width: width) {
+        case .previous:
+            if currentChapter > 1 { currentChapter -= 1; updateProgress() }
+        case .next:
+            if currentChapter < chapterCount { currentChapter += 1; updateProgress() }
+        case .center:
+            withAnimation { showToolbar.toggle() }
         }
     }
 
@@ -328,32 +370,35 @@ struct ReaderView: View {
                 document: document,
                 mode: mode,
                 currentPageIndex: $pdfCurrentPageIndex,
-                backgroundColor: UIColor(colors.background)
+                backgroundColor: UIColor(colors.background),
+                onCenterTap: { withAnimation { showToolbar.toggle() } }
             )
             .frame(maxHeight: .infinity)
             .onChange(of: pdfCurrentPageIndex) { _, _ in updatePDFProgress() }
 
-            HStack(spacing: LibraVaultSpacing.lg) {
-                Button(action: { if pdfCurrentPageIndex > 0 { pdfCurrentPageIndex -= 1 } }) {
-                    Image(systemName: "chevron.left")
+            if showToolbar {
+                HStack(spacing: LibraVaultSpacing.lg) {
+                    Button(action: { if pdfCurrentPageIndex > 0 { pdfCurrentPageIndex -= 1 } }) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(pdfCurrentPageIndex <= 0)
+
+                    Text("Page \(pdfCurrentPageIndex + 1) of \(document.pageCount)")
+                        .font(LibraVaultTypography.labelMedium)
+
+                    ProgressView(value: Double(pdfCurrentPageIndex), total: Double(max(document.pageCount - 1, 1)))
+                        .tint(colors.primary)
+                        .frame(maxWidth: .infinity)
+
+                    Button(action: { if pdfCurrentPageIndex < document.pageCount - 1 { pdfCurrentPageIndex += 1 } }) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(pdfCurrentPageIndex >= document.pageCount - 1)
                 }
-                .disabled(pdfCurrentPageIndex <= 0)
-
-                Text("Page \(pdfCurrentPageIndex + 1) of \(document.pageCount)")
-                    .font(LibraVaultTypography.labelMedium)
-
-                ProgressView(value: Double(pdfCurrentPageIndex), total: Double(max(document.pageCount - 1, 1)))
-                    .tint(colors.primary)
-                    .frame(maxWidth: .infinity)
-
-                Button(action: { if pdfCurrentPageIndex < document.pageCount - 1 { pdfCurrentPageIndex += 1 } }) {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(pdfCurrentPageIndex >= document.pageCount - 1)
+                .foregroundStyle(colors.onSurfaceVariant)
+                .padding(LibraVaultSpacing.lg)
+                .background(colors.surface)
             }
-            .foregroundStyle(colors.onSurfaceVariant)
-            .padding(LibraVaultSpacing.lg)
-            .background(colors.surface)
         }
     }
 
@@ -427,6 +472,24 @@ struct ReaderView: View {
             }
             try? await bridge.addBookmark(bookId: book.id, position: position)
         }
+    }
+
+    /// Jumps the reader to a saved bookmark's position and dismisses the sheet —
+    /// mirrors Android's ReaderScreen bookmark-tap dispatch (ReaderScreen.kt), parsing
+    /// the same position-string prefixes addBookmark() above writes.
+    private func navigateToBookmark(_ bookmark: Bookmark) {
+        if bookmark.position.hasPrefix("Page "), let page = Int(bookmark.position.dropFirst("Page ".count)) {
+            let lastPageIndex = max((pdfDocument?.pageCount ?? 1) - 1, 0)
+            pdfCurrentPageIndex = max(0, min(page - 1, lastPageIndex))
+        } else if bookmark.position.hasPrefix("scroll:"), let fraction = Double(bookmark.position.dropFirst("scroll:".count)) {
+            let blockCount = markdownBlocks?.count ?? 0
+            if blockCount > 0 {
+                pendingTocBlockIndex = min(max(Int((fraction * Double(blockCount)).rounded()), 0), blockCount - 1)
+            }
+        } else if bookmark.position.hasPrefix("Chapter "), let chapter = Int(bookmark.position.dropFirst("Chapter ".count)) {
+            currentChapter = max(1, min(chapter, max(chapterCount, 1)))
+        }
+        showBookmarksSheet = false
     }
 
     /// "Read Aloud" now hands off to the real Player screen (Phase 4) instead of

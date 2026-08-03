@@ -16,6 +16,11 @@ struct PDFReaderContent: UIViewRepresentable {
     let mode: ReaderLayoutMode
     @Binding var currentPageIndex: Int
     let backgroundColor: UIColor
+    /// Mirrors Android's PdfReaderScreen center-third tap — toggles the reader's
+    /// chrome. Left/right-third taps are handled in the Coordinator directly (they
+    /// only make sense in .paginated mode, since there's no discrete "page" to flip
+    /// to while continuously scrolling — see ReaderTapZone's doc comment).
+    let onCenterTap: () -> Void
 
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
@@ -27,6 +32,8 @@ struct PDFReaderContent: UIViewRepresentable {
         if let page = document.page(at: currentPageIndex) {
             view.go(to: page)
         }
+        let tapRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        view.addGestureRecognizer(tapRecognizer)
         return view
     }
 
@@ -38,6 +45,8 @@ struct PDFReaderContent: UIViewRepresentable {
             uiView.backgroundColor = backgroundColor
         }
         applyDisplayMode(to: uiView, context: context)
+        context.coordinator.mode = mode
+        context.coordinator.document = document
 
         // Only jump the view when currentPageIndex changed from *outside* (Prev/Next
         // buttons, bookmark restore) — the Coordinator's own page-change notification
@@ -51,7 +60,7 @@ struct PDFReaderContent: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(currentPageIndex: $currentPageIndex)
+        Coordinator(currentPageIndex: $currentPageIndex, mode: mode, document: document, onCenterTap: onCenterTap)
     }
 
     /// Reapplies displayMode/pageViewController only when `mode` actually changed —
@@ -73,11 +82,40 @@ struct PDFReaderContent: UIViewRepresentable {
 
     final class Coordinator: NSObject {
         var appliedMode: ReaderLayoutMode?
+        var mode: ReaderLayoutMode
+        var document: PDFDocument?
         private let currentPageIndex: Binding<Int>
+        private let onCenterTap: () -> Void
         private var pageChangedObserver: NSObjectProtocol?
 
-        init(currentPageIndex: Binding<Int>) {
+        init(currentPageIndex: Binding<Int>, mode: ReaderLayoutMode, document: PDFDocument, onCenterTap: @escaping () -> Void) {
             self.currentPageIndex = currentPageIndex
+            self.mode = mode
+            self.document = document
+            self.onCenterTap = onCenterTap
+        }
+
+        /// Mirrors Android's PdfPaginatedView/PdfScrollingView split: left/right
+        /// thirds only flip pages in .paginated mode (there's no discrete "page" to
+        /// flip to while continuously scrolling), but the center third always
+        /// toggles the toolbar regardless of mode.
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view else { return }
+            let x = recognizer.location(in: view).x
+            switch ReaderTapZone.classify(x: x, width: view.bounds.width) {
+            case .previous:
+                guard mode == .paginated else { return }
+                if currentPageIndex.wrappedValue > 0 {
+                    currentPageIndex.wrappedValue -= 1
+                }
+            case .next:
+                guard mode == .paginated, let document else { return }
+                if currentPageIndex.wrappedValue < document.pageCount - 1 {
+                    currentPageIndex.wrappedValue += 1
+                }
+            case .center:
+                onCenterTap()
+            }
         }
 
         func observe(_ view: PDFView) {
