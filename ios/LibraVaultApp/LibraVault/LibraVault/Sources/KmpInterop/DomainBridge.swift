@@ -149,6 +149,18 @@ class LibravaultDomainBridge: ObservableObject {
         logger?.d(tag: "Bookmarks", message: "Updated note on bookmark \(bookmarkId)")
     }
 
+    func deleteBookmark(bookId: String, bookmarkId: String) async throws {
+        guard isInitialized else { throw DomainError.notInitialized }
+
+        guard let index = bookmarks[bookId]?.firstIndex(where: { $0.id == bookmarkId }) else {
+            throw DomainError.bookNotFound(bookmarkId)
+        }
+        bookmarks[bookId]?.remove(at: index)
+        persistence.save(bookmarks: bookmarks)
+
+        logger?.d(tag: "Bookmarks", message: "Deleted bookmark \(bookmarkId)")
+    }
+
     // MARK: - Logger Integration
     func log(_ message: String, tag: String = "LibraVault") {
         logger?.d(tag: tag, message: message)

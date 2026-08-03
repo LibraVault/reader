@@ -50,6 +50,28 @@ final class DomainBridgeTests: XCTestCase {
         }
     }
 
+    func testDeleteBookmarkRemovesBookmark() async throws {
+        try await bridge.addBookmark(bookId: "1", position: "chapter-6")
+        let bookmarkId = try XCTUnwrap(bridge.bookmarks["1"]?.last?.id)
+        let before = bridge.bookmarks["1"]?.count ?? 0
+
+        try await bridge.deleteBookmark(bookId: "1", bookmarkId: bookmarkId)
+
+        XCTAssertEqual(bridge.bookmarks["1"]?.count, before - 1)
+        XCTAssertFalse(bridge.bookmarks["1"]?.contains { $0.id == bookmarkId } ?? false)
+    }
+
+    func testDeleteBookmarkThrowsForUnknownBookmark() async {
+        do {
+            try await bridge.deleteBookmark(bookId: "1", bookmarkId: "does-not-exist")
+            XCTFail("Expected DomainError.bookNotFound to be thrown")
+        } catch DomainError.bookNotFound(let id) {
+            XCTAssertEqual(id, "does-not-exist")
+        } catch {
+            XCTFail("Expected DomainError.bookNotFound, got \(error)")
+        }
+    }
+
     func testAddHighlightAppendsHighlight() async throws {
         let before = bridge.highlights["1"]?.count ?? 0
         try await bridge.addHighlight(bookId: "1", position: "para-2", text: "notable quote")

@@ -5,6 +5,7 @@ import SwiftUI
 /// overflow menu, with no way to ever see what you'd bookmarked) plus inline note editing.
 struct BookmarksSheet: View {
     let bookId: String
+    var onNavigate: (Bookmark) -> Void = { _ in }
     @ObservedObject private var bridge = LibravaultDomainBridge.shared
     @State private var editingBookmark: Bookmark?
     @State private var draftNote: String = ""
@@ -49,7 +50,14 @@ struct BookmarksSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { onNavigate(bookmark) }
                     .listRowBackground(LibraVaultColor.surface)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { deleteBookmark(bookmark) } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -78,6 +86,12 @@ struct BookmarksSheet: View {
         guard let bookmark = editingBookmark else { return }
         Task {
             try? await bridge.updateBookmarkNote(bookId: bookId, bookmarkId: bookmark.id, note: draftNote)
+        }
+    }
+
+    private func deleteBookmark(_ bookmark: Bookmark) {
+        Task {
+            try? await bridge.deleteBookmark(bookId: bookId, bookmarkId: bookmark.id)
         }
     }
 }
