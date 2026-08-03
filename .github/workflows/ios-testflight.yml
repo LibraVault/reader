@@ -192,10 +192,15 @@ jobs:
           IPA_PATH=$(find build/export -name "*.ipa" | head -1)
           echo "Uploading $IPA_PATH to TestFlight..."
 
+          # --groups auto-assigns the build to the external testers group on
+          # upload — without it, every build (compliance status notwithstanding)
+          # sat unassigned until someone manually clicked "+" in App Store
+          # Connect's Groups column for it.
           fastlane pilot upload \
             --api_key_path api_key.json \
             --ipa "$IPA_PATH" \
-            --skip_waiting_for_build_processing true
+            --skip_waiting_for_build_processing true \
+            --groups "LibraVault Alpha/Beta"
 
           rm -f AuthKey.p8 api_key.json
 
