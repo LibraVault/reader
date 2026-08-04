@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Read-only list backed by LibravaultDomainBridge.highlights — previously reachable
-/// only via "View Highlights" in BookDetailView, which did nothing when tapped. Unlike
-/// BookmarksSheet, there's no in-reader "create a highlight" affordance anywhere yet
-/// (ReaderView enables text selection but nothing turns a selection into a Highlight),
-/// so this stays read-only rather than implying a creation flow that doesn't exist.
+/// Read-only list backed by LibravaultDomainBridge.highlights. Not currently wired up
+/// to any screen — its only caller, BookDetailView's "View Highlights" button, was
+/// removed (LibraryView now navigates straight into Reader/Player, matching Android,
+/// which has no book-detail screen at all). Kept for whenever a real in-reader
+/// "create a highlight" affordance exists (ReaderView enables text selection but
+/// nothing turns a selection into a Highlight yet) — until then this component has
+/// nothing to ever show, since there's no way to populate it.
 struct HighlightsSheet: View {
     let bookId: String
     @ObservedObject private var bridge = LibravaultDomainBridge.shared
