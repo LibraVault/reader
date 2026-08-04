@@ -127,9 +127,18 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
-        XCTAssertTrue(app.buttons["reader.themeButton"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["reader.addBookmarkButton"].exists)
+        // Add/View Bookmark stay as direct top-level toolbar icons (see
+        // ReaderView's toolbar doc comment — a real-device toolbar-overflow bug
+        // dropped the Add Bookmark button entirely when it was a 4th/5th separate
+        // item). Theme and Settings now live behind the overflow Menu.
+        XCTAssertTrue(app.buttons["reader.addBookmarkButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["reader.bookmarksButton"].exists)
+
+        let moreMenuButton = app.buttons["reader.moreMenuButton"]
+        XCTAssertTrue(moreMenuButton.exists)
+        moreMenuButton.tap()
+
+        XCTAssertTrue(app.buttons["reader.themeButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["reader.settingsButton"].exists)
     }
 
@@ -155,6 +164,7 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
+        app.buttons["reader.moreMenuButton"].tap()
         let settingsButton = app.buttons["reader.settingsButton"]
         XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
         settingsButton.tap()
@@ -174,6 +184,7 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
+        app.buttons["reader.moreMenuButton"].tap()
         let settingsButton = app.buttons["reader.settingsButton"]
         XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
         settingsButton.tap()
@@ -192,6 +203,7 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
+        app.buttons["reader.moreMenuButton"].tap()
         app.buttons["reader.settingsButton"].tap()
         let readAloudButton = app.buttons["Read Aloud"]
         XCTAssertTrue(readAloudButton.waitForExistence(timeout: 5))
