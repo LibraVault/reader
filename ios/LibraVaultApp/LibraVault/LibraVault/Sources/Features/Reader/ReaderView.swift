@@ -103,22 +103,15 @@ struct ReaderView: View {
         .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { readingTheme = readingTheme.next }) {
-                    Image(systemName: readingTheme.systemImageName)
-                        .foregroundStyle(colors.onBackground)
-                }
-                .accessibilityIdentifier("reader.themeButton")
-            }
-            if book.format == .markdown {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showTocSheet = true }) {
-                        Image(systemName: "list.bullet")
-                            .foregroundStyle(colors.onBackground)
-                    }
-                    .accessibilityIdentifier("reader.tocButton")
-                }
-            }
+            // Only Add/View Bookmark stay as direct top-level icons — with a book
+            // title competing for space in .inline display mode, 4-5 separate
+            // navigationBarTrailing items reliably fit on CI's Simulator (a large
+            // modern iPhone) but silently get dropped (not shown in an overflow
+            // menu, just missing) on smaller real devices. Reported in the field as
+            // "there's no + button to add a bookmark" — the button was always there
+            // in code, it just didn't fit. Everything lower-frequency now lives
+            // behind a single overflow Menu, which iOS always renders as one icon
+            // regardless of how many actions are inside it.
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: addBookmark) {
                     Image(systemName: "bookmark.badge.plus")
@@ -134,11 +127,28 @@ struct ReaderView: View {
                 .accessibilityIdentifier("reader.bookmarksButton")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showSettingsSheet = true }) {
-                    Image(systemName: "textformat.size")
+                Menu {
+                    Button(action: { readingTheme = readingTheme.next }) {
+                        Label(readingTheme.label, systemImage: readingTheme.systemImageName)
+                    }
+                    .accessibilityIdentifier("reader.themeButton")
+
+                    if book.format == .markdown {
+                        Button(action: { showTocSheet = true }) {
+                            Label("Table of Contents", systemImage: "list.bullet")
+                        }
+                        .accessibilityIdentifier("reader.tocButton")
+                    }
+
+                    Button(action: { showSettingsSheet = true }) {
+                        Label("Reading Settings", systemImage: "textformat.size")
+                    }
+                    .accessibilityIdentifier("reader.settingsButton")
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                         .foregroundStyle(colors.onBackground)
                 }
-                .accessibilityIdentifier("reader.settingsButton")
+                .accessibilityIdentifier("reader.moreMenuButton")
             }
         }
         .toolbar(showToolbar ? .visible : .hidden, for: .navigationBar)

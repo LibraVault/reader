@@ -33,6 +33,19 @@ struct PDFReaderContent: UIViewRepresentable {
             view.go(to: page)
         }
         let tapRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapRecognizer.numberOfTapsRequired = 1
+        // PDFView installs its own double/triple-tap recognizers for tap-to-zoom
+        // (already present on view.gestureRecognizers by this point, set up in its
+        // own init). Without requiring ours to fail first, a plain single-tap
+        // recognizer fires immediately on the first tap of any double-tap, since
+        // UIKit doesn't know a second tap is coming — which broke double-tap-to-
+        // zoom entirely (reported in the field on PDF landscape) rather than just
+        // adding a harmless extra call to onCenterTap alongside the zoom.
+        for recognizer in view.gestureRecognizers ?? [] {
+            if let multiTap = recognizer as? UITapGestureRecognizer, multiTap.numberOfTapsRequired > 1 {
+                tapRecognizer.require(toFail: multiTap)
+            }
+        }
         view.addGestureRecognizer(tapRecognizer)
         return view
     }
