@@ -62,6 +62,21 @@ class SearchLibraryUseCase @Inject constructor(
         libraryRepository.search(query)
 }
 
+/**
+ * Looks up the sibling file immediately before/after a given item within the same vault
+ * folder, ordered by [LibraryItem.filePath]. Used as a "next/previous chapter" fallback for
+ * audiobooks split across multiple physical files with no embedded chapter markers.
+ */
+class GetAdjacentLibraryItemUseCase @Inject constructor(
+    private val libraryRepository: LibraryRepository,
+) {
+    suspend fun next(vaultFolderId: Long, filePath: String): LibraryItem? =
+        libraryRepository.getNextItemInVault(vaultFolderId, filePath)
+
+    suspend fun previous(vaultFolderId: Long, filePath: String): LibraryItem? =
+        libraryRepository.getPreviousItemInVault(vaultFolderId, filePath)
+}
+
 class SaveReadingProgressUseCase @Inject constructor(
     private val progressRepository: ProgressRepository,
 ) {

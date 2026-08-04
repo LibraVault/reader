@@ -25,6 +25,12 @@ interface LibraryRepository {
     fun observeRecentlyAccessed(limit: Int = 10): Flow<List<LibraryItem>>
     suspend fun getItemById(id: Long): LibraryItem?
     suspend fun findByPath(path: String): LibraryItem?
+
+    /** Next sibling file in the same vault folder, ordered by [LibraryItem.filePath]. */
+    suspend fun getNextItemInVault(vaultFolderId: Long, filePath: String): LibraryItem?
+
+    /** Previous sibling file in the same vault folder, ordered by [LibraryItem.filePath]. */
+    suspend fun getPreviousItemInVault(vaultFolderId: Long, filePath: String): LibraryItem?
     suspend fun search(query: String): List<LibraryItem>
     suspend fun upsert(item: LibraryItem): Long
     suspend fun deleteItem(id: Long)

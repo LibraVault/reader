@@ -170,11 +170,13 @@ class PlayerViewModel @Inject constructor(
                         positionMs = ctrl.currentPosition,
                     )
                     playbackStateHolder.update(
-                        itemId       = item.id,
-                        title        = item.title,
-                        author       = item.author,
-                        coverArtPath = item.coverArtPath,
-                        isPlaying    = true,
+                        itemId        = item.id,
+                        vaultFolderId = item.vaultFolderId,
+                        filePath      = item.filePath,
+                        title         = item.title,
+                        author        = item.author,
+                        coverArtPath  = item.coverArtPath,
+                        isPlaying     = true,
                     )
                     startPolling()
                     startProgressSaving()
@@ -241,11 +243,13 @@ class PlayerViewModel @Inject constructor(
                     val stateItem = _uiState.value.item
                     if (stateItem != null) {
                         playbackStateHolder.update(
-                            itemId       = stateItem.id,
-                            title        = stateItem.title,
-                            author       = stateItem.author,
-                            coverArtPath = stateItem.coverArtPath,
-                            isPlaying    = true,
+                            itemId        = stateItem.id,
+                            vaultFolderId = stateItem.vaultFolderId,
+                            filePath      = stateItem.filePath,
+                            title         = stateItem.title,
+                            author        = stateItem.author,
+                            coverArtPath  = stateItem.coverArtPath,
+                            isPlaying     = true,
                         )
                     }
                     startPolling()
@@ -292,11 +296,13 @@ class PlayerViewModel @Inject constructor(
             val item = _uiState.value.item
             if (item != null) {
                 playbackStateHolder.update(
-                    itemId       = item.id,
-                    title        = item.title,
-                    author       = item.author,
-                    coverArtPath = item.coverArtPath,
-                    isPlaying    = isPlaying,
+                    itemId        = item.id,
+                    vaultFolderId = item.vaultFolderId,
+                    filePath      = item.filePath,
+                    title         = item.title,
+                    author        = item.author,
+                    coverArtPath  = item.coverArtPath,
+                    isPlaying     = isPlaying,
                 )
             }
             if (isPlaying) startPolling() else stopPolling()
@@ -357,11 +363,13 @@ class PlayerViewModel @Inject constructor(
         val item = _uiState.value.item
         if (item != null) {
             playbackStateHolder.update(
-                itemId       = item.id,
-                title        = item.title,
-                author       = item.author,
-                coverArtPath = item.coverArtPath,
-                isPlaying    = true,
+                itemId        = item.id,
+                vaultFolderId = item.vaultFolderId,
+                filePath      = item.filePath,
+                title         = item.title,
+                author        = item.author,
+                coverArtPath  = item.coverArtPath,
+                isPlaying     = true,
             )
         }
         // Optimistically set isPlaying = true so the PlayerScreen UI reflects
@@ -384,11 +392,13 @@ class PlayerViewModel @Inject constructor(
         val item = _uiState.value.item
         if (item != null) {
             playbackStateHolder.update(
-                itemId       = item.id,
-                title        = item.title,
-                author       = item.author,
-                coverArtPath = item.coverArtPath,
-                isPlaying    = !wasPlaying,
+                itemId        = item.id,
+                vaultFolderId = item.vaultFolderId,
+                filePath      = item.filePath,
+                title         = item.title,
+                author        = item.author,
+                coverArtPath  = item.coverArtPath,
+                isPlaying     = !wasPlaying,
             )
         }
     }
@@ -575,11 +585,13 @@ class PlayerViewModel @Inject constructor(
                 val item = _uiState.value.item
                 if (item != null) {
                     playbackStateHolder.update(
-                        itemId       = item.id,
-                        title        = item.title,
-                        author       = item.author,
-                        coverArtPath = item.coverArtPath,
-                        isPlaying    = ctrl.isPlaying,
+                        itemId        = item.id,
+                        vaultFolderId = item.vaultFolderId,
+                        filePath      = item.filePath,
+                        title         = item.title,
+                        author        = item.author,
+                        coverArtPath  = item.coverArtPath,
+                        isPlaying     = ctrl.isPlaying,
                     )
                 }
                 delay(200)

@@ -332,11 +332,13 @@ class LibraryViewModel @Inject constructor(
         val current = playbackStateHolder.state.value
         if (current.itemId != null) {
             playbackStateHolder.update(
-                itemId       = current.itemId,
-                title        = current.title,
-                author       = current.author,
-                coverArtPath = current.coverArtPath,
-                isPlaying    = !wasPlaying,
+                itemId        = current.itemId,
+                vaultFolderId = current.vaultFolderId,
+                filePath      = current.filePath,
+                title         = current.title,
+                author        = current.author,
+                coverArtPath  = current.coverArtPath,
+                isPlaying     = !wasPlaying,
             )
         }
     }

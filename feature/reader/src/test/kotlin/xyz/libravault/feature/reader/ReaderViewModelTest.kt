@@ -346,11 +346,13 @@ class ReaderViewModelTest {
     @Test
     fun `pauseAudiobook updates holder when an item is loaded`() = runTest {
         playbackStateHolder.update(
-            itemId       = 7L,
-            title        = "Test Audiobook",
-            author       = "Test Author",
-            coverArtPath = null,
-            isPlaying    = true,
+            itemId        = 7L,
+            vaultFolderId = 1L,
+            filePath      = "content://vault/book.mp3",
+            title         = "Test Audiobook",
+            author        = "Test Author",
+            coverArtPath  = null,
+            isPlaying     = true,
         )
         val vm = viewModel()
         vm.pauseAudiobook()
@@ -361,7 +363,8 @@ class ReaderViewModelTest {
     @Test
     fun `playPauseAudiobook flips isPlaying via controller when an item is loaded`() = runTest {
         playbackStateHolder.update(
-            itemId = 7L, title = "T", author = "A", coverArtPath = null, isPlaying = true,
+            itemId = 7L, vaultFolderId = 1L, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = null, isPlaying = true,
         )
         every { mockController.isPlaying } returns true
         val vm = viewModel()
@@ -375,7 +378,8 @@ class ReaderViewModelTest {
     @Test
     fun `playPauseAudiobook plays via controller when paused`() = runTest {
         playbackStateHolder.update(
-            itemId = 7L, title = "T", author = "A", coverArtPath = null, isPlaying = false,
+            itemId = 7L, vaultFolderId = 1L, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = null, isPlaying = false,
         )
         every { mockController.isPlaying } returns false
         val vm = viewModel()

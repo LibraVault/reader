@@ -81,6 +81,12 @@ class LibraryRepositoryImpl @Inject constructor(
     override suspend fun getItemById(id: Long): LibraryItem? =
         dao.getItemById(id)?.toDomain()
 
+    override suspend fun getNextItemInVault(vaultFolderId: Long, filePath: String): LibraryItem? =
+        dao.getNextByFilePath(vaultFolderId, filePath)?.toDomain()
+
+    override suspend fun getPreviousItemInVault(vaultFolderId: Long, filePath: String): LibraryItem? =
+        dao.getPreviousByFilePath(vaultFolderId, filePath)?.toDomain()
+
     override suspend fun upsert(item: LibraryItem): Long =
         dao.upsert(item.toEntity())
 

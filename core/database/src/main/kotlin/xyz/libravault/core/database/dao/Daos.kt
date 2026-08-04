@@ -75,6 +75,26 @@ interface LibraryItemDao {
     @Query("SELECT * FROM library_items WHERE id = :id LIMIT 1")
     suspend fun getItemById(id: Long): LibraryItemEntity?
 
+    /**
+     * Next sibling file within the same vault folder, ordered by [LibraryItemEntity.filePath].
+     * Used as a "next chapter" fallback for audiobooks split across multiple physical files
+     * (e.g. "Chapter 01.mp3", "Chapter 02.mp3") that have no embedded chapter markers.
+     */
+    @Query("""
+        SELECT * FROM library_items
+        WHERE vaultFolderId = :vaultFolderId AND filePath > :filePath
+        ORDER BY filePath ASC LIMIT 1
+    """)
+    suspend fun getNextByFilePath(vaultFolderId: Long, filePath: String): LibraryItemEntity?
+
+    /** Previous sibling file within the same vault folder — see [getNextByFilePath]. */
+    @Query("""
+        SELECT * FROM library_items
+        WHERE vaultFolderId = :vaultFolderId AND filePath < :filePath
+        ORDER BY filePath DESC LIMIT 1
+    """)
+    suspend fun getPreviousByFilePath(vaultFolderId: Long, filePath: String): LibraryItemEntity?
+
     @Query("SELECT * FROM library_items WHERE filePath = :path LIMIT 1")
     suspend fun findByPath(path: String): LibraryItemEntity?
 
