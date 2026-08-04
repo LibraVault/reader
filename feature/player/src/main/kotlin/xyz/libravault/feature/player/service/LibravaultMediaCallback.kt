@@ -3,8 +3,10 @@
 package xyz.libravault.feature.player.service
 
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
@@ -12,8 +14,19 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
-import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
+import java.time.Instant
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import xyz.libravault.core.domain.model.ListeningProgress
+import xyz.libravault.core.domain.usecase.GetAdjacentLibraryItemUseCase
+import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
+import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
 
 /**
  * Top-level [MediaSession.Callback] that drives the lockscreen / Quick-Settings media tile
@@ -49,11 +62,22 @@ import com.google.common.util.concurrent.ListenableFuture
  *   central glyph is driven by `PlaybackStateCompat.state`, not by a separate action slot.
  * - `customLayout` is the five-button strip built by [buildStandardStrip]
  *   ([Prev | −seek | PlayPause | +seek | Next]). These buttons reach
- *   `PlaybackStateCompat.customActions` (via the filter above) on the system tile. Prev/Next
- *   dispatch straight to [Player.seekToPrevious] / [Player.seekToNext] — for a single-item
- *   audiobook, Prev restarts the current track (or is a no-op right at the start) and Next is
- *   always a no-op, matching how those two controls already behave in the in-app player when
- *   there is nothing to skip to.
+ *   `PlaybackStateCompat.customActions` (via the filter above) on the system tile.
+ *
+ * # Prev/Next semantics
+ *
+ * [ChapterExtractor] currently always returns a single "Full Book" chapter — there is no
+ * real per-file chapter navigation anywhere in the app yet. So Prev/Next on the lockscreen
+ * tile switch to the previous/next sibling audio file within the same vault folder (ordered
+ * by [xyz.libravault.core.domain.model.LibraryItem.filePath]) via [GetAdjacentLibraryItemUseCase]
+ * — the practical "next chapter" for audiobooks split across multiple physical files (e.g.
+ * "Chapter 01.mp3", "Chapter 02.mp3"). If there is no sibling file in that direction (already
+ * at the first/last file in the folder), Prev/Next are a no-op. Switching files saves the
+ * outgoing item's progress, resumes the incoming item from its last saved position, and
+ * updates [PlaybackStateHolder] so the notification/lockscreen title, author, and artwork
+ * follow the new file. This mirrors the in-app player's `PlayerViewModel.goToChapter` at the
+ * player level, but operates on whole files since the service layer has no ViewModel-scoped
+ * chapter list to draw on.
  *
  * [antenna]: https://github.com/AntennaPod/AntennaPod/blob/develop/playback/service/src/main/java/de/danoeh/antennapod/playback/service/internal/MediaLibrarySessionCallback.java
  */
@@ -61,7 +85,21 @@ internal class LibravaultMediaCallback(
     private val context: Context,
     private val player: ExoPlayer,
     private val seekStepMs: Long,
+    private val playbackStateHolder: PlaybackStateHolder,
+    private val getAdjacentItem: GetAdjacentLibraryItemUseCase,
+    private val getListeningProgress: GetListeningProgressUseCase,
+    private val saveListeningProgress: SaveListeningProgressUseCase,
+    dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) : MediaSession.Callback {
+
+    /**
+     * Scope for [onCustomCommand] dispatch. Uses [Dispatchers.Main] (not `Unconfined` or
+     * `Default`) so that after a suspending DB lookup (file-switch path), execution resumes
+     * back on the main thread before touching [player] — ExoPlayer instances are confined to
+     * the thread they were created on. Tests override [dispatcher] with `Unconfined` so
+     * dispatch completes synchronously without a real Android main looper.
+     */
+    private val callbackScope = CoroutineScope(SupervisorJob() + dispatcher)
 
     override fun onConnect(
         session: MediaSession,
@@ -151,12 +189,22 @@ internal class LibravaultMediaCallback(
             TAG,
             "onCustomCommand: pkg=${controller.packageName} action=${customCommand.customAction} args=$args",
         )
-        return try {
-            Futures.immediateFuture(dispatch(customCommand))
-        } catch (t: Throwable) {
-            Log.e(TAG, "onCustomCommand: dispatch threw", t)
-            Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_UNKNOWN))
+        val future = SettableFuture.create<SessionResult>()
+        callbackScope.launch {
+            val result = try {
+                dispatch(customCommand)
+            } catch (t: Throwable) {
+                Log.e(TAG, "onCustomCommand: dispatch threw", t)
+                SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
+            }
+            future.set(result)
         }
+        return future
+    }
+
+    /** Cancels [callbackScope]. Called from [PlaybackService.onDestroy]. */
+    fun release() {
+        callbackScope.cancel()
     }
 
     /**
@@ -165,13 +213,13 @@ internal class LibravaultMediaCallback(
      * from [CustomCommandActions.EXTRA_OFFSET_MS] in the [SessionCommand]'s extras bundle
      * (seeded by [buildStandardStrip] from the user's `defaultSkipDurationSec` preference)
      * and applied via [Player.seekTo] after [SeekClamp.clamp] bounds-checks the target.
-     * Prev/Next route straight to [Player.seekToPrevious] / [Player.seekToNext], which are
-     * safe no-ops (or a track restart, for Prev) on the single-item audiobook timeline.
+     * Prev/Next switch to the previous/next sibling file — see the class KDoc.
      */
-    private fun dispatch(command: SessionCommand): SessionResult {
-        when (command.customAction) {
+    private suspend fun dispatch(command: SessionCommand): SessionResult {
+        return when (command.customAction) {
             CustomCommandActions.PLAY_PAUSE -> {
                 if (player.playWhenReady) player.pause() else player.play()
+                SessionResult(SessionResult.RESULT_SUCCESS)
             }
             CustomCommandActions.SEEK_BY -> {
                 val deltaMs = command.customExtras?.getLong(CustomCommandActions.EXTRA_OFFSET_MS, 0L) ?: 0L
@@ -181,14 +229,74 @@ internal class LibravaultMediaCallback(
                     duration = player.duration,
                 )
                 player.seekTo(target)
+                SessionResult(SessionResult.RESULT_SUCCESS)
             }
-            CustomCommandActions.PREVIOUS -> player.seekToPrevious()
-            CustomCommandActions.NEXT -> player.seekToNext()
+            CustomCommandActions.PREVIOUS -> switchToAdjacentItem(forward = false)
+            CustomCommandActions.NEXT -> switchToAdjacentItem(forward = true)
             else -> {
                 Log.w(TAG, "onCustomCommand: unknown action=${command.customAction}")
-                return SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
+                SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
             }
         }
+    }
+
+    /**
+     * Switches playback to the next/previous sibling file in the current item's vault
+     * folder (see [GetAdjacentLibraryItemUseCase]). No-ops if no item is currently loaded
+     * ([PlaybackStateHolder] is empty) or there is no sibling file in that direction (already
+     * at the first/last file). Saves the outgoing item's progress, resumes the incoming item
+     * from its last saved position (or the start), and mirrors the switch into
+     * [PlaybackStateHolder] so the tile's title/author/artwork update immediately.
+     */
+    private suspend fun switchToAdjacentItem(forward: Boolean): SessionResult {
+        val current = playbackStateHolder.state.value
+        val itemId = current.itemId
+        val vaultFolderId = current.vaultFolderId
+        val filePath = current.filePath
+        if (itemId == null || vaultFolderId == null || filePath == null) {
+            Log.w(TAG, "switchToAdjacentItem: no item currently loaded, ignoring")
+            return SessionResult(SessionResult.RESULT_SUCCESS)
+        }
+
+        val adjacentItem = if (forward) {
+            getAdjacentItem.next(vaultFolderId, filePath)
+        } else {
+            getAdjacentItem.previous(vaultFolderId, filePath)
+        }
+        if (adjacentItem == null) {
+            Log.i(
+                TAG,
+                "switchToAdjacentItem: already at the ${if (forward) "last" else "first"} " +
+                    "file in vaultFolderId=$vaultFolderId",
+            )
+            return SessionResult(SessionResult.RESULT_SUCCESS)
+        }
+
+        val wasPlaying = player.isPlaying
+        saveListeningProgress(
+            ListeningProgress(
+                itemId = itemId,
+                positionMs = player.currentPosition,
+                chapterIndex = 0,
+                lastListenedAt = Instant.now(),
+                playbackSpeed = player.playbackParameters.speed,
+            ),
+        )
+
+        val resumeMs = getListeningProgress(adjacentItem.id)?.positionMs ?: 0L
+        player.setMediaItem(MediaItem.fromUri(Uri.parse(adjacentItem.filePath)), resumeMs)
+        player.prepare()
+        if (wasPlaying) player.play()
+
+        playbackStateHolder.update(
+            itemId = adjacentItem.id,
+            vaultFolderId = adjacentItem.vaultFolderId,
+            filePath = adjacentItem.filePath,
+            title = adjacentItem.title,
+            author = adjacentItem.author,
+            coverArtPath = adjacentItem.coverArtPath,
+            isPlaying = wasPlaying,
+        )
         return SessionResult(SessionResult.RESULT_SUCCESS)
     }
 
@@ -221,9 +329,9 @@ internal class LibravaultMediaCallback(
          * strings) so it survives the
          * `PlayerWrapper.createPlaybackStateCompat` filter — see the class KDoc for the
          * full rationale. Prev/Next are always enabled (matching the original notification
-         * provider's behavior for these two slots) even though they're frequently no-ops on
-         * a single-item audiobook — a stable five-button strip is preferable to one whose
-         * shape changes based on playback state.
+         * provider's behavior for these two slots) even though they're a no-op when there is
+         * no sibling file in that direction — a stable five-button strip is preferable to one
+         * whose shape changes based on playback state.
          */
         @JvmStatic
         fun buildStandardStrip(

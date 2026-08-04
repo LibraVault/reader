@@ -29,10 +29,15 @@ class PlaybackStateHolderTest {
     fun `update replaces the whole state and marks it active`() = runTest {
         val holder = PlaybackStateHolder()
 
-        holder.update(itemId = 7, title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true)
+        holder.update(
+            itemId = 7, vaultFolderId = 5, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true,
+        )
 
         val state = holder.state.value
         assertEquals(7L, state.itemId)
+        assertEquals(5L, state.vaultFolderId)
+        assertEquals("content://vault/book.mp3", state.filePath)
         assertEquals("T", state.title)
         assertEquals("A", state.author)
         assertEquals("cover.jpg", state.coverArtPath)
@@ -47,7 +52,10 @@ class PlaybackStateHolderTest {
 
         // A brand new update() call — e.g. switching to a different item — should
         // start fresh, not silently keep the previous item's playback position.
-        holder.update(itemId = 1, title = "T", author = "A", coverArtPath = null, isPlaying = false)
+        holder.update(
+            itemId = 1, vaultFolderId = 5, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = null, isPlaying = false,
+        )
 
         assertNull(holder.state.value.lastKnownPositionMs)
     }
@@ -55,7 +63,10 @@ class PlaybackStateHolderTest {
     @Test
     fun `updatePosition only changes the position, leaving the rest of the state intact`() {
         val holder = PlaybackStateHolder()
-        holder.update(itemId = 1, title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true)
+        holder.update(
+            itemId = 1, vaultFolderId = 5, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true,
+        )
 
         holder.updatePosition(12_345)
 
@@ -69,7 +80,10 @@ class PlaybackStateHolderTest {
     @Test
     fun `clear resets to the initial inactive state`() {
         val holder = PlaybackStateHolder()
-        holder.update(itemId = 1, title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true)
+        holder.update(
+            itemId = 1, vaultFolderId = 5, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true,
+        )
         holder.updatePosition(1_000)
 
         holder.clear()

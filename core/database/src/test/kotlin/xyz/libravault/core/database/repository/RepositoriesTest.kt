@@ -116,6 +116,35 @@ class LibraryRepositoryImplTest {
         assertEquals("PDF", slot.captured.format)
         assertEquals(1_700_000_000_000, slot.captured.addedAt)
     }
+
+    @Test
+    fun `getNextItemInVault delegates to the DAO and maps the result`() = runTest {
+        coEvery { dao.getNextByFilePath(1, "a") } returns entity(format = "MP3").copy(id = 2, filePath = "b")
+
+        val item = repository.getNextItemInVault(1, "a")
+
+        assertEquals(2L, item?.id)
+        assertEquals("b", item?.filePath)
+    }
+
+    @Test
+    fun `getNextItemInVault returns null when there is no sibling file after it`() = runTest {
+        coEvery { dao.getNextByFilePath(1, "z") } returns null
+
+        val item = repository.getNextItemInVault(1, "z")
+
+        assertNull(item)
+    }
+
+    @Test
+    fun `getPreviousItemInVault delegates to the DAO and maps the result`() = runTest {
+        coEvery { dao.getPreviousByFilePath(1, "b") } returns entity(format = "MP3").copy(id = 1, filePath = "a")
+
+        val item = repository.getPreviousItemInVault(1, "b")
+
+        assertEquals(1L, item?.id)
+        assertEquals("a", item?.filePath)
+    }
 }
 
 class ProgressRepositoryImplTest {

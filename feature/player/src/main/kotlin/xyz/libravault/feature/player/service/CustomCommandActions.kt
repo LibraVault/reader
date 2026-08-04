@@ -44,18 +44,18 @@ internal object CustomCommandActions {
     const val SEEK_BY = PREFIX + "SEEK_BY"
 
     /**
-     * Tap target: jump to the previous item. No extras — dispatches straight to
-     * [androidx.media3.common.Player.seekToPrevious], which restarts the current
-     * (single) audiobook track when more than a few seconds in, or is a no-op
-     * otherwise. There is no playlist to move to for a single-item audiobook.
+     * Tap target: jump to the previous sibling file in the current item's vault folder.
+     * No extras — dispatches to [LibravaultMediaCallback]'s file-switch path (see its
+     * class KDoc), which is the practical "previous chapter" today since there is no
+     * real per-file chapter navigation. No-ops if already at the first file.
      */
     const val PREVIOUS = PREFIX + "PREVIOUS"
 
     /**
-     * Tap target: jump to the next item. No extras — dispatches straight to
-     * [androidx.media3.common.Player.seekToNext], which is a no-op for a
-     * single-item audiobook (no next track to move to). Published anyway so the
-     * system tile carries the same five-button shape as the in-app mini-player.
+     * Tap target: jump to the next sibling file in the current item's vault folder.
+     * No extras — dispatches to [LibravaultMediaCallback]'s file-switch path (see its
+     * class KDoc), which is the practical "next chapter" today since there is no real
+     * per-file chapter navigation. No-ops if already at the last file.
      */
     const val NEXT = PREFIX + "NEXT"
 

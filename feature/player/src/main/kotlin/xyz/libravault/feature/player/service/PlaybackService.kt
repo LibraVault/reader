@@ -11,6 +11,9 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import xyz.libravault.core.domain.usecase.GetAdjacentLibraryItemUseCase
+import xyz.libravault.core.domain.usecase.GetListeningProgressUseCase
+import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
 import xyz.libravault.feature.player.R
 
 /**
@@ -28,7 +31,10 @@ import xyz.libravault.feature.player.R
  *   callback publishes a 5-button strip `[Prev | −seek | PlayPause | +seek | Next]` to
  *   `MediaSession.customLayout` as `PlaybackStateCompat.customActions`, and removes the
  *   overlapping standard commands from `availablePlayerCommands` so the system tile doesn't
- *   also derive duplicate standard-actions buttons for the same controls.
+ *   also derive duplicate standard-actions buttons for the same controls. Prev/Next switch
+ *   to the previous/next sibling audio file in the current item's vault folder — see
+ *   [LibravaultMediaCallback]'s KDoc for why (there is no real per-file chapter navigation
+ *   yet, so file-switching is the practical "next chapter" today).
  *
  * - **Skip duration**: read from [SkipDurationPreference] at service-create time and
  *   passed into [LibravaultMediaCallback] so the ±seek tile buttons embed the correct
@@ -47,9 +53,22 @@ import xyz.libravault.feature.player.R
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private var mediaCallback: LibravaultMediaCallback? = null
 
     @Inject
     lateinit var player: ExoPlayer
+
+    @Inject
+    lateinit var playbackStateHolder: PlaybackStateHolder
+
+    @Inject
+    lateinit var getAdjacentItem: GetAdjacentLibraryItemUseCase
+
+    @Inject
+    lateinit var getListeningProgress: GetListeningProgressUseCase
+
+    @Inject
+    lateinit var saveListeningProgress: SaveListeningProgressUseCase
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun onCreate() {
@@ -80,8 +99,18 @@ class PlaybackService : MediaSessionService() {
         val seekStepMs = SkipDurationPreference.getSkipDurationMs(this)
 
         try {
+            val callback = LibravaultMediaCallback(
+                context = this,
+                player = player,
+                seekStepMs = seekStepMs,
+                playbackStateHolder = playbackStateHolder,
+                getAdjacentItem = getAdjacentItem,
+                getListeningProgress = getListeningProgress,
+                saveListeningProgress = saveListeningProgress,
+            )
+            mediaCallback = callback
             val builder = MediaSession.Builder(this, player)
-                .setCallback(LibravaultMediaCallback(this, player, seekStepMs))
+                .setCallback(callback)
             sessionActivity?.let { builder.setSessionActivity(it) }
             mediaSession = builder.build()
             Log.i(TAG, "onCreate: MediaSession built; id=${mediaSession?.id} seekStepMs=$seekStepMs")
@@ -104,6 +133,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
+        mediaCallback?.release()
+        mediaCallback = null
         mediaSession?.run {
             release()
             // Do NOT release the singleton ExoPlayer here — it is @Singleton scoped

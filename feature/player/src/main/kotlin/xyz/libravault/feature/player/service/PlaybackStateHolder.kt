@@ -21,6 +21,8 @@ class PlaybackStateHolder @Inject constructor() {
 
     data class State(
         val itemId: Long? = null,
+        val vaultFolderId: Long? = null,
+        val filePath: String? = null,
         val title: String = "",
         val author: String = "",
         val coverArtPath: String? = null,
@@ -38,6 +40,8 @@ class PlaybackStateHolder @Inject constructor() {
 
     fun update(
         itemId: Long?,
+        vaultFolderId: Long?,
+        filePath: String?,
         title: String,
         author: String,
         coverArtPath: String?,
@@ -45,6 +49,8 @@ class PlaybackStateHolder @Inject constructor() {
     ) {
         _state.value = State(
             itemId = itemId,
+            vaultFolderId = vaultFolderId,
+            filePath = filePath,
             title = title,
             author = author,
             coverArtPath = coverArtPath,
