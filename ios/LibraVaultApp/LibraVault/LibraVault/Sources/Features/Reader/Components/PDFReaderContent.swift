@@ -23,8 +23,11 @@ struct PDFReaderContent: UIViewRepresentable {
     let onCenterTap: () -> Void
 
     func makeUIView(context: Context) -> PDFView {
-        let view = PDFView()
-        view.autoScales = true
+        let view = WidthFittingPDFView()
+        // WidthFittingPDFView manages scaleFactor itself (fit-to-width, not
+        // PDFKit's default fit-to-page) — autoScales would fight it every layout
+        // pass, since PDFKit's own auto-fit logic also runs during layoutSubviews.
+        view.autoScales = false
         view.backgroundColor = backgroundColor
         view.document = document
         applyDisplayMode(to: view, context: context)
@@ -146,6 +149,12 @@ struct PDFReaderContent: UIViewRepresentable {
                 let index = document.index(for: page)
                 guard index != NSNotFound else { return }
                 self.currentPageIndex.wrappedValue = index
+                // A new page can have different native dimensions than the last
+                // one (mixed-size scans aren't common but do happen) — turning
+                // pages doesn't change the view's own bounds, so
+                // WidthFittingPDFView's layoutSubviews size-change guard wouldn't
+                // otherwise catch this.
+                (view as? WidthFittingPDFView)?.fitCurrentPageToWidth()
             }
         }
 
@@ -154,5 +163,38 @@ struct PDFReaderContent: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(pageChangedObserver)
             }
         }
+    }
+}
+
+/// PDFKit's `autoScales` fits the *whole page* inside the view, preserving aspect
+/// ratio — correct in portrait, but in landscape a portrait-oriented page's height
+/// becomes the limiting dimension, leaving empty space on both sides instead of
+/// filling the screen (reported in the field: "landscape PDF doesn't use full
+/// width"). This instead always scales the current page to fill the view's full
+/// width, matching Android's PdfReaderScreen (which rasterizes each page as a
+/// bitmap sized to the view's width via android.graphics.pdf.PdfRenderer).
+///
+/// Only recomputes on an actual bounds *size* change (rotation, split-view resize),
+/// not on every layoutSubviews pass — that also fires during an in-progress pinch
+/// gesture, when bounds.size is unchanged but scaleFactor is exactly what the user
+/// is actively adjusting; recomputing then would fight the gesture and make manual
+/// zoom feel stuck at the width-fit scale.
+final class WidthFittingPDFView: PDFView {
+    private var lastLayoutSize: CGSize = .zero
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != lastLayoutSize else { return }
+        lastLayoutSize = bounds.size
+        fitCurrentPageToWidth()
+    }
+
+    /// Not private — Coordinator.observe's page-change handler calls this directly
+    /// too (see its own doc comment for why).
+    func fitCurrentPageToWidth() {
+        guard let page = currentPage, bounds.width > 0 else { return }
+        let pageWidth = page.bounds(for: displayBox).width
+        guard pageWidth > 0 else { return }
+        scaleFactor = bounds.width / pageWidth
     }
 }

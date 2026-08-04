@@ -55,12 +55,37 @@ final class AudioPlaybackEngine: NSObject, AudioPlaybackEngineProtocol {
     /// corrupt, unsupported codec).
     func load(fileURL: URL, rate: Float) throws {
         stop()
+        configureAudioSession()
         let newPlayer = try AVAudioPlayer(contentsOf: fileURL)
         newPlayer.delegate = self
         newPlayer.enableRate = true
         newPlayer.rate = rate
         newPlayer.prepareToPlay()
         player = newPlayer
+    }
+
+    /// Without this, audiobook playback used the default (non-`.playback`) audio
+    /// session category, which iOS silences the moment the app backgrounds or the
+    /// device locks — reported in the field as "audiobook playback should continue
+    /// when locked." Mirrors TTSEngineBridge's identical setup (DomainBridge.swift),
+    /// which already got this right for TTS but never applied to real audio-file
+    /// playback through this class. Requires the `audio` UIBackgroundMode
+    /// (Info.plist) to actually keep running once backgrounded, not just avoid
+    /// being silenced immediately.
+    private func configureAudioSession() {
+        guard !Self.isRunningUnderXCTest else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    /// `xcodebuild test`'s CI Simulator has no real audio hardware — AVAudioSession
+    /// activation was confirmed elsewhere in this codebase (TTSEngineBridge) to hang
+    /// indefinitely there. AudioPlaybackEngineTests already avoids starting real
+    /// playback for the same reason; this guard additionally keeps the session
+    /// activation itself (now added to `load`, which those tests do call) from
+    /// reintroducing that hang.
+    private static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     /// Loads a new file and starts playing it from the beginning.

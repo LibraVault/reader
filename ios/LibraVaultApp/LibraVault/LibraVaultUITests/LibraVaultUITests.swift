@@ -115,11 +115,10 @@ final class LibraVaultUITests: XCTestCase {
     private func openReaderForMockingbird(in app: XCUIApplication) {
         app.launch()
         XCTAssertTrue(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 5))
+        // Tapping a book in the Library grid navigates straight into Reader/Player
+        // now — no intermediate detail screen (see LibraryView.bookTapTarget).
         app.staticTexts["To Kill a Mockingbird"].tap()
-
-        let continueButton = app.buttons["bookDetail.continueReadingButton"]
-        XCTAssertTrue(continueButton.waitForExistence(timeout: 5))
-        continueButton.tap()
+        XCTAssertTrue(app.buttons["reader.addBookmarkButton"].waitForExistence(timeout: 5))
     }
 
     @MainActor

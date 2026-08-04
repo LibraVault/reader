@@ -111,10 +111,7 @@ struct LibraryView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: LibraVaultSpacing.sm) {
                     ForEach(continueBooks) { book in
-                        NavigationLink(destination: BookDetailView(book: book)) {
-                            ContinueCard(book: book)
-                        }
-                        .buttonStyle(.plain)
+                        bookTapTarget(for: book) { ContinueCard(book: book) }
                     }
                 }
             }
@@ -143,12 +140,35 @@ struct LibraryView: View {
                 spacing: LibraVaultSpacing.lg
             ) {
                 ForEach(filteredBooks) { book in
-                    NavigationLink(destination: BookDetailView(book: book)) {
-                        BookCoverView(book: book)
-                    }
-                    .buttonStyle(.plain)
+                    bookTapTarget(for: book) { BookCoverView(book: book) }
                 }
             }
+        }
+    }
+
+    /// Navigates straight into Reader/Player on tap — matches Android's
+    /// LibravaultNavHost, which routes a Library item tap directly to Reader or
+    /// Player by format with no intermediate detail screen. iOS used to have one
+    /// (BookDetailView, since removed) with big colored "Continue Reading"/"View
+    /// Bookmarks"/"View Highlights" buttons that didn't match any Android screen —
+    /// "View Highlights" was dead UI besides (nothing anywhere on iOS ever calls
+    /// DomainBridge.addHighlight, so the sheet it opened was always empty), and the
+    /// extra tap before reading was reported as friction against Android's flow.
+    @ViewBuilder
+    private func bookTapTarget<Content: View>(for book: BookItem, @ViewBuilder content: () -> Content) -> some View {
+        if book.format.isAudio {
+            Button(action: {
+                appState.startPlayback(book: book)
+                appState.shouldNavigateToPlayer = true
+            }) {
+                content()
+            }
+            .buttonStyle(.plain)
+        } else {
+            NavigationLink(destination: ReaderView(book: book)) {
+                content()
+            }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -274,134 +294,6 @@ struct BookCoverView: View {
                         .tint(LibraVaultColor.primary)
                 }
             }
-        }
-    }
-}
-
-struct BookDetailView: View {
-    let book: BookItem
-    @EnvironmentObject var appState: AppState
-    @State private var isLoading = false
-    @State private var showBookmarksSheet = false
-    @State private var showHighlightsSheet = false
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Cover area
-                VStack {
-                    ZStack {
-                        Color.blue.opacity(0.3)
-                        Image(systemName: "book.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.blue)
-                    }
-                    .frame(height: 200)
-                    .cornerRadius(12)
-                }
-                .padding()
-
-                VStack(alignment: .leading, spacing: 16) {
-                    // Title and author
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(book.title)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        Text(book.author)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Divider()
-
-                    // Progress
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Label("Reading Progress", systemImage: "percent")
-                            Spacer()
-                            Text("\(Int(book.progress * 100))%")
-                                .fontWeight(.semibold)
-                        }
-                        ProgressView(value: book.progress)
-                    }
-
-                    // Action buttons
-                    VStack(spacing: 12) {
-                        // Audio-format books have no real reading UI (ReaderView is
-                        // text-only — see its unsupportedFormatContent) — route
-                        // straight to the real Player instead, the same way
-                        // ReaderView's "Read Aloud" does for text books.
-                        if book.format.isAudio {
-                            Button(action: {
-                                appState.startPlayback(book: book)
-                                appState.shouldNavigateToPlayer = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "headphones")
-                                    Text("Continue Listening")
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                }
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue)
-                                .cornerRadius(8)
-                            }
-                            .accessibilityIdentifier("bookDetail.continueReadingButton")
-                        } else {
-                            NavigationLink(destination: ReaderView(book: book)) {
-                                HStack {
-                                    Image(systemName: "book")
-                                    Text("Continue Reading")
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                }
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue)
-                                .cornerRadius(8)
-                            }
-                            .accessibilityIdentifier("bookDetail.continueReadingButton")
-                        }
-
-                        Button(action: { showBookmarksSheet = true }) {
-                            HStack {
-                                Image(systemName: "bookmark")
-                                Text("View Bookmarks")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.green.opacity(0.7))
-                            .cornerRadius(8)
-                        }
-
-                        Button(action: { showHighlightsSheet = true }) {
-                            HStack {
-                                Image(systemName: "highlighter")
-                                Text("View Highlights")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.orange.opacity(0.7))
-                            .cornerRadius(8)
-                        }
-                    }
-
-                    Spacer()
-                }
-                .padding()
-            }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showBookmarksSheet) {
-            BookmarksSheet(bookId: book.id)
-        }
-        .sheet(isPresented: $showHighlightsSheet) {
-            HighlightsSheet(bookId: book.id)
         }
     }
 }
