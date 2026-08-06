@@ -175,11 +175,19 @@ final class CoverArtExtractorTests: XCTestCase {
     /// Confirms the metadata-only `AVAsset` read this depends on actually runs against
     /// a real, valid audio file in this project's CI Simulator without hanging — the
     /// class of concern feedback-ios-avfoundation-ci-hang documents for other
-    /// AVFoundation entry points (AVAudioSession/AVSpeechSynthesizer activation).
+    /// AVFoundation entry points (AVAudioSession/AVSpeechSynthesizer activation). Since
+    /// `commonMetadata` comes back empty for this fixture, this also exercises the
+    /// `availableMetadataFormats`/`loadMetadata(for:)` ID3/iTunes fallback path added
+    /// for the field-reported "MP3 audiobook cover art missing" gap, confirming it
+    /// runs clean (no hang, no crash) on a real file that simply has no artwork in
+    /// any keyspace, rather than only on the untested happy path.
     /// No embedded artwork in this fixture, so nil is the correct result here;
     /// fabricating real ID3/M4A embedded cover art for a fixture is disproportionate
     /// for what this test needs to prove — see CoverArtExtractor.extractAudioCover's
-    /// doc comment for why this call is CI-safe in the first place.
+    /// doc comment for why this call is CI-safe in the first place. Verifying the
+    /// fallback actually *finds* an ID3 APIC frame needs a real tagged MP3, which
+    /// isn't practical to fabricate as a unit-test fixture (AVAudioFile can't encode
+    /// MP3) — that path needs on-device confirmation.
     func testReturnsNilForAudioWithNoEmbeddedArtwork() async throws {
         let fileURL = try makeFixtureM4A(seconds: 0.2)
         let book = BookData(id: "audio-1", title: "T", author: "A", format: .aac, fileURL: fileURL)
