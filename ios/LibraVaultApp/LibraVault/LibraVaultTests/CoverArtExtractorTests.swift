@@ -73,8 +73,14 @@ final class CoverArtExtractorTests: XCTestCase {
         return epubURL
     }
 
+    // format.scale = 1 pins pixel dimensions to the point size given — see the
+    // matching comment in CoverArtCacheTests.makeFixtureImage for why an unpinned
+    // renderer would be a trap (harmless here since these tests don't assert on
+    // exact pixel size, but worth keeping consistent).
     private func makeFixtureCoverImage() -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 60))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 60), format: format)
         return renderer.image { context in
             UIColor.blue.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 40, height: 60))

@@ -17,8 +17,17 @@ final class CoverArtCacheTests: XCTestCase {
     /// Draws a solid-color raster image of `size` and encodes it as PNG — a real,
     /// decodable image (not a synthetic stand-in), matching the fixture-building
     /// approach `PDFParserTests`/`EPUBParserTests` use elsewhere in this target.
+    ///
+    /// `format.scale = 1` is required: `UIGraphicsImageRenderer`'s default format
+    /// scale comes from the current trait collection (3x on the iPhone 17 Simulator
+    /// this project's CI runs), so an unpinned renderer would silently bake a 100x50
+    /// *point* size into a 300x150 *pixel* PNG — the size assertions below compare
+    /// against actual decoded pixel dimensions, not points, so they'd fail against a
+    /// scaled fixture even though `CoverArtCache` behaved correctly.
     private func makeFixtureImage(size: CGSize) -> Data {
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let image = renderer.image { context in
             UIColor.red.setFill()
             context.fill(CGRect(origin: .zero, size: size))
