@@ -210,8 +210,22 @@ final class AppState: ObservableObject {
             for bookData in scanned {
                 guard let coverURL = await CoverArtExtractor.extractCoverPath(for: bookData, cache: cache) else { continue }
                 await MainActor.run {
-                    guard let self, let index = self.books.firstIndex(where: { $0.id == bookData.id }) else { return }
-                    self.books[index].coverUrl = coverURL.path
+                    guard let self else { return }
+                    if let index = self.books.firstIndex(where: { $0.id == bookData.id }) {
+                        self.books[index].coverUrl = coverURL.path
+                    }
+                    // nowPlayingBook is a value-type snapshot taken once at
+                    // startPlayback — if playback started on this book before its
+                    // extraction above finished (a real race for audiobooks, whose
+                    // AVAsset metadata load can be slow on a large file), the
+                    // snapshot's coverUrl stays nil forever even after `books` gets
+                    // patched, since nothing re-reads it from there. Patch the
+                    // now-playing copy directly so the mini-player/PlayerView pick
+                    // up the art the moment it's ready (reported in the field:
+                    // audiobook cover art blank in the mini-player/Now Playing).
+                    if self.nowPlayingBook?.id == bookData.id {
+                        self.nowPlayingBook?.coverUrl = coverURL.path
+                    }
                 }
             }
         }

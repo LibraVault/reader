@@ -162,7 +162,7 @@ enum CoverArtExtractor {
         return thumbnail.jpegData(compressionQuality: 0.85)
     }
 
-    // MARK: - Audio (embedded artwork via AVAsset common metadata)
+    // MARK: - Audio (embedded artwork via AVAsset metadata)
 
     /// Reads embedded artwork from container-level metadata (ID3/M4B tags) — a pure
     /// file-parsing read, not audio playback or session activation. Safe to run
@@ -171,10 +171,37 @@ enum CoverArtExtractor {
     /// hangs the CI Simulator because it touches the audio daemon), this never opens an
     /// audio session — the same class of call as AVAudioPlayer's non-playing `load()`,
     /// which that CI-hang investigation confirmed runs clean.
+    ///
+    /// `commonMetadata` only surfaces artwork that AVFoundation itself maps to a
+    /// common key, which it reliably does for iTunes-style atoms (M4A/M4B) but often
+    /// doesn't for ID3 `APIC` frames on MP3s — those need the ID3 keyspace read
+    /// explicitly via `loadMetadata(for:)` (reported in the field: audiobook cover
+    /// art missing, while EPUB/PDF cover art — neither of which goes through
+    /// AVFoundation — worked fine).
     private static func extractAudioCover(fileURL: URL) async -> Data? {
         let asset = AVURLAsset(url: fileURL)
-        guard let metadata = try? await asset.load(.commonMetadata) else { return nil }
-        guard let artworkItem = metadata.first(where: { $0.commonKey == .commonKeyArtwork }) else { return nil }
+
+        if let commonMetadata = try? await asset.load(.commonMetadata),
+           let data = await artworkData(in: commonMetadata) {
+            return data
+        }
+
+        guard let formats = try? await asset.load(.availableMetadataFormats) else { return nil }
+        for format in formats where format == .id3Metadata || format == .iTunesMetadata {
+            guard let items = try? await asset.loadMetadata(for: format) else { continue }
+            if let data = await artworkData(in: items) {
+                return data
+            }
+        }
+        return nil
+    }
+
+    private static func artworkData(in items: [AVMetadataItem]) async -> Data? {
+        guard let artworkItem = items.first(where: {
+            $0.commonKey == .commonKeyArtwork
+                || $0.identifier == .id3MetadataAttachedPicture
+                || $0.identifier == .iTunesMetadataCoverArt
+        }) else { return nil }
         return try? await artworkItem.load(.dataValue)
     }
 }
