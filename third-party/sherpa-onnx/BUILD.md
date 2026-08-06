@@ -36,5 +36,6 @@ confirm the `android.tar.bz2` asset exists for that tag.
 ## The voice model is separate
 
 This AAR only contains the engine (inference runtime). The voice model
-itself is downloaded on-device at runtime by `PocketModelManager`, from the
-URL/checksum in `core/tts/build.gradle.kts` — see `SHERPA_ONNX_SETUP.md`.
+itself is bundled separately, at build time, by `setup-android-model.sh`
+into `core/tts/src/main/assets/pocket-tts-model/` (committed to git, like
+this AAR) — see `SHERPA_ONNX_SETUP.md`.

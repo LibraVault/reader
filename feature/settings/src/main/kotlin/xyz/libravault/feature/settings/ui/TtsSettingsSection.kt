@@ -29,7 +29,6 @@ fun TtsSettingsSection(
     engineProvider: TtsEngineProvider,
     modelManager: PocketModelManager? = null,
     voiceCatalog: PocketVoiceCatalog? = null,
-    isFdroidBuild: Boolean = false,
 ) {
     val engineType by engineProvider.engineType.collectAsState()
     val currentEngine by engineProvider.engine.collectAsState()
@@ -51,13 +50,14 @@ fun TtsSettingsSection(
             onTypeSelected = { newType ->
                 engineProvider.switchEngineSync(newType)
             },
-            isFdroidBuild = isFdroidBuild,
         )
 
         Divider()
 
-        // Pocket TTS model download (if selected)
-        if (engineType == TtsEngineType.POCKET_TTS && modelManager != null && !isFdroidBuild) {
+        // Pocket TTS model setup (if selected) - one-time copy from the APK's
+        // bundled assets into app storage, same on Play and F-Droid now that
+        // the model ships in the APK instead of being downloaded.
+        if (engineType == TtsEngineType.POCKET_TTS && modelManager != null) {
             PocketTtsModelSection(modelManager)
             Divider()
         }
@@ -83,7 +83,6 @@ fun TtsSettingsSection(
 private fun EngineSelectionRadioGroup(
     selectedType: TtsEngineType,
     onTypeSelected: (TtsEngineType) -> Unit,
-    isFdroidBuild: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         EngineRadioOption(
@@ -92,13 +91,11 @@ private fun EngineSelectionRadioGroup(
             onClick = { onTypeSelected(TtsEngineType.ANDROID) },
         )
 
-        if (!isFdroidBuild) {
-            EngineRadioOption(
-                label = "Pocket TTS (offline)",
-                isSelected = selectedType == TtsEngineType.POCKET_TTS,
-                onClick = { onTypeSelected(TtsEngineType.POCKET_TTS) },
-            )
-        }
+        EngineRadioOption(
+            label = "Pocket TTS (offline)",
+            isSelected = selectedType == TtsEngineType.POCKET_TTS,
+            onClick = { onTypeSelected(TtsEngineType.POCKET_TTS) },
+        )
     }
 }
 
@@ -123,7 +120,10 @@ private fun EngineRadioOption(
 
 @Composable
 private fun PocketTtsModelSection(modelManager: PocketModelManager) {
-    // TODO: Observe modelManager.ensureModelAvailable() state and show download UI
+    // TODO: Observe modelManager.ensureModelAvailable() state and show setup progress UI.
+    // The model itself ships inside the APK (no network call here) - this is a
+    // one-time copy from app assets into app storage so sherpa-onnx's native
+    // code can read it via a real filesystem path.
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -131,7 +131,7 @@ private fun PocketTtsModelSection(modelManager: PocketModelManager) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Model Status: Downloading…",
+            text = "Model Status: Preparing…",
             style = MaterialTheme.typography.bodySmall,
         )
         LinearProgressIndicator(
@@ -139,7 +139,7 @@ private fun PocketTtsModelSection(modelManager: PocketModelManager) {
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = "~21 MB (first use only)",
+            text = "~37 MB, bundled with the app (first use only)",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
         )

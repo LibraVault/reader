@@ -68,11 +68,11 @@ class PocketTtsEngineTest {
     // ── initialize() against PocketModelManager's model status ──────────────
 
     @Test
-    fun `initialize stays INITIALIZING while the model is idle or downloading`() = runTest(UnconfinedTestDispatcher()) {
+    fun `initialize stays INITIALIZING while the model is idle or preparing`() = runTest(UnconfinedTestDispatcher()) {
         val modelManager = mockk<PocketModelManager> {
             every { ensureModelAvailable() } returns flowOf(
                 ModelStatus.Idle,
-                ModelStatus.Downloading(0.5f),
+                ModelStatus.Preparing(0.5f),
             )
         }
         val engine = engine(modelManager)
@@ -84,7 +84,7 @@ class PocketTtsEngineTest {
     }
 
     @Test
-    fun `initialize surfaces a model download failure as an ERROR state`() = runTest(UnconfinedTestDispatcher()) {
+    fun `initialize surfaces a model setup failure as an ERROR state`() = runTest(UnconfinedTestDispatcher()) {
         val modelManager = mockk<PocketModelManager> {
             every { ensureModelAvailable() } returns flowOf(ModelStatus.Failed("checksum mismatch"))
         }
