@@ -21,6 +21,26 @@ final class WidthFittingPDFViewTests: XCTestCase {
         return PDFDocument(data: data)!
     }
 
+    /// A two-page document where each page has different native dimensions —
+    /// for tests exercising a scroll-triggered page change (`view.go(to:)`)
+    /// *within* the same document, as Coordinator.observe's real
+    /// .PDFViewPageChanged handler does, as opposed to a document swap (which
+    /// WidthFittingPDFView.document's didSet already resets `lastFitScale` for).
+    private func makeMultiPageFixtureDocument(page1: CGSize, page2: CGSize) -> PDFDocument {
+        let document = PDFDocument()
+        for (index, size) in [page1, page2].enumerated() {
+            let pageBounds = CGRect(origin: .zero, size: size)
+            let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
+            let data = renderer.pdfData { context in
+                context.beginPage()
+                ("Fixture page \(index)" as NSString).draw(at: CGPoint(x: 20, y: 20), withAttributes: [.font: UIFont.systemFont(ofSize: 18)])
+            }
+            let page = PDFDocument(data: data)!.page(at: 0)!
+            document.insert(page, at: index)
+        }
+        return document
+    }
+
     func testScalesToFillLandscapeWidth() {
         let document = makeFixtureDocument()
         let view = WidthFittingPDFView()
@@ -85,6 +105,45 @@ final class WidthFittingPDFViewTests: XCTestCase {
         view.fitCurrentPageToWidth()
 
         XCTAssertEqual(view.scaleFactor, manualZoomScale, accuracy: 0.01)
+    }
+
+    /// Regression coverage for the field-reported bug (build 29, after PR #88):
+    /// zoom reverted to unzoomed a few pages into a continuous-scroll session, with
+    /// no pinch/double-tap in between. Root cause: `fitCurrentPageToWidth()` stored
+    /// the *requested* fit scale as `lastFitScale`, not the value PDFView actually
+    /// applied — if PDFView's own `maxScaleFactor` clamp (which it can recompute
+    /// per-page) ever produced a different applied scaleFactor, the next page
+    /// change's drift check compared live `scaleFactor` against that wrong stored
+    /// value, false-positived as "the user zoomed manually," and permanently
+    /// stopped refitting.
+    func testRefitsCorrectlyAfterAPriorClampedApplication() {
+        let view = WidthFittingPDFView()
+        view.document = makeMultiPageFixtureDocument(
+            page1: CGSize(width: 612, height: 792),
+            page2: CGSize(width: 400, height: 300)
+        )
+        view.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
+        // Force PDFKit to clamp the width-fit scale we ask for below, simulating
+        // real-world per-page clamp recomputation rather than applying it verbatim.
+        let page1Width = view.document!.page(at: 0)!.bounds(for: view.displayBox).width
+        let intendedFitScale = 800 / page1Width
+        view.maxScaleFactor = intendedFitScale * 0.5
+        view.layoutIfNeeded()
+
+        // The clamp actually took effect — otherwise this test isn't exercising
+        // the scenario it's meant to.
+        XCTAssertLessThan(view.scaleFactor, intendedFitScale)
+
+        // No manual zoom occurred; scrolling to the next page (different native
+        // dimensions, this time within the clamp range) should still refit
+        // correctly rather than getting stuck at the previous page's clamped
+        // scale, the way Coordinator.observe's real .PDFViewPageChanged handler
+        // calls this on every scroll-past-boundary in continuous mode.
+        view.maxScaleFactor = 10 // lift the artificial clamp for the new page
+        view.go(to: view.document!.page(at: 1)!)
+        view.fitCurrentPageToWidth()
+
+        XCTAssertEqual(view.scaleFactor, 800 / 400, accuracy: 0.01)
     }
 
     /// Regression coverage for the field-reported bug: after a double-tap zoom,
