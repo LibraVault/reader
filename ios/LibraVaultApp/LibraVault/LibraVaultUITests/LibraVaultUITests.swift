@@ -229,7 +229,11 @@ final class LibraVaultUITests: XCTestCase {
     /// Settings is a Form long enough that "Support Development" (its last section)
     /// sits below the fold on the simulator's screen — waitForExistence doesn't
     /// scroll a SwiftUI Form/List into view on its own, so a swipe is needed first.
-    private func scrollDownUntilVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 6) {
+    /// maxSwipes has a bit of headroom above what a compact-height simulator
+    /// actually needs, since every section above "Support Development" (Playback's
+    /// mini-player auto-hide toggle + footer, most recently) adds to how far down
+    /// the fold moves.
+    private func scrollDownUntilVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 8) {
         var attempts = 0
         while !element.exists && attempts < maxSwipes {
             app.swipeUp()
