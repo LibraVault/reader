@@ -188,7 +188,17 @@ final class WidthFittingPDFView: PDFView {
     /// The scale this view itself last applied via fitCurrentPageToWidth(), so a
     /// later auto-fit trigger can tell "nothing's changed since we set this" apart
     /// from "the user pinched/double-tapped since then" (see fitCurrentPageToWidth).
+    /// Reset on every new `document` assignment (see the override below) — PDFKit
+    /// itself resets `scaleFactor` when a fresh document is assigned, and without
+    /// this reset that looked identical to a manual zoom, permanently disabling
+    /// fit-to-width for the new document.
     private var lastFitScale: CGFloat = 0
+
+    override var document: PDFDocument? {
+        didSet {
+            lastFitScale = 0
+        }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
