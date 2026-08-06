@@ -12,8 +12,7 @@ struct MiniPlayerBar: View {
     var body: some View {
         if let book = appState.nowPlayingBook, !appState.isPlayerScreenActive {
             HStack(spacing: LibraVaultSpacing.sm) {
-                RoundedRectangle(cornerRadius: LibraVaultRadius.cover)
-                    .fill(generatedCoverGradient(for: book))
+                CoverArtView(book: book)
                     .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 2) {

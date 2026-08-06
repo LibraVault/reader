@@ -186,8 +186,35 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        books = scanVaults().map { BookItem(from: $0) }
+        let scanned = scanVaults()
+        books = scanned.map { BookItem(from: $0) }
         bridge.log("Loaded \(books.count) books from library", tag: "Library")
+
+        enrichCoverArt(for: scanned)
+    }
+
+    /// Phase 2 of the two-phase scan LibraryFileScanner.swift's header comment already
+    /// describes as the intended shape: phase 1 (above) returns instantly from
+    /// filenames alone so the Library grid never blocks on I/O, then this walks the
+    /// same scan results in the background (zip reads for EPUB, PDF page rendering,
+    /// AVAsset metadata loading — see CoverArtExtractor) and patches real cover art
+    /// into `books` as each extraction finishes, replacing that book's placeholder
+    /// gradient. Detached rather than structured under `loadLibrary`'s own async
+    /// context so a rescan (addVault/removeVault) doesn't leave a stale enrichment
+    /// pass racing a newer one — each call gets its own detached task, and a stale
+    /// pass's writes for since-removed books are simply no-ops below (index lookup
+    /// by id fails once a book is gone from `books`).
+    private func enrichCoverArt(for scanned: [BookData]) {
+        let cache = CoverArtCache()
+        Task.detached(priority: .utility) { [weak self] in
+            for bookData in scanned {
+                guard let coverURL = await CoverArtExtractor.extractCoverPath(for: bookData, cache: cache) else { continue }
+                await MainActor.run {
+                    guard let self, let index = self.books.firstIndex(where: { $0.id == bookData.id }) else { return }
+                    self.books[index].coverUrl = coverURL.path
+                }
+            }
+        }
     }
 
     /// Adds a folder picked via Settings' `.fileImporter` as a new vault, persists it,
@@ -423,7 +450,11 @@ struct BookItem: Identifiable {
     let title: String
     let author: String
     let format: MediaFormat
-    let coverUrl: String?
+    /// Absolute path to a cached cover image (see CoverArtCache), or nil if none has
+    /// been extracted yet/exists for this book. Not `let`: AppState's phase-2 library
+    /// enrichment (loadLibrary's `enrichCoverArt`) patches this in after the initial
+    /// filename-only scan, once CoverArtExtractor finishes for this book.
+    var coverUrl: String?
     var progress: Double
     /// The real file this book was scanned from, and the vault it belongs to — needed
     /// to reopen the book for content parsing/playback. Nil for books not backed by a

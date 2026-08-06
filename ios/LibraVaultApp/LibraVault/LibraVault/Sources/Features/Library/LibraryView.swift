@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum LibraryFormatFilter: String, CaseIterable {
     case all = "All"
@@ -173,9 +174,10 @@ struct LibraryView: View {
     }
 }
 
-/// Deterministic per-book gradient so covers without real artwork (all of them, until
-/// core:storage cover extraction is wired — see DomainBridge.swift's Phase D TODOs)
-/// stay visually distinct instead of a single flat placeholder color. Not private:
+/// Deterministic per-book gradient — the fallback CoverArtView below renders when a
+/// book has no extractable cover art (CoverArtExtractor found nothing, or extraction
+/// hasn't finished yet — see AppState.loadLibrary's phase-2 enrichment), so covers stay
+/// visually distinct instead of a single flat placeholder color. Not private:
 /// MiniPlayerBar and PlayerView reuse it so a book's cover tint is consistent
 /// everywhere it appears, not just in the Library grid.
 let generatedCoverPalette: [(Color, Color)] = [
@@ -200,6 +202,33 @@ func generatedCoverPaletteIndex(for book: BookItem) -> Int {
 func generatedCoverGradient(for book: BookItem) -> LinearGradient {
     let (start, end) = generatedCoverPalette[generatedCoverPaletteIndex(for: book)]
     return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+/// Renders `book`'s real cover art (extracted by CoverArtExtractor, cached to disk by
+/// CoverArtCache) when one exists, falling back to `generatedCoverGradient` otherwise —
+/// the single place every cover-shaped surface (Library grid, Continue row, mini-player,
+/// full player) goes through, so "no real cover yet" degrades the same way everywhere.
+///
+/// Reads the cached JPEG synchronously via `UIImage(contentsOfFile:)` rather than
+/// `AsyncImage` — covers are local cache files already downsampled to a small fixed size
+/// (see CoverArtCache), not network fetches, so there's no loading state worth the extra
+/// machinery of async image loading.
+struct CoverArtView: View {
+    let book: BookItem
+    var cornerRadius: CGFloat = LibraVaultRadius.cover
+
+    var body: some View {
+        Group {
+            if let coverPath = book.coverUrl, let uiImage = UIImage(contentsOfFile: coverPath) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                generatedCoverGradient(for: book)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
 }
 
 struct SupporterBadge: View {
@@ -245,8 +274,7 @@ struct ContinueCard: View {
 
     var body: some View {
         HStack(spacing: LibraVaultSpacing.sm) {
-            RoundedRectangle(cornerRadius: LibraVaultRadius.cover)
-                .fill(generatedCoverGradient(for: book))
+            CoverArtView(book: book)
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
@@ -274,8 +302,7 @@ struct BookCoverView: View {
             // Title lives in the caption below, not overlaid here — matches Android's
             // actual behavior for books with real title metadata: the cover shows
             // artwork with no text, title appears once beneath it.
-            RoundedRectangle(cornerRadius: LibraVaultRadius.cover)
-                .fill(generatedCoverGradient(for: book))
+            CoverArtView(book: book)
                 .aspectRatio(LibraVaultSpacing.coverAspect, contentMode: .fit)
 
             VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
