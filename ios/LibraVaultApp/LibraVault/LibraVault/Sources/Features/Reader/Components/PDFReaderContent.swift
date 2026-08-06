@@ -174,27 +174,49 @@ struct PDFReaderContent: UIViewRepresentable {
 /// width, matching Android's PdfReaderScreen (which rasterizes each page as a
 /// bitmap sized to the view's width via android.graphics.pdf.PdfRenderer).
 ///
-/// Only recomputes on an actual bounds *size* change (rotation, split-view resize),
+/// Only recomputes on an actual bounds *width* change (rotation, split-view resize),
 /// not on every layoutSubviews pass — that also fires during an in-progress pinch
 /// gesture, when bounds.size is unchanged but scaleFactor is exactly what the user
 /// is actively adjusting; recomputing then would fight the gesture and make manual
-/// zoom feel stuck at the width-fit scale.
+/// zoom feel stuck at the width-fit scale. Deliberately width-only, not the full
+/// bounds.size: toggling the reader's chrome (toolbar/status bar) changes the
+/// view's *height* without touching its width, and used to be misread as a resize —
+/// wiping out a double-tap zoom the moment the user tapped once to bring the
+/// toolbar back (reported in the field on PDF landscape).
 final class WidthFittingPDFView: PDFView {
-    private var lastLayoutSize: CGSize = .zero
+    private var lastLayoutWidth: CGFloat = 0
+    /// The scale this view itself last applied via fitCurrentPageToWidth(), so a
+    /// later auto-fit trigger can tell "nothing's changed since we set this" apart
+    /// from "the user pinched/double-tapped since then" (see fitCurrentPageToWidth).
+    private var lastFitScale: CGFloat = 0
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.size != lastLayoutSize else { return }
-        lastLayoutSize = bounds.size
+        guard bounds.width > 0, bounds.width != lastLayoutWidth else { return }
+        lastLayoutWidth = bounds.width
         fitCurrentPageToWidth()
     }
 
     /// Not private — Coordinator.observe's page-change handler calls this directly
-    /// too (see its own doc comment for why).
+    /// too, on every page-changed notification (see its own doc comment for why),
+    /// which fires just as much for scrolling past a page boundary in continuous
+    /// mode as for an explicit Prev/Next/bookmark jump. Skips reapplying the fit
+    /// scale when the live scaleFactor has already drifted away from the value we
+    /// last set here — that drift only happens via the user's own pinch/double-tap
+    /// gesture, since nothing else in this view touches scaleFactor directly — so a
+    /// scroll-triggered page change (or the chrome-toggle tap, belt-and-suspenders
+    /// alongside the width-only layoutSubviews guard above) no longer stomps a zoom
+    /// the user just set (reported in the field: double-tap zoom "resizes again" on
+    /// the next scroll or single tap).
     func fitCurrentPageToWidth() {
         guard let page = currentPage, bounds.width > 0 else { return }
+        if lastFitScale > 0, abs(scaleFactor - lastFitScale) > 0.01 {
+            return
+        }
         let pageWidth = page.bounds(for: displayBox).width
         guard pageWidth > 0 else { return }
-        scaleFactor = bounds.width / pageWidth
+        let fitScale = bounds.width / pageWidth
+        scaleFactor = fitScale
+        lastFitScale = fitScale
     }
 }
