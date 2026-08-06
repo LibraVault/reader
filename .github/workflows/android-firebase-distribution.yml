@@ -66,6 +66,9 @@ jobs:
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
           TESTER_GROUPS: ${{ inputs.groups }}
+          # firebase-tools has no --credential-file flag; it authenticates via
+          # this standard env var instead (see requireAuth.js in the CLI).
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/firebase-key.json
         run: |
           APK_PATH=$(find app/build/outputs/apk/play/release -name "*.apk" | head -1)
           echo "Distributing $APK_PATH"
@@ -73,8 +76,7 @@ jobs:
           npx --yes firebase-tools@13.29.1 appdistribution:distribute "$APK_PATH" \
             --app "$FIREBASE_APP_ID" \
             --groups "$TESTER_GROUPS" \
-            --release-notes "$RELEASE_NOTES" \
-            --credential-file firebase-key.json
+            --release-notes "$RELEASE_NOTES"
 
           echo "✅ Uploaded to Firebase App Distribution"
 

@@ -1,6 +1,6 @@
 # Android Firebase App Distribution Process
 
-**Status: New — not yet run in CI.** This is the ground-truth doc for Android beta distribution, replacing the ad hoc, ClickOps-only instructions that used to live at the repo root (`APP_DISTRIBUTION_SETUP.md`, `FIREBASE_TESTING_SETUP.md`, `FIREBASE_TESTING_CHECKLIST.md`) — those described a maintainer manually building an APK locally and dragging it into the Firebase Console. This doc describes the CI-automated replacement, structured the same way as [iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md).
+**Status: Bootstrapped and verified 2026-08-06 — first CI run succeeded end to end.** This is the ground-truth doc for Android beta distribution, replacing the ad hoc, ClickOps-only instructions that used to live at the repo root (`APP_DISTRIBUTION_SETUP.md`, `FIREBASE_TESTING_SETUP.md`, `FIREBASE_TESTING_CHECKLIST.md`) — those described a maintainer manually building an APK locally and dragging it into the Firebase Console. This doc describes the CI-automated replacement, structured the same way as [iOS-TESTFLIGHT-RELEASE-PROCESS.md](iOS-TESTFLIGHT-RELEASE-PROCESS.md).
 
 ## What this is
 
@@ -36,7 +36,7 @@ gh secret list --repo LibraVault/reader
 
 ## One-time bootstrap (manual — requires GCP/Firebase Console access)
 
-1. Confirm the Firebase project and Android app for `xyz.libravault.app` already exist. They do — a maintainer already distributed a build manually through the Console (see the now-removed `APP_DISTRIBUTION_SETUP.md`). Copy the App ID into the `FIREBASE_APP_ID` secret.
+1. Confirm the Firebase project and Android app for `xyz.libravault.app` exist. As of 2026-08-06 the app lives in the **`libravault-xyz`** Firebase project (App ID `1:170483129446:android:984845c0fa2f630e26e1a7`) — registered directly via the Firebase Management API, since neither pre-existing project actually had a correctly-named app (`libravault-testing` had one Android app but registered under the wrong package, `libravault.xyz`; `libravault-xyz` had none). Copy the App ID into the `FIREBASE_APP_ID` secret.
 2. Create a CI-scoped service account and grant App Distribution admin rights:
    ```bash
    gcloud iam service-accounts create firebase-app-distro-ci --project=PROJECT_ID
@@ -62,9 +62,9 @@ gh secret list --repo LibraVault/reader
    npx --yes firebase-tools@13.29.1 appdistribution:distribute "$APK_PATH" \
      --app "$FIREBASE_APP_ID" \
      --groups "$TESTER_GROUPS" \
-     --release-notes "$RELEASE_NOTES" \
-     --credential-file firebase-key.json
+     --release-notes "$RELEASE_NOTES"
    ```
+   Authentication comes from `GOOGLE_APPLICATION_CREDENTIALS` pointing at the decoded `firebase-key.json` — `firebase-tools` has no `--credential-file` flag (an early version of this workflow assumed one and failed at runtime; see gotchas below).
 6. Upload the APK as a build artifact (30-day retention).
 7. **Clean up** (`if: always()`) — remove the keystore, `keystore.properties`, and `firebase-key.json`. Never leave key material on the runner.
 
