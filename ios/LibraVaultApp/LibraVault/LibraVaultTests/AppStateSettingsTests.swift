@@ -135,4 +135,19 @@ final class AppStateSettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.defaultPlaybackSpeed, 2.0)
         XCTAssertEqual(reloaded.skipDurationSeconds, 45)
     }
+
+    func testMiniPlayerAutoHideEnabledDefaultsToTrue() {
+        XCTAssertTrue(AppState(userPreferencesPersistence: makeIsolatedPersistence()).miniPlayerAutoHideEnabled)
+    }
+
+    func testMiniPlayerAutoHideEnabledIsSettableAndPersistsAcrossAppStateInstances() {
+        let persistence = makeIsolatedPersistence()
+
+        let state = AppState(userPreferencesPersistence: persistence)
+        state.miniPlayerAutoHideEnabled = false
+        XCTAssertFalse(state.miniPlayerAutoHideEnabled)
+
+        let reloaded = AppState(userPreferencesPersistence: persistence)
+        XCTAssertFalse(reloaded.miniPlayerAutoHideEnabled)
+    }
 }

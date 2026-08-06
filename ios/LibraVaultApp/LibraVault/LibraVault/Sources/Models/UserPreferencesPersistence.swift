@@ -15,6 +15,7 @@ struct UserPreferencesPersistence {
         static let playbackSpeed = "xyz.libravault.defaultPlaybackSpeed"
         static let skipDurationSeconds = "xyz.libravault.skipDurationSeconds"
         static let ttsEngineType = "xyz.libravault.ttsEngineType"
+        static let miniPlayerAutoHideEnabled = "xyz.libravault.miniPlayerAutoHideEnabled"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -63,5 +64,18 @@ struct UserPreferencesPersistence {
 
     func save(ttsEngineType: TTSEngineType) {
         defaults.set(ttsEngineType.rawValue, forKey: Key.ttsEngineType)
+    }
+
+    /// Whether the mini-player collapses to a small hint strip after a few seconds
+    /// idle (see MiniPlayerBar). `object(forKey:)` (not `bool(forKey:)`, which
+    /// returns `false` for an absent key) so a never-configured install defaults to
+    /// enabled rather than reading as an explicit opt-out.
+    func loadMiniPlayerAutoHideEnabled() -> Bool {
+        guard let value = defaults.object(forKey: Key.miniPlayerAutoHideEnabled) as? Bool else { return true }
+        return value
+    }
+
+    func save(miniPlayerAutoHideEnabled: Bool) {
+        defaults.set(miniPlayerAutoHideEnabled, forKey: Key.miniPlayerAutoHideEnabled)
     }
 }

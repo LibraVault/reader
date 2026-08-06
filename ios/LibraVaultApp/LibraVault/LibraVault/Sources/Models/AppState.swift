@@ -45,6 +45,11 @@ final class AppState: ObservableObject {
             Task { await bridge.switchTTSEngine(to: ttsEngineType) }
         }
     }
+    /// Whether MiniPlayerBar collapses to a small hint strip after a few seconds
+    /// idle. Defaults to enabled — see UserPreferencesPersistence.loadMiniPlayerAutoHideEnabled.
+    @Published var miniPlayerAutoHideEnabled: Bool = true {
+        didSet { userPreferencesPersistence.save(miniPlayerAutoHideEnabled: miniPlayerAutoHideEnabled) }
+    }
 
     // MARK: - Playback (mini-player / Player screen)
 
@@ -163,6 +168,7 @@ final class AppState: ObservableObject {
         defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
         ttsEngineType = userPreferencesPersistence.loadTTSEngineType()
+        miniPlayerAutoHideEnabled = userPreferencesPersistence.loadMiniPlayerAutoHideEnabled()
 
         audioEngine.onProgress = { [weak self] elapsed, duration in
             Task { @MainActor [weak self] in

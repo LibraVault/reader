@@ -88,6 +88,7 @@ final class LibraVaultDesignSystemTests: XCTestCase {
         XCTAssertEqual(LibraVaultSpacing.xxl, 32)
         XCTAssertEqual(LibraVaultSpacing.coverWidth, 120)
         XCTAssertEqual(LibraVaultSpacing.miniBarHeight, 64)
+        XCTAssertEqual(LibraVaultSpacing.miniBarHintHeight, 20)
         XCTAssertEqual(LibraVaultSpacing.topBarHeight, 56)
     }
 

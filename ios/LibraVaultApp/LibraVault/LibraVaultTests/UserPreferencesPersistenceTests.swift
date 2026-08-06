@@ -67,4 +67,28 @@ final class UserPreferencesPersistenceTests: XCTestCase {
         defaults.set("not-a-real-engine", forKey: "xyz.libravault.ttsEngineType")
         XCTAssertEqual(UserPreferencesPersistence(defaults: defaults).loadTTSEngineType(), .system)
     }
+
+    // MARK: - Mini-player auto-hide
+
+    /// Defaults to *enabled* on a never-configured install — the reverse of
+    /// `bool(forKey:)`'s own "absent key reads as false" default, which is why
+    /// this reads via `object(forKey:)` instead. See the doc comment on
+    /// `loadMiniPlayerAutoHideEnabled` for why that distinction matters here.
+    func testLoadMiniPlayerAutoHideEnabledDefaultsToTrueWhenNothingSaved() {
+        let persistence = UserPreferencesPersistence(defaults: makeIsolatedDefaults())
+        XCTAssertTrue(persistence.loadMiniPlayerAutoHideEnabled())
+    }
+
+    func testSaveThenLoadRoundTripsMiniPlayerAutoHideEnabledDisabled() {
+        let defaults = makeIsolatedDefaults()
+        UserPreferencesPersistence(defaults: defaults).save(miniPlayerAutoHideEnabled: false)
+        XCTAssertFalse(UserPreferencesPersistence(defaults: defaults).loadMiniPlayerAutoHideEnabled())
+    }
+
+    func testSaveThenLoadRoundTripsMiniPlayerAutoHideEnabledEnabled() {
+        let defaults = makeIsolatedDefaults()
+        UserPreferencesPersistence(defaults: defaults).save(miniPlayerAutoHideEnabled: false)
+        UserPreferencesPersistence(defaults: defaults).save(miniPlayerAutoHideEnabled: true)
+        XCTAssertTrue(UserPreferencesPersistence(defaults: defaults).loadMiniPlayerAutoHideEnabled())
+    }
 }
