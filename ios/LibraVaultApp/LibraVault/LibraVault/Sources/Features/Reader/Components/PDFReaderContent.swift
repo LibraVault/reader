@@ -227,6 +227,16 @@ final class WidthFittingPDFView: PDFView {
         guard pageWidth > 0 else { return }
         let fitScale = bounds.width / pageWidth
         scaleFactor = fitScale
-        lastFitScale = fitScale
+        // Read back the value PDFView actually applied rather than trusting
+        // `fitScale` itself: PDFView clamps `scaleFactor` to its own
+        // `minScaleFactor`/`maxScaleFactor`, which it recomputes per-page (a page
+        // with different native dimensions than the last can yield a different
+        // clamp range). If the applied value ever diverged from what we asked for,
+        // comparing the *next* page-change's live scaleFactor against the
+        // unclamped `fitScale` we'd stored here would false-positive as "the user
+        // pinched/double-tapped since then," permanently disabling refit for the
+        // rest of the session (reported in the field: zoom reverts to unzoomed
+        // after a few pages of continuous scroll).
+        lastFitScale = scaleFactor
     }
 }
