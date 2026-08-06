@@ -23,8 +23,7 @@ struct PlayerView: View {
             Spacer()
 
             if let book {
-                RoundedRectangle(cornerRadius: LibraVaultRadius.card)
-                    .fill(generatedCoverGradient(for: book))
+                CoverArtView(book: book, cornerRadius: LibraVaultRadius.card)
                     .frame(width: 220, height: 220)
                     .shadow(radius: 12)
 

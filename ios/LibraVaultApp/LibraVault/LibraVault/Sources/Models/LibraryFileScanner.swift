@@ -3,10 +3,12 @@ import Foundation
 /// Real (non-mock) filesystem scan of a vault folder for known book/audiobook file
 /// extensions. This is the iOS-native counterpart to Android's FileScanner +
 /// MetadataExtractor (core:storage): deliberately simpler, since it only reads the
-/// filename and extension — no embedded metadata (title/author/cover/duration)
-/// extraction, which is the Phase D core:storage KMP work described in
-/// DomainBridge.swift. Matches Android's two-phase scan in spirit (stub entries first,
-/// metadata enrichment later) by only implementing phase one for now.
+/// filename and extension here — title/author/duration extraction is still the
+/// Phase D core:storage KMP work described in DomainBridge.swift (not implemented).
+/// Cover art *is* extracted, but as a separate phase-two pass over this scan's
+/// output — see AppState.loadLibrary's enrichCoverArt and CoverArtExtractor — so this
+/// scan itself stays filename-only and fast. Matches Android's two-phase scan in
+/// spirit (stub entries first, metadata enrichment later): this implements phase one.
 enum LibraryFileScanner {
     static let extensionFormats: [String: MediaFormat] = [
         "epub": .epub,

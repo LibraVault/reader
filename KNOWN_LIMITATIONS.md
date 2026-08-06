@@ -39,8 +39,11 @@ contributors don't mistake them for gaps, and so users don't ask
   `LibraryScannerImpl.enrichMetadata` Phase 2 processes files
   sequentially on a single coroutine; 10 k+ items will take several
   minutes on first run.
-- The cover art cache caps each cover at 512 px on the long edge.
-  No folder-level cover art for series; each book gets its own.
+- The cover art cache caps each cover at 512 px on the long edge, on
+  both Android (`core:storage`'s `CoverArtCache`) and iOS (its Swift
+  port of the same). No folder-level cover art for series; each book
+  gets its own. See `docs/ios-android-feature-parity.md` for the full
+  platform status matrix.
 
 ## Editing
 
