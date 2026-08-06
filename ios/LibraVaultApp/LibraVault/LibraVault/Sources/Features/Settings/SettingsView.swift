@@ -118,8 +118,15 @@ struct SettingsView: View {
                 }
             }
             .padding(.vertical, LibraVaultSpacing.xs)
+
+            Toggle("Auto-hide mini-player", isOn: $appState.miniPlayerAutoHideEnabled)
+                .tint(LibraVaultColor.primary)
         } header: {
             sectionHeader("Playback")
+        } footer: {
+            Text("Tucks the mini-player away after a few seconds idle, leaving a small hint at the bottom to bring it back.")
+                .font(LibraVaultTypography.bodySmall)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }
     }
 

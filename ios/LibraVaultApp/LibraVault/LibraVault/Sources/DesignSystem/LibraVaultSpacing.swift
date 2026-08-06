@@ -16,6 +16,11 @@ enum LibraVaultSpacing {
     /// Mini-player / reader mini-bar height.
     static let miniBarHeight: CGFloat = 64
 
+    /// Collapsed-state hint strip height when the mini-player auto-hides (see
+    /// MiniPlayerBar) — tall enough to be a comfortable tap target, short enough to
+    /// read as "tucked away" rather than a second bar.
+    static let miniBarHintHeight: CGFloat = 20
+
     /// Standard nav-bar height (matches Android's Material top-app-bar default).
     static let topBarHeight: CGFloat = 56
 }
