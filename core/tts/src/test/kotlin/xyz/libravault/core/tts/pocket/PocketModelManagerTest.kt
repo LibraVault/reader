@@ -1,22 +1,23 @@
 package xyz.libravault.core.tts.pocket
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.util.Log
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import xyz.libravault.core.tts.BuildConfig
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Path
 
@@ -33,19 +34,19 @@ class PocketModelManagerTest {
     @Test
     fun `ModelStatus sealed class has expected types`() {
         val idle = ModelStatus.Idle
-        val downloading = ModelStatus.Downloading(0.5f)
+        val preparing = ModelStatus.Preparing(0.5f)
         val ready = ModelStatus.Ready("/path/to/model")
         val failed = ModelStatus.Failed("error message")
 
         assertNotNull(idle)
-        assertNotNull(downloading)
+        assertNotNull(preparing)
         assertNotNull(ready)
         assertNotNull(failed)
     }
 
     @Test
-    fun `Downloading status captures progress`() {
-        val status = ModelStatus.Downloading(0.75f)
+    fun `Preparing status captures progress`() {
+        val status = ModelStatus.Preparing(0.75f)
         assertEquals(0.75f, status.progress)
     }
 
@@ -75,9 +76,10 @@ class PocketModelManagerTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private fun manager(): PocketModelManager {
+    private fun manager(assetManager: AssetManager = mockk()): PocketModelManager {
         val context = mockk<Context>()
         every { context.filesDir } returns tempDir.toFile()
+        every { context.assets } returns assetManager
         return PocketModelManager(context)
     }
 
@@ -139,43 +141,83 @@ class PocketModelManagerTest {
         assertEquals(modelDir.absolutePath, manager().modelPathIfReady())
     }
 
-    // ── extractTarBz2() ──────────────────────────────────────────────────────
+    // ── copyModelAssets() ────────────────────────────────────────────────────
 
-    @Test
-    fun `extractTarBz2 strips the single top-level release directory`() {
-        val archive = File(tempDir.toFile(), "fixture.tar.bz2")
-        writeFixtureTarBz2(
-            archive,
-            "vits-piper-en_US-ljspeech-medium-int8/en_US-ljspeech-medium.onnx" to "onnx-bytes",
-            "vits-piper-en_US-ljspeech-medium-int8/tokens.txt" to "token-bytes",
-            "vits-piper-en_US-ljspeech-medium-int8/espeak-ng-data/phontab" to "phontab-bytes",
-        )
-
-        val destination = File(tempDir.toFile(), "extracted").apply { mkdirs() }
-        manager().extractTarBz2(archive, destination)
-
-        assertEquals("onnx-bytes", File(destination, "en_US-ljspeech-medium.onnx").readText())
-        assertEquals("token-bytes", File(destination, "tokens.txt").readText())
-        assertEquals("phontab-bytes", File(destination, "espeak-ng-data/phontab").readText())
-        assertFalse(
-            File(destination, "vits-piper-en_US-ljspeech-medium-int8").exists(),
-            "the wrapping release directory itself must not be materialized",
-        )
+    /**
+     * Builds a fake [AssetManager] over an in-memory tree, mirroring
+     * `assets/pocket-tts-model/`'s real shape (a couple of top-level files
+     * plus a nested `espeak-ng-data/` directory). [AssetManager.list] must
+     * return an empty array (not null) for a file path and the child names
+     * for a directory path - real devices behave that way, and
+     * `PocketModelManager`'s private path-classification logic relies on it
+     * to tell files from directories.
+     */
+    private fun fakeAssetManager(files: Map<String, String>): AssetManager {
+        val assetManager = mockk<AssetManager>()
+        val childrenByDir = mutableMapOf<String, MutableSet<String>>()
+        for (path in files.keys) {
+            var current = path
+            while (current.contains('/')) {
+                val parent = current.substringBeforeLast('/')
+                val child = current.substringAfterLast('/')
+                childrenByDir.getOrPut(parent) { mutableSetOf() }.add(child)
+                current = parent
+            }
+        }
+        for ((dir, children) in childrenByDir) {
+            every { assetManager.list(dir) } returns children.toTypedArray()
+        }
+        for (path in files.keys) {
+            every { assetManager.list(path) } returns emptyArray()
+        }
+        for ((path, content) in files) {
+            every { assetManager.open(path) } answers { ByteArrayInputStream(content.toByteArray()) }
+        }
+        return assetManager
     }
 
-    /** Builds a minimal real .tar.bz2 so the extraction/strip logic (including the codec) is exercised end to end. */
-    private fun writeFixtureTarBz2(destination: File, vararg entries: Pair<String, String>) {
-        BZip2CompressorOutputStream(destination.outputStream()).use { bzOut ->
-            TarArchiveOutputStream(bzOut).use { tarOut ->
-                for ((name, content) in entries) {
-                    val bytes = content.toByteArray()
-                    val entry = TarArchiveEntry(name)
-                    entry.size = bytes.size.toLong()
-                    tarOut.putArchiveEntry(entry)
-                    tarOut.write(bytes)
-                    tarOut.closeArchiveEntry()
-                }
-            }
+    @Test
+    fun `copyModelAssets copies every file into the model directory, stripping the assets root`() = runTest {
+        val assetManager = fakeAssetManager(
+            mapOf(
+                "$ASSET_MODEL_DIR/model.onnx" to "onnx-bytes",
+                "$ASSET_MODEL_DIR/tokens.txt" to "token-bytes",
+                "$ASSET_MODEL_DIR/espeak-ng-data/phontab" to "phontab-bytes",
+            ),
+        )
+
+        manager(assetManager).copyModelAssets()
+
+        assertEquals("onnx-bytes", File(modelDir, "model.onnx").readText())
+        assertEquals("token-bytes", File(modelDir, "tokens.txt").readText())
+        assertEquals("phontab-bytes", File(modelDir, "espeak-ng-data/phontab").readText())
+    }
+
+    @Test
+    fun `copyModelAssets reports progress from 0 up to 1`() = runTest {
+        val assetManager = fakeAssetManager(
+            mapOf(
+                "$ASSET_MODEL_DIR/a" to "a",
+                "$ASSET_MODEL_DIR/b" to "b",
+            ),
+        )
+        val progressUpdates = mutableListOf<Float>()
+
+        manager(assetManager).copyModelAssets { progressUpdates.add(it) }
+
+        assertEquals(listOf(0.5f, 1.0f), progressUpdates)
+    }
+
+    @Test
+    fun `copyModelAssets fails loudly when the assets root is empty`() = runTest {
+        val assetManager = mockk<AssetManager>()
+        every { assetManager.list(ASSET_MODEL_DIR) } returns emptyArray()
+
+        try {
+            manager(assetManager).copyModelAssets()
+            fail<Unit>("expected copyModelAssets to throw")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message.orEmpty().contains("setup-android-model.sh"))
         }
     }
 }

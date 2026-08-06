@@ -1,5 +1,30 @@
 # Pocket-TTS Implementation Progress
 
+## v1.1: model bundled at build time on Android too, F-Droid parity
+
+`PocketModelManager.kt` (Android) no longer downloads the voice model
+on-device at first use — it's now bundled into the APK's assets at
+build/release-prep time by `third-party/sherpa-onnx/setup-android-model.sh`
+(extract-and-commit, mirroring how `sherpa-onnx-android.aar` itself is
+already handled), the same shape as iOS's build-time bundling, just via a
+committed asset instead of a gitignored CI fetch (see
+`SHERPA_ONNX_SETUP.md`'s "Why Android commits the model to git and iOS
+doesn't"). `PocketModelManager` now copies from assets into app storage
+instead of downloading+extracting a `.tar.bz2`, dropping the `okhttp3` and
+`commons-compress` dependencies from `core/tts` entirely.
+
+Consequence: `TtsEngineFactory`'s F-Droid fallback to system TTS is gone —
+that existed only because the download needed the Play-only INTERNET
+permission. Pocket TTS now ships identically on Play, F-Droid, and iOS.
+`ModelStatus.Downloading` was renamed to `ModelStatus.Preparing` to stop
+implying a network call that no longer happens.
+
+Not done in this pass: `TtsSettingsSection` (the Compose engine-picker UI)
+still has no live caller anywhere in the app — Settings > Text-to-Speech
+isn't actually wired up yet on Android, so none of this is user-reachable
+through the UI today despite being fully functional underneath. See the
+"Not done" note below, which predates this change and still applies.
+
 ## v1 status: RESOLVED (Android + iOS)
 
 The AAR blocker and TODOs below are closed out on Android, and iOS now has a
@@ -31,10 +56,12 @@ end to end:
   fetched at build time by `third-party/sherpa-onnx/setup-ios.sh`, not
   committed (~230MB combined) - see `SHERPA_ONNX_SETUP.md`.
 - The same voice model (same URL/checksum, same licensing reasoning) is
-  bundled into the app at build time rather than downloaded on first use
-  like Android - `Foundation` has no tar/bzip2 support, and the only
-  on-device alternative uses a private Apple API. See
-  `SHERPA_ONNX_SETUP.md`'s "iOS: why the model is bundled" section.
+  bundled into the app at build time - at the time this was written, that
+  was ahead of Android, which still downloaded the model on first use; see
+  the "v1.1" section above for why Android also moved to build-time
+  bundling. `Foundation` has no tar/bzip2 support, and the only on-device
+  alternative uses a private Apple API. See `SHERPA_ONNX_SETUP.md`'s "Why
+  Android commits the model to git and iOS doesn't" section.
 - `TTSEngineProtocol` gives both `TTSEngineBridge` (system voice) and
   `PocketTTSEngine` a shared shape; `AppState.ttsEngineType` (persisted,
   Settings > Text-to-Speech) drives `LibravaultDomainBridge.switchTTSEngine(to:)`,

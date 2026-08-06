@@ -17,6 +17,12 @@ class TtsEngineFactory @Inject constructor(
     private val androidEngine: AndroidTtsEngine,
     private val pocketEngine: PocketTtsEngine,
 ) {
+    // Pocket TTS used to fall back to Android system TTS on F-Droid builds
+    // here, because the voice model was downloaded on first use and F-Droid
+    // ships with no INTERNET permission. The model is now bundled into the
+    // APK at build time instead (see PocketModelManager and
+    // third-party/sherpa-onnx/setup-android-model.sh), so both flavors can
+    // use it - no flavor check needed.
     fun create(type: TtsEngineType): TtsEngine {
         return when (type) {
             TtsEngineType.ANDROID -> {
@@ -24,28 +30,9 @@ class TtsEngineFactory @Inject constructor(
                 androidEngine
             }
             TtsEngineType.POCKET_TTS -> {
-                // Check build flavor at runtime
-                if (isFdroidBuild()) {
-                    Log.w(TAG, "Pocket TTS requested but F-Droid build; falling back to Android TTS")
-                    androidEngine
-                } else {
-                    Log.d(TAG, "Using Pocket TTS")
-                    pocketEngine
-                }
+                Log.d(TAG, "Using Pocket TTS")
+                pocketEngine
             }
-        }
-    }
-
-    private fun isFdroidBuild(): Boolean {
-        return try {
-            val clazz = Class.forName("xyz.libravault.BuildConfig")
-            val field = clazz.getDeclaredField("FLAVOR")
-            field.isAccessible = true
-            val flavor = field.get(null) as String
-            flavor == "fdroid"
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not determine build flavor: ${e.message}")
-            false
         }
     }
 }

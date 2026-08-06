@@ -3,10 +3,9 @@
 ## Overview
 
 LibraVault uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) to power
-the Pocket TTS on-device text-to-speech engine on **both platforms**:
-Android (Play flavor only — F-Droid uses system TTS, see
-`TtsEngineFactory.isFdroidBuild()`) and iOS (selectable in Settings > Voice,
-alongside the system voice).
+the Pocket TTS on-device text-to-speech engine on **both platforms and both
+Android flavors** — Play, F-Droid, and iOS all ship it, selectable in
+Settings alongside the system voice.
 
 Three independent pieces make this work, all sourced from sherpa-onnx's own
 prebuilt GitHub Release assets rather than compiled/trained locally:
@@ -19,18 +18,28 @@ prebuilt GitHub Release assets rather than compiled/trained locally:
    include onnxruntime on iOS, unlike bundling it might suggest), fetched by
    `third-party/sherpa-onnx/setup-ios.sh`. See "iOS engine binaries" below.
 3. **The voice model** — same model, same URL/checksum, on both platforms.
-   Android downloads it on-device at first use (`PocketModelManager.kt`);
-   iOS bundles it into the app at build time instead (`PocketModelManager.swift`
-   — see "iOS: why the model is bundled, not downloaded" below). Never
-   committed to git either way (kept out of the repo to avoid bloating repo
-   size; verified via SHA-256 on fetch).
+   Both bundle it into the app at build time: Android via
+   `third-party/sherpa-onnx/setup-android-model.sh`, which extracts it to
+   `core/tts/src/main/assets/pocket-tts-model/` (committed to git, the same
+   way `sherpa-onnx-android.aar` itself is); iOS via `setup-ios.sh` into
+   `PocketTTSModel/` (gitignored, re-fetched per build/CI run — see "iOS
+   engine binaries" below for why the two differ on that point). Neither
+   platform downloads anything at app runtime, so both Android flavors and
+   iOS get Pocket TTS with no INTERNET permission required for it.
+   Previously Android downloaded the model on-device at first use instead
+   (`PocketModelManager.kt`'s old design) — that needed the Play-only
+   INTERNET permission and was why F-Droid didn't ship Pocket TTS at all.
 
 ## The voice model: what and why
 
 The bundled voice is **`vits-piper-en_US-ljspeech-medium` (int8)**, a
-single-speaker Piper VITS model, configured via
-`core/tts/build.gradle.kts`'s `POCKET_TTS_MODEL_URL` /
-`POCKET_TTS_MODEL_SHA256` build config fields.
+single-speaker Piper VITS model. The URL/checksum live in two places that
+must be kept in sync: `third-party/sherpa-onnx/setup-android-model.sh` and
+`third-party/sherpa-onnx/setup-ios.sh` (each hardcodes its own copy, same as
+they already do for engine binaries); `core/tts/build.gradle.kts`'s
+`POCKET_TTS_MODEL_SHA256` build config field keeps only the checksum, as the
+"which model version is this APK's bundled copy" marker `PocketModelManager`
+checks after copying from assets into app storage.
 
 This specific voice was a deliberate choice, not the first thing tried.
 LibraVault doesn't have a live paid tier today (per `KNOWN_LIMITATIONS.md`:
@@ -65,14 +74,20 @@ each additional voice's license checked the same way before adding it.
 1. Pick a voice from https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
    and **check its `MODEL_CARD` file's dataset license** before using it —
    this is the step that was missed for `lessac`/`amy` above.
-2. Update `POCKET_TTS_MODEL_URL` / `POCKET_TTS_MODEL_SHA256` in
-   `core/tts/build.gradle.kts` (compute the SHA-256 of the `.tar.bz2` asset
-   itself, e.g. `sha256sum vits-piper-<voice>.tar.bz2`).
+2. Update `MODEL_URL` / `MODEL_SHA256` in both
+   `third-party/sherpa-onnx/setup-android-model.sh` and
+   `third-party/sherpa-onnx/setup-ios.sh` (compute the SHA-256 of the
+   `.tar.bz2` asset itself, e.g. `sha256sum vits-piper-<voice>.tar.bz2`), and
+   `POCKET_TTS_MODEL_SHA256` in `core/tts/build.gradle.kts` to match.
 3. Update the filenames in `PocketVoiceCatalog` (`MODEL_FILE_NAME`,
    `TOKENS_FILE_NAME`) to match the new voice's `.onnx`/`tokens.txt` names.
-4. Bump `PocketModelManager`'s stored `sha256.txt` invalidates automatically
-   since it's compared against the new `BuildConfig.POCKET_TTS_MODEL_SHA256`
-   at runtime — existing installs will re-download once.
+4. Re-run `./third-party/sherpa-onnx/setup-android-model.sh`, then
+   `git add core/tts/src/main/assets/pocket-tts-model` and commit — the old
+   model's stored `sha256.txt` (written into app storage, not the asset
+   folder) stops matching the new `BuildConfig.POCKET_TTS_MODEL_SHA256`
+   automatically, so existing installs re-copy once after updating.
+5. Re-run `./third-party/sherpa-onnx/setup-ios.sh` (or let CI do it) to pick
+   up the new model for the next iOS build.
 
 ## Android engine binaries
 
@@ -108,20 +123,36 @@ functions directly, predating sherpa-onnx's newer official SPM support.
 Run this once before opening the Xcode project locally; `ios-app-build.yml`
 runs it as a CI step (cached across runs, keyed on the script's own hash).
 
-## iOS: why the model is bundled, not downloaded
+## Why Android commits the model to git and iOS doesn't
 
-Android's `PocketModelManager` downloads and extracts the model on first use
-(`.tar.bz2`, verified via SHA-256). iOS's `PocketModelManager` just resolves
-a path inside the app bundle — the model is fetched and extracted by
-`setup-ios.sh` at build time instead. This isn't a style preference, it's a
-real platform gap: **Foundation has no built-in tar/bzip2 decompression**,
-and sherpa-onnx's model releases are `.tar.bz2`. The only on-device
-alternative — linking `libbz2.dylib` directly, which IS present in the iOS
-SDK — needs `bzlib.h`, which Apple doesn't ship publicly; that's a private-API
-App Store rejection risk. Extracting at build time, on a machine with a real
-`tar`, sidesteps the problem entirely.
+Both platforms extract the same `.tar.bz2` at build/dev-setup time now, not
+at app runtime — but where the extracted output lives differs:
 
-Practical difference from Android: the ~37MB model adds to the iOS app's
-install size instead of a Settings-triggered download. `TtsSettingsSection`'s
-Android-side download-progress UI has no iOS equivalent for the same reason
-— there's nothing to show progress for.
+- **Android**: `setup-android-model.sh` extracts straight into
+  `core/tts/src/main/assets/pocket-tts-model/`, which gets **committed to
+  git**, the same way `sherpa-onnx-android.aar` is (~11MB, already
+  committed) — Gradle just picks it up as a normal asset, no CI step needed
+  to fetch it, matching how Android's binary deps already work in this repo.
+- **iOS**: `setup-ios.sh` extracts into a **gitignored** path and is re-run
+  by CI on every build/TestFlight run (`ios-app-build.yml`,
+  `ios-testflight.yml`), same as the two xcframeworks it also fetches. Those
+  frameworks push the total per-build fetch to ~230MB — too large to commit
+  — so the model rides along with the same fetch-at-build-time mechanism for
+  consistency, even though on its own (~37MB) it wouldn't have forced that
+  choice.
+
+Either way, no network call happens when the app runs on a user's device —
+only during development/CI, fetching a public, checksum-verified asset.
+
+iOS's `PocketModelManager` just resolves a path inside the app bundle,
+extraction having already happened at build time via `setup-ios.sh`. This
+isn't a style preference relative to Android's old on-device-download
+design (see git history) — it reflects a real platform gap: **Foundation
+has no built-in tar/bzip2 decompression**, and sherpa-onnx's model releases
+are `.tar.bz2`. The only on-device alternative — linking `libbz2.dylib`
+directly, which IS present in the iOS SDK — needs `bzlib.h`, which Apple
+doesn't ship publicly; that's a private-API App Store rejection risk.
+Extracting at build time, on a machine with a real `tar`, sidesteps the
+problem entirely — which is also why Android's own extraction moved to
+build time instead of using `commons-compress` on-device once there was no
+runtime download left to pair it with.
