@@ -46,6 +46,15 @@ import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.tts.TtsEngine
+import xyz.libravault.core.tts.TtsEngineProvider
+import xyz.libravault.core.tts.TtsEngineType
+import xyz.libravault.core.tts.TtsPreferences
+import xyz.libravault.core.tts.TtsState
+import xyz.libravault.core.tts.TtsVoiceInfo
+import xyz.libravault.core.tts.pocket.ModelStatus
+import xyz.libravault.core.tts.pocket.PocketModelManager
+import xyz.libravault.core.tts.pocket.PocketVoiceCatalog
 
 @ExtendWith(MockKExtension::class)
 class SettingsViewModelTest {
@@ -65,6 +74,16 @@ class SettingsViewModelTest {
     private val donationClient = mockk<DonationClient>(relaxed = true)
     private val staticAddresses = mockk<StaticDonationAddresses>(relaxed = true)
 
+    private val ttsEngineProvider = mockk<TtsEngineProvider>()
+    private val ttsPreferences = mockk<TtsPreferences>(relaxed = true)
+    private val pocketModelManager = mockk<PocketModelManager>()
+    private val pocketVoiceCatalog = mockk<PocketVoiceCatalog>()
+
+    private val fakeTtsEngine = mockk<TtsEngine>(relaxed = true)
+    private val ttsEngineTypeFlow = MutableStateFlow(TtsEngineType.ANDROID)
+    private val ttsEngineFlow = MutableStateFlow(fakeTtsEngine)
+    private val ttsEngineStateFlow = MutableStateFlow(TtsState())
+
     private val mainDispatcher = UnconfinedTestDispatcher()
     private val vaultsFlow = MutableStateFlow(emptyList<VaultFolder>())
 
@@ -79,6 +98,12 @@ class SettingsViewModelTest {
         every { observeVaults() }           returns vaultsFlow
         every { scanVaultsUseCase() }        returns flowOf(ScanProgress.Completed(0))
         every { supporterRepository.getPendingInvoiceId() } returns null
+
+        every { ttsEngineProvider.engineType } returns ttsEngineTypeFlow
+        every { ttsEngineProvider.engine }     returns ttsEngineFlow
+        every { fakeTtsEngine.state }          returns ttsEngineStateFlow
+        every { pocketModelManager.ensureModelAvailable() } returns flowOf(ModelStatus.Idle)
+        every { pocketVoiceCatalog.availableVoices() } returns emptyList()
     }
 
     @AfterEach
@@ -93,6 +118,7 @@ class SettingsViewModelTest {
             prefsRepo, coverCache, libraryRepository, vaultManager,
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
             supporterRepository, donationClient, staticAddresses,
+            ttsEngineProvider, ttsPreferences, pocketModelManager, pocketVoiceCatalog,
         )
     }
 
@@ -304,5 +330,67 @@ class SettingsViewModelTest {
 
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // ── Text-to-Speech ────────────────────────────────────────────────────────
+
+    @Test
+    fun `tts state reflects engine type, engine state, and model status`() = runTest(mainDispatcher) {
+        ttsEngineTypeFlow.value = TtsEngineType.POCKET_TTS
+        ttsEngineStateFlow.value = TtsState(speechRate = 1.5f, selectedVoiceId = "en_US-ljspeech-medium")
+        every { pocketVoiceCatalog.availableVoices() } returns listOf(
+            TtsVoiceInfo(id = "en_US-ljspeech-medium", displayName = "Ljspeech", locale = "en-US"),
+        )
+        every { pocketModelManager.ensureModelAvailable() } returns flowOf(ModelStatus.Ready("/path"))
+
+        val vm = viewModel()
+        vm.ttsState.test {
+            val state = awaitItem()
+            assertEquals(TtsEngineType.POCKET_TTS, state.engineType)
+            assertEquals(1.5f, state.speechRate)
+            assertEquals("en_US-ljspeech-medium", state.selectedVoiceId)
+            assertEquals(1, state.availableVoices.size)
+            assertEquals(ModelStatus.Ready("/path"), state.modelStatus)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `tts state does not collect model setup progress while android engine selected`() =
+        runTest(mainDispatcher) {
+            ttsEngineTypeFlow.value = TtsEngineType.ANDROID
+
+            val vm = viewModel()
+            vm.ttsState.test {
+                val state = awaitItem()
+                assertEquals(ModelStatus.Idle, state.modelStatus)
+                cancelAndIgnoreRemainingEvents()
+            }
+            // ensureModelAvailable() is a cold Flow that copies the bundled model out of
+            // the APK's assets on collection - it must never be touched while Pocket TTS
+            // isn't selected.
+            verify(exactly = 0) { pocketModelManager.ensureModelAvailable() }
+        }
+
+    @Test
+    fun `engine type selection persists to preferences rather than switching the engine directly`() =
+        runTest(mainDispatcher) {
+            val vm = viewModel()
+            vm.onTtsEngineTypeSelected(TtsEngineType.POCKET_TTS)
+            coVerify { ttsPreferences.setEngineType(TtsEngineType.POCKET_TTS) }
+        }
+
+    @Test
+    fun `voice selection persists to preferences`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onTtsVoiceSelected("en_US-ljspeech-medium")
+        coVerify { ttsPreferences.setSelectedVoice("en_US-ljspeech-medium") }
+    }
+
+    @Test
+    fun `speech rate change applies directly to the current engine`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onTtsSpeechRateChanged(2.0f)
+        verify { fakeTtsEngine.setSpeechRate(2.0f) }
     }
 }
