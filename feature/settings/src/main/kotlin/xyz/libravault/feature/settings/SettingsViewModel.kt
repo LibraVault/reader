@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.AppReadingTheme
@@ -26,12 +29,27 @@ import xyz.libravault.core.storage.CoverArtCache
 import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.tts.TtsEngineProvider
+import xyz.libravault.core.tts.TtsEngineType
+import xyz.libravault.core.tts.TtsPreferences
+import xyz.libravault.core.tts.TtsVoiceInfo
+import xyz.libravault.core.tts.pocket.ModelStatus
+import xyz.libravault.core.tts.pocket.PocketModelManager
+import xyz.libravault.core.tts.pocket.PocketVoiceCatalog
 import javax.inject.Inject
 
 data class VaultManagementState(
     val vaults: List<VaultFolder> = emptyList(),
     val isScanning: Boolean = false,
     val scanMessage: String? = null,
+)
+
+data class TtsSettingsUiState(
+    val engineType: TtsEngineType = TtsEngineType.ANDROID,
+    val speechRate: Float = 1.0f,
+    val selectedVoiceId: String? = null,
+    val availableVoices: List<TtsVoiceInfo> = emptyList(),
+    val modelStatus: ModelStatus = ModelStatus.Idle,
 )
 
 sealed class DonationState {
@@ -67,6 +85,10 @@ class SettingsViewModel @Inject constructor(
     private val supporterRepository: SupporterRepository,
     private val donationClient: DonationClient,
     private val staticAddresses: StaticDonationAddresses,
+    private val ttsEngineProvider: TtsEngineProvider,
+    private val ttsPreferences: TtsPreferences,
+    private val pocketModelManager: PocketModelManager,
+    private val pocketVoiceCatalog: PocketVoiceCatalog,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.observe()
@@ -74,6 +96,34 @@ class SettingsViewModel @Inject constructor(
 
     val isSupporter: StateFlow<Boolean> = supporterRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), supporterRepository.isSupporter())
+
+    /**
+     * Model setup progress is exposed separately from [TtsEngineProvider.engine]'s own
+     * state (see [xyz.libravault.core.tts.pocket.PocketTtsEngine] init) - only re-collect
+     * [PocketModelManager.ensureModelAvailable] while Pocket TTS is actually selected, since
+     * that Flow copies the bundled model out of the APK's assets on collection (an
+     * already-valid on-disk copy short-circuits to [ModelStatus.Ready] immediately, so
+     * switching away and back is safe).
+     */
+    val ttsState: StateFlow<TtsSettingsUiState> = combine(
+        ttsEngineProvider.engineType,
+        ttsEngineProvider.engine.flatMapLatest { it.state },
+        ttsEngineProvider.engineType.flatMapLatest { type ->
+            if (type == TtsEngineType.POCKET_TTS) {
+                pocketModelManager.ensureModelAvailable()
+            } else {
+                flowOf(ModelStatus.Idle)
+            }
+        },
+    ) { engineType, engineState, modelStatus ->
+        TtsSettingsUiState(
+            engineType = engineType,
+            speechRate = engineState.speechRate,
+            selectedVoiceId = engineState.selectedVoiceId,
+            availableVoices = pocketVoiceCatalog.availableVoices(),
+            modelStatus = modelStatus,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TtsSettingsUiState())
 
     private val _vaultState = MutableStateFlow(VaultManagementState())
     val vaultState: StateFlow<VaultManagementState> = _vaultState.asStateFlow()
@@ -124,6 +174,26 @@ class SettingsViewModel @Inject constructor(
 
     fun onDynamicColorToggled(enabled: Boolean) = update {
         it.copy(dynamicColorEnabled = enabled)
+    }
+
+    // ── Text-to-Speech ───────────────────────────────────────────────────────
+
+    /**
+     * Persists the choice to [TtsPreferences] rather than calling
+     * `TtsEngineProvider.switchEngineSync` directly - [TtsEngineProvider] already
+     * observes `engineTypeFlow` and switches reactively, so writing only to the
+     * engine (and not the preference) would revert on the next app launch.
+     */
+    fun onTtsEngineTypeSelected(type: TtsEngineType) {
+        viewModelScope.launch { ttsPreferences.setEngineType(type) }
+    }
+
+    fun onTtsVoiceSelected(voiceId: String) {
+        viewModelScope.launch { ttsPreferences.setSelectedVoice(voiceId) }
+    }
+
+    fun onTtsSpeechRateChanged(rate: Float) {
+        ttsEngineProvider.engine.value.setSpeechRate(rate)
     }
 
     /**

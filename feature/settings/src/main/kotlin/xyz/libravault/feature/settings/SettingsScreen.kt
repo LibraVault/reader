@@ -59,6 +59,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
+import xyz.libravault.feature.settings.ui.TtsSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +71,7 @@ fun SettingsScreen(
     val vaultState by viewModel.vaultState.collectAsState()
     val isSupporter by viewModel.isSupporter.collectAsState()
     val donationState by viewModel.donationState.collectAsState()
+    val ttsState by viewModel.ttsState.collectAsState()
     val context = LocalContext.current
     var showDonateSheet by remember { mutableStateOf(false) }
 
@@ -240,6 +242,19 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            Divider()
+
+            TtsSettingsSection(
+                engineType = ttsState.engineType,
+                speechRate = ttsState.speechRate,
+                selectedVoiceId = ttsState.selectedVoiceId,
+                availableVoices = ttsState.availableVoices,
+                modelStatus = ttsState.modelStatus,
+                onEngineTypeSelected = viewModel::onTtsEngineTypeSelected,
+                onVoiceSelected = viewModel::onTtsVoiceSelected,
+                onSpeechRateChanged = viewModel::onTtsSpeechRateChanged,
+            )
 
             Divider()
 

@@ -2,6 +2,7 @@ package xyz.libravault.feature.settings
 
 import app.cash.turbine.test
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -23,6 +24,15 @@ import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.domain.repository.LibraryRepository
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.tts.TtsEngine
+import xyz.libravault.core.tts.TtsEngineProvider
+import xyz.libravault.core.tts.TtsPreferences
+import xyz.libravault.core.tts.TtsState
+import xyz.libravault.core.tts.pocket.ModelStatus
+import xyz.libravault.core.tts.pocket.PocketModelManager
+import xyz.libravault.core.tts.pocket.PocketVoiceCatalog
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Focused tests for the [StaticDonationAddresses] integration in
@@ -138,6 +148,17 @@ class StaticAddressesTest {
             supporterRepository = mockk<SupporterRepository>(relaxed = true),
             donationClient     = donationClient,
             staticAddresses    = staticAddresses,
+            ttsEngineProvider  = mockk<TtsEngineProvider>(relaxed = true).apply {
+                every { engineType } returns MutableStateFlow(xyz.libravault.core.tts.TtsEngineType.ANDROID)
+                every { engine } returns MutableStateFlow(mockk<TtsEngine>(relaxed = true).apply {
+                    every { state } returns MutableStateFlow(TtsState())
+                })
+            },
+            ttsPreferences     = mockk<TtsPreferences>(relaxed = true),
+            pocketModelManager = mockk<PocketModelManager>(relaxed = true).apply {
+                every { ensureModelAvailable() } returns flowOf(ModelStatus.Idle)
+            },
+            pocketVoiceCatalog = mockk<PocketVoiceCatalog>(relaxed = true),
         )
     }
 }
