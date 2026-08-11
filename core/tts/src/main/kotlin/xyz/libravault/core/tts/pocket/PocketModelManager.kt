@@ -3,6 +3,7 @@ package xyz.libravault.core.tts.pocket
 import android.content.Context
 import android.content.res.AssetManager
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import xyz.libravault.core.tts.BuildConfig
@@ -25,7 +26,7 @@ sealed class ModelStatus {
 
 @Singleton
 class PocketModelManager @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
 ) {
 
     private val modelDir: File
