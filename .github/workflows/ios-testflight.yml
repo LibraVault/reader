@@ -21,7 +21,12 @@ jobs:
   build-and-upload:
     name: Build & Upload to TestFlight
     runs-on: macos-26
-    timeout-minutes: 120
+    # Apple's build-processing time before pilot can distribute to a group is
+    # highly variable — observed well over 2 hours on build 30 (2026-08-11),
+    # vs. the usual 15-30 min. 120 min was cutting it close once the "Upload
+    # to TestFlight" step below started waiting on that instead of returning
+    # immediately (see the comment on that step for why it waits now).
+    timeout-minutes: 240
     outputs:
       build_number: ${{ steps.build-number.outputs.value }}
 
@@ -192,14 +197,31 @@ jobs:
           IPA_PATH=$(find build/export -name "*.ipa" | head -1)
           echo "Uploading $IPA_PATH to TestFlight..."
 
-          # --groups auto-assigns the build to the external testers group on
-          # upload — without it, every build (compliance status notwithstanding)
-          # sat unassigned until someone manually clicked "+" in App Store
-          # Connect's Groups column for it.
+          # --groups is meant to auto-assign the build to the external testers
+          # group on upload - without it, every build (compliance status
+          # notwithstanding) sat unassigned until someone manually clicked "+"
+          # in App Store Connect's Groups column for it (#83).
+          #
+          # That fix never actually took effect, though: fastlane's pilot
+          # (pilot/lib/pilot/build_manager.rb) returns *before* calling
+          # distribute_build - the step that assigns groups and sends tester
+          # notification emails - whenever skip_waiting_for_build_processing
+          # is true and the build isn't done processing yet, which it never
+          # is immediately after upload. So --groups here was a no-op on
+          # every build since #83 landed; whichever testers did get notified
+          # were Apple's automatic internal testers (any org member with App
+          # Store Connect access), not the "LibraVault Alpha/Beta" external
+          # group, which was never actually being populated.
+          #
+          # Removing skip_waiting_for_build_processing makes pilot wait for
+          # Apple's processing (variable, sometimes 2+ hours - see the job's
+          # timeout-minutes) and then actually run distribute_build, so group
+          # assignment and tester notification happen for real, inside this
+          # job, where a failure would show up in the run instead of silently
+          # never happening.
           fastlane pilot upload \
             --api_key_path api_key.json \
             --ipa "$IPA_PATH" \
-            --skip_waiting_for_build_processing true \
             --groups "LibraVault Alpha/Beta"
 
           rm -f AuthKey.p8 api_key.json
@@ -241,7 +263,7 @@ jobs:
               ### Status
               Build completed: ${{ job.status }}
 
-              ${{ job.status == 'success' && 'Uploaded to TestFlight. It will appear in App Store Connect within 15-30 minutes once Apple finishes processing.' || 'Build or upload failed - check the workflow logs for details.' }}`
+              ${{ job.status == 'success' && 'Uploaded, processed, and distributed to the LibraVault Alpha/Beta group on TestFlight - testers should already have their notification email.' || 'Build or upload failed - check the workflow logs for details.' }}`
             }).catch(err => console.log('PR comment skipped (not a PR context)'))
 
   create-release-notes:
