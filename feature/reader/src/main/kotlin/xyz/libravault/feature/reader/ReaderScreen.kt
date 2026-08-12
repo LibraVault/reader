@@ -130,6 +130,44 @@ fun ReaderScreen(
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    // A real topBar (rather than a floating overlay drawn on top of the
+                    // content) so Scaffold's innerPadding actually reserves space for it —
+                    // previously the toolbar was an AnimatedVisibility overlay inside the
+                    // content Box with no topBar set at all, so innerPadding.calculateTopPadding()
+                    // was always 0 and page text scrolled up underneath the (translucent,
+                    // alpha=0.95f) toolbar instead of stopping below it. AnimatedVisibility
+                    // inside a Scaffold slot still animates its height, so the content
+                    // correctly expands to fill the screen when the toolbar auto-hides.
+                    topBar = {
+                        AnimatedVisibility(
+                            visible = state.showToolbar,
+                            modifier = Modifier.fillMaxWidth(),
+                            enter = fadeIn() + slideInVertically { -it },
+                            exit  = fadeOut() + slideOutVertically { -it },
+                        ) {
+                            ReaderTopBar(
+                                title             = item.title,
+                                onBack            = onBack,
+                                onFontDecrease    = viewModel::decreaseFontSize,
+                                onFontIncrease    = viewModel::increaseFontSize,
+                                showFontControls  = item.format != MediaFormat.PDF,
+                                onAddBookmark     = {
+                                    val ref: String? = when (item.format) {
+                                        MediaFormat.PDF ->
+                                            "page:${state.progress?.pageIndex ?: 0}"
+                                        MediaFormat.MARKDOWN ->
+                                            "scroll:${state.progress?.markdownScrollOffset ?: 0}"
+                                        else ->
+                                            state.progress?.positionCfi ?: currentLocatorJson
+                                    }
+                                    ref?.let { viewModel.addBookmark(it) }
+                                },
+                                onShowBookmarks = viewModel::showBookmarks,
+                                onSettings      = viewModel::showSettings,
+                                onShowToc       = if (item.format == MediaFormat.MARKDOWN) viewModel::showToc else null,
+                            )
+                        }
+                    },
                     bottomBar = {
                         if (showMiniPlayer) {
                             ReaderMiniPlayerBar(
@@ -233,37 +271,6 @@ fun ReaderScreen(
                                     ErrorScreen("This format opens in the player.", onBack)
                                 }
                             }
-                        }
-
-                        AnimatedVisibility(
-                            visible  = state.showToolbar,
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .fillMaxWidth(),
-                            enter = fadeIn() + slideInVertically { -it },
-                            exit  = fadeOut() + slideOutVertically { -it },
-                        ) {
-                            ReaderTopBar(
-                                title             = item.title,
-                                onBack            = onBack,
-                                onFontDecrease    = viewModel::decreaseFontSize,
-                                onFontIncrease    = viewModel::increaseFontSize,
-                                showFontControls  = item.format != MediaFormat.PDF,
-                                onAddBookmark     = {
-                                    val ref: String? = when (item.format) {
-                                        MediaFormat.PDF ->
-                                            "page:${state.progress?.pageIndex ?: 0}"
-                                        MediaFormat.MARKDOWN ->
-                                            "scroll:${state.progress?.markdownScrollOffset ?: 0}"
-                                        else ->
-                                            state.progress?.positionCfi ?: currentLocatorJson
-                                    }
-                                    ref?.let { viewModel.addBookmark(it) }
-                                },
-                                onShowBookmarks = viewModel::showBookmarks,
-                                onSettings      = viewModel::showSettings,
-                                onShowToc       = if (item.format == MediaFormat.MARKDOWN) viewModel::showToc else null,
-                            )
                         }
                     }
                 }
