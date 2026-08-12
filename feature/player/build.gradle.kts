@@ -29,9 +29,11 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Media3 — ExoPlayer, MediaSession, UI
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-session:1.3.1")
-    implementation("androidx.media3:media3-ui:1.3.1")
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.session)
+    implementation(libs.media3.ui)
+    // Pre-playback chapter metadata (MetadataRetriever) — media3-inspector, added in 1.11.
+    implementation(libs.media3.inspector)
 
     // Guava for ListenableFuture (MediaController.buildAsync)
     implementation("com.google.guava:guava:33.2.1-android")

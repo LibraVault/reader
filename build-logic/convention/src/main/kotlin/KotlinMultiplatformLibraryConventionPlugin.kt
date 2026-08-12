@@ -37,10 +37,8 @@ class KotlinMultiplatformLibraryConventionPlugin : Plugin<Project> {
             iosX64()
 
             jvm {
-                compilations.all {
-                    compileKotlinTask.compilerOptions {
-                        jvmTarget.set(JvmTarget.JVM_17)
-                    }
+                compilerOptions {
+                    jvmTarget.set(JvmTarget.JVM_17)
                 }
             }
         }

@@ -46,8 +46,9 @@ internal object CustomCommandActions {
     /**
      * Tap target: jump to the previous sibling file in the current item's vault folder.
      * No extras — dispatches to [LibravaultMediaCallback]'s file-switch path (see its
-     * class KDoc), which is the practical "previous chapter" today since there is no
-     * real per-file chapter navigation. No-ops if already at the first file.
+     * class KDoc), which is the practical "previous chapter" on the lockscreen tile since
+     * that dispatch path runs in the playback service and has no access to the in-app
+     * player's chapter list. No-ops if already at the first file.
      */
     const val PREVIOUS = PREFIX + "PREVIOUS"
 
