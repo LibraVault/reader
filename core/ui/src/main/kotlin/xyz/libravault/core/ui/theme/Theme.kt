@@ -9,9 +9,13 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import xyz.libravault.core.ui.findActivity
 
 enum class ReadingTheme { DARK, LIGHT, SEPIA }
 
@@ -75,15 +79,37 @@ fun LibravaultTheme(
     useDynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // Sepia and Light are both light backgrounds — only Dark (and dynamic-dark) call for
+    // light-colored status bar icons. Tracked alongside colorScheme, rather than derived
+    // from it after the fact, since dynamic color schemes don't cleanly say "I'm dark".
+    var isLightBackground = false
     val colorScheme = when {
         // Dynamic color requires Android 12+ (API 31); fall through to leather palette on older devices
         useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
+            isLightBackground = !darkTheme
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         }
-        readingTheme == ReadingTheme.SEPIA -> SepiaColorScheme
+        readingTheme == ReadingTheme.SEPIA -> { isLightBackground = true; SepiaColorScheme }
         darkTheme -> DarkColorScheme
-        else      -> LightColorScheme
+        else      -> { isLightBackground = true; LightColorScheme }
+    }
+
+    // Reactively matches the status bar's icon color to the resolved theme. Previously
+    // nothing in the app ever called this — status bar icons followed whatever the static
+    // android:windowLightStatusBar value in themes.xml happened to be (tuned for the dark
+    // theme), so picking a light reading theme (Sepia, or plain Light) left white icons on
+    // a light/cream background with effectively no contrast. Fixed at this single call site
+    // since LibravaultTheme wraps both the app root (MainActivity) and each reader screen's
+    // independent per-book theme override — every caller gets this for free.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            view.context.findActivity()?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
+                    isLightBackground
+            }
+        }
     }
 
     CompositionLocalProvider(LocalReadingTheme provides readingTheme) {
