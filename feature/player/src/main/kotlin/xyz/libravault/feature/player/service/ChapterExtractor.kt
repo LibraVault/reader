@@ -1,10 +1,10 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package xyz.libravault.feature.player.service
 
 import android.content.Context
 import android.net.Uri
-import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.metadata.Chapter as Media3Chapter
 import androidx.media3.inspector.MetadataRetriever
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -44,7 +44,6 @@ class ChapterExtractor @Inject constructor(
         private const val TAG = "ChapterExtractor"
     }
 
-    @OptIn(UnstableApi::class)
     suspend fun extract(uri: Uri, durationMs: Long): List<Chapter> =
         withContext(Dispatchers.IO) {
             runCatching {

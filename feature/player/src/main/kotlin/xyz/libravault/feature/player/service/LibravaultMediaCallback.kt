@@ -12,6 +12,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.ListenableFuture
@@ -198,7 +199,7 @@ internal class LibravaultMediaCallback(
                 dispatch(customCommand)
             } catch (t: Throwable) {
                 Log.e(TAG, "onCustomCommand: dispatch threw", t)
-                SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
+                SessionResult(SessionError.ERROR_UNKNOWN)
             }
             future.set(result)
         }
@@ -238,7 +239,7 @@ internal class LibravaultMediaCallback(
             CustomCommandActions.NEXT -> switchToAdjacentItem(forward = true)
             else -> {
                 Log.w(TAG, "onCustomCommand: unknown action=${command.customAction}")
-                SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
+                SessionResult(SessionError.ERROR_NOT_SUPPORTED)
             }
         }
     }
