@@ -36,9 +36,10 @@ import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
  *
  * This implementation follows the pattern used by [AntennaPod's
  * MediaLibrarySessionCallback][antenna] (Media3 1.9, github.com/AntennaPod/AntennaPod) —
- * with one important difference: AntennaPod uses Media3 1.9 APIs (`setMediaButtonPreferences`,
- * `CommandButton.Builder(int icon)`) that don't exist in our pinned Media3 1.3.1, so the
- * primitives used here are the 1.3.1 equivalents.
+ * originally written against our then-pinned Media3 1.3.1, which lacked AntennaPod's
+ * `setMediaButtonPreferences`/`CommandButton.Builder(int icon)` APIs. Those APIs are
+ * available now that we're on 1.11 too, but this file hasn't been migrated to them —
+ * it still builds buttons the 1.3.1 way, via [SessionCommand] + `setIconResId`.
  *
  * # What this publishes to the system media tile
  *
@@ -66,9 +67,11 @@ import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
  *
  * # Prev/Next semantics
  *
- * [ChapterExtractor] currently always returns a single "Full Book" chapter — there is no
- * real per-file chapter navigation anywhere in the app yet. So Prev/Next on the lockscreen
- * tile switch to the previous/next sibling audio file within the same vault folder (ordered
+ * [ChapterExtractor] can return real chapter data when a file has embedded chapter
+ * metadata, and the in-app player exposes real chapter navigation via
+ * `PlayerViewModel.goToChapter`. But this `MediaSession.Callback` runs in the playback
+ * service, with no access to that ViewModel-scoped chapter list. So Prev/Next on the
+ * lockscreen tile switch to the previous/next sibling audio file within the same vault folder (ordered
  * by [xyz.libravault.core.domain.model.LibraryItem.filePath]) via [GetAdjacentLibraryItemUseCase]
  * — the practical "next chapter" for audiobooks split across multiple physical files (e.g.
  * "Chapter 01.mp3", "Chapter 02.mp3"). If there is no sibling file in that direction (already
@@ -320,8 +323,10 @@ internal class LibravaultMediaCallback(
          *   call site (which has a real [Context]) so this helper stays Context-free and
          *   trivially unit-testable on the JVM.
          *
-         * Icons are the bitmaps bundled in `androidx.media3.session` 1.3.1
-         * (`media3_notification_*`). Display names come from the same module
+         * Icons are the vector drawables bundled in `androidx.media3.session`
+         * (`media3_icon_*` — renamed from `media3_notification_*` in the 1.11 release that
+         * also introduced the [CommandButton.ICON_SKIP_BACK]/[CommandButton.ICON_SKIP_FORWARD]
+         * constants these map to). Display names come from the same module
          * (`media3_controls_*_description`). These are the same identifiers AntennaPod's
          * MediaLibrarySessionCallback uses.
          *
@@ -344,7 +349,7 @@ internal class LibravaultMediaCallback(
             builder.add(
                 CommandButton.Builder()
                     .setSessionCommand(SessionCommand(CustomCommandActions.PREVIOUS, Bundle()))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_to_previous)
+                    .setIconResId(androidx.media3.session.R.drawable.media3_icon_previous)
                     .setDisplayName(displayNames.previous)
                     .setEnabled(true)
                     .build(),
@@ -352,7 +357,7 @@ internal class LibravaultMediaCallback(
             builder.add(
                 CommandButton.Builder()
                     .setSessionCommand(seekByCommand(-seekOffset(seekStepMs)))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_back)
+                    .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_back)
                     .setDisplayName(displayNames.back)
                     .setEnabled(true)
                     .build(),
@@ -360,7 +365,7 @@ internal class LibravaultMediaCallback(
             builder.add(
                 CommandButton.Builder()
                     .setSessionCommand(SessionCommand(CustomCommandActions.PLAY_PAUSE, Bundle()))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_play)
+                    .setIconResId(androidx.media3.session.R.drawable.media3_icon_play)
                     .setDisplayName(displayNames.play)
                     .setEnabled(true)
                     .build(),
@@ -368,7 +373,7 @@ internal class LibravaultMediaCallback(
             builder.add(
                 CommandButton.Builder()
                     .setSessionCommand(seekByCommand(seekOffset(seekStepMs)))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_forward)
+                    .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_forward)
                     .setDisplayName(displayNames.forward)
                     .setEnabled(true)
                     .build(),
@@ -376,7 +381,7 @@ internal class LibravaultMediaCallback(
             builder.add(
                 CommandButton.Builder()
                     .setSessionCommand(SessionCommand(CustomCommandActions.NEXT, Bundle()))
-                    .setIconResId(androidx.media3.session.R.drawable.media3_notification_seek_to_next)
+                    .setIconResId(androidx.media3.session.R.drawable.media3_icon_next)
                     .setDisplayName(displayNames.next)
                     .setEnabled(true)
                     .build(),

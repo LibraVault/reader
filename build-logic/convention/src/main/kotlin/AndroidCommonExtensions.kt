@@ -7,7 +7,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
 
 internal fun Project.configureAndroidCommon(extension: CommonExtension<*, *, *, *, *, *>) {
     extension.apply {
-        compileSdk = 35
+        compileSdk = 36
 
         defaultConfig {
             minSdk = 31    // Android 12 — required for AndroidX PDF Viewer and best Media3 APIs

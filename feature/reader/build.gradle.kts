@@ -26,7 +26,7 @@ dependencies {
     implementation(project(":core:logger"))
     implementation(project(":core:database"))
     implementation(project(":feature:player"))
-    implementation("androidx.media3:media3-session:1.3.1")
+    implementation(libs.media3.session)
     implementation("com.google.guava:guava:33.2.1-android")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")

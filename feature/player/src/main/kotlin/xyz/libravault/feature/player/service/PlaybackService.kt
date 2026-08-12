@@ -33,8 +33,9 @@ import xyz.libravault.feature.player.R
  *   overlapping standard commands from `availablePlayerCommands` so the system tile doesn't
  *   also derive duplicate standard-actions buttons for the same controls. Prev/Next switch
  *   to the previous/next sibling audio file in the current item's vault folder — see
- *   [LibravaultMediaCallback]'s KDoc for why (there is no real per-file chapter navigation
- *   yet, so file-switching is the practical "next chapter" today).
+ *   [LibravaultMediaCallback]'s KDoc for why (the callback runs in the playback service and
+ *   has no access to the in-app player's chapter list, so file-switching is the practical
+ *   "next chapter" on the lockscreen tile).
  *
  * - **Skip duration**: read from [SkipDurationPreference] at service-create time and
  *   passed into [LibravaultMediaCallback] so the ±seek tile buttons embed the correct

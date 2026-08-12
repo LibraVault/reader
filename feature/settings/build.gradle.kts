@@ -24,8 +24,9 @@ dependencies {
     api(project(":core:storage"))
     api(project(":core:logger"))
     api(project(":core:tts"))
-    implementation("com.google.dagger:hilt-android:2.52")
-    ksp("com.google.dagger:hilt-android-compiler:2.52")
+    // hilt-android/hilt-android-compiler come from the libravault.android.hilt
+    // convention plugin (applied via libravault.android.feature above) — declaring
+    // them again here just duplicated a hardcoded version that drifted from it.
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")

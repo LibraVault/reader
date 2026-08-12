@@ -59,8 +59,10 @@ class AndroidHiltConventionPlugin : Plugin<Project> {
             apply("com.google.devtools.ksp")
         }
         dependencies {
-            add("implementation", "com.google.dagger:hilt-android:2.52")
-            add("ksp", "com.google.dagger:hilt-android-compiler:2.52")
+            // Hardcoded for the same reason as build-logic/convention/build.gradle.kts's
+            // own compileOnly deps — keep in sync with libs.versions.toml's `hilt` version.
+            add("implementation", "com.google.dagger:hilt-android:2.58")
+            add("ksp", "com.google.dagger:hilt-android-compiler:2.58")
         }
     }
 }
