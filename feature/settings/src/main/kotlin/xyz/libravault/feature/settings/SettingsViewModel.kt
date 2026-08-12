@@ -1,9 +1,11 @@
 package xyz.libravault.feature.settings
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,10 +91,29 @@ class SettingsViewModel @Inject constructor(
     private val ttsPreferences: TtsPreferences,
     private val pocketModelManager: PocketModelManager,
     private val pocketVoiceCatalog: PocketVoiceCatalog,
+    private val networkCapability: NetworkCapability,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), prefsRepo.read())
+
+    // ── About ────────────────────────────────────────────────────────────────
+
+    /**
+     * The app's real version, read from [android.content.pm.PackageManager] at
+     * runtime rather than hardcoded — this project doesn't use BuildConfig (see
+     * app/build.gradle.kts). Falls back to "unknown" if the package somehow can't
+     * be looked up, which should never happen for the app's own package.
+     */
+    val appVersionName: String = runCatching {
+        @Suppress("DEPRECATION") // getPackageInfo(String, Int) — the non-deprecated
+        // overload needs PackageManager.PackageInfoFlags, API 33+; minSdk here is 31.
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrNull() ?: "unknown"
+
+    /** True on the play flavor (BTCPay); false on fdroid (no network calls at all). */
+    val hasNetwork: Boolean = networkCapability.hasNetwork
 
     val isSupporter: StateFlow<Boolean> = supporterRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), supporterRepository.isSupporter())

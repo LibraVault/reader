@@ -1,5 +1,8 @@
 package xyz.libravault.feature.settings
 
+import android.content.Context
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import app.cash.turbine.test
 import io.mockk.coEvery
@@ -73,6 +76,9 @@ class SettingsViewModelTest {
     private val supporterRepository = mockk<SupporterRepository>(relaxed = true)
     private val donationClient = mockk<DonationClient>(relaxed = true)
     private val staticAddresses = mockk<StaticDonationAddresses>(relaxed = true)
+    private val networkCapability = mockk<NetworkCapability>(relaxed = true)
+    private val context = mockk<Context>()
+    private val packageManager = mockk<PackageManager>()
 
     private val ttsEngineProvider = mockk<TtsEngineProvider>()
     private val ttsPreferences = mockk<TtsPreferences>(relaxed = true)
@@ -104,6 +110,11 @@ class SettingsViewModelTest {
         every { fakeTtsEngine.state }          returns ttsEngineStateFlow
         every { pocketModelManager.ensureModelAvailable() } returns flowOf(ModelStatus.Idle)
         every { pocketVoiceCatalog.availableVoices() } returns emptyList()
+
+        every { context.packageManager } returns packageManager
+        every { context.packageName }    returns "xyz.libravault.app"
+        every { packageManager.getPackageInfo("xyz.libravault.app", 0) } returns
+            PackageInfo().apply { versionName = "9.9.9-test" }
     }
 
     @AfterEach
@@ -119,6 +130,7 @@ class SettingsViewModelTest {
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
             supporterRepository, donationClient, staticAddresses,
             ttsEngineProvider, ttsPreferences, pocketModelManager, pocketVoiceCatalog,
+            networkCapability, context,
         )
     }
 
@@ -392,5 +404,31 @@ class SettingsViewModelTest {
         val vm = viewModel()
         vm.onTtsSpeechRateChanged(2.0f)
         verify { fakeTtsEngine.setSpeechRate(2.0f) }
+    }
+
+    // ── About ────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `appVersionName reads the real version from PackageManager rather than a hardcoded string`() =
+        runTest(mainDispatcher) {
+            assertEquals("9.9.9-test", viewModel().appVersionName)
+        }
+
+    @Test
+    fun `appVersionName falls back to unknown if the package can't be looked up`() =
+        runTest(mainDispatcher) {
+            every { packageManager.getPackageInfo("xyz.libravault.app", 0) } throws
+                PackageManager.NameNotFoundException()
+
+            assertEquals("unknown", viewModel().appVersionName)
+        }
+
+    @Test
+    fun `hasNetwork reflects the injected NetworkCapability`() = runTest(mainDispatcher) {
+        every { networkCapability.hasNetwork } returns true
+        assertTrue(viewModel().hasNetwork)
+
+        every { networkCapability.hasNetwork } returns false
+        assertFalse(viewModel().hasNetwork)
     }
 }
