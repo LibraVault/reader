@@ -63,6 +63,10 @@ sealed class DonationState {
         val paymentLink: String,
         val cryptoAmount: String,
         val checkoutLink: String,
+        // False for a live BTCPay invoice being polled for payment (Play);
+        // true for a static, no-network donation address (F-Droid) that
+        // will never resolve on its own — the UI must not imply otherwise.
+        val isStatic: Boolean,
     ) : DonationState()
     object Paid : DonationState()
     data class NoMethod(
@@ -332,6 +336,7 @@ class SettingsViewModel @Inject constructor(
                     paymentLink = paymentInfo.paymentLink,
                     cryptoAmount = paymentInfo.cryptoAmount,
                     checkoutLink = invoice.checkoutLink,
+                    isStatic = invoice.isStatic,
                 )
                 if (!invoice.isStatic) pollUntilPaid(invoice.id)
             } catch (e: Exception) {
