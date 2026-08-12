@@ -16,4 +16,8 @@ abstract class DonationModule {
     @Binds
     @Singleton
     abstract fun bindStaticAddresses(impl: FdroidStaticDonationAddresses): StaticDonationAddresses
+
+    @Binds
+    @Singleton
+    abstract fun bindNetworkCapability(impl: FdroidNetworkCapability): NetworkCapability
 }

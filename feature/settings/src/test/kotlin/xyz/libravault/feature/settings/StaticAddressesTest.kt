@@ -1,5 +1,8 @@
 package xyz.libravault.feature.settings
 
+import android.content.Context
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.every
@@ -159,6 +162,14 @@ class StaticAddressesTest {
                 every { ensureModelAvailable() } returns flowOf(ModelStatus.Idle)
             },
             pocketVoiceCatalog = mockk<PocketVoiceCatalog>(relaxed = true),
+            networkCapability  = mockk<NetworkCapability>(relaxed = true),
+            context            = mockk<Context>(relaxed = true).apply {
+                every { packageName } returns "xyz.libravault.app"
+                every { packageManager } returns mockk<PackageManager>(relaxed = true).apply {
+                    every { getPackageInfo("xyz.libravault.app", 0) } returns
+                        PackageInfo().apply { versionName = "test" }
+                }
+            },
         )
     }
 }

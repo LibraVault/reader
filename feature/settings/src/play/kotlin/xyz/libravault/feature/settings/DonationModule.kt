@@ -16,4 +16,8 @@ abstract class DonationModule {
     @Binds
     @Singleton
     abstract fun bindStaticAddresses(impl: EmptyStaticDonationAddresses): StaticDonationAddresses
+
+    @Binds
+    @Singleton
+    abstract fun bindNetworkCapability(impl: PlayNetworkCapability): NetworkCapability
 }

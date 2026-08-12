@@ -311,14 +311,19 @@ fun SettingsScreen(
 
             SettingLabel(
                 title    = "LibraVault",
-                subtitle = "Version 0.1.0 · GPL-3.0 · libravault.xyz",
+                subtitle = "Version ${viewModel.appVersionName} · GPL-3.0 · libravault.xyz",
             )
             SettingLabel(
                 title    = "Permissions",
                 subtitle = "This app does not request location, contacts, camera, or broad " +
-                        "file access. Internet is used only to verify donations via the " +
-                        "self-hosted BTCPay server at pay.libravault.xyz. " +
-                        "It reads only folders you explicitly grant it.",
+                        "file access. It reads only folders you explicitly grant it. " +
+                        if (viewModel.hasNetwork) {
+                            "Internet is used only to verify donations via the " +
+                                "self-hosted BTCPay server at pay.libravault.xyz."
+                        } else {
+                            "This build has no internet permission and makes no network " +
+                                "calls of any kind — donations use static addresses only."
+                        },
             )
 
             Divider()
