@@ -393,4 +393,66 @@ class SettingsViewModelTest {
         vm.onTtsSpeechRateChanged(2.0f)
         verify { fakeTtsEngine.setSpeechRate(2.0f) }
     }
+
+    // ── Donation ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun `static invoice marks pending state as static and never polls for status`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        coEvery { donationClient.createInvoice(10) } returns NewInvoice(id = "", checkoutLink = "")
+        coEvery { donationClient.getPaymentInfo("", "BTC") } returns
+            InvoicePaymentInfo(address = "bc1qstatic", paymentLink = "", cryptoAmount = "0.00042")
+
+        val vm = viewModel()
+        vm.donationState.test {
+            assertEquals(DonationState.Idle, awaitItem())
+
+            vm.createDonationInvoice(10, "BTC")
+            runCurrent()
+
+            assertEquals(DonationState.Creating, awaitItem())
+            val pending = awaitItem() as DonationState.Pending
+            assertTrue(pending.isStatic)
+            assertEquals("bc1qstatic", pending.address)
+
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // No polling should ever be attempted for a static, no-network address —
+        // not even once the (unused) poll interval would have elapsed.
+        testDispatcher.scheduler.advanceTimeBy(60_000)
+        coVerify(exactly = 0) { donationClient.getInvoiceStatus(any()) }
+    }
+
+    @Test
+    fun `live invoice marks pending state as non-static and polls for status`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        coEvery { donationClient.createInvoice(10) } returns
+            NewInvoice(id = "inv-live", checkoutLink = "https://pay.libravault.xyz/i/inv-live")
+        coEvery { donationClient.getPaymentInfo("inv-live", "BTC") } returns
+            InvoicePaymentInfo(address = "bc1qlive", paymentLink = "", cryptoAmount = "0.00042")
+        coEvery { donationClient.getInvoiceStatus("inv-live") } returns InvoiceStatus.Processing
+
+        val vm = viewModel()
+        vm.donationState.test {
+            assertEquals(DonationState.Idle, awaitItem())
+
+            vm.createDonationInvoice(10, "BTC")
+            runCurrent()
+
+            assertEquals(DonationState.Creating, awaitItem())
+            val pending = awaitItem() as DonationState.Pending
+            assertFalse(pending.isStatic)
+
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        testDispatcher.scheduler.advanceTimeBy(15_000)
+        runCurrent()
+        coVerify(atLeast = 1) { donationClient.getInvoiceStatus("inv-live") }
+    }
 }
