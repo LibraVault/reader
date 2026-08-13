@@ -161,9 +161,9 @@ struct ReaderView: View {
                 mode: $mode,
                 isSpeaking: isCurrentlyPlayingThisBook,
                 onToggleSpeaking: toggleReadAloud,
-                showFontControls: book.format != .pdf,
-                showReadAloud: BookContentProvider.supportsChapterParsing(book.format),
-                showLayoutMode: book.format != .markdown
+                showFontControls: ReaderSettingsAvailability.showFontControls(for: book.format),
+                showReadAloud: ReaderSettingsAvailability.showReadAloud(for: book.format),
+                showLayoutMode: ReaderSettingsAvailability.showLayoutMode(for: book.format)
             )
         }
         .sheet(isPresented: $showBookmarksSheet) {

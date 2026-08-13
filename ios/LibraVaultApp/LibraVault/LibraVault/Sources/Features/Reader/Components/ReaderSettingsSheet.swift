@@ -5,6 +5,42 @@ enum ReaderLayoutMode: String, CaseIterable {
     case scrolling = "Scrolling"
 }
 
+/// Decides which sections of [ReaderSettingsSheet] apply to a given book format.
+///
+/// Pure functions rather than expressions inlined at the call site, for the same reason
+/// [ReaderTapZone] is its own type: the rules are easy to get subtly wrong and there is
+/// no other way to test them — a SwiftUI `View`'s body can't be asserted on without
+/// snapshot infrastructure this project doesn't have.
+///
+/// The specific mistake this guards against already happened once: `showReadAloud` was
+/// first written as `format != .markdown`, which left `.mobi`/`.cbz` (both mapped by
+/// LibraryFileScanner) showing a Read Aloud button that AppState.startPlayback then
+/// silently refused, i.e. a dead control. Keeping the predicate here, next to its
+/// siblings and covered by tests over *every* MediaFormat case, makes that class of
+/// drift visible.
+enum ReaderSettingsAvailability {
+
+    /// False for PDF — a rendered PDF page is a fixed image of the book's real layout,
+    /// so text size / line spacing / font family have nothing to apply to.
+    static func showFontControls(for format: MediaFormat) -> Bool {
+        format != .pdf
+    }
+
+    /// False for any format with no chapter parser (Markdown, mobi, cbz). Deliberately
+    /// delegates to the same predicate `AppState.startPlayback` guards on, so the
+    /// control and the action it triggers can never disagree about which formats can
+    /// actually be narrated.
+    static func showReadAloud(for format: MediaFormat) -> Bool {
+        BookContentProvider.supportsChapterParsing(format)
+    }
+
+    /// False for Markdown — MarkdownReaderContent is a single continuous scroll with no
+    /// pagination, so the Paginated/Scrolling toggle has nothing to switch.
+    static func showLayoutMode(for format: MediaFormat) -> Bool {
+        format != .markdown
+    }
+}
+
 /// Mirrors Android's ReaderSettingsSheet (feature/reader/components) — Theme, text size,
 /// line spacing, font, and layout mode. Uses app-chrome colors (LibraVaultColor.*), not
 /// the reading theme, matching Android's reference screenshots: the sheet renders as a
