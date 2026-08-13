@@ -25,11 +25,13 @@ data class MarkdownSection(
  *
  * Deliberately a standalone line scanner rather than sharing the renderer's internal
  * AST — mikepenz's simple `Markdown(content: String)` overload (the version this
- * project is pinned to, 0.28.0, for Kotlin 2.0 compatibility) doesn't expose its
- * parsed tree back to the caller. ATX headers are structurally simple enough that a
- * scanner is the pragmatic choice; the one real hazard is a line starting with `#`
+ * project is pinned to, 0.32.0 — see feature/reader/build.gradle.kts) doesn't expose
+ * its parsed tree back to the caller. ATX headers are structurally simple enough that
+ * a scanner is the pragmatic choice; the one real hazard is a line starting with `#`
  * inside a fenced code block (a shell comment, a Python comment) — tracked below so
- * those are never mistaken for headings.
+ * those are never mistaken for headings. GFM table rows (`| a | b |`) never start
+ * with `#`, so tables need no special handling here — they fall through as plain
+ * body text either way.
  */
 object MarkdownTocExtractor {
 

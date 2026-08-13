@@ -43,9 +43,10 @@ import kotlin.math.roundToInt
  * (light/dark/sepia) already flow through automatically from
  * [xyz.libravault.core.ui.theme.LibravaultTheme]'s `MaterialTheme.colorScheme`, which
  * wraps this whole screen in ReaderScreen.kt — no separate color adapter needed. GFM
- * tables are not yet supported — the renderer is pinned to a pre-0.30.0 release for
- * Kotlin 2.0.0 compatibility (see feature/reader/build.gradle.kts); same fast-follow
- * gap as the iOS viewer.
+ * tables render natively as of the 0.32.0 renderer pin (see
+ * feature/reader/build.gradle.kts for why 0.32.0 specifically, not the latest
+ * release); iOS gained equivalent real table rendering (`MarkdownDocumentParser.swift`'s
+ * `.table` block) in the same change.
  *
  * Renders one [com.mikepenz.markdown.m3.Markdown] call per [MarkdownTocExtractor]
  * section (rather than one call for the whole document) so each heading's on-screen
@@ -53,7 +54,10 @@ import kotlin.math.roundToInt
  * pinned above predates its own `LazyColumn`/list-state API (added in 0.33.0), so this
  * is how TOC scroll-to-heading is done without it. Scroll position itself is still a
  * single shared [rememberScrollState] across all sections, so persistence (a plain
- * pixel offset) is unaffected by this internal split.
+ * pixel offset) is unaffected by this internal split. 0.33.0's async `Markdown(String)`
+ * parsing would also change the timing this onGloballyPositioned capture depends on,
+ * which is the other reason that bump is deliberately deferred (see the build.gradle.kts
+ * comment) rather than folded into the GFM-table upgrade.
  *
  * @param fileUri              SAF content URI of the Markdown file.
  * @param initialScrollOffset  Restored scroll offset (px) from Room, or null if never opened.

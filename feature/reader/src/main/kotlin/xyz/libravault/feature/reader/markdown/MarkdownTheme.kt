@@ -65,5 +65,10 @@ fun rememberMarkdownTypography(settings: ReaderSettings): MarkdownTypography {
         bullet = bodyLarge,
         list = bodyLarge,
         link = bodyLarge.copy(fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline),
+        // GFM table cell text — new in the 0.32.0 renderer pin (see
+        // feature/reader/build.gradle.kts). Reuses bodyLarge rather than a smaller
+        // style: table content is regular reading content, not chrome, so it should
+        // respect the same user font-size preference as everything else.
+        table = bodyLarge,
     )
 }

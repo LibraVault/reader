@@ -31,16 +31,21 @@ enum MarkdownBlock: Equatable {
     /// is not extracted specially — it falls through to plain alt-text like any other
     /// unhandled inline node (see BlockBuilder.walk's `default` case).
     case image(url: String, altText: String)
+    /// A GFM table (#120) — `headers` is the single head row, `rows` the body rows,
+    /// each cell already flattened to inline runs via the same [inlineRuns(for:)]
+    /// walk headings/paragraphs use, since a `Table.Cell` is a `BasicInlineContainer`
+    /// just like they are. Column alignment (`Table.columnAlignments`) isn't carried
+    /// through — MarkdownReaderContent renders every column left-aligned, matching
+    /// Android's renderer default (see feature/reader/build.gradle.kts for the
+    /// version this table support was added alongside).
+    case table(headers: [[MarkdownInlineRun]], rows: [[[MarkdownInlineRun]]])
 }
 
 /// Parses raw Markdown text into a flat list of [MarkdownBlock] using
 /// swiftlang/swift-markdown's CommonMark/GFM AST (cmark-gfm under the hood).
 ///
 /// v1 scope: headings, paragraphs (with bold/italic/inline-code runs), code blocks,
-/// block quotes, ordered/unordered lists, thematic breaks. GFM tables are recognized
-/// by the parser but rendered as a placeholder — real table rendering is a deliberate
-/// fast-follow on both platforms (Android's renderer is likewise pinned to a
-/// pre-table release for Kotlin-version-compatibility reasons), not a v1 blocker.
+/// block quotes, ordered/unordered lists, thematic breaks, GFM tables (#120).
 enum MarkdownDocumentParser {
     static func parse(_ source: String) -> [MarkdownBlock] {
         let document = Document(parsing: source)
@@ -117,9 +122,14 @@ private struct BlockBuilder: MarkupVisitor {
     }
 
     mutating func visitTable(_ table: Table) -> [MarkdownBlock] {
-        [.paragraph(text: [
-            MarkdownInlineRun(text: "[Table omitted — not yet supported in this viewer]", bold: false, italic: true, code: false),
-        ])]
+        // Table.Head and Table.Row both conform to TableCellContainer (`.cells`);
+        // Table.Cell conforms to BasicInlineContainer, so it walks through the same
+        // inlineRuns(for:) as any other inline container — headings, paragraphs.
+        // `.cells`/`.rows` are LazyMapSequence, so both levels need an explicit
+        // Array(...) — mapping alone leaves the inner sequence lazy too.
+        let headers = Array(table.head.cells.map { inlineRuns(for: $0) })
+        let rows = Array(table.body.rows.map { row in Array(row.cells.map { inlineRuns(for: $0) }) })
+        return [.table(headers: headers, rows: rows)]
     }
 
     /// Walks a block's inline children (Text/Strong/Emphasis/InlineCode/Link/breaks),
