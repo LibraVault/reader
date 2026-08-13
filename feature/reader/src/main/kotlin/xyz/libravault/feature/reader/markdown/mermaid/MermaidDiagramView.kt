@@ -76,26 +76,20 @@ fun MermaidDiagramView(
             .build()
     }
 
-    val bridge = remember {
-        object {
-            /** Called from JS on the WebView's own thread, not the main thread — every
-             *  write here must hop back via [Handler] before touching Compose state,
-             *  which is only safe to mutate from the main thread. */
-            @JavascriptInterface
-            fun reportHeight(px: Float) {
+    val bridge: MermaidJsBridge = remember {
+        MermaidJsBridge(
+            notifyHeightReported = { px ->
                 Handler(Looper.getMainLooper()).post {
                     renderError = null
                     heightDp = with(density) { px.toDp() }
                 }
-            }
-
-            @JavascriptInterface
-            fun onRenderError(message: String) {
+            },
+            notifyRenderError = { message ->
                 Handler(Looper.getMainLooper()).post {
                     renderError = message.ifBlank { "Unknown Mermaid render error" }
                 }
-            }
-        }
+            },
+        )
     }
 
     val webView = remember {
@@ -111,6 +105,19 @@ fun MermaidDiagramView(
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            // Lint false positive, confirmed by direct inspection, not just suppressed
+            // on faith: MermaidJsBridge.reportHeight/onRenderError ARE both real,
+            // top-level, @JavascriptInterface-annotated methods (see that class) —
+            // the actual API-17 security property this check exists for is satisfied.
+            // What the checker can't do is trace `bridge`'s concrete type through
+            // Compose's `remember<T>(...)` — a generic call into a third-party
+            // library it has no special knowledge of — back to the MermaidJsBridge
+            // constructor call inside the lambda; its data-flow tracking only follows
+            // direct local-variable assignment chains (`Object o = new Foo(); Object t
+            // = o;`), not through an arbitrary intervening function call. Restructuring
+            // this call to dodge the tracker would make the code worse for a tool
+            // limitation, not a real annotation gap.
+            @Suppress("JavascriptInterface")
             addJavascriptInterface(bridge, "AndroidBridge")
             webViewClient = object : WebViewClientCompat() {
                 override fun shouldInterceptRequest(
@@ -204,6 +211,48 @@ private fun MermaidFallback(source: String, message: String, modifier: Modifier 
             style = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/**
+ * The `AndroidBridge` object passed to [WebView.addJavascriptInterface]. Deliberately a
+ * real, named, top-level class — not an anonymous `object { ... }` expression inside
+ * the composable, which is what this started as. That anonymous form fails Android
+ * Lint's `JavascriptInterface` check ("None of the methods in the added interface have
+ * been annotated with @JavascriptInterface; they will not be visible in API 17"), and
+ * the underlying cause isn't just a lint nitpick: Kotlin anonymous object expressions
+ * compile to synthetic classes, and `addJavascriptInterface`'s reflection-based method
+ * lookup for `@JavascriptInterface` isn't reliable against those — since API 17,
+ * Android *requires* the annotation to expose a method to JS at all (the pre-17
+ * unannotated behaviour was a real remote-code-execution vector), so a bridge method
+ * lint can't see is a bridge method that may silently never be callable from JS, not
+ * just a suppressible warning.
+ *
+ * Callbacks rather than direct Compose state access: keeps this class free of any
+ * Compose/`@Composable` dependency, so it stays a plain, ordinary Kotlin class Lint (and
+ * the JVM reflection `addJavascriptInterface` itself performs) has no ambiguity about.
+ */
+internal class MermaidJsBridge(
+    private val notifyHeightReported: (px: Float) -> Unit,
+    private val notifyRenderError: (message: String) -> Unit,
+) {
+    /** Called from JS on the WebView's own thread, not the main thread — callers must
+     *  hop back to the main thread themselves before touching Compose state. Method
+     *  name is part of the JS-facing contract (see mermaid_host.html's
+     *  `AndroidBridge.reportHeight(...)` call) — do not rename without updating that
+     *  asset too. Deliberately not named the same as the constructor property above:
+     *  Kotlin resolves a call by name to the member function first, so a same-named
+     *  property holding the callback would never actually be reached. */
+    @JavascriptInterface
+    fun reportHeight(px: Float) {
+        notifyHeightReported(px)
+    }
+
+    /** See [reportHeight]'s doc comment — same JS-facing-name-vs-property-name
+     *  reasoning applies here. */
+    @JavascriptInterface
+    fun onRenderError(message: String) {
+        notifyRenderError(message)
     }
 }
 
