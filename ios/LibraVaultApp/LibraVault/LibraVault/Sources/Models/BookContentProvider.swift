@@ -22,8 +22,17 @@ enum BookContentProvider {
     /// gate *before* starting work that only makes sense for a narratable book — see
     /// AppState.startPlayback — instead of inferring it from a thrown error, which is
     /// indistinguishable from "right format, unreadable file".
+    ///
+    /// Markdown included since #124 — MarkdownDocumentParser.chaptersForNarration
+    /// converts its parsed blocks into the same [BookChapter] currency EPUB/PDF
+    /// already narrate through, so the rest of AppState's TTS pipeline needs no
+    /// changes, only a source of chapters for a third format. `true` here does NOT
+    /// guarantee a non-empty result, though — an image-only Markdown file parses fine
+    /// but has nothing speakable; AppState.startPlayback guards that case separately
+    /// (an empty, non-nil chapters array), since it isn't a realistic case for
+    /// EPUB/PDF the way it is for Markdown.
     static func supportsChapterParsing(_ format: MediaFormat) -> Bool {
-        format == .epub || format == .pdf
+        format == .epub || format == .pdf || format == .markdown
     }
 
     static func chapters(for book: BookItem, vaultPersistence: VaultPersistence = VaultPersistence()) throws -> [BookChapter] {
@@ -34,6 +43,10 @@ enum BookContentProvider {
             switch book.format {
             case .epub: return try EPUBParser.parse(fileURL: fileURL)
             case .pdf: return try PDFParser.parse(fileURL: fileURL)
+            case .markdown:
+                let source = try String(contentsOf: fileURL, encoding: .utf8)
+                let blocks = MarkdownDocumentParser.parse(source)
+                return MarkdownDocumentParser.chaptersForNarration(from: blocks)
             default: throw ContentError.unsupportedFormat
             }
         }

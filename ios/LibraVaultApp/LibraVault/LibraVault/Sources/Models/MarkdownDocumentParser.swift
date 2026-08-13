@@ -82,6 +82,85 @@ extension MarkdownDocumentParser {
     }
 }
 
+/// Read Aloud support for Markdown (#124) — converts parsed [MarkdownBlock]s into
+/// [BookChapter]s (see BookContentProvider.swift), the same currency AppState's
+/// playback pipeline already narrates EPUB/PDF through via AVSpeechSynthesizer, so no
+/// change to that pipeline itself is needed — only a source of chapters for it.
+///
+/// One chapter per top-level heading section, matching the granularity
+/// MarkdownReaderContent's own TOC/scroll-restore logic already uses (see
+/// sectionIndexForFraction's Android counterpart and this file's extractToc) — headings
+/// are a document's only real structural unit, and narrating "the whole file" as a
+/// single chapter would make skip-to-next-chapter useless for anything but the
+/// shortest notes. A document with no headings at all becomes one "Untitled" chapter
+/// containing everything, rather than zero chapters — a heading-less note is still a
+/// real, narratable document.
+extension MarkdownDocumentParser {
+    static func chaptersForNarration(from blocks: [MarkdownBlock]) -> [BookChapter] {
+        var chapters: [BookChapter] = []
+        var currentTitle: String?
+        var currentParts: [String] = []
+
+        func flush() {
+            let text = currentParts.joined(separator: "\n\n")
+            if !text.isEmpty {
+                chapters.append(BookChapter(title: currentTitle ?? "Untitled", text: text))
+            }
+            currentParts = []
+        }
+
+        for block in blocks {
+            if case let .heading(_, runs) = block {
+                flush()
+                currentTitle = runs.map(\.text).joined()
+            }
+            if let text = narrationText(for: block) {
+                currentParts.append(text)
+            }
+        }
+        flush()
+        return chapters
+    }
+
+    /// Plain speakable text for one block, or nil for a block with nothing to say.
+    /// Deliberately silent (not "[table omitted]"-style placeholder speech) for
+    /// content that would be actively unhelpful read aloud:
+    ///  - code blocks: hearing source code spoken character-by-character isn't useful
+    ///  - tables: reading cell values in isolation, with no visual grid for context,
+    ///    conveys little; a real fix (announcing row/column headers) is a fast-follow,
+    ///    not a v1 blocker
+    ///  - thematic breaks: a visual divider, no textual content
+    /// Image alt text IS spoken, unlike the above — it's already written specifically
+    /// to describe the image in words, the one media type where that's true.
+    ///
+    /// NOTE: MarkdownBlock gains a `.mermaidDiagram` case in #121 (Mermaid rendering),
+    /// developed in parallel on a separate branch and not yet merged as of this
+    /// writing — inherently visual, nothing to narrate, so once that case exists this
+    /// switch needs `.mermaidDiagram` added alongside `.codeBlock`/`.thematicBreak`/
+    /// `.table` below, or it will fail to compile as non-exhaustive.
+    private static func narrationText(for block: MarkdownBlock) -> String? {
+        switch block {
+        case let .heading(_, runs), let .paragraph(runs):
+            let text = runs.map(\.text).joined()
+            return text.isEmpty ? nil : text
+        case let .blockQuote(nested):
+            return joinedNarration(of: nested)
+        case let .unorderedList(items), let .orderedList(items, _):
+            let spoken = items.compactMap { joinedNarration(of: $0) }
+            return spoken.isEmpty ? nil : spoken.joined(separator: ". ")
+        case let .image(_, altText):
+            return altText.isEmpty ? nil : altText
+        case .codeBlock, .thematicBreak, .table:
+            return nil
+        }
+    }
+
+    private static func joinedNarration(of blocks: [MarkdownBlock]) -> String? {
+        let parts = blocks.compactMap { narrationText(for: $0) }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+}
+
 private struct BlockBuilder: MarkupVisitor {
     typealias Result = [MarkdownBlock]
 

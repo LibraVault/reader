@@ -7,7 +7,11 @@ import XCTest
 /// formats a rule "is about", because the bug these rules exist to prevent was exactly
 /// an unconsidered format falling on the wrong side of a predicate: `showReadAloud`
 /// originally read `format != .markdown`, silently leaving `.mobi` and `.cbz` — both
-/// mapped by LibraryFileScanner — with a Read Aloud button that does nothing.
+/// mapped by LibraryFileScanner — with a Read Aloud button that does nothing. Markdown
+/// itself later gained a real chapter parser (#124) and moved to the "shown" side —
+/// `showReadAloud` delegates to `BookContentProvider.supportsChapterParsing`, so that
+/// one source-of-truth change is what these tests now assert, not a change to the
+/// predicate's own logic here.
 final class ReaderSettingsAvailabilityTests: XCTestCase {
 
     /// Every format the app can produce. Kept explicit (rather than derived) so adding a
@@ -31,10 +35,14 @@ final class ReaderSettingsAvailabilityTests: XCTestCase {
     // MARK: - showReadAloud
 
     func testReadAloudShownOnlyForFormatsWithAChapterParser() {
+        // Markdown joined EPUB/PDF here in #124 — MarkdownDocumentParser.chaptersForNarration
+        // gives it a real chapter parser, so offering Read Aloud is no longer a dead
+        // control the way it still is for mobi/cbz (neither has any parser at all).
         XCTAssertTrue(ReaderSettingsAvailability.showReadAloud(for: .epub))
         XCTAssertTrue(ReaderSettingsAvailability.showReadAloud(for: .pdf))
+        XCTAssertTrue(ReaderSettingsAvailability.showReadAloud(for: .markdown))
 
-        for format: MediaFormat in [.markdown, .mobi, .cbz] {
+        for format: MediaFormat in [.mobi, .cbz] {
             XCTAssertFalse(
                 ReaderSettingsAvailability.showReadAloud(for: format),
                 "\(format) has no chapter parser — offering Read Aloud would be a dead control"
@@ -87,11 +95,13 @@ final class ReaderSettingsAvailabilityTests: XCTestCase {
 
     // MARK: - Markdown, end to end
 
-    /// The originally-reported defect, pinned as a single case: opening a .md file must
-    /// offer neither Read Aloud nor the layout toggle, while keeping font controls.
-    func testMarkdownGetsFontControlsButNeitherReadAloudNorLayoutMode() {
+    /// Pinned as a single case, updated for #124: opening a .md file gets font
+    /// controls and (now) Read Aloud, but not the layout toggle — Markdown is one
+    /// continuous scroll with no pagination to switch, unrelated to whether it can be
+    /// narrated.
+    func testMarkdownGetsFontControlsAndReadAloudButNotLayoutMode() {
         XCTAssertTrue(ReaderSettingsAvailability.showFontControls(for: .markdown))
-        XCTAssertFalse(ReaderSettingsAvailability.showReadAloud(for: .markdown))
+        XCTAssertTrue(ReaderSettingsAvailability.showReadAloud(for: .markdown))
         XCTAssertFalse(ReaderSettingsAvailability.showLayoutMode(for: .markdown))
     }
 }
