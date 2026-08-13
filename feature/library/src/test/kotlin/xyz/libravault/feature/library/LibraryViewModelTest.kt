@@ -173,7 +173,37 @@ class LibraryViewModelTest {
         }
     }
 
+    @Test
+    fun `format filter MARKDOWN keeps only markdown items`() = runTest(mainDispatcher) {
+        val items = listOf(
+            item(1, format = MediaFormat.EPUB),
+            item(2, format = MediaFormat.MARKDOWN),
+            item(3, format = MediaFormat.MP3),
+        )
+        every { getLibrary() } returns flowOf(items)
+
+        val vm = viewModel()
+        vm.onFormatFilterChanged(MediaFormat.MARKDOWN.name)
+
+        vm.uiState.test {
+            val state = awaitItem()
+            assertEquals(listOf(2L), state.vaultGroupedItems.values.flatten().map { it.id })
+            assertEquals("MARKDOWN", state.formatFilter)
+        }
+    }
+
     // ── formatFilteredItems / vaultFilteredItems (pure helpers) ─────────────────
+
+    @Test
+    fun `formatFilteredItems keeps only markdown for the MARKDOWN filter`() {
+        val items = listOf(
+            item(1, format = MediaFormat.MARKDOWN),
+            item(2, format = MediaFormat.EPUB),
+        )
+        val vm = viewModel()
+
+        assertEquals(listOf(1L), vm.formatFilteredItems(items, "MARKDOWN").map { it.id })
+    }
 
     @Test
     fun `formatFilteredItems returns items unchanged for a null filter`() {

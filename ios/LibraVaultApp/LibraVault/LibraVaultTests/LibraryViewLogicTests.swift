@@ -26,6 +26,19 @@ final class LibraryViewLogicTests: XCTestCase {
         XCTAssertFalse(LibraryFormatFilter.pdf.matches(.epub))
     }
 
+    func testMarkdownFilterMatchesOnlyMarkdown() {
+        XCTAssertTrue(LibraryFormatFilter.markdown.matches(.markdown))
+        XCTAssertFalse(LibraryFormatFilter.markdown.matches(.epub))
+        XCTAssertFalse(LibraryFormatFilter.markdown.matches(.pdf))
+        XCTAssertFalse(LibraryFormatFilter.markdown.matches(.mp3))
+    }
+
+    /// The chip row is driven by `allCases`, so its order is the on-screen order —
+    /// documents grouped together, audio last.
+    func testFilterCasesAreInDisplayOrder() {
+        XCTAssertEqual(LibraryFormatFilter.allCases, [.all, .epub, .pdf, .markdown, .audio])
+    }
+
     func testAudioFilterMatchesOnlyAudioFormats() {
         for format: MediaFormat in [.mp3, .m4b, .aac, .flac, .ogg, .opus] {
             XCTAssertTrue(LibraryFormatFilter.audio.matches(format), "\(format) should match the Audio filter")
