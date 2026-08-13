@@ -52,13 +52,16 @@ enum EPUBParser {
     /// does not: `container.xml` and the OPF are addressed by exact location, and
     /// guessing at them would turn a clearly-malformed archive into a confusing one.
     private static func extract(_ path: String, from archive: Archive) throws -> Data {
-        guard let entry = entry(for: path, in: archive) else { throw ParseError.entryNotFound(path) }
+        guard let entry = firstEntry(for: path, in: archive) else { throw ParseError.entryNotFound(path) }
         return try read(entry, from: archive)
     }
 
     /// First archive entry matching any of `path`'s resolved spellings.
-    private static func entry(for path: String, in archive: Archive) -> Entry? {
-        resolveEntryPath(path).lazy.compactMap { archive[$0] }.first
+    private static func firstEntry(for path: String, in archive: Archive) -> Entry? {
+        for candidate in resolveEntryPath(path) {
+            if let entry = archive[candidate] { return entry }
+        }
+        return nil
     }
 
     /// Reads a spine content document, tolerating the gap between how an href is
@@ -69,7 +72,7 @@ enum EPUBParser {
     /// and percent-decoded forms, plus the literal spelling), then falls back to a
     /// filename match against the archive's entries.
     private static func extractSpineItem(_ href: String, from archive: Archive) throws -> Data {
-        if let entry = entry(for: href, in: archive) {
+        if let entry = firstEntry(for: href, in: archive) {
             return try read(entry, from: archive)
         }
 
