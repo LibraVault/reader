@@ -84,7 +84,10 @@ data class ReadingProgressEntity(
     @PrimaryKey val itemId: Long,
     val positionCfi: String?,
     val pageIndex: Int?,
-    val markdownScrollOffset: Int?,
+    // 0.0..1.0 fraction through the document, not a pixel offset — see MIGRATION_6_7
+    // for why this replaced the old markdownScrollOffset (Int, px) column outright
+    // rather than reinterpreting it in place.
+    val markdownScrollFraction: Double?,
     val lastReadAt: Long,
 )
 

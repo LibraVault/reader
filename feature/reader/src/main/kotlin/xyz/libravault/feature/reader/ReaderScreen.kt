@@ -96,9 +96,9 @@ fun ReaderScreen(
     val pendingPdfPage = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
     }
-    // Shared scroll-to-offset channel between BookmarksSheet and MarkdownReaderScreen.
-    val pendingMarkdownScrollOffset = androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf<Int?>(null)
+    // Shared scroll-to-fraction channel between BookmarksSheet and MarkdownReaderScreen.
+    val pendingMarkdownScrollFraction = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<Double?>(null)
     }
     // TOC for the currently-open Markdown file, and a one-shot scroll-to-section
     // channel between MarkdownTocSheet and MarkdownReaderScreen.
@@ -156,7 +156,7 @@ fun ReaderScreen(
                                         MediaFormat.PDF ->
                                             "page:${state.progress?.pageIndex ?: 0}"
                                         MediaFormat.MARKDOWN ->
-                                            "scroll:${state.progress?.markdownScrollOffset ?: 0}"
+                                            "scroll:${state.progress?.markdownScrollFraction ?: 0.0}"
                                         else ->
                                             state.progress?.positionCfi ?: currentLocatorJson
                                     }
@@ -254,9 +254,9 @@ fun ReaderScreen(
                                 MediaFormat.MARKDOWN -> {
                                     MarkdownReaderScreen(
                                         fileUri          = uri,
-                                        initialScrollOffset = state.progress?.markdownScrollOffset,
-                                        scrollToOffset   = pendingMarkdownScrollOffset.value,
-                                        onScrollConsumed = { pendingMarkdownScrollOffset.value = null },
+                                        initialScrollFraction = state.progress?.markdownScrollFraction,
+                                        scrollToFraction = pendingMarkdownScrollFraction.value,
+                                        onScrollConsumed = { pendingMarkdownScrollFraction.value = null },
                                         settings         = state.settings,
                                         onScrollChanged  = viewModel::onMarkdownScrollChanged,
                                         onCentreTap      = viewModel::onCentreTap,
@@ -317,8 +317,8 @@ fun ReaderScreen(
                                 bookmark.positionRef.startsWith("scroll:") -> {
                                     bookmark.positionRef
                                         .removePrefix("scroll:")
-                                        .toIntOrNull()
-                                        ?.let { pendingMarkdownScrollOffset.value = it }
+                                        .toDoubleOrNull()
+                                        ?.let { pendingMarkdownScrollFraction.value = it }
                                     viewModel.hideBookmarks()
                                 }
                                 else -> {

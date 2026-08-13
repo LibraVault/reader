@@ -262,6 +262,20 @@ class ReaderViewModelTest {
         assertEquals(7, saved.captured.pageIndex)
     }
 
+    @Test
+    fun `markdown scroll change saves a fraction, not a pixel offset`() = runTest {
+        // Regression coverage for #125 — this used to be an Int pixel offset
+        // (onMarkdownScrollChanged(offset: Int)); a 0.0..1.0 Double fraction survives
+        // font-size/theme/rotation changes between sessions the way a pixel value can't.
+        val vm = viewModel()
+        vm.onMarkdownScrollChanged(0.42)
+
+        val saved = slot<ReadingProgress>()
+        coVerify { saveProgress(capture(saved)) }
+        assertEquals(0.42, saved.captured.markdownScrollFraction)
+        assertEquals(1L, saved.captured.itemId)
+    }
+
     // ── Bookmarks ─────────────────────────────────────────────────────────────
 
     @Test

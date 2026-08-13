@@ -115,3 +115,74 @@ val MIGRATION_5_6 = Migration(5, 6) { db ->
         "ALTER TABLE `reading_progress` ADD COLUMN `markdownScrollOffset` INTEGER"
     )
 }
+
+/**
+ * Migration from v6→v7: replaces markdownScrollOffset (Int, pixels) with
+ * markdownScrollFraction (Double, 0.0..1.0) on reading_progress.
+ *
+ * v6's pixel offset was fragile — it's only meaningful against the exact layout
+ * that produced it, so changing font size, reading theme, or device rotation
+ * between sessions reflows the document to a different total height and the
+ * restored offset lands somewhere unrelated to where the reader actually stopped
+ * (worse the further into a long document). iOS's Markdown reader already stored a
+ * fraction for exactly this reason (see #125) — this brings Android in line.
+ *
+ * Old pixel values are dropped, not converted: a pixel offset alone can't be turned
+ * into a fraction without the total scrollable height it was measured against, and
+ * that was never persisted. The rows affected are a narrow set in practice (only
+ * users with an in-progress Markdown read at the moment they upgrade past this
+ * migration), and per the paragraph above, the value being dropped was already an
+ * unreliable position — restarting at the top of the document over silently landing
+ * on a wrong-looking-but-plausible one is the safer failure mode.
+ *
+ * SQLite's ALTER TABLE can't change a column's type or drop a column reliably across
+ * the range of SQLite versions Android devices in the wild actually ship (DROP COLUMN
+ * needs SQLite >= 3.35.0, inconsistent in practice) — so this uses the standard
+ * Room-recommended rebuild-the-table pattern instead: create the new shape, copy over
+ * every column except the one being dropped, delete the old table, rename the new one
+ * into place. Column order/types/nullability mirror exactly what Room's own codegen
+ * expects for ReadingProgressEntity at this version — see
+ * LibravaultDatabase_Impl.kt's `CREATE TABLE reading_progress` statement, which Room
+ * validates the post-migration schema against at runtime and throws on any mismatch.
+ *
+ * Also resets `bookmarks.positionRef` for Markdown bookmarks in the same migration —
+ * they encode position as `"scroll:<value>"` strings (see ReaderScreen.kt), entirely
+ * independent of this table, but in the same fragile pixel unit. No schema change is
+ * needed there (`positionRef` stays a plain TEXT column), but leaving old rows alone
+ * would be a real, silent correctness bug, not just a missed cleanup: `"scroll:4200"`
+ * parses just fine as `4200.0` under the new fraction interpretation — nothing throws —
+ * it just silently coerces to the last section (or wherever `4200 * sectionCount`
+ * happens to land), taking the user to a wrong-but-plausible-looking place on tap
+ * rather than where they actually left the bookmark. Reset to `"scroll:0.0"` rather
+ * than deleted: the same "unreliable value → restart at a known-honest position, not a
+ * wrong-looking precise one" reasoning as reading_progress above, but keeping the
+ * bookmark itself intact (it's a deliberate user action, unlike auto-saved progress)
+ * so the user can see it, notice, and re-set it rather than losing it outright. The
+ * `LIKE 'scroll:%'` prefix alone disambiguates Markdown bookmarks from EPUB (raw
+ * CFI/locator JSON, no prefix) and PDF (`"page:<n>"`) — no join to library_items or its
+ * format column needed.
+ */
+val MIGRATION_6_7 = Migration(6, 7) { db ->
+    db.execSQL(
+        """
+        CREATE TABLE `reading_progress_new` (
+            `itemId` INTEGER NOT NULL,
+            `positionCfi` TEXT,
+            `pageIndex` INTEGER,
+            `markdownScrollFraction` REAL,
+            `lastReadAt` INTEGER NOT NULL,
+            PRIMARY KEY(`itemId`)
+        )
+        """.trimIndent()
+    )
+    db.execSQL(
+        """
+        INSERT INTO `reading_progress_new` (`itemId`, `positionCfi`, `pageIndex`, `markdownScrollFraction`, `lastReadAt`)
+        SELECT `itemId`, `positionCfi`, `pageIndex`, NULL, `lastReadAt` FROM `reading_progress`
+        """.trimIndent()
+    )
+    db.execSQL("DROP TABLE `reading_progress`")
+    db.execSQL("ALTER TABLE `reading_progress_new` RENAME TO `reading_progress`")
+
+    db.execSQL("UPDATE `bookmarks` SET `positionRef` = 'scroll:0.0' WHERE `positionRef` LIKE 'scroll:%'")
+}

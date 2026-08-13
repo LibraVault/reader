@@ -35,7 +35,7 @@ data class ReadingProgress(
     val itemId: Long,
     val positionCfi: String? = null,    // EPUB CFI
     val pageIndex: Int? = null,         // PDF page
-    val markdownScrollOffset: Int? = null, // Markdown scroll offset (px)
+    val markdownScrollFraction: Double? = null, // 0.0..1.0 through the Markdown doc
     val lastReadAt: Instant = Instant.now(),
 )
 
