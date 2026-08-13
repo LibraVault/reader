@@ -19,6 +19,14 @@ android {
             assets.srcDirs("src/androidTest/assets")
         }
     }
+
+    // Robolectric-hosted Compose UI tests (MarkdownTableRenderingTest) need the merged
+    // manifest/resources to resolve the ComponentActivity that createComposeRule()
+    // launches to host content — see the ui-test-manifest dependency below. Same setup
+    // as :feature:library (FormatFilterRowTest) / :feature:settings (TtsSettingsSectionTest).
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -49,12 +57,17 @@ dependencies {
 
     // Markdown rendering — Compose-native CommonMark renderer. Chosen over Markwon
     // (TextView/AndroidView-based) since this codebase is Compose throughout; wraps
-    // commonmark-java, whose AST we also reuse for TOC extraction. Pinned to 0.28.0
-    // (pre-0.30.0) deliberately — later releases require Kotlin >= 2.1's metadata
-    // format, incompatible with this project's Kotlin 2.0.0. That also means no GFM
-    // tables yet (added in 0.30.0) — dropped from v1 on both platforms for the same
-    // reason iOS dropped them (see feature/reader/markdown/MarkdownReaderScreen.kt);
-    // revisit once a Kotlin bump is deliberately reviewed on its own.
+    // commonmark-java, whose AST we also reuse for TOC extraction. Pinned to 0.32.0
+    // deliberately — that is the last release before 0.33.0's breaking change (async
+    // `Markdown(String)` parsing, `MarkdownComponent` losing its `ColumnScope`, the
+    // `level`->`depth` param rename). This project's per-section `Markdown()` calls
+    // (see MarkdownReaderScreen.kt) depend on synchronous layout to record each
+    // section's on-screen offset via onGloballyPositioned for TOC scrolling, so async
+    // parsing needs its own deliberate migration rather than riding along with this
+    // bump. 0.30.0 added GFM tables; 0.32.0 added the MarkdownTypography.table config
+    // used to theme them (see MarkdownTheme.kt). Later releases also raise the
+    // required Kotlin version well past this project's 2.2.10 (0.39.0 needs 2.3.0,
+    // 0.42.0 needs 2.4.0) — revisit only alongside a deliberate Kotlin bump review.
     implementation(libs.markdown.renderer.m3)
 
     // DocumentFile — walks the SAF vault tree to resolve a Markdown file's relative
@@ -71,6 +84,18 @@ dependencies {
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("androidx.test:runner:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+
+    // Compose UI test for the Markdown renderer (MarkdownTableRenderingTest) —
+    // Robolectric hosts a real Compose tree on the JVM, no emulator/device needed.
+    // JUnit4 (Compose test rules are JUnit4-only) runs alongside this module's JUnit5
+    // tests via the vintage engine. Mirrors :feature:library's/:feature:settings' setup.
+    testImplementation(libs.bundles.testing.android)
+    testImplementation(libs.junit)
+    testRuntimeOnly(libs.junit5.vintage.engine)
+    // Debug-only manifest declaring the ComponentActivity that Compose's
+    // createComposeRule() launches to host test content — picked up by unit
+    // tests too via testOptions.unitTests.isIncludeAndroidResources above.
+    debugImplementation(libs.compose.ui.test.manifest)
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

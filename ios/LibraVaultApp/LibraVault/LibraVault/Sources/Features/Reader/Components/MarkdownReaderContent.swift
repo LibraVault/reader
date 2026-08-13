@@ -172,6 +172,47 @@ private struct MarkdownBlockView: View {
         case .thematicBreak:
             Divider()
 
+        case let .table(headers, rows):
+            // Horizontal scroll rather than squeezing columns — a table with more
+            // than a couple of columns (or long cell content) easily exceeds a phone
+            // width, and a real ScrollView reads better than compressed, wrapped, or
+            // truncated cells. Grid (iOS 16+) sizes each column to its widest cell
+            // across every row, matching normal table behaviour.
+            ScrollView(.horizontal, showsIndicators: true) {
+                Grid(alignment: .leading, horizontalSpacing: LibraVaultSpacing.md, verticalSpacing: LibraVaultSpacing.sm) {
+                    GridRow {
+                        ForEach(Array(headers.enumerated()), id: \.offset) { _, cell in
+                            runsText(cell, baseSize: 16 * fontSize)
+                                .fontWeight(.bold)
+                                .foregroundStyle(colors.onBackground)
+                        }
+                    }
+                    if !headers.isEmpty {
+                        // Views placed directly in a Grid (not wrapped in GridRow) span
+                        // every column automatically, but also try to fill all available
+                        // width by default — which, inside this view's horizontal
+                        // ScrollView, would stretch the divider (and drag the whole grid
+                        // wider with it) to the scroll viewport's width instead of the
+                        // table's actual content width. gridCellUnsizedAxes(.horizontal)
+                        // keeps it sized to the columns' real widths instead.
+                        Divider()
+                            .gridCellColumns(headers.count)
+                            .gridCellUnsizedAxes(.horizontal)
+                    }
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        GridRow {
+                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                runsText(cell, baseSize: 16 * fontSize)
+                                    .foregroundStyle(colors.onBackground)
+                            }
+                        }
+                    }
+                }
+                .padding(LibraVaultSpacing.sm)
+            }
+            .background(colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
         case let .image(url, altText):
             if let data = images[url], let uiImage = UIImage(data: data) {
                 Image(uiImage: uiImage)
