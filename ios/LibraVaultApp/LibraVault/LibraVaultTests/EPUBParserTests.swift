@@ -245,6 +245,44 @@ final class EPUBParserTests: XCTestCase {
         XCTAssertTrue(chapters[0].text.contains("Real."))
     }
 
+    /// `container.xml`'s `full-path` is percent-encoded by the same rules as an OPF
+    /// href, and failing to resolve it loses the *whole book* rather than one page.
+    func testParseReadsPercentEncodedOPFPath() throws {
+        let sourceDir = tempDir.appendingPathComponent("pct-opf", isDirectory: true)
+        let packageDir = sourceDir.appendingPathComponent("OEBPS 2", isDirectory: true)
+        let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+
+        try """
+        <?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS%202/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>
+        """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        try """
+        <?xml version="1.0"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+          <manifest><item id="c0" href="chap0.xhtml" media-type="application/xhtml+xml"/></manifest>
+          <spine><itemref idref="c0"/></spine>
+        </package>
+        """.write(to: packageDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+        try "<html><body><p>Whole book loaded.</p></body></html>"
+            .write(to: packageDir.appendingPathComponent("chap0.xhtml"), atomically: true, encoding: .utf8)
+
+        let epubURL = tempDir.appendingPathComponent("pct-opf.epub")
+        try FileManager().zipItem(at: sourceDir, to: epubURL, shouldKeepParent: false)
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertTrue(chapters[0].text.contains("Whole book loaded."))
+    }
+
     // MARK: - resolveEntryPath
 
     func testResolveEntryPathDecodesAndNormalizes() {
@@ -270,12 +308,15 @@ final class EPUBParserTests: XCTestCase {
 
     // MARK: - plainText fallback
 
+    /// Minified on purpose — no whitespace between `</head>` and `<h1>`, so anything
+    /// leaking out of `<head>` mashes into the first heading rather than landing on a
+    /// line of its own where it would be easy to miss.
     private static let awkwardXHTML = """
     <?xml version="1.0" encoding="utf-8"?>
     <!DOCTYPE html>
-    <html xmlns="http://www.w3.org/1999/xhtml"><head><style>p { color: red }</style></head><body>
-    <h1>Foreword</h1><p>Held&nbsp;up his elastic toy &amp; grinned.</p><p>Second para.</p>
-    </body></html>
+    <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 8</title>\
+    <style>p { color: red }</style></head><body><h1>Foreword</h1>\
+    <p>Held&nbsp;up his elastic toy &amp; grinned.</p><p>Second para.</p></body></html>
     """
 
     /// The fallback taken when `NSAttributedString`'s importer answers `nil` — tested
@@ -287,11 +328,57 @@ final class EPUBParserTests: XCTestCase {
         let text = EPUBParser.strippingTags(from: Data(Self.awkwardXHTML.utf8))
 
         XCTAssertTrue(text.contains("Foreword"))
-        XCTAssertTrue(text.contains("Held up his elastic toy & grinned."))
+        XCTAssertTrue(text.contains("Held\u{00A0}up his elastic toy & grinned."))
         XCTAssertTrue(text.contains("Second para."))
         XCTAssertFalse(text.contains("<"), "tags leaked into reader text: \(text)")
         XCTAssertFalse(text.contains("&nbsp;"))
         XCTAssertFalse(text.contains("color: red"), "stylesheet leaked into reader text: \(text)")
+    }
+
+    /// `<head>` holds no prose, but `<title>` is text and used to survive tag removal —
+    /// landing at the top of the page, glued to the first heading in a minified
+    /// document, and then getting picked up as the chapter title too.
+    func testStrippingTagsDropsHeadContent() {
+        let text = EPUBParser.strippingTags(from: Data(Self.awkwardXHTML.utf8))
+
+        XCTAssertFalse(text.contains("Chapter 8"), "<title> leaked into reader text: \(text)")
+        XCTAssertTrue(text.hasPrefix("Foreword"), "expected prose to start at the heading: \(text)")
+    }
+
+    func testStrippingTagsDropsComments() {
+        let text = EPUBParser.strippingTags(from: Data("<!-- nav > here --><p>Real prose.</p>".utf8))
+
+        XCTAssertEqual(text, "Real prose.")
+    }
+
+    /// An unescaped `>` inside a quoted attribute value is legal XML. Scanning to the
+    /// first `>` left the remainder of the attribute (`3">`) sitting in the prose.
+    func testStrippingTagsHandlesGreaterThanInsideAttributeValue() {
+        let text = EPUBParser.strippingTags(from: Data(#"<p title="5 > 3">Real prose.</p>"#.utf8))
+
+        XCTAssertEqual(text, "Real prose.")
+    }
+
+    /// This path runs precisely on entity-heavy documents, so leaving entities encoded
+    /// would trade a blank page for a page of visible `&#8217;`.
+    func testStrippingTagsDecodesNamedAndNumericEntities() {
+        let text = EPUBParser.strippingTags(
+            from: Data("<p>Benzie&#8217;s toy&mdash;a caf&eacute; in Bekoji&#xa0;awaited &#x2018;form&#8217;.</p>".utf8)
+        )
+
+        XCTAssertEqual(text, "Benzie\u{2019}s toy—a café in Bekoji\u{00A0}awaited \u{2018}form\u{2019}.")
+    }
+
+    /// `&amp;` is decoded last so an escaped entity survives as literal text rather
+    /// than being decoded twice.
+    func testStrippingTagsDoesNotDoubleDecodeEscapedAmpersand() {
+        XCTAssertEqual(EPUBParser.strippingTags(from: Data("<p>&amp;lt; and &amp;</p>".utf8)), "&lt; and &")
+    }
+
+    /// An unrecognised entity is left verbatim rather than silently dropped — visible
+    /// beats missing when prose is at stake.
+    func testStrippingTagsLeavesUnknownEntitiesVerbatim() {
+        XCTAssertEqual(EPUBParser.strippingTags(from: Data("<p>&notarealentity; here</p>".utf8)), "&notarealentity; here")
     }
 
     /// Block boundaries have to survive as newlines, or paragraphs run together into
