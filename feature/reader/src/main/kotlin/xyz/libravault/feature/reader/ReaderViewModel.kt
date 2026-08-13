@@ -165,10 +165,18 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    /** Called by the Markdown renderer on scroll position change (px). */
-    fun onMarkdownScrollChanged(offset: Int) {
+    /**
+     * Called by the Markdown renderer on scroll position change — a 0.0..1.0 fraction
+     * through the document, not a pixel offset (see #125 / MIGRATION_6_7). A raw pixel
+     * offset is only meaningful against the exact layout that produced it: change font
+     * size, reading theme, or device rotation between sessions and the document
+     * reflows to a different total height, landing the restored position somewhere
+     * unrelated to where the reader actually stopped. A fraction survives all three,
+     * matching how iOS's Markdown reader has always persisted progress.
+     */
+    fun onMarkdownScrollChanged(fraction: Double) {
         val id = itemId ?: return
-        val newProgress = ReadingProgress(itemId = id, markdownScrollOffset = offset, lastReadAt = Instant.now())
+        val newProgress = ReadingProgress(itemId = id, markdownScrollFraction = fraction, lastReadAt = Instant.now())
         _uiState.value = _uiState.value.copy(progress = newProgress)
         viewModelScope.launch {
             saveProgress(newProgress)
