@@ -204,6 +204,76 @@ final class MarkdownDocumentParserTests: XCTestCase {
     func testExtractTocOnEmptyDocumentIsEmpty() {
         XCTAssertTrue(MarkdownDocumentParser.extractToc(from: []).isEmpty)
     }
+
+    // MARK: - chaptersForNarration (#124)
+
+    func testOneChapterPerHeadingSection() {
+        let blocks = MarkdownDocumentParser.parse("# One\nFirst body.\n# Two\nSecond body.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.map(\.title), ["One", "Two"])
+        XCTAssertEqual(chapters[0].text, "One\n\nFirst body.")
+        XCTAssertEqual(chapters[1].text, "Two\n\nSecond body.")
+    }
+
+    func testAHeadinglessDocumentBecomesOneUntitledChapter() {
+        let blocks = MarkdownDocumentParser.parse("Just a paragraph, no heading at all.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.map(\.title), ["Untitled"])
+        XCTAssertEqual(chapters.first?.text, "Just a paragraph, no heading at all.")
+    }
+
+    func testEmptyDocumentProducesNoChapters() {
+        XCTAssertTrue(MarkdownDocumentParser.chaptersForNarration(from: []).isEmpty)
+    }
+
+    func testCodeBlocksTablesAndThematicBreaksAreNeverSpoken() {
+        // A document consisting ONLY of unspeakable content produces zero chapters —
+        // this is the case AppState.startPlayback must guard against (see
+        // AppStatePlaybackTests), the Markdown-specific version of the phantom-player
+        // bug #112 fixed for "no chapter parser at all".
+        let blocks = MarkdownDocumentParser.parse("```\nsome code\n```\n\n---\n\n| A | B |\n|---|---|\n| 1 | 2 |")
+        XCTAssertTrue(MarkdownDocumentParser.chaptersForNarration(from: blocks).isEmpty)
+    }
+
+    func testImageAltTextIsSpokenUnlikeOtherMediaBlocks() {
+        let blocks = MarkdownDocumentParser.parse("# Photo\n![A sunset over the ocean](./sunset.png)")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.first?.text, "Photo\n\nA sunset over the ocean")
+    }
+
+    func testImageWithNoAltTextContributesNothingButDoesNotCrash() {
+        let blocks = MarkdownDocumentParser.parse("# Photo\n![](./sunset.png)")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        // Heading text alone still makes a real, non-empty chapter.
+        XCTAssertEqual(chapters.first?.text, "Photo")
+    }
+
+    func testListItemsAreJoinedIntoOneSpokenPassage() {
+        let blocks = MarkdownDocumentParser.parse("# Steps\n- First\n- Second\n- Third")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.first?.text, "Steps\n\nFirst. Second. Third")
+    }
+
+    func testBlockQuoteContentIsSpoken() {
+        let blocks = MarkdownDocumentParser.parse("# Quote\n> Wise words here.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.first?.text, "Quote\n\nWise words here.")
+    }
+
+    func testContentBeforeTheFirstHeadingBecomesAPreambleChapter() {
+        let blocks = MarkdownDocumentParser.parse("Preamble text.\n# First Heading\nBody.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.map(\.title), ["Untitled", "First Heading"])
+        XCTAssertEqual(chapters[0].text, "Preamble text.")
+        XCTAssertEqual(chapters[1].text, "First Heading\n\nBody.")
+    }
 }
 
 private extension Array {

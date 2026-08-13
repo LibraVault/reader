@@ -285,9 +285,9 @@ final class AppState: ObservableObject {
     // since there's no real audio stream to measure against for synthesized speech.
 
     func startPlayback(book: BookItem, chapter: Int = 1) {
-        // A text format with no chapter parser has nothing to narrate — Markdown (and
-        // mobi/cbz) never reach BookContentProvider.chapters' EPUB/PDF switch. Bail out
-        // first, before any teardown or state assignment: continuing would speak an
+        // A text format with no chapter parser has nothing to narrate — mobi/cbz never
+        // reach BookContentProvider.chapters' switch (Markdown does, since #124). Bail
+        // out first, before any teardown or state assignment: continuing would speak an
         // empty string, run the wall-clock timer against a 0-second estimate, and leave
         // an idle mini-player pinned to a book that can never play — while also having
         // torn down whatever session was legitimately playing. Gated on format rather
@@ -312,6 +312,21 @@ final class AppState: ObservableObject {
             nowPlayingChapters = book.format.isAudio
                 ? nil
                 : try? BookContentProvider.chapters(for: book, vaultPersistence: vaultPersistence)
+
+            // A Markdown file that parses successfully but has nothing speakable (an
+            // image-only document, or one made entirely of code blocks/tables/thematic
+            // breaks — see MarkdownDocumentParser.narrationText) would otherwise reach
+            // the exact phantom-player state the format-gate above prevents for "no
+            // parser at all": empty text, isPlaying = true, a 0-second estimate. EPUB/PDF
+            // don't need this check — a near-zero-content book in those formats isn't a
+            // realistic case the way an image-only Markdown note is, and several
+            // playback tests rely on an *unreachable* EPUB file (chapters is nil, not
+            // empty) still entering a playing state. Checking specifically for an empty
+            // (not nil) array preserves that: parsing failure still proceeds as before,
+            // this only catches "parsed fine, genuinely nothing to say".
+            if book.format == .markdown, nowPlayingChapters?.isEmpty == true {
+                return
+            }
         }
         nowPlayingBook = book
         nowPlayingChapter = book.format.isAudio ? 1 : chapter

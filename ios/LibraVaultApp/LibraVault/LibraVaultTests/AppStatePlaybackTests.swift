@@ -215,32 +215,108 @@ final class AppStatePlaybackTests: XCTestCase {
 
     // MARK: - Formats with no chapter parser
 
-    func testStartPlaybackIgnoresAMarkdownBook() {
+    /// mobi/cbz remain genuinely unsupported (no parser exists for either) — the
+    /// format-gate test that used to name Markdown here now lives in the Markdown TTS
+    /// section below, since #124 gave Markdown a real chapter parser and this
+    /// behaviour reversed deliberately.
+    func testStartPlaybackIgnoresAnUnsupportedFormat() {
         let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
-        state.startPlayback(book: BookItem(id: "md", title: "Notes", author: "A", format: .markdown))
+        state.startPlayback(book: BookItem(id: "m", title: "Comic", author: "A", format: .cbz))
 
-        XCTAssertNil(state.nowPlayingBook, "Markdown has no chapter parser — it must not enter a playing state")
+        XCTAssertNil(state.nowPlayingBook, "cbz has no chapter parser — it must not enter a playing state")
         XCTAssertFalse(state.isPlaying)
         XCTAssertEqual(state.totalEstimatedSeconds, 0)
     }
 
-    func testStartPlaybackIgnoringMarkdownLeavesAnExistingSessionAlone() {
+    func testStartPlaybackIgnoringAnUnsupportedFormatLeavesAnExistingSessionAlone() {
         let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
         XCTAssertTrue(state.isPlaying)
 
-        state.startPlayback(book: BookItem(id: "md", title: "Notes", author: "A", format: .markdown))
+        state.startPlayback(book: BookItem(id: "m", title: "Comic", author: "A", format: .cbz))
 
         XCTAssertEqual(state.nowPlayingBook?.id, "1", "the unsupported book shouldn't hijack the live session")
         XCTAssertTrue(state.isPlaying)
     }
 
-    func testSupportsChapterParsingCoversOnlyEpubAndPdf() {
+    func testSupportsChapterParsingCoversEpubPdfAndMarkdown() {
+        // Markdown joined EPUB/PDF in #124 — MarkdownDocumentParser.chaptersForNarration
+        // gives it a real chapter parser, narrating through the same AVSpeechSynthesizer
+        // pipeline EPUB/PDF already use.
         XCTAssertTrue(BookContentProvider.supportsChapterParsing(.epub))
         XCTAssertTrue(BookContentProvider.supportsChapterParsing(.pdf))
-        XCTAssertFalse(BookContentProvider.supportsChapterParsing(.markdown))
+        XCTAssertTrue(BookContentProvider.supportsChapterParsing(.markdown))
         XCTAssertFalse(BookContentProvider.supportsChapterParsing(.mobi))
         XCTAssertFalse(BookContentProvider.supportsChapterParsing(.cbz))
+    }
+
+    // MARK: - Markdown Read Aloud (#124)
+
+    /// A real .md file inside a real vault folder, registered with `vaultPersistence` —
+    /// mirrors makeRealEPUBBook's shape/purpose but far simpler, since Markdown needs
+    /// no zip/manifest scaffolding, just a plain text file.
+    private func makeRealMarkdownBook(
+        vaultPersistence: VaultPersistence,
+        source: String = "# Only Chapter\nReal narratable text."
+    ) throws -> BookItem {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStatePlaybackTests-md-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let fileURL = tempDir.appendingPathComponent("Fixture.md")
+        try source.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vault = try vaultPersistence.makeVault(from: tempDir)
+        vaultPersistence.save([vault])
+
+        return BookItem(
+            id: "vault:\(vault.id):\(fileURL.path)",
+            title: "Fixture",
+            author: "",
+            format: .markdown,
+            fileURL: fileURL,
+            vaultId: vault.id
+        )
+    }
+
+    func testStartPlaybackWithARealMarkdownFileEntersAPlayingState() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealMarkdownBook(vaultPersistence: vaultPersistence)
+
+        state.startPlayback(book: book)
+
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertEqual(state.nowPlayingChapterCount, 1)
+        XCTAssertEqual(state.nowPlayingChapterTitles, ["Only Chapter"])
+    }
+
+    func testStartPlaybackWithAnImageOnlyMarkdownFileDoesNotEnterAPlayingState() throws {
+        // The Markdown-specific edge case EPUB/PDF don't realistically hit: a file
+        // that parses successfully but has nothing speakable at all (see
+        // MarkdownDocumentParser.narrationText — code blocks, tables, thematic breaks,
+        // and an alt-text-less image all produce no narration). Without this guard,
+        // this reaches the exact phantom-player state #112 fixed for "no parser at
+        // all": empty text, isPlaying = true, a 0-second estimate.
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealMarkdownBook(vaultPersistence: vaultPersistence, source: "![](./no-alt-text.png)")
+
+        state.startPlayback(book: book)
+
+        XCTAssertFalse(state.isPlaying, "an image with no alt text has nothing speakable — must not enter a playing state")
+        XCTAssertNil(state.nowPlayingBook)
+    }
+
+    func testStartPlaybackWithAnUnreachableMarkdownFileStillEntersAPlayingState() {
+        // Mirrors testStartPlaybackUsesRealChaptersForARealEPUB's sibling behaviour:
+        // a parseable format whose file just isn't reachable (no vault fixture, as
+        // here) should still enter a playing state — chapters ends up nil (parsing
+        // never ran), not empty (parsed fine, nothing to say), and the guard added in
+        // #124 is deliberately narrower than that so this case is unaffected.
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
+        state.startPlayback(book: BookItem(id: "md", title: "Notes", author: "A", format: .markdown))
+
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertEqual(state.nowPlayingBook?.id, "md")
     }
 
     func testTogglePlaybackFlipsIsPlaying() {
