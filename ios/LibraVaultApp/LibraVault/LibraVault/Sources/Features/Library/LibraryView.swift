@@ -5,14 +5,16 @@ enum LibraryFormatFilter: String, CaseIterable {
     case all = "All"
     case epub = "EPUB"
     case pdf = "PDF"
+    case markdown = "MD"
     case audio = "Audio"
 
     func matches(_ format: MediaFormat) -> Bool {
         switch self {
-        case .all:   return true
-        case .epub:  return format == .epub
-        case .pdf:   return format == .pdf
-        case .audio: return format.isAudio
+        case .all:      return true
+        case .epub:     return format == .epub
+        case .pdf:      return format == .pdf
+        case .markdown: return format == .markdown
+        case .audio:    return format.isAudio
         }
     }
 }

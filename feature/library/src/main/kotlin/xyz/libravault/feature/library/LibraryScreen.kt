@@ -1017,6 +1017,13 @@ private fun FormatFilterRow(
         }
         item {
             FilterChip(
+                selected = currentFilter == MediaFormat.MARKDOWN.name,
+                onClick = { onFilterChanged(MediaFormat.MARKDOWN.name) },
+                label = { Text("MD") },
+            )
+        }
+        item {
+            FilterChip(
                 selected = currentFilter == "AUDIO",
                 onClick = { onFilterChanged("AUDIO") },
                 label = { Text("Listening") },
