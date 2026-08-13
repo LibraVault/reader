@@ -247,14 +247,32 @@ final class LibraVaultUITests: XCTestCase {
         openSettings(in: app)
 
         XCTAssertTrue(app.staticTexts["Vaults"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Reading"].exists)
-        XCTAssertTrue(app.staticTexts["Playback"].exists)
-        XCTAssertTrue(app.staticTexts["Privacy & Diagnostics"].exists)
 
-        let supportDevelopment = app.staticTexts["Support Development"]
-        scrollDownUntilVisible(supportDevelopment, in: app)
-        XCTAssertTrue(app.staticTexts["About"].exists)
-        XCTAssertTrue(supportDevelopment.exists)
+        // Every section, in the order SettingsView declares them, each scrolled into
+        // view before being asserted. SwiftUI doesn't instantiate off-screen rows, so
+        // `.exists` is false for anything below the fold rather than true-but-offscreen.
+        //
+        // That is what broke this test: the Text-to-Speech section was added between
+        // Playback and Privacy & Diagnostics, pushing the latter past the bottom of the
+        // screen, and the unscrolled `XCTAssertTrue(...["Privacy & Diagnostics"].exists)`
+        // started failing — while Text-to-Speech itself was never asserted at all, so
+        // the test checked six sections despite its name promising seven.
+        //
+        // scrollDownUntilVisible no-ops when the element is already on screen, so
+        // asserting uniformly this way costs nothing and doesn't care where the fold
+        // happens to fall on a given device.
+        for section in [
+            "Reading",
+            "Playback",
+            "Text-to-Speech",
+            "Privacy & Diagnostics",
+            "About",
+            "Support Development",
+        ] {
+            let header = app.staticTexts[section]
+            scrollDownUntilVisible(header, in: app)
+            XCTAssertTrue(header.exists, "Settings should show a \"\(section)\" section")
+        }
 
         // Deliberately omitted (see SettingsView.swift's comments): no iOS equivalent
         // for Material You dynamic color, and no real cover cache to clear yet.
