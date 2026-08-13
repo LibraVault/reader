@@ -31,6 +31,12 @@ struct MarkdownReaderContent: View {
     let fontSize: Double
     let lineSpacing: Double
     let fontDesign: Font.Design
+    /// Threaded separately from [colors] purely for Mermaid diagram theming (#121) —
+    /// `LibraVaultColorScheme` is built *from* a `ReadingTheme` (see
+    /// LibraVaultColor.forReadingTheme) but doesn't carry it back, and
+    /// mermaid.js needs its own theme name (see mermaidThemeName(for:)), not
+    /// LibraVault's derived colour tokens.
+    let readingTheme: ReadingTheme
     /// 0...1 fraction of the way through `blocks`, restored from saved progress.
     let initialScrollFraction: Double
     let onScrollFractionChanged: (Double) -> Void
@@ -62,7 +68,8 @@ struct MarkdownReaderContent: View {
                             colors: colors,
                             fontSize: fontSize,
                             lineSpacing: lineSpacing,
-                            fontDesign: fontDesign
+                            fontDesign: fontDesign,
+                            readingTheme: readingTheme
                         )
                         .id(index)
                     }
@@ -140,6 +147,7 @@ private struct MarkdownBlockView: View {
     let fontSize: Double
     let lineSpacing: Double
     let fontDesign: Font.Design
+    let readingTheme: ReadingTheme
 
     var body: some View {
         switch block {
@@ -172,7 +180,7 @@ private struct MarkdownBlockView: View {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { _, nested in
                         MarkdownBlockView(
                             block: nested, images: images, colors: colors, fontSize: fontSize,
-                            lineSpacing: lineSpacing, fontDesign: fontDesign
+                            lineSpacing: lineSpacing, fontDesign: fontDesign, readingTheme: readingTheme
                         )
                     }
                 }
@@ -258,6 +266,9 @@ private struct MarkdownBlockView: View {
                 .background(colors.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
+
+        case let .mermaidDiagram(source):
+            MermaidDiagramBlockView(source: source, readingTheme: readingTheme, colors: colors, fontSize: fontSize)
         }
     }
 
@@ -270,7 +281,7 @@ private struct MarkdownBlockView: View {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     MarkdownBlockView(
                         block: block, images: images, colors: colors, fontSize: fontSize,
-                        lineSpacing: lineSpacing, fontDesign: fontDesign
+                        lineSpacing: lineSpacing, fontDesign: fontDesign, readingTheme: readingTheme
                     )
                 }
             }

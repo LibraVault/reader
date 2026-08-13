@@ -428,6 +428,7 @@ struct ReaderView: View {
             fontSize: fontSize,
             lineSpacing: lineSpacing,
             fontDesign: fontDesign,
+            readingTheme: readingTheme,
             initialScrollFraction: bridge.progress[book.id] ?? 0,
             onScrollFractionChanged: { markdownScrollFraction = $0 },
             scrollToBlockIndex: pendingTocBlockIndex,

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<!--
+  Loaded once per MermaidDiagramView (see MermaidDiagramView.swift) from the app
+  bundle via a custom WKURLSchemeHandler (scheme "mermaid-local://") — never a real
+  network request, LibraVault is offline-first. mermaid.min.js sits alongside this
+  file as a committed resource (see #121); nothing here is ever fetched at runtime.
+
+  CSP pins script-src to 'self' and blocks everything else by default — no images,
+  fonts, connections, or frames from anywhere, matching htmlLabels:false below
+  (diagram source ultimately comes from a user's own Markdown file, so it's treated
+  as untrusted input, not just inert text). Mirrors Android's identical
+  mermaid_host.html asset byte-for-byte apart from the bridge calls at the bottom.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+    #diagram {
+      display: flex;
+      justify-content: center;
+    }
+    #diagram svg {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+  <script src="mermaid.min.js"></script>
+</head>
+<body>
+  <div id="diagram"></div>
+  <script>
+    // Populated by window.webkit.messageHandlers.reportHeight/onRenderError — see
+    // MermaidDiagramView.swift's WKScriptMessageHandler for the Swift-side handlers.
+
+    function reportHeight() {
+      var height = document.getElementById('diagram').scrollHeight;
+      window.webkit.messageHandlers.reportHeight.postMessage(height);
+    }
+
+    /**
+     * Called once per diagram from Swift via evaluateJavaScript. [source] is the raw
+     * fenced-block body (see MarkdownDocumentParser.swift's .mermaidDiagram case);
+     * [theme] is one of Mermaid's own theme names ('default', 'dark', 'neutral') —
+     * see MermaidTheme.swift for the mapping from LibraVault's reading theme.
+     *
+     * securityLevel 'strict' + htmlLabels:false: diagram source is untrusted user
+     * content (a Markdown file, potentially from a shared vault), not app-authored
+     * text, so raw HTML in labels/links is never rendered as HTML.
+     */
+    async function renderDiagram(source, theme) {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: theme,
+          flowchart: { htmlLabels: false },
+        });
+        var result = await mermaid.render('mermaid-diagram', source);
+        document.getElementById('diagram').innerHTML = result.svg;
+        reportHeight();
+      } catch (err) {
+        window.webkit.messageHandlers.onRenderError.postMessage(
+          String(err && err.message ? err.message : err)
+        );
+      }
+    }
+  </script>
+</body>
+</html>

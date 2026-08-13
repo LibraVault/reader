@@ -75,6 +75,12 @@ dependencies {
     // DocumentFile/Uri types are used directly here too).
     implementation(libs.androidx.documentfile)
 
+    // WebViewAssetLoader — see MermaidDiagramView.kt (#121). The only network-shaped
+    // API this pulls in is entirely local: it serves bundled assets over a virtual
+    // https:// origin so the WebView's same-origin/CSP rules apply normally, never
+    // touching a real network.
+    implementation(libs.androidx.webkit)
+
     // Fragment interop for hosting Readium EpubNavigatorFragment inside Compose
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("androidx.fragment:fragment-compose:1.8.1")

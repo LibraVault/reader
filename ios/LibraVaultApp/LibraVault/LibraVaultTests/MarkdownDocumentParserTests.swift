@@ -89,6 +89,31 @@ final class MarkdownDocumentParserTests: XCTestCase {
         XCTAssertTrue(blocks.contains(.thematicBreak))
     }
 
+    // MARK: - Mermaid diagrams (#121)
+
+    func testMermaidFenceParsesAsAMermaidDiagramBlock() {
+        let blocks = MarkdownDocumentParser.parse("```mermaid\ngraph TD\n  A --> B\n```")
+
+        XCTAssertEqual(blocks, [.mermaidDiagram(source: "graph TD\n  A --> B\n")])
+    }
+
+    func testMermaidLanguageCheckIsCaseSensitive() {
+        // Matches GFM's own info-string convention — ```Mermaid``` is an ordinary,
+        // unrecognized-language code block, not a diagram (same rule Android's
+        // MermaidBlockDetector.mermaidSourceOrNull applies).
+        let blocks = MarkdownDocumentParser.parse("```Mermaid\ngraph TD\n```")
+
+        guard case .codeBlock? = blocks.first else {
+            return XCTFail("expected an ordinary code block, not a mermaid diagram, for a differently-cased language tag")
+        }
+    }
+
+    func testOtherLanguagesStillParseAsOrdinaryCodeBlocks() {
+        let blocks = MarkdownDocumentParser.parse("```kotlin\nval x = 1\n```")
+
+        XCTAssertEqual(blocks, [.codeBlock(code: "val x = 1\n", language: "kotlin")])
+    }
+
     // MARK: - Tables (#120)
 
     func testTableParsesHeaderAndBodyRowsAsSeparateCells() {
