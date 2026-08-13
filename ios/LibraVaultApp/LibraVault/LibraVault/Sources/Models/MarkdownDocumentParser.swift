@@ -125,10 +125,29 @@ private struct BlockBuilder: MarkupVisitor {
         // Table.Head and Table.Row both conform to TableCellContainer (`.cells`);
         // Table.Cell conforms to BasicInlineContainer, so it walks through the same
         // inlineRuns(for:) as any other inline container — headings, paragraphs.
-        // `.cells`/`.rows` are LazyMapSequence, so both levels need an explicit
-        // Array(...) — mapping alone leaves the inner sequence lazy too.
-        let headers = Array(table.head.cells.map { inlineRuns(for: $0) })
-        let rows = Array(table.body.rows.map { row in Array(row.cells.map { inlineRuns(for: $0) }) })
+        //
+        // Plain for-loops rather than `.cells.map { inlineRuns(for: $0) }`: `.cells`/
+        // `.rows` are LazyMapSequence, and a closure passed to a *lazy* sequence's
+        // `.map` is stored for deferred evaluation rather than called immediately —
+        // which makes it an escaping closure. Swift doesn't allow an escaping closure
+        // to capture `self` from inside a `mutating func` (self is effectively `inout`
+        // there), so `inlineRuns(for:)` — an instance method, implicitly `self.`-bound
+        // — can't be referenced that way here. visitBlockQuote/visitUnorderedList's
+        // `.flatMap { visit($0) }` calls look similar but are fine: their `.children`
+        // is a plain (non-lazy) Sequence, whose `.flatMap` runs the closure eagerly
+        // and doesn't retain it, so it's non-escaping.
+        var headers: [[MarkdownInlineRun]] = []
+        for cell in table.head.cells {
+            headers.append(inlineRuns(for: cell))
+        }
+        var rows: [[[MarkdownInlineRun]]] = []
+        for row in table.body.rows {
+            var rowCells: [[MarkdownInlineRun]] = []
+            for cell in row.cells {
+                rowCells.append(inlineRuns(for: cell))
+            }
+            rows.append(rowCells)
+        }
         return [.table(headers: headers, rows: rows)]
     }
 
