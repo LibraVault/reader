@@ -213,6 +213,36 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(state.totalEstimatedSeconds, 0)
     }
 
+    // MARK: - Formats with no chapter parser
+
+    func testStartPlaybackIgnoresAMarkdownBook() {
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
+        state.startPlayback(book: BookItem(id: "md", title: "Notes", author: "A", format: .markdown))
+
+        XCTAssertNil(state.nowPlayingBook, "Markdown has no chapter parser — it must not enter a playing state")
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertEqual(state.totalEstimatedSeconds, 0)
+    }
+
+    func testStartPlaybackIgnoringMarkdownLeavesAnExistingSessionAlone() {
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
+        state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))
+        XCTAssertTrue(state.isPlaying)
+
+        state.startPlayback(book: BookItem(id: "md", title: "Notes", author: "A", format: .markdown))
+
+        XCTAssertEqual(state.nowPlayingBook?.id, "1", "the unsupported book shouldn't hijack the live session")
+        XCTAssertTrue(state.isPlaying)
+    }
+
+    func testSupportsChapterParsingCoversOnlyEpubAndPdf() {
+        XCTAssertTrue(BookContentProvider.supportsChapterParsing(.epub))
+        XCTAssertTrue(BookContentProvider.supportsChapterParsing(.pdf))
+        XCTAssertFalse(BookContentProvider.supportsChapterParsing(.markdown))
+        XCTAssertFalse(BookContentProvider.supportsChapterParsing(.mobi))
+        XCTAssertFalse(BookContentProvider.supportsChapterParsing(.cbz))
+    }
+
     func testTogglePlaybackFlipsIsPlaying() {
         let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
         state.startPlayback(book: BookItem(id: "1", title: "T", author: "A"))

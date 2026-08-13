@@ -18,8 +18,16 @@ enum BookContentProvider {
         case vaultUnavailable
     }
 
+    /// Whether `chapters(for:)` has a parser for this format. Exposed so callers can
+    /// gate *before* starting work that only makes sense for a narratable book — see
+    /// AppState.startPlayback — instead of inferring it from a thrown error, which is
+    /// indistinguishable from "right format, unreadable file".
+    static func supportsChapterParsing(_ format: MediaFormat) -> Bool {
+        format == .epub || format == .pdf
+    }
+
     static func chapters(for book: BookItem, vaultPersistence: VaultPersistence = VaultPersistence()) throws -> [BookChapter] {
-        guard book.format == .epub || book.format == .pdf else {
+        guard supportsChapterParsing(book.format) else {
             throw ContentError.unsupportedFormat
         }
         return try withSecurityScopedAccess(for: book, vaultPersistence: vaultPersistence) { fileURL in
