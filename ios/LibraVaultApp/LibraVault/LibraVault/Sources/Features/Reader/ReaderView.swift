@@ -47,10 +47,10 @@ struct ReaderView: View {
     @State private var showSettingsSheet = false
     @State private var showBookmarksSheet = false
     @State private var showTocSheet = false
-    /// Toggled by center-third taps in EPUB/PDF's paginated & scrolling content —
-    /// mirrors Android's ReaderViewModel.onCentreTap, which hides/shows the whole
-    /// toolbar as an immersive-reading toggle. Markdown has no tap zones wired (out
-    /// of scope), so this never flips there and its toolbar stays always-visible.
+    /// Toggled by center-third taps in EPUB/PDF's paginated & scrolling content, and
+    /// (#125) Markdown's own centre-tap gesture in MarkdownReaderContent — mirrors
+    /// Android's ReaderViewModel.onCentreTap, which hides/shows the whole toolbar as
+    /// an immersive-reading toggle, across all three formats there too.
     @State private var showToolbar = true
     /// One-shot scroll target set when the user taps a TOC entry — consumed by
     /// MarkdownReaderContent's onBlockScrollConsumed.
@@ -431,7 +431,8 @@ struct ReaderView: View {
             initialScrollFraction: bridge.progress[book.id] ?? 0,
             onScrollFractionChanged: { markdownScrollFraction = $0 },
             scrollToBlockIndex: pendingTocBlockIndex,
-            onBlockScrollConsumed: { pendingTocBlockIndex = nil }
+            onBlockScrollConsumed: { pendingTocBlockIndex = nil },
+            onCenterTap: { withAnimation { showToolbar.toggle() } }
         )
     }
 

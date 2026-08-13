@@ -38,9 +38,17 @@ struct MarkdownReaderContent: View {
     /// into `blocks` (see MarkdownTocEntry.blockIndex), not a scroll fraction.
     var scrollToBlockIndex: Int? = nil
     var onBlockScrollConsumed: () -> Void = {}
+    /// Tap in the centre third of the screen — toggles the reader toolbar. Mirrors
+    /// Android's MarkdownReaderScreen `onCentreTap` (#125) and this same reader's own
+    /// left/right-third-ignoring behaviour on EPUB's `scrollingContent` (see
+    /// ReaderView.swift): Markdown has no discrete "page" to flip to while
+    /// continuously scrolling, so — like that EPUB path — only the centre band does
+    /// anything; left/right taps are deliberately inert rather than repurposed.
+    var onCenterTap: () -> Void = {}
 
     @State private var contentHeight: CGFloat = 0
     @State private var viewportHeight: CGFloat = 0
+    @State private var viewportWidth: CGFloat = 0
     private static let coordinateSpaceName = "markdownScroll"
 
     var body: some View {
@@ -77,8 +85,23 @@ struct MarkdownReaderContent: View {
             .background(
                 GeometryReader { viewportGeometry in
                     Color.clear
-                        .onAppear { viewportHeight = viewportGeometry.size.height }
-                        .onChange(of: viewportGeometry.size.height) { _, newHeight in viewportHeight = newHeight }
+                        .onAppear {
+                            viewportHeight = viewportGeometry.size.height
+                            viewportWidth = viewportGeometry.size.width
+                        }
+                        .onChange(of: viewportGeometry.size) { _, newSize in
+                            viewportHeight = newSize.height
+                            viewportWidth = newSize.width
+                        }
+                }
+            )
+            // Center-third only, matching ReaderTapZone's boundaries — see onCenterTap's
+            // doc comment above for why left/right are deliberately inert here.
+            .simultaneousGesture(
+                SpatialTapGesture(coordinateSpace: .local).onEnded { value in
+                    if ReaderTapZone.classify(x: value.location.x, width: viewportWidth) == .center {
+                        onCenterTap()
+                    }
                 }
             )
             .onPreferenceChange(MarkdownScrollOffsetKey.self) { minY in
