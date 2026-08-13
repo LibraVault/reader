@@ -63,6 +63,22 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
 
+      # Boot the simulator up front and wait for it, rather than letting xcodebuild
+      # race a cold first boot while it is also installing the test runner. That race
+      # was one of the ways this step used to stall until the job timeout.
+      - name: Boot Simulator
+        run: |
+          xcrun simctl boot "iPhone 17" 2>/dev/null || true
+          xcrun simctl bootstatus "iPhone 17"
+
+      # -only-testing:LibraVaultTests is the point of this step. It previously ran the
+      # whole scheme — despite the name — which meant the XCUITest target ran here too
+      # and its simulator flakiness failed the job that gates merges, even though the
+      # unit target passed every time. UI tests now live in their own job below.
+      #
+      # -parallel-testing-enabled NO stops Xcode cloning the simulator ("Clone 1 of
+      # iPhone 17", "Clone 2 of ...") — on a shared macOS runner those clones starve
+      # each other and produce DTServiceHub launch failures and 100s+ test durations.
       - name: Run Unit Tests
         run: |
           xcodebuild test \
@@ -70,6 +86,9 @@ jobs:
             -scheme "$SCHEME" \
             -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -only-testing:LibraVaultTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/unit-tests.xcresult" \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Test Results
@@ -77,7 +96,77 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-test-results
-          path: ~/Library/Developer/Xcode/DerivedData/*/Logs/Test/*.xcresult
+          path: ${{ runner.temp }}/unit-tests.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Separated from the gating job above deliberately. These tests depend on simulator
+  # app launch, which on GitHub's macOS runners fails often enough to be useless as a
+  # merge gate (see the "iOS Simulator CI job gives no signal" issue) — but the answer
+  # is a distinct red check you can look at, NOT `continue-on-error` inside the main
+  # job, which is how a real breakage got masked here once before.
+  #
+  # Keep this job out of report-status's `needs` so its result stays informational.
+  # If it becomes reliable, make it a required check in branch protection.
+  build-ios-ui-tests:
+    name: iOS UI Tests (informational)
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    env:
+      XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
+      SCHEME: LibraVault
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.5'
+
+      - name: Cache Pocket TTS iOS dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            third-party/sherpa-onnx/ios
+            ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel
+          key: pocket-tts-ios-${{ hashFiles('third-party/sherpa-onnx/setup-ios.sh') }}
+
+      - name: Fetch Pocket TTS iOS dependencies
+        run: ./third-party/sherpa-onnx/setup-ios.sh
+
+      - name: Boot Simulator
+        run: |
+          xcrun simctl boot "iPhone 17" 2>/dev/null || true
+          xcrun simctl bootstatus "iPhone 17"
+
+      # -retry-tests-on-failure re-runs only the individual tests that failed, so a
+      # one-off launch failure doesn't redden the whole target, while a test that is
+      # genuinely broken still fails after its retries.
+      - name: Run UI Tests
+        run: |
+          xcodebuild test \
+            -project "$XCODEPROJ" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -only-testing:LibraVaultUITests \
+            -parallel-testing-enabled NO \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
+            -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload UI Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-test-results
+          path: ${{ runner.temp }}/ui-tests.xcresult
           retention-days: 7
           if-no-files-found: ignore
 
@@ -151,8 +240,10 @@ jobs:
               repo: context.repo.repo,
               body: `## 📱 iOS Build Status: ${overall}
 
-              ${icon(iosResult)} **iOS Simulator Build & Tests** - ${iosResult}
+              ${icon(iosResult)} **iOS Simulator Build & Unit Tests** - ${iosResult}
               ${icon(androidResult)} **Android Core Modules** - ${androidResult}
+
+              _iOS UI tests run in a separate, informational job and are not reflected above — check "iOS UI Tests (informational)" for those._
 
               [View run details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`
             })
