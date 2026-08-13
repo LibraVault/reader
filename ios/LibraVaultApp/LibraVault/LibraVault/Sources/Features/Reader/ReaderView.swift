@@ -162,7 +162,7 @@ struct ReaderView: View {
                 isSpeaking: isCurrentlyPlayingThisBook,
                 onToggleSpeaking: toggleReadAloud,
                 showFontControls: book.format != .pdf,
-                showReadAloud: book.format != .markdown,
+                showReadAloud: BookContentProvider.supportsChapterParsing(book.format),
                 showLayoutMode: book.format != .markdown
             )
         }

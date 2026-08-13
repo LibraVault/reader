@@ -21,11 +21,14 @@ struct ReaderSettingsSheet: View {
     /// layout, so text size/line spacing/font family have nothing to apply to.
     /// Mirrors Android's ReaderSettingsSheet(showFontControls:).
     var showFontControls: Bool = true
-    /// False for Markdown — only EPUB and PDF have a chapter parser wired into
-    /// AppState.startPlayback (see BookContentProvider.chapters, which throws
-    /// `.unsupportedFormat` for anything else). Offering the button anyway started a
-    /// playback session over empty text and pushed an idle Player screen. Android
-    /// likewise has no Markdown TTS path; wiring one up is tracked separately.
+    /// False for any format without a chapter parser — Markdown, mobi, cbz. Only EPUB
+    /// and PDF reach BookContentProvider.chapters' switch, so callers should pass
+    /// `BookContentProvider.supportsChapterParsing(book.format)` rather than testing a
+    /// single format, keeping this in step with AppState.startPlayback's own guard.
+    /// Offering the button regardless started a playback session over empty text and
+    /// pushed an idle Player screen; with startPlayback now refusing those formats, an
+    /// ungated button would instead be a silent no-op. Android likewise has no Markdown
+    /// TTS path; wiring one up is tracked separately.
     var showReadAloud: Bool = true
     /// False for Markdown — MarkdownReaderContent is a single continuous scroll with
     /// no pagination, so the Paginated/Scrolling toggle has nothing to switch.
