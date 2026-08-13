@@ -460,6 +460,14 @@ fun LibraryScreen(
                             }
                             item(key = "section_audio_spacer", span = fullSpan) { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
+                    } else if (state.vaultGroupedItems.values.all { it.isEmpty() }) {
+                        // Format filter active, but nothing matches it — most commonly hit by
+                        // MD, since most vaults have no Markdown files at all (see #119). The
+                        // chips above stay visible and tappable, so this isn't a dead end; it
+                        // only explains why the grid below them is blank instead of looking broken.
+                        item(span = fullSpan) {
+                            FilteredEmptyState(formatFilter = state.formatFilter)
+                        }
                     } else {
                         // Format filter active: per-vault sections (already filtered by ViewModel)
                         state.vaultGroupedItems.forEach { (vault, vaultItems) ->
@@ -735,6 +743,56 @@ private fun BrandMonogram() {
             )
         }
     }
+}
+
+/**
+ * Shown in place of the grid when a format filter chip is active but matches nothing —
+ * most commonly MD, since most vaults have no Markdown files at all. Deliberately no CTA
+ * button (unlike [EmptyLibrary]): the filter chips stay visible directly above this, so
+ * clearing the filter is already one tap away.
+ */
+@Composable
+internal fun FilteredEmptyState(formatFilter: String?) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = Dimens.spaceXl),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Dimens.spaceSm),
+            modifier = Modifier.padding(horizontal = Dimens.spaceXl),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(40.dp),
+            )
+            Text(
+                text = stringResource(formatFilterEmptyMessageRes(formatFilter)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * Maps a [xyz.libravault.feature.library.LibraryViewModel] format-filter value — a
+ * [MediaFormat.name], or the pseudo-formats "AUDIO"/"BOOK" — to the string resource
+ * explaining why the grid is empty. Kept as a plain function (not @Composable) so it's
+ * unit-testable without a Compose host; the caller resolves it via [stringResource].
+ */
+internal fun formatFilterEmptyMessageRes(filter: String?): Int = when (filter) {
+    MediaFormat.EPUB.name -> R.string.empty_filter_epub
+    MediaFormat.PDF.name -> R.string.empty_filter_pdf
+    MediaFormat.MARKDOWN.name -> R.string.empty_filter_markdown
+    "AUDIO" -> R.string.empty_filter_audio
+    "BOOK" -> R.string.empty_filter_book
+    else -> R.string.empty_filter_generic
 }
 
 @Composable
