@@ -8,9 +8,9 @@ on:
         required: false
         default: "Beta build via GitHub Actions"
       groups:
-        description: "Firebase tester group(s), comma-separated"
+        description: "Firebase tester group(s), comma-separated (use group alias, not display name)"
         required: false
-        default: "testers"
+        default: "libravault-alphabeta"
 
 concurrency:
   group: android-firebase-distribution-${{ github.ref }}
