@@ -41,7 +41,7 @@ dependencies {
     // JUnit4-only) runs alongside the module's JUnit5 tests via the vintage engine.
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.2")
+    testRuntimeOnly(libs.junit5.vintage.engine)
     // Debug-only manifest declaring the ComponentActivity that Compose's
     // createComposeRule() launches to host test content - picked up by unit
     // tests too via testOptions.unitTests.isIncludeAndroidResources above.

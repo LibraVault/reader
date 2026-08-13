@@ -985,7 +985,7 @@ private fun List<LibraryItem>.applyFormatFilter(filter: String?): List<LibraryIt
 // ── Format filter chips for search ────────────────────────────────────────────
 
 @Composable
-private fun FormatFilterRow(
+internal fun FormatFilterRow(
     currentFilter: String?,
     onFilterChanged: (String?) -> Unit,
     contentPadding: PaddingValues = PaddingValues(horizontal = Dimens.spaceLg, vertical = Dimens.spaceXs),
