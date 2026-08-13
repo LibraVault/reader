@@ -34,6 +34,18 @@
 -keep class androidx.pdf.** { *; }
 -dontwarn androidx.pdf.**
 
+# ── sherpa-onnx JNI (Pocket TTS) ──────────────────────────────────────────────
+# libsherpa-onnx-jni.so uses *static* JNI registration: the runtime resolves
+# each `external fun` to a symbol built from the fully-qualified class name
+# (Java_com_k2fsa_sherpa_onnx_OfflineTts_newFromFile, ...), and the native side
+# additionally reads the config data classes' fields by name via GetFieldID and
+# constructs GeneratedAudio itself. R8 renaming any of that silently breaks
+# every native call in release builds only - debug builds are not minified, so
+# neither PocketTtsAudioOutputTest nor manual debug testing would catch it.
+# Keep names and members for the whole vendored package.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclasseswithmembernames class com.k2fsa.sherpa.onnx.** { native <methods>; }
+
 # ── Guava (MediaController) ───────────────────────────────────────────────────
 -dontwarn com.google.common.**
 -keep class com.google.common.util.concurrent.** { *; }

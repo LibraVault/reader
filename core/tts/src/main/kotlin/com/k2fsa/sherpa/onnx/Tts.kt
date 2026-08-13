@@ -6,11 +6,24 @@
 //
 // This is the JNI binding layer over the native libraries in
 // third-party/sherpa-onnx/sherpa-onnx-android.aar (also vendored from the
-// same upstream release, see SHERPA_ONNX_SETUP.md). Only the package
-// declaration was changed to fit this module; the API surface is kept as-is
-// (including model types Libravault doesn't use yet) so future upstream
+// same upstream release, see SHERPA_ONNX_SETUP.md). The API surface is kept
+// as-is (including model types Libravault doesn't use yet) so future upstream
 // updates stay a simple file replace.
-package xyz.libravault.core.tts.pocket.sherpa
+//
+// ⚠️  DO NOT MOVE THIS FILE OR CHANGE ITS PACKAGE. ⚠️
+//
+// The `external fun`s below are *statically registered* JNI methods: the
+// runtime resolves each one by looking the native library up for a symbol
+// derived from the fully-qualified class name. libsherpa-onnx-jni.so exports
+//     Java_com_k2fsa_sherpa_onnx_OfflineTts_newFromFile
+// and friends, so these classes must sit in `com.k2fsa.sherpa.onnx` and
+// nowhere else. This file was originally repackaged into the module's own
+// namespace, which compiled and linked cleanly and then failed at the first
+// native call with
+//     UnsatisfiedLinkError: No implementation found for ... newFromFile
+// - meaning Pocket TTS never produced a single sample of audio on Android.
+// Nothing caught it, because until issue #107 no test asserted on the audio.
+package com.k2fsa.sherpa.onnx
 
 import android.content.res.AssetManager
 

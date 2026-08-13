@@ -14,8 +14,22 @@ if (!sherpaOnnxAar.exists()) {
 android {
     namespace = "xyz.libravault.core.tts"
 
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
     buildFeatures {
         buildConfig = true
+    }
+
+    sourceSets {
+        // PCM measurement helpers shared by the JVM unit tests (which check the
+        // math against synthetic waveforms, on every push) and the on-device
+        // audio test (which applies it to real sherpa-onnx output, only on
+        // arm64 hardware). Compiled into both test source sets rather than into
+        // main, since production code has no use for them.
+        getByName("test").kotlin.srcDir("src/testShared/kotlin")
+        getByName("androidTest").kotlin.srcDir("src/testShared/kotlin")
     }
 
     // Pocket TTS bundles exactly one voice: a Piper VITS model trained from
@@ -53,4 +67,9 @@ dependencies {
 
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)
+
+    // ── Instrumentation tests ──
+    // PocketTtsAudioOutputTest runs the real sherpa-onnx pipeline on device.
+    // The AAR is arm64-v8a only, so it self-skips elsewhere (see that file).
+    androidTestImplementation(libs.bundles.testing.instrumentation)
 }
