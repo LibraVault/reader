@@ -42,17 +42,33 @@ final class ReaderSettingsAvailabilityTests: XCTestCase {
         }
     }
 
-    /// The control and the action must agree: anything `startPlayback` refuses must not
-    /// render a button, and anything it accepts must. Asserted as an equivalence rather
-    /// than two separate lists so the two can't drift apart.
-    func testReadAloudVisibilityMatchesStartPlaybacksOwnGuard() {
+    /// The control and the action it triggers must agree: the button is offered exactly
+    /// when `startPlayback` can actually narrate the book.
+    ///
+    /// Deliberately asserted against `startPlayback`'s observable *behaviour* — does the
+    /// app end up playing? — rather than against `BookContentProvider.supportsChapterParsing`.
+    /// Comparing to the latter would restate `showReadAloud`'s own one-line implementation
+    /// and pass no matter how wrong both were; this fails if either side changes
+    /// independently, which is the drift actually worth catching.
+    @MainActor
+    func testReadAloudVisibilityMatchesWhatStartPlaybackActuallyDoes() {
         for format in allFormats where !format.isAudio {
+            let state = AppState(userPreferencesPersistence: isolatedPreferences())
+            state.startPlayback(book: BookItem(id: "b", title: "T", author: "A", format: format))
+
             XCTAssertEqual(
-                ReaderSettingsAvailability.showReadAloud(for: format),
-                BookContentProvider.supportsChapterParsing(format),
-                "\(format): the Read Aloud control and AppState.startPlayback's guard disagree"
+                ReaderSettingsAvailability.showReadAloud(for: format), state.isPlaying,
+                "\(format): Read Aloud is offered iff startPlayback can actually narrate it"
             )
         }
+    }
+
+    /// Isolated from `UserDefaults.standard` so constructing an AppState here can't leak
+    /// playback preferences into other test classes (same reasoning as AppStatePlaybackTests).
+    private func isolatedPreferences() -> UserPreferencesPersistence {
+        UserPreferencesPersistence(
+            defaults: UserDefaults(suiteName: "ReaderSettingsAvailabilityTests.\(UUID().uuidString)")!
+        )
     }
 
     // MARK: - showLayoutMode
