@@ -285,6 +285,18 @@ final class AppState: ObservableObject {
     // since there's no real audio stream to measure against for synthesized speech.
 
     func startPlayback(book: BookItem, chapter: Int = 1) {
+        // A text format with no chapter parser has nothing to narrate — Markdown (and
+        // mobi/cbz) never reach BookContentProvider.chapters' EPUB/PDF switch. Bail out
+        // first, before any teardown or state assignment: continuing would speak an
+        // empty string, run the wall-clock timer against a 0-second estimate, and leave
+        // an idle mini-player pinned to a book that can never play — while also having
+        // torn down whatever session was legitimately playing. Gated on format rather
+        // than on `nowPlayingChapters == nil` because a parseable format whose file just
+        // isn't reachable (no vault fixture, as in most of the playback tests) should
+        // still enter a playing state, as it always has. Callers gate too (see
+        // ReaderSettingsSheet.showReadAloud); this is the backstop.
+        guard book.format.isAudio || BookContentProvider.supportsChapterParsing(book.format) else { return }
+
         let isNewSession = nowPlayingBook?.id != book.id
         if isNewSession {
             // Only reset to the preference / tear down the previous session's engine

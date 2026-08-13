@@ -21,6 +21,18 @@ struct ReaderSettingsSheet: View {
     /// layout, so text size/line spacing/font family have nothing to apply to.
     /// Mirrors Android's ReaderSettingsSheet(showFontControls:).
     var showFontControls: Bool = true
+    /// False for any format without a chapter parser — Markdown, mobi, cbz. Only EPUB
+    /// and PDF reach BookContentProvider.chapters' switch, so callers should pass
+    /// `BookContentProvider.supportsChapterParsing(book.format)` rather than testing a
+    /// single format, keeping this in step with AppState.startPlayback's own guard.
+    /// Offering the button regardless started a playback session over empty text and
+    /// pushed an idle Player screen; with startPlayback now refusing those formats, an
+    /// ungated button would instead be a silent no-op. Android likewise has no Markdown
+    /// TTS path; wiring one up is tracked separately.
+    var showReadAloud: Bool = true
+    /// False for Markdown — MarkdownReaderContent is a single continuous scroll with
+    /// no pagination, so the Paginated/Scrolling toggle has nothing to switch.
+    var showLayoutMode: Bool = true
 
     var body: some View {
         ScrollView {
@@ -53,22 +65,26 @@ struct ReaderSettingsSheet: View {
                     }
                 }
 
-                settingSection("Mode") {
-                    chipRow(ReaderLayoutMode.allCases, label: \.rawValue, isSelected: { $0 == mode }) { mode = $0 }
+                if showLayoutMode {
+                    settingSection("Mode") {
+                        chipRow(ReaderLayoutMode.allCases, label: \.rawValue, isSelected: { $0 == mode }) { mode = $0 }
+                    }
                 }
 
-                Divider()
+                if showReadAloud {
+                    Divider()
 
-                // TODO: Move to the dedicated Player screen once it exists (Phase 4 of
-                // the UI parity plan) — kept here for now so restyling the Reader
-                // toolbar doesn't regress the one working piece of TTS functionality.
-                Button(action: onToggleSpeaking) {
-                    Label(
-                        isSpeaking ? "Stop Reading Aloud" : "Read Aloud",
-                        systemImage: isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
-                    )
-                    .font(LibraVaultTypography.bodyLarge)
-                    .foregroundStyle(LibraVaultColor.primary)
+                    // TODO: Move to the dedicated Player screen once it exists (Phase 4 of
+                    // the UI parity plan) — kept here for now so restyling the Reader
+                    // toolbar doesn't regress the one working piece of TTS functionality.
+                    Button(action: onToggleSpeaking) {
+                        Label(
+                            isSpeaking ? "Stop Reading Aloud" : "Read Aloud",
+                            systemImage: isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
+                        )
+                        .font(LibraVaultTypography.bodyLarge)
+                        .foregroundStyle(LibraVaultColor.primary)
+                    }
                 }
             }
             .padding(LibraVaultSpacing.lg)
