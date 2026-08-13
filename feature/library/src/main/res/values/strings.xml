@@ -29,6 +29,14 @@
     <string name="empty_cta_add_vault">Add a vault folder</string>
     <string name="empty_cta_rescan">Rescan vaults</string>
 
+    <!-- Format filter chip active, but no items match it (see FormatFilterRow) -->
+    <string name="empty_filter_epub">No EPUB files in your library</string>
+    <string name="empty_filter_pdf">No PDF files in your library</string>
+    <string name="empty_filter_markdown">No Markdown files in your library</string>
+    <string name="empty_filter_audio">No audiobooks in your library</string>
+    <string name="empty_filter_book">No books in your library</string>
+    <string name="empty_filter_generic">No items match this filter</string>
+
     <!-- Player mini-bar -->
     <string name="resume">Resume</string>
     <string name="playing">Playing</string>
