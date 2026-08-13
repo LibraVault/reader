@@ -274,13 +274,19 @@ struct ReaderView: View {
             GeometryReader { geometry in
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        Text(chapterText(for: currentChapter))
-                            .font(.system(size: 16 * fontSize, design: fontDesign))
-                            .lineSpacing(8 * lineSpacing)
-                            .foregroundStyle(colors.onBackground)
-                            .padding(LibraVaultSpacing.lg)
-                            .textSelection(.enabled)
-                            .id(currentChapter)
+                        Group {
+                            if chapterText(for: currentChapter).isEmpty {
+                                emptyPageNotice
+                            } else {
+                                Text(chapterText(for: currentChapter))
+                                    .font(.system(size: 16 * fontSize, design: fontDesign))
+                                    .lineSpacing(8 * lineSpacing)
+                                    .foregroundStyle(colors.onBackground)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(LibraVaultSpacing.lg)
+                        .id(currentChapter)
                     }
                     .frame(maxHeight: .infinity)
                     // The ScrollView keeps its offset across content swaps, so without this
@@ -425,6 +431,23 @@ struct ReaderView: View {
             scrollToBlockIndex: pendingTocBlockIndex,
             onBlockScrollConsumed: { pendingTocBlockIndex = nil }
         )
+    }
+
+    /// A spine item with no extractable text is usually a legitimately text-free page
+    /// (a full-bleed image plate, a decorative part divider). It used to render as an
+    /// entirely empty screen, which readers reported as the page having failed to load
+    /// (issue #108) — saying so explicitly distinguishes "nothing to read here" from
+    /// "something broke", and keeps the page-turn controls reachable.
+    private var emptyPageNotice: some View {
+        VStack(spacing: LibraVaultSpacing.sm) {
+            Image(systemName: "doc.plaintext")
+                .font(.system(size: 32))
+            Text("This page has no text")
+                .font(LibraVaultTypography.bodyMedium)
+        }
+        .foregroundStyle(colors.onSurfaceVariant)
+        .frame(maxWidth: .infinity, minHeight: 240)
+        .accessibilityIdentifier("reader.emptyPageNotice")
     }
 
     private var loadingContent: some View {
