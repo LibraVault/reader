@@ -89,13 +89,55 @@ final class MarkdownDocumentParserTests: XCTestCase {
         XCTAssertTrue(blocks.contains(.thematicBreak))
     }
 
-    func testTableRendersAsPlaceholderParagraph() {
+    // MARK: - Tables (#120)
+
+    func testTableParsesHeaderAndBodyRowsAsSeparateCells() {
+        let blocks = MarkdownDocumentParser.parse("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |")
+
+        guard case let .table(headers, rows)? = blocks.first else {
+            return XCTFail("expected a table block")
+        }
+        XCTAssertEqual(headers.map { $0.map(\.text).joined() }, ["A", "B"])
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].map { $0.map(\.text).joined() }, ["1", "2"])
+        XCTAssertEqual(rows[1].map { $0.map(\.text).joined() }, ["3", "4"])
+    }
+
+    func testTableWithNoBodyRowsHasAnEmptyRowsArray() {
+        let blocks = MarkdownDocumentParser.parse("| A | B |\n|---|---|")
+
+        guard case let .table(headers, rows)? = blocks.first else {
+            return XCTFail("expected a table block")
+        }
+        XCTAssertEqual(headers.map { $0.map(\.text).joined() }, ["A", "B"])
+        XCTAssertTrue(rows.isEmpty)
+    }
+
+    func testTableCellSupportsInlineFormattingLikeAnyOtherInlineContainer() {
+        let blocks = MarkdownDocumentParser.parse("| Field |\n|---|\n| **Bold** and `code` |")
+
+        guard case let .table(_, rows)? = blocks.first, let firstCell = rows.first?.first else {
+            return XCTFail("expected a table block with at least one cell")
+        }
+        XCTAssertTrue(firstCell.contains(MarkdownInlineRun(text: "Bold", bold: true, italic: false, code: false)))
+        XCTAssertTrue(firstCell.contains(MarkdownInlineRun(text: "code", bold: false, italic: false, code: true)))
+    }
+
+    /// Direct regression coverage for the bug fixed alongside #120: `.table` is a real
+    /// block type MarkdownReaderContent switches over exhaustively, so an unhandled
+    /// `.table` case (like the old placeholder-paragraph approach effectively was)
+    /// would now fail to compile rather than silently rendering wrong content —
+    /// this test exists to keep a plain "no placeholder text anywhere" assertion
+    /// alongside that compiler guarantee, in case the case is ever handled by falling
+    /// back to `.paragraph` again instead.
+    func testTableNeverProducesThePreviousPlaceholderText() {
         let blocks = MarkdownDocumentParser.parse("| A | B |\n|---|---|\n| 1 | 2 |")
 
-        guard case let .paragraph(runs)? = blocks.first else {
-            return XCTFail("expected a placeholder paragraph for the unsupported table")
+        for block in blocks {
+            if case let .paragraph(runs) = block {
+                XCTAssertFalse(runs.contains { $0.text.contains("Table omitted") })
+            }
         }
-        XCTAssertTrue(runs.first?.text.contains("Table") ?? false)
     }
 
     func testEmptyDocumentReturnsNoBlocks() {
@@ -150,6 +192,13 @@ final class MarkdownDocumentParserTests: XCTestCase {
     func testExtractTocIgnoresNonHeadingBlocks() {
         let blocks = MarkdownDocumentParser.parse("Just a paragraph.\n\n- a list item")
         XCTAssertTrue(MarkdownDocumentParser.extractToc(from: blocks).isEmpty)
+    }
+
+    func testExtractTocIgnoresTablesButStillFindsHeadingsAroundThem() {
+        let blocks = MarkdownDocumentParser.parse("# Before\n| A | B |\n|---|---|\n| 1 | 2 |\n# After")
+        let toc = MarkdownDocumentParser.extractToc(from: blocks)
+
+        XCTAssertEqual(toc.map(\.title), ["Before", "After"])
     }
 
     func testExtractTocOnEmptyDocumentIsEmpty() {
