@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.flow.distinctUntilChanged
 import xyz.libravault.feature.reader.ReaderSettings
+import xyz.libravault.feature.reader.markdown.mermaid.rememberMermaidMarkdownComponents
 import xyz.libravault.feature.reader.markdown.toc.MarkdownTocExtractor
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import kotlin.math.roundToInt
@@ -126,6 +127,7 @@ fun MarkdownReaderScreen(
 
         is MarkdownPublicationState.Ready -> {
             val typography = rememberMarkdownTypography(settings)
+            val mermaidComponents = rememberMermaidMarkdownComponents(settings.theme)
             val imageTransformer = remember(current.assetParentDirectory) {
                 CoilMarkdownImageTransformer(current.assetParentDirectory)
             }
@@ -238,6 +240,7 @@ fun MarkdownReaderScreen(
                                 content = section.text,
                                 typography = typography,
                                 imageTransformer = imageTransformer,
+                                components = mermaidComponents,
                             )
                         }
                     }

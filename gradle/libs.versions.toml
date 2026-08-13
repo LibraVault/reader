@@ -27,6 +27,7 @@ turbine             = "1.1.0"
 compose-test        = "1.6.7"
 bouncycastle        = "1.84"
 kxml2               = "2.3.0"
+webkit              = "1.17.0"
 
 [libraries]
 # AndroidX core
@@ -81,6 +82,11 @@ readium-navigator               = { group = "org.readium.kotlin-toolkit", name =
 # Markdown rendering (Markdown viewer)
 markdown-renderer-m3            = { group = "com.mikepenz",               name = "multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
 androidx-documentfile           = { group = "androidx.documentfile",      name = "documentfile",                version.ref = "documentfile" }
+# WebViewAssetLoader — serves the bundled Mermaid renderer (#121) to its own WebView
+# from a local https://appassets.androidplatform.net virtual origin, never a real
+# network request, without relying on raw file:// URLs (blocked/deprecated for WebView
+# content loading on modern Android).
+androidx-webkit                  = { group = "androidx.webkit",            name = "webkit",                      version.ref = "webkit" }
 
 # Core
 androidx-splashscreen           = { group = "androidx.core",              name = "core-splashscreen",          version.ref = "splashscreen" }

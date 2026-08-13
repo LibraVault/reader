@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<!--
+  Loaded once per MermaidDiagramView (see MermaidDiagramView.kt) via WebViewAssetLoader's
+  https://appassets.androidplatform.net virtual origin — never a real network request,
+  LibraVault is offline-first. mermaid.min.js is bundled alongside this file as a
+  committed asset (see #121); nothing here is ever fetched at runtime.
+
+  CSP pins script-src to 'self' (this virtual origin only) and blocks everything else
+  by default — no images, fonts, connections, or frames from anywhere, matching
+  htmlLabels:false below (diagram source ultimately comes from a user's own Markdown
+  file, so it's treated as untrusted input, not just inert text).
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+    #diagram {
+      display: flex;
+      justify-content: center;
+    }
+    #diagram svg {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+  <script src="mermaid.min.js"></script>
+</head>
+<body>
+  <div id="diagram"></div>
+  <script>
+    // Populated by AndroidBridge.reportHeight/onRenderError — see MermaidDiagramView.kt
+    // for the Kotlin-side @JavascriptInterface this calls into.
+
+    function reportHeight() {
+      var height = document.getElementById('diagram').scrollHeight;
+      AndroidBridge.reportHeight(height);
+    }
+
+    /**
+     * Called once per diagram from Kotlin via evaluateJavascript. [source] is the raw
+     * fenced-block body (see MermaidBlockDetector.kt); [theme] is one of Mermaid's own
+     * theme names ('default', 'dark', 'neutral') — see MermaidTheme.kt for the mapping
+     * from LibraVault's reading theme (light/dark/sepia).
+     *
+     * securityLevel 'strict' + htmlLabels:false: diagram source is untrusted user
+     * content (a Markdown file, potentially from a shared vault), not app-authored
+     * text, so raw HTML in labels/links is never rendered as HTML.
+     */
+    async function renderDiagram(source, theme) {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: theme,
+          flowchart: { htmlLabels: false },
+        });
+        var result = await mermaid.render('mermaid-diagram', source);
+        document.getElementById('diagram').innerHTML = result.svg;
+        reportHeight();
+      } catch (err) {
+        AndroidBridge.onRenderError(String(err && err.message ? err.message : err));
+      }
+    }
+  </script>
+</body>
+</html>

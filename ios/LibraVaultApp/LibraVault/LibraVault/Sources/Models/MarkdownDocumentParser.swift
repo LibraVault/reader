@@ -39,6 +39,12 @@ enum MarkdownBlock: Equatable {
     /// Android's renderer default (see feature/reader/build.gradle.kts for the
     /// version this table support was added alongside).
     case table(headers: [[MarkdownInlineRun]], rows: [[[MarkdownInlineRun]]])
+    /// A ```` ```mermaid ```` fenced code block (#121) — `source` is the fence body
+    /// exactly as written, unmodified. Split out from [codeBlock] rather than
+    /// special-cased at render time so MarkdownReaderContent's `switch` stays
+    /// exhaustive over "is this actually a diagram", matching how [image] is split
+    /// out of [paragraph] for the same reason.
+    case mermaidDiagram(source: String)
 }
 
 /// Parses raw Markdown text into a flat list of [MarkdownBlock] using
@@ -97,7 +103,13 @@ private struct BlockBuilder: MarkupVisitor {
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> [MarkdownBlock] {
-        [.codeBlock(code: codeBlock.code, language: codeBlock.language)]
+        // Case-sensitive, matching GFM's own info-string convention — ```Mermaid``` is
+        // an ordinary, unrecognized-language code block, not a diagram (see Android's
+        // identical MermaidBlockDetector.mermaidSourceOrNull for the same rule).
+        if codeBlock.language == "mermaid" {
+            return [.mermaidDiagram(source: codeBlock.code)]
+        }
+        return [.codeBlock(code: codeBlock.code, language: codeBlock.language)]
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> [MarkdownBlock] {
