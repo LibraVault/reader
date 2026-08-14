@@ -24,6 +24,7 @@ struct SettingsView: View {
             // dynamic color, which has no iOS equivalent — nothing honest to put here.
             privacySection
             aboutSection
+            helpSection
             supportSection
         }
         .navigationTitle("Settings")
@@ -194,6 +195,23 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Help
+
+    /// Field feedback (issue #151): "Ik mis een help menu" — there was no in-app
+    /// Help/FAQ anywhere. This is a plain static screen, not a support ticket
+    /// system — LibraVault has no networking, so there's nothing honest to wire a
+    /// "contact us" form to (same reasoning as supportSection's missing donate
+    /// button).
+    private var helpSection: some View {
+        Section {
+            NavigationLink(destination: HelpView()) {
+                Text("Help & FAQ")
+            }
+        } header: {
+            sectionHeader("Help")
+        }
+    }
+
     // MARK: - Support Development
 
     private var supportSection: some View {
@@ -289,54 +307,122 @@ struct LogViewerView: View {
 }
 
 struct AboutView: View {
+    // Field feedback (#151): "Tekst past niet" — the About paragraph was showing up
+    // truncated ("...privacy-first e-book reade...") on a real device. This VStack
+    // used to lay out directly with no ScrollView around it: on a screen short
+    // enough (or with Dynamic Type large enough) that the icon + both title texts +
+    // the About paragraph + the Privacy bullets + the Spacer + the link don't all
+    // fit in one screen's height, SwiftUI compresses the flexible Text views down to
+    // fit rather than letting the VStack grow past the screen — visually
+    // indistinguishable from truncation, but the text is still one line internally,
+    // which is why it also stopped mid-sentence rather than wrapping to a second
+    // line. Wrapping in a ScrollView lets the VStack take its full intrinsic height
+    // and scroll instead, the same fix already applied to HelpView below.
     var body: some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 8) {
-                Image(systemName: "books.vertical")
-                    .font(.system(size: 64))
-                    .foregroundStyle(LibraVaultColor.primary)
+        ScrollView {
+            VStack(spacing: 20) {
+                VStack(spacing: 8) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 64))
+                        .foregroundStyle(LibraVaultColor.primary)
 
-                Text("LibraVault")
-                    .font(LibraVaultTypography.headlineMedium)
-                    .foregroundStyle(LibraVaultColor.onBackground)
+                    Text("LibraVault")
+                        .font(LibraVaultTypography.headlineMedium)
+                        .foregroundStyle(LibraVaultColor.onBackground)
 
-                Text("Your Personal E-Book Library")
-                    .font(LibraVaultTypography.bodySmall)
-                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            }
-            .padding()
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("About")
-                    .font(LibraVaultTypography.titleMedium)
-                    .foregroundStyle(LibraVaultColor.onBackground)
-
-                Text("LibraVault is a privacy-first e-book reader and library manager for iOS, focused on giving you full control over your reading experience without tracking or data collection.")
-                    .font(LibraVaultTypography.bodyMedium)
-                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            }
-            .padding()
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Privacy")
-                    .font(LibraVaultTypography.titleMedium)
-                    .foregroundStyle(LibraVaultColor.onBackground)
-
-                BulletPoint(text: "No cloud sync or accounts")
-                BulletPoint(text: "All data stored locally")
-                BulletPoint(text: "No tracking or analytics")
-                BulletPoint(text: "Open source")
-            }
-            .padding()
-
-            Spacer()
-
-            Link("GitHub Repository", destination: URL(string: "https://github.com/LibraVault/reader")!)
-                .font(LibraVaultTypography.bodySmall)
-                .foregroundStyle(LibraVaultColor.primary)
+                    Text("Your Personal E-Book Library")
+                        .font(LibraVaultTypography.bodySmall)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                }
                 .padding()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("About")
+                        .font(LibraVaultTypography.titleMedium)
+                        .foregroundStyle(LibraVaultColor.onBackground)
+
+                    Text("LibraVault is a privacy-first e-book reader and library manager for iOS, focused on giving you full control over your reading experience without tracking or data collection.")
+                        .font(LibraVaultTypography.bodyMedium)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Privacy")
+                        .font(LibraVaultTypography.titleMedium)
+                        .foregroundStyle(LibraVaultColor.onBackground)
+
+                    BulletPoint(text: "No cloud sync or accounts")
+                    BulletPoint(text: "All data stored locally")
+                    BulletPoint(text: "No tracking or analytics")
+                    BulletPoint(text: "Open source")
+                }
+                .padding()
+
+                Link("GitHub Repository", destination: URL(string: "https://github.com/LibraVault/reader")!)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.primary)
+                    .padding()
+            }
         }
         .navigationTitle("About LibraVault")
+    }
+}
+
+/// One question in HelpView's FAQ list.
+struct HelpTopic: Identifiable {
+    let id = UUID()
+    let question: String
+    let answer: String
+}
+
+struct HelpView: View {
+    private let topics: [HelpTopic] = [
+        HelpTopic(
+            question: "How do I add books?",
+            answer: "In Settings → Vaults, tap \"Add Vault\" and pick a folder. LibraVault reads every EPUB, PDF, and Markdown file inside it — nothing is copied off your device."
+        ),
+        HelpTopic(
+            question: "How do I turn pages or scroll?",
+            answer: "Tap the left or right edge of the page to go back or forward, or tap the center to show/hide the toolbar. Switch between paginated and continuous-scroll layout from the reader's ⋯ menu → Reading Settings."
+        ),
+        HelpTopic(
+            question: "How do I add or view a bookmark?",
+            answer: "The bookmark icon in the reader's top-right toolbar opens your saved bookmarks — tap it to view, edit, or delete them. Press and hold that same icon to add a new bookmark at your current position."
+        ),
+        HelpTopic(
+            question: "Where is Read Aloud?",
+            answer: "Tap the Play icon in the reader's top-right toolbar (next to the bookmark icon) to start Read Aloud from your current position for EPUB, PDF, or Markdown. Voice and playback speed can be changed from Settings → Text-to-Speech and Playback."
+        ),
+        HelpTopic(
+            question: "How do I change the reading theme or font?",
+            answer: "Use the reader's ⋯ menu to cycle the theme (Dark/Light/Sepia), or open Reading Settings from that same menu for font size, spacing, and font."
+        ),
+        HelpTopic(
+            question: "Does LibraVault need an internet connection?",
+            answer: "No. LibraVault works fully offline — no accounts, no cloud sync, no tracking. Everything, including on-device Read Aloud, runs locally."
+        ),
+    ]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                ForEach(topics) { topic in
+                    VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+                        Text(topic.question)
+                            .font(LibraVaultTypography.titleMedium)
+                            .foregroundStyle(LibraVaultColor.onBackground)
+                        Text(topic.answer)
+                            .font(LibraVaultTypography.bodyMedium)
+                            .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(LibraVaultSpacing.lg)
+        }
+        .navigationTitle("Help")
     }
 }
 

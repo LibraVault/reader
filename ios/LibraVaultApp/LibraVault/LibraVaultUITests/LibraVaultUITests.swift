@@ -248,7 +248,7 @@ final class LibraVaultUITests: XCTestCase {
     }
 
     @MainActor
-    func testSettingsShowsAllSevenSections() throws {
+    func testSettingsShowsAllEightSections() throws {
         let app = makeApp()
         openSettings(in: app)
 
@@ -258,11 +258,11 @@ final class LibraVaultUITests: XCTestCase {
         // view before being asserted. SwiftUI doesn't instantiate off-screen rows, so
         // `.exists` is false for anything below the fold rather than true-but-offscreen.
         //
-        // That is what broke this test: the Text-to-Speech section was added between
-        // Playback and Privacy & Diagnostics, pushing the latter past the bottom of the
-        // screen, and the unscrolled `XCTAssertTrue(...["Privacy & Diagnostics"].exists)`
-        // started failing — while Text-to-Speech itself was never asserted at all, so
-        // the test checked six sections despite its name promising seven.
+        // That is what broke this test before: a new section added between two
+        // existing ones pushed a later section past the bottom of the screen, and an
+        // unscrolled `XCTAssertTrue(...[...].exists)` started failing while the new
+        // section itself was never asserted at all — the test silently checked fewer
+        // sections than its name promised.
         //
         // scrollDownUntilVisible no-ops when the element is already on screen, so
         // asserting uniformly this way costs nothing and doesn't care where the fold
@@ -273,6 +273,7 @@ final class LibraVaultUITests: XCTestCase {
             "Text-to-Speech",
             "Privacy & Diagnostics",
             "About",
+            "Help",
             "Support Development",
         ] {
             let header = app.staticTexts[section]
@@ -284,6 +285,59 @@ final class LibraVaultUITests: XCTestCase {
         // for Material You dynamic color, and no real cover cache to clear yet.
         XCTAssertFalse(app.staticTexts["Appearance"].exists)
         XCTAssertFalse(app.staticTexts["Storage"].exists)
+    }
+
+    /// Field feedback (issue #151): "Ik mis een help menu" — Settings → Help should
+    /// open a real, non-empty FAQ screen, not a dead link.
+    @MainActor
+    func testSettingsHelpOpensFAQ() throws {
+        let app = makeApp()
+        openSettings(in: app)
+
+        let helpRow = app.staticTexts["Help & FAQ"]
+        scrollDownUntilVisible(helpRow, in: app)
+        XCTAssertTrue(helpRow.exists)
+        helpRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Help"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Where is Read Aloud?"].exists)
+    }
+
+    /// Field feedback (#151): "Tekst past niet" — the About paragraph was showing up
+    /// truncated on a real device because AboutView laid its content out in a fixed
+    /// VStack (icon, both title texts, About paragraph, Privacy bullets, a Spacer,
+    /// then the GitHub link) with no ScrollView: when that content's ideal height
+    /// exceeds the screen, SwiftUI compresses the flexible Text views to fit instead
+    /// of growing past the screen, which visually clips text without changing its
+    /// accessibility label — so this can't assert against the clipped rendering
+    /// directly, XCUITest matches elements by label, not by whether the label's text
+    /// actually rendered in full. What it does verify: AboutView is scrollable now,
+    /// so the GitHub link at the bottom stays reachable however tall the content
+    /// above it turns out to be on a given device/Dynamic Type setting, instead of
+    /// being confined to whatever the Spacer left in a fixed-height layout.
+    @MainActor
+    func testSettingsAboutIsScrollableAndShowsFullContent() throws {
+        let app = makeApp()
+        openSettings(in: app)
+
+        let aboutRow = app.staticTexts["About LibraVault"]
+        scrollDownUntilVisible(aboutRow, in: app)
+        XCTAssertTrue(aboutRow.exists)
+        aboutRow.tap()
+
+        XCTAssertTrue(app.navigationBars["About LibraVault"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Privacy"].exists)
+
+        // Not `app.links[...]`: this build's accessibility tree doesn't expose
+        // SwiftUI's Link with the `.link` element type XCUITest matches there — that
+        // query never resolved even after repeated swipes on real CI, a false
+        // failure in the test itself, not the app (see run 31824256925). Matching by
+        // label across any element type is what actually finds it.
+        let githubLink = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "GitHub Repository"))
+            .firstMatch
+        scrollDownUntilVisible(githubLink, in: app)
+        XCTAssertTrue(githubLink.exists, "GitHub Repository link should be reachable by scrolling")
     }
 
     @MainActor
