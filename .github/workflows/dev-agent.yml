@@ -27,12 +27,25 @@ concurrency:
 
 jobs:
   triage-and-implement:
+    # SECURITY-CRITICAL gate, not just a convenience filter: this repo is
+    # public, so `issues: opened` fires for literally anyone who opens an
+    # issue, with no permission required. Without the author_association
+    # check below, any stranger's issue body would be handed to an agent
+    # holding contents:write/pull-requests:write/issues:write and a Bash
+    # tool — a trivial prompt-injection-to-RCE-ish path. workflow_dispatch
+    # is exempt because GitHub itself already requires write access to
+    # trigger it manually, so it's inherently trusted.
     if: >-
       vars.AGENTS_PAUSED != 'true' &&
       (
         github.event_name == 'workflow_dispatch' ||
-        github.event.action == 'opened' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
+        (
+          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+          (
+            github.event.action == 'opened' ||
+            (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
+          )
+        )
       )
     runs-on: ubuntu-latest
     steps:
@@ -61,6 +74,12 @@ jobs:
       - name: Run dev agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
+        env:
+          # Belt-and-suspenders: claude-code-action likely wires this in
+          # for its own tools already, but the persona also shells out to
+          # the `gh` CLI directly via Bash, which needs it explicitly to
+          # authenticate — don't rely on an undocumented default.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -78,6 +97,12 @@ jobs:
             question. If the persona says to stop and ask, do that by
             commenting on the issue and applying status:needs-info; do not
             wait for a reply.
+
+            As your very last action, write a single line to the file
+            `dev-agent-pr-number.txt` in the repo root: the PR number if you
+            opened one, or the word `none` if you stopped at triage without
+            opening a PR. The workflow reads this file to know what to do
+            next, so always write it, even if something went wrong earlier.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
             --max-turns 40
@@ -90,9 +115,27 @@ jobs:
           set -euo pipefail
           ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
 
-          PR_NUMBER=$(gh pr list --state open \
-            --search "Closes #${ISSUE_NUMBER} in:body" \
-            --json number -q '.[0].number // empty')
+          PR_NUMBER=""
+          if [ -f dev-agent-pr-number.txt ]; then
+            CONTENT=$(tr -d '[:space:]' < dev-agent-pr-number.txt)
+            if [ "$CONTENT" != "none" ] && [ -n "$CONTENT" ]; then
+              PR_NUMBER="$CONTENT"
+            fi
+            rm -f dev-agent-pr-number.txt
+          fi
+
+          # Fallback if the agent didn't write the file for some reason:
+          # gh's search index can lag a just-created PR by a few seconds,
+          # so retry briefly rather than accepting a false "nothing to do".
+          if [ -z "$PR_NUMBER" ]; then
+            for _ in 1 2 3 4 5; do
+              PR_NUMBER=$(gh pr list --state open \
+                --search "Closes #${ISSUE_NUMBER} in:body" \
+                --json number -q '.[0].number // empty')
+              [ -n "$PR_NUMBER" ] && break
+              sleep 5
+            done
+          fi
 
           if [ -z "$PR_NUMBER" ]; then
             echo "No PR found referencing issue #$ISSUE_NUMBER — dev agent" \

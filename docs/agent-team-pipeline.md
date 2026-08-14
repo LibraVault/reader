@@ -6,6 +6,14 @@ its first real run, and hasn't triaged a real issue yet. Phases 2-3 (QA,
 principal review workflows) don't exist yet; everything past `status:needs-qa`
 today needs a human.
 
+**Trust boundary**: `reader` is a public repo, so `dev-agent.yml`'s
+`issues: opened` trigger would otherwise let any anonymous GitHub user hand
+a prompt to an agent holding repo-write permissions and a Bash tool, just by
+filing an issue. The workflow gates on `github.event.issue.author_association`
+being `OWNER`/`MEMBER`/`COLLABORATOR` — only people with at least write
+access to the repo can trigger it. Keep this gate if the trigger surface
+ever expands (e.g. `issue_comment`).
+
 Goal: scale development by moving triage and first-pass implementation off the
 critical path of a human, while keeping a risk-based human checkpoint for
 anything that isn't obviously safe to auto-merge.
