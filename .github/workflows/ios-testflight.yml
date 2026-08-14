@@ -12,6 +12,10 @@ on:
         description: 'Build number (default: auto-increment)'
         required: false
         type: string
+      release_notes:
+        description: 'What to test — shown to TestFlight testers on this build. Required: the previous auto-generated notes were permanently stale Phase B/D boilerplate and never matched what actually shipped.'
+        required: true
+        type: string
 
 concurrency:
   group: ios-testflight-${{ github.ref }}
@@ -182,6 +186,7 @@ jobs:
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           echo "$PRIVATE_KEY" > AuthKey.p8
 
@@ -196,6 +201,15 @@ jobs:
 
           IPA_PATH=$(find build/export -name "*.ipa" | head -1)
           echo "Uploading $IPA_PATH to TestFlight..."
+
+          # --changelog is the "What to Test" text testers actually see. Fed from the
+          # workflow_dispatch release_notes input (required — see that input's own
+          # description for why: this workflow used to have a separate
+          # `create-release-notes` job generating a same-named RELEASE_NOTES.md
+          # artifact that was never wired into this upload at all — permanently-stale
+          # hardcoded "Phase B" text nobody actually saw as tester notes. Removed in
+          # favor of this real, per-build input.
+          echo "$RELEASE_NOTES" > changelog.txt
 
           # --groups is meant to auto-assign the build to the external testers
           # group on upload - without it, every build (compliance status
@@ -222,9 +236,10 @@ jobs:
           fastlane pilot upload \
             --api_key_path api_key.json \
             --ipa "$IPA_PATH" \
-            --groups "LibraVault Alpha/Beta"
+            --groups "LibraVault Alpha/Beta" \
+            --changelog "$(cat changelog.txt)"
 
-          rm -f AuthKey.p8 api_key.json
+          rm -f AuthKey.p8 api_key.json changelog.txt
 
           echo "✅ Uploaded to TestFlight"
 
@@ -248,6 +263,7 @@ jobs:
             const buildInfo = fs.existsSync('build-info.txt')
               ? fs.readFileSync('build-info.txt', 'utf8')
               : 'Build metadata unavailable';
+            const releaseNotes = ${{ toJSON(inputs.release_notes) }};
 
             github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -260,66 +276,11 @@ jobs:
               ${buildInfo}
               \`\`\`
 
+              ### What testers see ("What to Test")
+              ${releaseNotes}
+
               ### Status
               Build completed: ${{ job.status }}
 
               ${{ job.status == 'success' && 'Uploaded, processed, and distributed to the LibraVault Alpha/Beta group on TestFlight - testers should already have their notification email.' || 'Build or upload failed - check the workflow logs for details.' }}`
             }).catch(err => console.log('PR comment skipped (not a PR context)'))
-
-  create-release-notes:
-    name: Generate Release Notes
-    runs-on: ubuntu-24.04
-    needs: build-and-upload
-    if: always()
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 50
-
-      - name: Generate Release Notes
-        run: |
-          echo "## 📱 LibraVault iOS v3.0 TestFlight Build" > RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "### What's New" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "#### Phase B: Complete iOS UI" >> RELEASE_NOTES.md
-          echo "- Native SwiftUI app with tab navigation" >> RELEASE_NOTES.md
-          echo "- Book library with search functionality" >> RELEASE_NOTES.md
-          echo "- Reading experience with page navigation" >> RELEASE_NOTES.md
-          echo "- Bookmarks and highlights support" >> RELEASE_NOTES.md
-          echo "- TTS (Text-to-Speech) integration" >> RELEASE_NOTES.md
-          echo "- Settings for display, audio, and vault management" >> RELEASE_NOTES.md
-          echo "- Developer logging and debugging tools" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "### Build Information" >> RELEASE_NOTES.md
-          echo "- **Build Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> RELEASE_NOTES.md
-          echo "- **Git Commit**: ${{ github.sha }}" >> RELEASE_NOTES.md
-          echo "- **Branch**: ${{ github.ref_name }}" >> RELEASE_NOTES.md
-          echo "- **Build Number**: ${{ needs.build-and-upload.outputs.build_number }}" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "### Known Limitations" >> RELEASE_NOTES.md
-          echo "- Using mock library data (Phase B)" >> RELEASE_NOTES.md
-          echo "- Real KMP domain layer integration pending (Phase D)" >> RELEASE_NOTES.md
-          echo "- Database persistence not yet active" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "### Testing Checklist" >> RELEASE_NOTES.md
-          echo "- [ ] App launches without crashes" >> RELEASE_NOTES.md
-          echo "- [ ] Library view displays sample books" >> RELEASE_NOTES.md
-          echo "- [ ] Can open and read books" >> RELEASE_NOTES.md
-          echo "- [ ] Page navigation works smoothly" >> RELEASE_NOTES.md
-          echo "- [ ] Bookmarks can be created and viewed" >> RELEASE_NOTES.md
-          echo "- [ ] Highlights can be created and viewed" >> RELEASE_NOTES.md
-          echo "- [ ] Settings page loads and responds" >> RELEASE_NOTES.md
-          echo "- [ ] No memory leaks during extended use" >> RELEASE_NOTES.md
-          echo "- [ ] Works on iOS 17+ devices/simulators" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-
-          cat RELEASE_NOTES.md
-
-      - name: Upload Release Notes
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-notes
-          path: RELEASE_NOTES.md
-          retention-days: 30
