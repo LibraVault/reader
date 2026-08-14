@@ -1,0 +1,152 @@
+name: Dev Agent
+
+# Phase 1 of docs/agent-team-pipeline.md. Triages a filed issue and, if the
+# dev-agent persona (.claude/agents/dev-agent.md) can scope it confidently,
+# implements a fix/feature and opens a PR. See that persona file for what
+# it actually does — this workflow only wires triggers, guardrails, and the
+# deterministic risk-classification backstop around it.
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to triage/implement (manual test trigger)"
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: dev-agent-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  triage-and-implement:
+    # SECURITY-CRITICAL gate, not just a convenience filter: this repo is
+    # public, so `issues: opened` fires for literally anyone who opens an
+    # issue, with no permission required. Without the author_association
+    # check below, any stranger's issue body would be handed to an agent
+    # holding contents:write/pull-requests:write/issues:write and a Bash
+    # tool — a trivial prompt-injection-to-RCE-ish path. workflow_dispatch
+    # is exempt because GitHub itself already requires write access to
+    # trigger it manually, so it's inherently trusted.
+    if: >-
+      vars.AGENTS_PAUSED != 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+          (
+            github.event.action == 'opened' ||
+            (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve issue number and check for status:blocked
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER="${{ github.event.issue.number || github.event.inputs.issue_number }}"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          echo "Issue #$ISSUE_NUMBER labels: $LABELS"
+          if echo ",$LABELS," | grep -q ",status:blocked,"; then
+            echo "status:blocked is set — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run dev agent
+        if: steps.guard.outputs.skip != 'true'
+        id: agent
+        env:
+          # Belt-and-suspenders: claude-code-action likely wires this in
+          # for its own tools already, but the persona also shells out to
+          # the `gh` CLI directly via Bash, which needs it explicitly to
+          # authenticate — don't rely on an undocumented default.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read .claude/agents/dev-agent.md in full — it is your complete
+            operating persona for this run, including what "triage" and
+            "implementation" mean and when to stop instead of proceeding.
+            Then follow it for issue #${{ steps.guard.outputs.issue_number }}
+            in this repository (use `gh issue view` to read it).
+
+            Use `gh issue comment`, `gh issue edit --add-label` / `--remove-label`
+            for all issue interaction, and normal git + `gh pr create --base dev`
+            for branching, committing, and opening the PR. You are running
+            non-interactively in CI — there is no human to ask a follow-up
+            question. If the persona says to stop and ask, do that by
+            commenting on the issue and applying status:needs-info; do not
+            wait for a reply.
+
+            As your very last action, write a single line to the file
+            `dev-agent-pr-number.txt` in the repo root: the PR number if you
+            opened one, or the word `none` if you stopped at triage without
+            opening a PR. The workflow reads this file to know what to do
+            next, so always write it, even if something went wrong earlier.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
+            --max-turns 40
+
+      - name: Force-classify risk on any PR the dev agent opened
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
+
+          PR_NUMBER=""
+          if [ -f dev-agent-pr-number.txt ]; then
+            CONTENT=$(tr -d '[:space:]' < dev-agent-pr-number.txt)
+            if [ "$CONTENT" != "none" ] && [ -n "$CONTENT" ]; then
+              PR_NUMBER="$CONTENT"
+            fi
+            rm -f dev-agent-pr-number.txt
+          fi
+
+          # Fallback if the agent didn't write the file for some reason:
+          # gh's search index can lag a just-created PR by a few seconds,
+          # so retry briefly rather than accepting a false "nothing to do".
+          if [ -z "$PR_NUMBER" ]; then
+            for _ in 1 2 3 4 5; do
+              PR_NUMBER=$(gh pr list --state open \
+                --search "Closes #${ISSUE_NUMBER} in:body" \
+                --json number -q '.[0].number // empty')
+              [ -n "$PR_NUMBER" ] && break
+              sleep 5
+            done
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found referencing issue #$ISSUE_NUMBER — dev agent" \
+                 "likely stopped at triage. Nothing to classify."
+            exit 0
+          fi
+          echo "Classifying risk for PR #$PR_NUMBER"
+
+          HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
+          git fetch origin dev "$HEAD_REF"
+
+          pip install --quiet pyyaml
+          python3 .github/scripts/classify_pr_risk.py \
+            "origin/dev" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"
