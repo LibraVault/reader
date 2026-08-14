@@ -166,6 +166,15 @@ class LibravaultDomainBridge: ObservableObject {
         logger?.d(tag: tag, message: message)
     }
 
+    /// Error-level counterpart to `log(_:tag:)` — routes to `LoggerBridge.e` instead of
+    /// `.d`, so a failure a caller can't otherwise surface (e.g. AppState.importSharedFile's
+    /// swallowed `try?`/catch paths) leaves a real, level-filterable trail in
+    /// LibraVaultLogStore for field debugging, the same way switchTTSEngine's catch
+    /// above already does internally.
+    func logError(_ message: String, tag: String = "LibraVault", error: Error? = nil) {
+        logger?.e(tag: tag, message: message, error: error)
+    }
+
     // MARK: - TTS Integration
     func startSpeaking(text: String, rate: Double = 1.0) async throws {
         guard ttsEngine != nil else { throw DomainError.notInitialized }

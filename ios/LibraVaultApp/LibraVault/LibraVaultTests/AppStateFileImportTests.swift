@@ -2,10 +2,10 @@ import XCTest
 @testable import LibraVault
 
 /// Covers `AppState.importSharedFile`, the entry point LibraVaultApp.swift's
-/// `.onOpenURL` calls when the OS hands LibraVault a file via "Open In"/"Copy to
-/// LibraVault" (see Info.plist's CFBundleDocumentTypes). Sibling to
-/// AppStateVaultTests, which covers the folder-vault ("Add Vault") flow this is
-/// deliberately kept separate from.
+/// `.onOpenURL` calls (inside a `Task { }`, since importSharedFile is `async`) when the
+/// OS hands LibraVault a file via "Open In"/"Copy to LibraVault" (see Info.plist's
+/// CFBundleDocumentTypes). Sibling to AppStateVaultTests, which covers the folder-vault
+/// ("Add Vault") flow this is deliberately kept separate from.
 @MainActor
 final class AppStateFileImportTests: XCTestCase {
 
@@ -46,20 +46,19 @@ final class AppStateFileImportTests: XCTestCase {
         let fileURL = try makeFixtureFile(named: "MyBook.epub", in: sourceFolder)
 
         let state = AppState(vaultPersistence: persistence)
-        state.importSharedFile(url: fileURL)
-        await state.loadLibrary()
+        await state.importSharedFile(url: fileURL)
 
         XCTAssertTrue(state.books.contains { $0.title == "MyBook" && $0.format == .epub })
     }
 
-    func testImportSharedFileRegistersTheImportedVault() throws {
+    func testImportSharedFileRegistersTheImportedVault() async throws {
         let persistence = try makeIsolatedPersistence()
         let sourceFolder = try makeTempFolder()
         defer { try? FileManager.default.removeItem(at: sourceFolder) }
         let fileURL = try makeFixtureFile(named: "MyBook.epub", in: sourceFolder)
 
         let state = AppState(vaultPersistence: persistence)
-        state.importSharedFile(url: fileURL)
+        await state.importSharedFile(url: fileURL)
 
         XCTAssertEqual(state.vaults.count, 1)
         XCTAssertEqual(state.vaults.first?.displayName, "Imported")
@@ -68,7 +67,7 @@ final class AppStateFileImportTests: XCTestCase {
     /// Regression guard mirroring AppStateVaultTests'
     /// testAddingTheSameFolderTwiceDoesNotDuplicateTheVault: importing a second file
     /// must reuse the same Imported vault, not append a second one every time.
-    func testImportingASecondFileReusesTheSameImportedVault() throws {
+    func testImportingASecondFileReusesTheSameImportedVault() async throws {
         let persistence = try makeIsolatedPersistence()
         let sourceFolder = try makeTempFolder()
         defer { try? FileManager.default.removeItem(at: sourceFolder) }
@@ -76,8 +75,8 @@ final class AppStateFileImportTests: XCTestCase {
         let second = try makeFixtureFile(named: "Second.epub", in: sourceFolder)
 
         let state = AppState(vaultPersistence: persistence)
-        state.importSharedFile(url: first)
-        state.importSharedFile(url: second)
+        await state.importSharedFile(url: first)
+        await state.importSharedFile(url: second)
 
         XCTAssertEqual(state.vaults.count, 1)
     }
@@ -95,21 +94,20 @@ final class AppStateFileImportTests: XCTestCase {
         let second = try makeFixtureFile(named: "Book.epub", in: secondSourceFolder, contents: Data("second".utf8))
 
         let state = AppState(vaultPersistence: persistence)
-        state.importSharedFile(url: first)
-        state.importSharedFile(url: second)
-        await state.loadLibrary()
+        await state.importSharedFile(url: first)
+        await state.importSharedFile(url: second)
 
         XCTAssertEqual(state.books.filter { $0.title.hasPrefix("Book") }.count, 2)
     }
 
-    func testImportingAnUnsupportedFileTypeSetsAnErrorAndAddsNothing() throws {
+    func testImportingAnUnsupportedFileTypeSetsAnErrorAndAddsNothing() async throws {
         let persistence = try makeIsolatedPersistence()
         let sourceFolder = try makeTempFolder()
         defer { try? FileManager.default.removeItem(at: sourceFolder) }
         let fileURL = try makeFixtureFile(named: "Random.xyz", in: sourceFolder)
 
         let state = AppState(vaultPersistence: persistence)
-        state.importSharedFile(url: fileURL)
+        await state.importSharedFile(url: fileURL)
 
         XCTAssertEqual(state.error?.errorDescription, AppError.unsupportedFileType.errorDescription)
         XCTAssertTrue(state.vaults.isEmpty)
@@ -119,13 +117,13 @@ final class AppStateFileImportTests: XCTestCase {
     /// the `.unsupportedFileType` guard above, and deliberately not `.storageAccessDenied`
     /// either (that's reserved for addVault's folder-bookmark failures): a failed copy
     /// isn't a storage-access denial, so it gets its own message.
-    func testImportingAMissingSourceFileSetsFileImportFailedError() throws {
+    func testImportingAMissingSourceFileSetsFileImportFailedError() async throws {
         let persistence = try makeIsolatedPersistence()
         let missingURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AppStateFileImportTests-missing-\(UUID().uuidString).epub")
 
         let state = AppState(vaultPersistence: persistence)
-        state.importSharedFile(url: missingURL)
+        await state.importSharedFile(url: missingURL)
 
         XCTAssertEqual(state.error?.errorDescription, AppError.fileImportFailed.errorDescription)
     }

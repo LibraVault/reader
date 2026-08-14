@@ -274,36 +274,67 @@ final class AppState: ObservableObject {
     ///
     /// Reports failure via `error` rather than crashing — RootView surfaces it as an
     /// alert (see its `errorAlertBinding`) — on an extension LibraryFileScanner doesn't
-    /// recognize, or on any failure to create/copy into the Imported vault.
-    func importSharedFile(url: URL) {
+    /// recognize, or on any failure to create/copy into the Imported vault. Every
+    /// failure path also leaves a trail in LibraVaultLogStore via `bridge.logError` —
+    /// `error` alone tells the user something went wrong, but not *why*, which matters
+    /// for a "sharing a book doesn't work" field report with no other diagnostics.
+    ///
+    /// `async` (called from LibraVaultApp's `.onOpenURL` inside a `Task { }`) rather
+    /// than fire-and-forget: the actual file copy runs off the main actor in a detached
+    /// task below and this awaits it, so a large/slow shared file (a multi-hundred-MB
+    /// audiobook, or one iCloud hasn't finished downloading) can't freeze the UI or trip
+    /// the main-thread hang watchdog just because import was triggered synchronously.
+    func importSharedFile(url: URL) async {
         guard LibraryFileScanner.extensionFormats[url.pathExtension.lowercased()] != nil else {
             error = AppError.unsupportedFileType
             return
         }
-        guard let vault = try? vaultPersistence.importedVault(),
-              let destinationFolder = vaultPersistence.resolvedURL(for: vault) else {
-            error = AppError.fileImportFailed
+
+        let vault: Vault
+        let destinationFolder: URL
+        do {
+            vault = try vaultPersistence.importedVault()
+            guard let resolved = vaultPersistence.resolvedURL(for: vault) else {
+                throw AppError.fileImportFailed
+            }
+            destinationFolder = resolved
+        } catch {
+            bridge.logError("Couldn't prepare the Imported vault", tag: "Import", error: error)
+            self.error = AppError.fileImportFailed
             return
         }
+
         if !vaults.contains(where: { $0.id == vault.id }) {
             vaults.append(vault)
             vaultPersistence.save(vaults)
         }
 
-        // The incoming URL (from another app's document provider, e.g. Files/iCloud
-        // Drive) may itself be security-scoped even though the destination isn't —
-        // mirrors the start/stop pairing already used in makeVault/LibraryFileScanner.
-        let didStartAccessing = url.startAccessingSecurityScopedResource()
-        defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+        // `Error` isn't guaranteed Sendable, so the detached task hands back a plain
+        // String (or nil for success) rather than the thrown error itself.
+        let filename = url.lastPathComponent
+        let copyFailureDescription: String? = await Task.detached(priority: .userInitiated) {
+            // The incoming URL (from another app's document provider, e.g. Files/
+            // iCloud Drive) may itself be security-scoped even though the destination
+            // isn't — mirrors the start/stop pairing already used in
+            // makeVault/LibraryFileScanner.
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
 
-        let destinationURL = Self.uniqueDestinationURL(for: url.lastPathComponent, in: destinationFolder)
-        do {
-            try FileManager.default.copyItem(at: url, to: destinationURL)
-        } catch {
+            let destinationURL = Self.uniqueDestinationURL(for: filename, in: destinationFolder)
+            do {
+                try FileManager.default.copyItem(at: url, to: destinationURL)
+                return nil
+            } catch {
+                return String(describing: error)
+            }
+        }.value
+
+        if let copyFailureDescription {
+            bridge.logError("Couldn't copy shared file \"\(filename)\": \(copyFailureDescription)", tag: "Import")
             self.error = AppError.fileImportFailed
-            return
+        } else {
+            await loadLibrary()
         }
-        Task { await loadLibrary() }
     }
 
     /// Appends " 2", " 3", … before the extension until the name is free, so importing

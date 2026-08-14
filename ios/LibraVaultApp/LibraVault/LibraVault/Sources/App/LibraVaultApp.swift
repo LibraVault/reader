@@ -15,7 +15,7 @@ struct LibraVaultApp: App {
                 // LibraryFileScanner knows how to read, whether the app was already
                 // running or just launched to handle this.
                 .onOpenURL { url in
-                    appState.importSharedFile(url: url)
+                    Task { await appState.importSharedFile(url: url) }
                 }
         }
     }
