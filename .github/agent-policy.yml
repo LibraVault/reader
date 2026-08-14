@@ -1,0 +1,71 @@
+# Risk policy for the dev/qa/principal-review agent pipeline.
+# See docs/agent-team-pipeline.md for the full state machine this feeds.
+#
+# A PR is classified risk:high (and therefore always lands on
+# status:needs-human-merge, never auto-merged) if any changed file matches
+# one of the globs below, regardless of what QA or the principal review
+# agent otherwise conclude. Everything else defaults to risk:low, but a
+# CONFIRMED finding from the principal review agent blocks auto-merge
+# outright either way.
+
+version: 1
+
+# The authoritative implementation of this policy is
+# .github/scripts/classify_pr_risk.py, run as a workflow step (not an LLM
+# judgment call) every time the dev agent pushes to a PR. docs and agent
+# personas describe the *intent* of these rules but should not restate the
+# exact logic — read it from here and the script, not from prose elsewhere,
+# to avoid the description drifting from what actually runs.
+
+# Above this many changed lines, force risk:high even with no sensitive
+# path match — large diffs deserve a human read regardless of subject.
+# Counted as additions + deletions from `git diff --numstat` against the
+# PR's merge-base with its target branch (i.e. what classify_pr_risk.py
+# computes) — not net line delta, not GitHub's own "files changed" UI.
+max_auto_mergeable_diff_lines: 400
+
+sensitive_paths:
+  # CI/CD and release plumbing
+  - ".github/workflows/**"
+  - "fastlane/**"
+  - "**/*.keystore"
+  - "**/keystore.properties"
+  - "**/*signing*"
+  - "**/ExportOptions*.plist"
+
+  # Encrypted vaults / crypto
+  - "core/vaultcrypto/**"
+  - "core/vaultstore/**"
+
+  # Licensing / billing / payments
+  - "core/licensing/**"
+  - "**/BtcPayClient*"
+  - "**/*Billing*"
+
+  # Dependency + toolchain pinning (see feedback: no hardcoded versions)
+  - "gradle/libs.versions.toml"
+  - "build-logic/**"
+
+  # Agent pipeline's own configuration — changes to the rules the agents
+  # follow always need a human, otherwise an agent could loosen its own
+  # constraints unsupervised.
+  - ".github/agent-policy.yml"
+  - ".claude/agents/**"
+
+# Issues/PRs the dev agent should never attempt fully autonomously, even at
+# triage time — it should stop at status:needs-info and ask instead. These
+# labels are NOT applied by the issue templates (GitHub issue-form YAML
+# can't conditionally label based on a dropdown answer) — the dev agent
+# must self-apply them from the issue content during triage, before it
+# decides whether to proceed. See dev-agent.md's triage section.
+sensitive_issue_labels:
+  - "security"
+  - "release-blocker"
+
+# A human (or an agent acting on explicit human instruction) has applied
+# this to a specific issue or PR to stop the pipeline from touching it,
+# independent of the repo-wide kill switch (the `AGENTS_PAUSED` repository
+# variable — a label can't express "stop everything," only "stop this item,"
+# so the two mechanisms are deliberately different). Every agent must
+# treat it as "do not act on this" and leave it alone.
+blocked_label: "status:blocked"

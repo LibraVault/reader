@@ -76,3 +76,13 @@ git worktree add -b fix/<short-slug> ../<worktree-dir>
 ```
 
 Keep `dev` clean — rebase feature branches onto `dev` before opening a PR.
+
+## Agent-team pipeline (dev / qa / principal review)
+
+Filed issues can flow through an autonomous dev-agent → qa-agent →
+principal-review-agent pipeline before landing on a human's plate. See
+[`docs/agent-team-pipeline.md`](docs/agent-team-pipeline.md) for the full
+state machine, [`.github/agent-policy.yml`](.github/agent-policy.yml) for
+what always requires a human merge, and `.claude/agents/` for each role's
+persona. Every rule above in this file is binding on those agents too —
+they don't get a lighter bar than a human contributor.
