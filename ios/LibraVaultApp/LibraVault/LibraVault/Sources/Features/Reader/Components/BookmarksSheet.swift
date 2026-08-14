@@ -22,7 +22,7 @@ struct BookmarksSheet: View {
                 .padding(LibraVaultSpacing.lg)
 
             if bookmarks.isEmpty {
-                Text("No bookmarks yet. Tap the bookmark icon while reading to add one.")
+                Text("No bookmarks yet. Long-press the bookmark icon while reading to add one.")
                     .font(LibraVaultTypography.bodyMedium)
                     .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                     .padding(.horizontal, LibraVaultSpacing.lg)
