@@ -63,6 +63,9 @@ media3-exoplayer                = { group = "androidx.media3",           name = 
 media3-session                  = { group = "androidx.media3",           name = "media3-session",              version.ref = "media3" }
 media3-ui                       = { group = "androidx.media3",           name = "media3-ui",                   version.ref = "media3" }
 media3-inspector                = { group = "androidx.media3",           name = "media3-inspector",            version.ref = "media3" }
+# DataSource/BaseDataSource only — a transitive dep of media3-exoplayer already, but core:vaultcontent
+# needs just this slice without pulling in the full playback engine.
+media3-datasource               = { group = "androidx.media3",           name = "media3-datasource",           version.ref = "media3" }
 
 # Coroutines
 coroutines-core                 = { group = "org.jetbrains.kotlinx",     name = "kotlinx-coroutines-core",     version.ref = "coroutines" }
