@@ -60,8 +60,11 @@ server/node_modules/
 *.apk
 feedback-1-changes.html
 
-# Claude Code
-.claude/
+# Claude Code — local session state (settings, worktrees, locks) stays
+# untracked, but .claude/agents/ is versioned pipeline config that CI and
+# every contributor need to see (see docs/agent-team-pipeline.md).
+.claude/*
+!.claude/agents/
 
 # Kilo CLI (agent plans, scratch files)
 .kilo/

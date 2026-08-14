@@ -1,0 +1,68 @@
+name: Bug report
+description: Something isn't working as expected.
+title: "[Bug] "
+labels:
+  - bug
+  - "status:triage"
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, from a clean state if possible. The dev agent uses this to decide whether it can confidently pick the issue up.
+      placeholder: |
+        1. Open a Markdown book
+        2. Tap "Read Aloud"
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Module / component
+      description: Best guess is fine — the dev agent will re-scope this if wrong.
+      options:
+        - Android app
+        - iOS app
+        - core:tts (Read Aloud)
+        - core:vaultcrypto / vaultstore (Encrypted Vaults)
+        - core:licensing / billing
+        - EPUB reader
+        - PDF reader
+        - Markdown viewer
+        - CI / build / release
+        - Other / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Low — cosmetic, minor annoyance"
+        - "Medium — feature partially broken, has a workaround"
+        - "High — feature unusable, no workaround"
+        - "Critical — crash, data loss, or security"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version / build
+      placeholder: "e.g. 0.4.5-alpha or TestFlight build 29"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Logs, screenshots, anything else
