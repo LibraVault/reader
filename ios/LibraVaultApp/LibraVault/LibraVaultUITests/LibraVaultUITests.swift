@@ -303,6 +303,36 @@ final class LibraVaultUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Where is Read Aloud?"].exists)
     }
 
+    /// Field feedback (#151): "Tekst past niet" — the About paragraph was showing up
+    /// truncated on a real device because AboutView laid its content out in a fixed
+    /// VStack (icon, both title texts, About paragraph, Privacy bullets, a Spacer,
+    /// then the GitHub link) with no ScrollView: when that content's ideal height
+    /// exceeds the screen, SwiftUI compresses the flexible Text views to fit instead
+    /// of growing past the screen, which visually clips text without changing its
+    /// accessibility label — so this can't assert against the clipped rendering
+    /// directly, XCUITest matches elements by label, not by whether the label's text
+    /// actually rendered in full. What it does verify: AboutView is scrollable now,
+    /// so the GitHub link at the bottom stays reachable however tall the content
+    /// above it turns out to be on a given device/Dynamic Type setting, instead of
+    /// being confined to whatever the Spacer left in a fixed-height layout.
+    @MainActor
+    func testSettingsAboutIsScrollableAndShowsFullContent() throws {
+        let app = makeApp()
+        openSettings(in: app)
+
+        let aboutRow = app.staticTexts["About LibraVault"]
+        scrollDownUntilVisible(aboutRow, in: app)
+        XCTAssertTrue(aboutRow.exists)
+        aboutRow.tap()
+
+        XCTAssertTrue(app.navigationBars["About LibraVault"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Privacy"].exists)
+
+        let githubLink = app.links["GitHub Repository"]
+        scrollDownUntilVisible(githubLink, in: app)
+        XCTAssertTrue(githubLink.exists, "GitHub Repository link should be reachable by scrolling")
+    }
+
     @MainActor
     func testSettingsReadingSectionShowsThemeChips() throws {
         let app = makeApp()

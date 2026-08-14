@@ -307,52 +307,64 @@ struct LogViewerView: View {
 }
 
 struct AboutView: View {
+    // Field feedback (#151): "Tekst past niet" — the About paragraph was showing up
+    // truncated ("...privacy-first e-book reade...") on a real device. This VStack
+    // used to lay out directly with no ScrollView around it: on a screen short
+    // enough (or with Dynamic Type large enough) that the icon + both title texts +
+    // the About paragraph + the Privacy bullets + the Spacer + the link don't all
+    // fit in one screen's height, SwiftUI compresses the flexible Text views down to
+    // fit rather than letting the VStack grow past the screen — visually
+    // indistinguishable from truncation, but the text is still one line internally,
+    // which is why it also stopped mid-sentence rather than wrapping to a second
+    // line. Wrapping in a ScrollView lets the VStack take its full intrinsic height
+    // and scroll instead, the same fix already applied to HelpView below.
     var body: some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 8) {
-                Image(systemName: "books.vertical")
-                    .font(.system(size: 64))
-                    .foregroundStyle(LibraVaultColor.primary)
+        ScrollView {
+            VStack(spacing: 20) {
+                VStack(spacing: 8) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 64))
+                        .foregroundStyle(LibraVaultColor.primary)
 
-                Text("LibraVault")
-                    .font(LibraVaultTypography.headlineMedium)
-                    .foregroundStyle(LibraVaultColor.onBackground)
+                    Text("LibraVault")
+                        .font(LibraVaultTypography.headlineMedium)
+                        .foregroundStyle(LibraVaultColor.onBackground)
 
-                Text("Your Personal E-Book Library")
-                    .font(LibraVaultTypography.bodySmall)
-                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            }
-            .padding()
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("About")
-                    .font(LibraVaultTypography.titleMedium)
-                    .foregroundStyle(LibraVaultColor.onBackground)
-
-                Text("LibraVault is a privacy-first e-book reader and library manager for iOS, focused on giving you full control over your reading experience without tracking or data collection.")
-                    .font(LibraVaultTypography.bodyMedium)
-                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            }
-            .padding()
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Privacy")
-                    .font(LibraVaultTypography.titleMedium)
-                    .foregroundStyle(LibraVaultColor.onBackground)
-
-                BulletPoint(text: "No cloud sync or accounts")
-                BulletPoint(text: "All data stored locally")
-                BulletPoint(text: "No tracking or analytics")
-                BulletPoint(text: "Open source")
-            }
-            .padding()
-
-            Spacer()
-
-            Link("GitHub Repository", destination: URL(string: "https://github.com/LibraVault/reader")!)
-                .font(LibraVaultTypography.bodySmall)
-                .foregroundStyle(LibraVaultColor.primary)
+                    Text("Your Personal E-Book Library")
+                        .font(LibraVaultTypography.bodySmall)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                }
                 .padding()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("About")
+                        .font(LibraVaultTypography.titleMedium)
+                        .foregroundStyle(LibraVaultColor.onBackground)
+
+                    Text("LibraVault is a privacy-first e-book reader and library manager for iOS, focused on giving you full control over your reading experience without tracking or data collection.")
+                        .font(LibraVaultTypography.bodyMedium)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Privacy")
+                        .font(LibraVaultTypography.titleMedium)
+                        .foregroundStyle(LibraVaultColor.onBackground)
+
+                    BulletPoint(text: "No cloud sync or accounts")
+                    BulletPoint(text: "All data stored locally")
+                    BulletPoint(text: "No tracking or analytics")
+                    BulletPoint(text: "Open source")
+                }
+                .padding()
+
+                Link("GitHub Repository", destination: URL(string: "https://github.com/LibraVault/reader")!)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.primary)
+                    .padding()
+            }
         }
         .navigationTitle("About LibraVault")
     }
