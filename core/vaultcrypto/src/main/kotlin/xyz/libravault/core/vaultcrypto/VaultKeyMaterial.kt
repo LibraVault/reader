@@ -87,10 +87,21 @@ object VaultKeyManager {
     }
 
     /** @throws VaultAuthenticationException on a wrong PIN. */
-    fun unlockWithPin(pin: CharArray, material: VaultKeyMaterial): ByteArray {
-        val kek = Argon2idKdf.deriveKey(pin, material.argon2Salt, material.argon2Params)
+    fun unlockWithPin(pin: CharArray, material: VaultKeyMaterial): ByteArray =
+        unlockWithPin(pin, material.argon2Salt, material.argon2Params, material.wrappedVmkByKek)
+
+    /**
+     * Same as the [VaultKeyMaterial] overload above, but takes just the three
+     * fields this path actually reads, for the same reason as the
+     * [unlockWithRecoveryKey] overload below: core:vaultstore's Keystore
+     * integration (Phase 2) recovers `wrappedVmkByKek` by unwrapping the
+     * Keystore layer first, and had nothing to put in the unused
+     * `wrappedVmkByRecovery` field except a placeholder.
+     */
+    fun unlockWithPin(pin: CharArray, argon2Salt: ByteArray, argon2Params: Argon2Params, wrappedVmkByKek: WrappedKey): ByteArray {
+        val kek = Argon2idKdf.deriveKey(pin, argon2Salt, argon2Params)
         return try {
-            KeyWrap.unwrap(kek, material.wrappedVmkByKek, KEK_WRAP_AAD)
+            KeyWrap.unwrap(kek, wrappedVmkByKek, KEK_WRAP_AAD)
         } finally {
             kek.fill(0)
         }
@@ -105,7 +116,21 @@ object VaultKeyManager {
      * completely broken.
      */
     fun unlockWithRecoveryKey(recoveryKey: ByteArray, material: VaultKeyMaterial): ByteArray =
-        KeyWrap.unwrap(recoveryKey, material.wrappedVmkByRecovery, RECOVERY_WRAP_AAD)
+        unlockWithRecoveryKey(recoveryKey, material.wrappedVmkByRecovery)
+
+    /**
+     * Same as the [VaultKeyMaterial] overload above, but takes just the
+     * recovery-wrapped blob directly. Added when core:vaultstore's integration
+     * (Phase 2) needed this path without the rest of [VaultKeyMaterial] on
+     * hand (its Keystore-wrapped `wrappedVmkByKek` in particular): the
+     * original signature forced callers who only have the recovery-wrapped
+     * blob to construct a [VaultKeyMaterial] with placeholder values for three
+     * unused fields just to satisfy the type, which is exactly the kind of
+     * API smell worth fixing at the source rather than working around
+     * upstream.
+     */
+    fun unlockWithRecoveryKey(recoveryKey: ByteArray, wrappedVmkByRecovery: WrappedKey): ByteArray =
+        KeyWrap.unwrap(recoveryKey, wrappedVmkByRecovery, RECOVERY_WRAP_AAD)
 
     /**
      * Re-wraps the VMK under a new PIN. Only the small [VaultKeyMaterial.wrappedVmkByKek]
