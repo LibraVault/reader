@@ -267,10 +267,14 @@ final class MarkdownDocumentParserTests: XCTestCase {
     /// without either rebasing onto the other, so `narrationText`'s switch went
     /// non-exhaustive and broke the dev build outright (caught via the very next CI
     /// run, not before merge). A diagram is visual, like a code block or table — it
-    /// should be silently skipped, not spoken and not merged into a heading-only
-    /// document's emptiness.
+    /// should be silently skipped, not spoken.
+    ///
+    /// Deliberately headingless, matching testCodeBlocksTablesAndThematicBreaksAreNeverSpoken
+    /// exactly — a heading's own title text is legitimately speakable (see
+    /// testOneChapterPerHeadingSection), so a document *with* a heading always
+    /// produces at least one chapter regardless of what the body contains.
     func testMermaidDiagramsAreNeverSpoken() {
-        let blocks = MarkdownDocumentParser.parse("# Diagram\n```mermaid\ngraph TD\n  A --> B\n```")
+        let blocks = MarkdownDocumentParser.parse("```mermaid\ngraph TD\n  A --> B\n```")
         XCTAssertTrue(MarkdownDocumentParser.chaptersForNarration(from: blocks).isEmpty)
     }
 
