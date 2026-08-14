@@ -133,11 +133,9 @@ extension MarkdownDocumentParser {
     /// Image alt text IS spoken, unlike the above — it's already written specifically
     /// to describe the image in words, the one media type where that's true.
     ///
-    /// NOTE: MarkdownBlock gains a `.mermaidDiagram` case in #121 (Mermaid rendering),
-    /// developed in parallel on a separate branch and not yet merged as of this
-    /// writing — inherently visual, nothing to narrate, so once that case exists this
-    /// switch needs `.mermaidDiagram` added alongside `.codeBlock`/`.thematicBreak`/
-    /// `.table` below, or it will fail to compile as non-exhaustive.
+    /// `.mermaidDiagram` (added by #121, merged after this function was first written
+    /// on a separate branch) is silent for the same reason as `.codeBlock`/`.table`/
+    /// `.thematicBreak` — inherently visual, nothing textual to narrate.
     private static func narrationText(for block: MarkdownBlock) -> String? {
         switch block {
         case let .heading(_, runs), let .paragraph(runs):
@@ -150,7 +148,7 @@ extension MarkdownDocumentParser {
             return spoken.isEmpty ? nil : spoken.joined(separator: ". ")
         case let .image(_, altText):
             return altText.isEmpty ? nil : altText
-        case .codeBlock, .thematicBreak, .table:
+        case .codeBlock, .thematicBreak, .table, .mermaidDiagram:
             return nil
         }
     }
