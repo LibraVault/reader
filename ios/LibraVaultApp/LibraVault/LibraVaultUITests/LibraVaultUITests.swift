@@ -118,7 +118,7 @@ final class LibraVaultUITests: XCTestCase {
         // Tapping a book in the Library grid navigates straight into Reader/Player
         // now — no intermediate detail screen (see LibraryView.bookTapTarget).
         app.staticTexts["To Kill a Mockingbird"].tap()
-        XCTAssertTrue(app.buttons["reader.addBookmarkButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reader.bookmarksButton"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -126,11 +126,12 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
-        // Add/View Bookmark stay as direct top-level toolbar icons (see
-        // ReaderView's toolbar doc comment — a real-device toolbar-overflow bug
-        // dropped the Add Bookmark button entirely when it was a 4th/5th separate
-        // item). Theme and Settings now live behind the overflow Menu.
-        XCTAssertTrue(app.buttons["reader.addBookmarkButton"].waitForExistence(timeout: 5))
+        // Play and the combined Bookmark control stay as direct top-level toolbar
+        // icons (see ReaderView's toolbar doc comment — a real-device
+        // toolbar-overflow bug drops top-level icons entirely, not into an
+        // overflow, once there are too many). Theme and Settings live behind the
+        // overflow Menu.
+        XCTAssertTrue(app.buttons["reader.playButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["reader.bookmarksButton"].exists)
 
         let moreMenuButton = app.buttons["reader.moreMenuButton"]
@@ -146,16 +147,30 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
-        let addBookmarkButton = app.buttons["reader.addBookmarkButton"]
-        XCTAssertTrue(addBookmarkButton.waitForExistence(timeout: 5))
-        addBookmarkButton.tap()
+        // The combined bookmark control: holding past the long-press threshold
+        // adds a bookmark at the current position, and — since it's still a
+        // normal tap-release underneath — also opens the management sheet
+        // afterward, showing what was just added. See ReaderView's toolbar doc
+        // comment for why these two actions share one Button now.
+        let bookmarksButton = app.buttons["reader.bookmarksButton"]
+        XCTAssertTrue(bookmarksButton.waitForExistence(timeout: 5))
+        bookmarksButton.press(forDuration: 0.6)
+
+        XCTAssertTrue(app.staticTexts["Bookmarks"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Chapter 1"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testBookmarksButtonQuickTapOpensSheetWithoutAdding() throws {
+        let app = makeApp()
+        openReaderForMockingbird(in: app)
 
         let bookmarksButton = app.buttons["reader.bookmarksButton"]
         XCTAssertTrue(bookmarksButton.waitForExistence(timeout: 5))
         bookmarksButton.tap()
 
         XCTAssertTrue(app.staticTexts["Bookmarks"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Chapter 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No bookmarks yet. Long-press the bookmark icon while reading to add one."].exists)
     }
 
     @MainActor
@@ -183,14 +198,9 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
-        app.buttons["reader.moreMenuButton"].tap()
-        let settingsButton = app.buttons["reader.settingsButton"]
-        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
-        settingsButton.tap()
-
-        let readAloudButton = app.buttons["Read Aloud"]
-        XCTAssertTrue(readAloudButton.waitForExistence(timeout: 5))
-        readAloudButton.tap()
+        let playButton = app.buttons["reader.playButton"]
+        XCTAssertTrue(playButton.waitForExistence(timeout: 5))
+        playButton.tap()
 
         XCTAssertTrue(app.navigationBars["Now Playing"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["player.playPauseButton"].exists)
@@ -202,11 +212,7 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
-        app.buttons["reader.moreMenuButton"].tap()
-        app.buttons["reader.settingsButton"].tap()
-        let readAloudButton = app.buttons["Read Aloud"]
-        XCTAssertTrue(readAloudButton.waitForExistence(timeout: 5))
-        readAloudButton.tap()
+        app.buttons["reader.playButton"].tap()
 
         let chaptersButton = app.buttons["player.chaptersButton"]
         XCTAssertTrue(chaptersButton.waitForExistence(timeout: 5))

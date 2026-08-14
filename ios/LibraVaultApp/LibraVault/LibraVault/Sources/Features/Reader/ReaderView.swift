@@ -103,27 +103,52 @@ struct ReaderView: View {
         .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Only Add/View Bookmark stay as direct top-level icons — with a book
-            // title competing for space in .inline display mode, 4-5 separate
+            // Only Play/Bookmark stay as direct top-level icons — with a book title
+            // competing for space in .inline display mode, 4-5 separate
             // navigationBarTrailing items reliably fit on CI's Simulator (a large
             // modern iPhone) but silently get dropped (not shown in an overflow
             // menu, just missing) on smaller real devices. Reported in the field as
             // "there's no + button to add a bookmark" — the button was always there
-            // in code, it just didn't fit. Everything lower-frequency now lives
-            // behind a single overflow Menu, which iOS always renders as one icon
-            // regardless of how many actions are inside it.
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: addBookmark) {
-                    Image(systemName: "bookmark.badge.plus")
-                        .foregroundStyle(colors.onBackground)
+            // in code, it just didn't fit. That's also why Add/View Bookmark are one
+            // combined tap/long-press icon below rather than two: adding a Play
+            // button while keeping both separate would put the count right back at
+            // 4. Everything lower-frequency lives behind a single overflow Menu,
+            // which iOS always renders as one icon regardless of how many actions
+            // are inside it.
+            if ReaderSettingsAvailability.showReadAloud(for: book.format) {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: toggleReadAloud) {
+                        Image(systemName: isCurrentlyPlayingThisBook ? "pause.fill" : "play.fill")
+                            .foregroundStyle(colors.onBackground)
+                    }
+                    .accessibilityIdentifier("reader.playButton")
                 }
-                .accessibilityIdentifier("reader.addBookmarkButton")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                // One combined control rather than separate add/view icons: a tap
+                // opens the bookmarks sheet (view/edit/delete); holding past the
+                // long-press threshold additionally adds a bookmark at the current
+                // position first (with a haptic to confirm), and the same release
+                // still opens the sheet afterward — so a long-press shows you the
+                // bookmark it just added instead of leaving you to trust the icon
+                // switching to its filled state alone.
+                //
+                // This stays a real Button (with the long-press layered on via
+                // .simultaneousGesture) rather than a bare Image with
+                // .onTapGesture/.onLongPressGesture — the latter computed an
+                // invalid {-1, -1} hit point once hosted inside a nav-bar
+                // ToolbarItem, which CI caught as a real, reproducible
+                // testBookmarksSheetShowsAddedBookmark failure, not flakiness.
                 Button(action: { showBookmarksSheet = true }) {
                     Image(systemName: hasBookmarks ? "bookmark.fill" : "bookmark")
                         .foregroundStyle(colors.onBackground)
                 }
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        addBookmark()
+                    }
+                )
                 .accessibilityIdentifier("reader.bookmarksButton")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -159,10 +184,7 @@ struct ReaderView: View {
                 lineSpacing: $lineSpacing,
                 fontDesign: $fontDesign,
                 mode: $mode,
-                isSpeaking: isCurrentlyPlayingThisBook,
-                onToggleSpeaking: toggleReadAloud,
                 showFontControls: ReaderSettingsAvailability.showFontControls(for: book.format),
-                showReadAloud: ReaderSettingsAvailability.showReadAloud(for: book.format),
                 showLayoutMode: ReaderSettingsAvailability.showLayoutMode(for: book.format)
             )
         }
@@ -529,14 +551,13 @@ struct ReaderView: View {
         showBookmarksSheet = false
     }
 
-    /// "Read Aloud" now hands off to the real Player screen (Phase 4) instead of
-    /// toggling TTS in place — starts shared playback state and asks RootView to
+    /// The toolbar Play button hands off to the real Player screen (Phase 4) instead
+    /// of toggling TTS in place — starts shared playback state and asks RootView to
     /// push PlayerView, the same trigger the mini-player's tap uses. For PDF,
     /// AppState.startPlayback's `chapter` parameter means "PDF page number" (it loads
     /// one BookChapter per page via PDFParser under the hood), so it takes
     /// pdfCurrentPageIndex there instead of the EPUB-only `currentChapter` state.
     private func toggleReadAloud() {
-        showSettingsSheet = false
         if isCurrentlyPlayingThisBook {
             appState.stopPlayback()
         } else {
