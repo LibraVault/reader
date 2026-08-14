@@ -64,6 +64,8 @@ sensitive_issue_labels:
 
 # A human (or an agent acting on explicit human instruction) has applied
 # this to a specific issue or PR to stop the pipeline from touching it,
-# independent of the repo-wide agents:paused kill switch. Every agent must
+# independent of the repo-wide kill switch (the `AGENTS_PAUSED` repository
+# variable — a label can't express "stop everything," only "stop this item,"
+# so the two mechanisms are deliberately different). Every agent must
 # treat it as "do not act on this" and leave it alone.
 blocked_label: "status:blocked"
