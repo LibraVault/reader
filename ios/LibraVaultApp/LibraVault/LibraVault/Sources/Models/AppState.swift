@@ -341,7 +341,12 @@ final class AppState: ObservableObject {
     /// two different files that happen to share a filename (e.g. re-sharing what looks
     /// like "the same" book from a different source) never silently overwrites the
     /// earlier one.
-    private static func uniqueDestinationURL(for filename: String, in folder: URL) -> URL {
+    ///
+    /// `nonisolated`: static members of an `@MainActor` type are MainActor-isolated by
+    /// default, but `importSharedFile` calls this from inside its `Task.detached` copy
+    /// step specifically to keep it off the main actor — this touches no actor-isolated
+    /// state (pure FileManager/String work), so it's safe to opt out.
+    private nonisolated static func uniqueDestinationURL(for filename: String, in folder: URL) -> URL {
         var candidate = folder.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
 
