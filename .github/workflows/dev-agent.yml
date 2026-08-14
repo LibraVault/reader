@@ -20,6 +20,12 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  # claude-code-action requests an OIDC ID token as part of its own
+  # auth/telemetry setup. Without this, actions/core's OidcClient can't
+  # find ACTIONS_ID_TOKEN_REQUEST_URL in the environment and the "Run dev
+  # agent" step fails after 3 retries with "Could not fetch an OIDC
+  # token" — confirmed via a real failed run (issue #158).
+  id-token: write
 
 concurrency:
   group: dev-agent-${{ github.event.issue.number || github.event.inputs.issue_number }}
