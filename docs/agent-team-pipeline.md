@@ -1,10 +1,22 @@
 # Agent-team pipeline: issue → dev → qa → principal review → merge
 
 Status: **Phase 1 built** (`.github/workflows/dev-agent.yml`) but **not yet
-proven live** — it needs an `ANTHROPIC_API_KEY` repository secret before
+proven live** — it needs a `CLAUDE_CODE_OAUTH_TOKEN` repository secret before
 its first real run, and hasn't triaged a real issue yet. Phases 2-3 (QA,
 principal review workflows) don't exist yet; everything past `status:needs-qa`
 today needs a human.
+
+**Auth: subscription OAuth token, not an API key.** The workflow runs on
+GitHub-hosted (ephemeral) runners and authenticates via
+`CLAUDE_CODE_OAUTH_TOKEN`, generated once by running `claude setup-token`
+interactively (it's tied to a Claude subscription — Pro/Max/Team — not a
+separate pay-per-token API key) and stored as a repo secret. This was a
+deliberate choice over both a raw `anthropic_api_key` (needs separate API
+billing) and running the agent directly on `rob-dev` (which also hosts
+production-adjacent infrastructure — a self-hosted runner or local cron
+poller there would give an agent, triggered by public-repo issue content,
+Bash access to that same machine; GitHub's ephemeral runners keep the
+blast radius of a bad or injected run contained to a throwaway VM).
 
 **Trust boundary**: `reader` is a public repo, so `dev-agent.yml`'s
 `issues: opened` trigger would otherwise let any anonymous GitHub user hand
@@ -105,7 +117,7 @@ don't silently drift from what's expected of a human contributor:
 2. **Phase 1 (built, unproven)** — `dev-agent.yml` workflow (triage + fix),
    triggered on issue open / `status:ready-for-dev` label, or manually via
    `workflow_dispatch` for testing against a specific issue number. Needs
-   an `ANTHROPIC_API_KEY` repo secret before it can run at all.
+   a `CLAUDE_CODE_OAUTH_TOKEN` repo secret before it can run at all.
 3. **Phase 2** — `qa-agent.yml` workflow, triggered on `status:needs-qa`.
 4. **Phase 3** — `principal-review.yml` workflow, triggered on
    `status:needs-review`; implements the auto-merge/human-merge split.

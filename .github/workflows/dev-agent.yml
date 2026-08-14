@@ -82,7 +82,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Uses the CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`,
+          # tied to a Claude subscription) rather than a pay-per-token
+          # anthropic_api_key. Deliberate: no separate API billing to set
+          # up, at the cost of drawing on that subscription's own usage
+          # limits. See docs/agent-team-pipeline.md.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             Read .claude/agents/dev-agent.md in full — it is your complete
             operating persona for this run, including what "triage" and
