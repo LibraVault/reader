@@ -183,6 +183,7 @@ dependencies {
     implementation(project(":feature:reader"))
     implementation(project(":feature:player"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:vault"))
 
     // Core modules
     implementation(project(":core:database"))

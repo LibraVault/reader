@@ -14,11 +14,29 @@ import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
 import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
+import xyz.libravault.feature.vault.CreateVaultScreen
+import xyz.libravault.feature.vault.UnlockVaultScreen
+import xyz.libravault.feature.vault.VaultContentsScreen
+import xyz.libravault.feature.vault.VaultListScreen
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Library    : Screen("library")
     data object Settings   : Screen("settings")
+
+    // ── Encrypted Vaults (PRD: "Vault", distinct from the unencrypted
+    // "Folder" concept — see feature:settings's "Encrypted Vaults" section) ──
+    data object VaultList : Screen("vaults")
+    // "vault/new", not "vaults/new" — deliberately a different top segment
+    // from "vaults/{vaultId}" below, so the two routes can never structurally
+    // collide regardless of how Navigation-Compose breaks matching ties.
+    data object CreateVault : Screen("vault/new")
+    data object UnlockVault : Screen("vaults/{vaultId}/unlock") {
+        fun createRoute(vaultId: String) = "vaults/$vaultId/unlock"
+    }
+    data object VaultContents : Screen("vaults/{vaultId}") {
+        fun createRoute(vaultId: String) = "vaults/$vaultId"
+    }
 
     /** Open a library item by its Room ID (normal flow). */
     data object Reader : Screen("reader/{itemId}") {
@@ -81,6 +99,52 @@ fun LibravaultNavHost(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
+                onEncryptedVaultsClick = { navController.navigate(Screen.VaultList.route) },
+            )
+        }
+
+        // ── Encrypted Vaults ────────────────────────────────────────────────
+
+        composable(Screen.VaultList.route) {
+            VaultListScreen(
+                onCreateVault = { navController.navigate(Screen.CreateVault.route) },
+                onUnlockVault = { vaultId -> navController.navigate(Screen.UnlockVault.createRoute(vaultId)) },
+                onOpenVault = { vaultId -> navController.navigate(Screen.VaultContents.createRoute(vaultId)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Screen.CreateVault.route) {
+            CreateVaultScreen(
+                onCreated = { vaultId ->
+                    navController.navigate(Screen.VaultContents.createRoute(vaultId)) {
+                        popUpTo(Screen.VaultList.route)
+                    }
+                },
+                onCancel = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route     = Screen.UnlockVault.route,
+            arguments = listOf(navArgument("vaultId") { type = NavType.StringType }),
+        ) {
+            UnlockVaultScreen(
+                onUnlocked = { vaultId ->
+                    navController.navigate(Screen.VaultContents.createRoute(vaultId)) {
+                        popUpTo(Screen.VaultList.route)
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route     = Screen.VaultContents.route,
+            arguments = listOf(navArgument("vaultId") { type = NavType.StringType }),
+        ) {
+            VaultContentsScreen(
+                onBack = { navController.popBackStack(Screen.VaultList.route, inclusive = false) },
             )
         }
 
