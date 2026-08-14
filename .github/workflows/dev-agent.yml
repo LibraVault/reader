@@ -1,0 +1,109 @@
+name: Dev Agent
+
+# Phase 1 of docs/agent-team-pipeline.md. Triages a filed issue and, if the
+# dev-agent persona (.claude/agents/dev-agent.md) can scope it confidently,
+# implements a fix/feature and opens a PR. See that persona file for what
+# it actually does — this workflow only wires triggers, guardrails, and the
+# deterministic risk-classification backstop around it.
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to triage/implement (manual test trigger)"
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: dev-agent-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  triage-and-implement:
+    if: >-
+      vars.AGENTS_PAUSED != 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.action == 'opened' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve issue number and check for status:blocked
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER="${{ github.event.issue.number || github.event.inputs.issue_number }}"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          echo "Issue #$ISSUE_NUMBER labels: $LABELS"
+          if echo ",$LABELS," | grep -q ",status:blocked,"; then
+            echo "status:blocked is set — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run dev agent
+        if: steps.guard.outputs.skip != 'true'
+        id: agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read .claude/agents/dev-agent.md in full — it is your complete
+            operating persona for this run, including what "triage" and
+            "implementation" mean and when to stop instead of proceeding.
+            Then follow it for issue #${{ steps.guard.outputs.issue_number }}
+            in this repository (use `gh issue view` to read it).
+
+            Use `gh issue comment`, `gh issue edit --add-label` / `--remove-label`
+            for all issue interaction, and normal git + `gh pr create --base dev`
+            for branching, committing, and opening the PR. You are running
+            non-interactively in CI — there is no human to ask a follow-up
+            question. If the persona says to stop and ask, do that by
+            commenting on the issue and applying status:needs-info; do not
+            wait for a reply.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
+            --max-turns 40
+
+      - name: Force-classify risk on any PR the dev agent opened
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
+
+          PR_NUMBER=$(gh pr list --state open \
+            --search "Closes #${ISSUE_NUMBER} in:body" \
+            --json number -q '.[0].number // empty')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found referencing issue #$ISSUE_NUMBER — dev agent" \
+                 "likely stopped at triage. Nothing to classify."
+            exit 0
+          fi
+          echo "Classifying risk for PR #$PR_NUMBER"
+
+          HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
+          git fetch origin dev "$HEAD_REF"
+
+          pip install --quiet pyyaml
+          python3 .github/scripts/classify_pr_risk.py \
+            "origin/dev" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"

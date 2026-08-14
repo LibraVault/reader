@@ -1,6 +1,10 @@
 # Agent-team pipeline: issue → dev → qa → principal review → merge
 
-Status: **Phase 0 (scaffolding) — not yet wired to live GitHub Actions triggers.**
+Status: **Phase 1 built** (`.github/workflows/dev-agent.yml`) but **not yet
+proven live** — it needs an `ANTHROPIC_API_KEY` repository secret before
+its first real run, and hasn't triaged a real issue yet. Phases 2-3 (QA,
+principal review workflows) don't exist yet; everything past `status:needs-qa`
+today needs a human.
 
 Goal: scale development by moving triage and first-pass implementation off the
 critical path of a human, while keeping a risk-based human checkpoint for
@@ -88,10 +92,12 @@ don't silently drift from what's expected of a human contributor:
 
 ## Rollout plan
 
-1. **Phase 0 (this PR)** — issue templates, label taxonomy, agent-policy.yml,
-   agent persona files, this doc. No live automation yet.
-2. **Phase 1** — `dev-agent.yml` workflow (triage + fix), triggered on issue
-   open / `status:ready-for-dev` label.
+1. **Phase 0 (PR #146)** — issue templates, label taxonomy, agent-policy.yml,
+   agent persona files, this doc. No live automation.
+2. **Phase 1 (built, unproven)** — `dev-agent.yml` workflow (triage + fix),
+   triggered on issue open / `status:ready-for-dev` label, or manually via
+   `workflow_dispatch` for testing against a specific issue number. Needs
+   an `ANTHROPIC_API_KEY` repo secret before it can run at all.
 3. **Phase 2** — `qa-agent.yml` workflow, triggered on `status:needs-qa`.
 4. **Phase 3** — `principal-review.yml` workflow, triggered on
    `status:needs-review`; implements the auto-merge/human-merge split.
