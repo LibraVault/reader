@@ -248,7 +248,7 @@ final class LibraVaultUITests: XCTestCase {
     }
 
     @MainActor
-    func testSettingsShowsAllSevenSections() throws {
+    func testSettingsShowsAllEightSections() throws {
         let app = makeApp()
         openSettings(in: app)
 
@@ -258,11 +258,11 @@ final class LibraVaultUITests: XCTestCase {
         // view before being asserted. SwiftUI doesn't instantiate off-screen rows, so
         // `.exists` is false for anything below the fold rather than true-but-offscreen.
         //
-        // That is what broke this test: the Text-to-Speech section was added between
-        // Playback and Privacy & Diagnostics, pushing the latter past the bottom of the
-        // screen, and the unscrolled `XCTAssertTrue(...["Privacy & Diagnostics"].exists)`
-        // started failing — while Text-to-Speech itself was never asserted at all, so
-        // the test checked six sections despite its name promising seven.
+        // That is what broke this test before: a new section added between two
+        // existing ones pushed a later section past the bottom of the screen, and an
+        // unscrolled `XCTAssertTrue(...[...].exists)` started failing while the new
+        // section itself was never asserted at all — the test silently checked fewer
+        // sections than its name promised.
         //
         // scrollDownUntilVisible no-ops when the element is already on screen, so
         // asserting uniformly this way costs nothing and doesn't care where the fold
@@ -273,6 +273,7 @@ final class LibraVaultUITests: XCTestCase {
             "Text-to-Speech",
             "Privacy & Diagnostics",
             "About",
+            "Help",
             "Support Development",
         ] {
             let header = app.staticTexts[section]
@@ -284,6 +285,22 @@ final class LibraVaultUITests: XCTestCase {
         // for Material You dynamic color, and no real cover cache to clear yet.
         XCTAssertFalse(app.staticTexts["Appearance"].exists)
         XCTAssertFalse(app.staticTexts["Storage"].exists)
+    }
+
+    /// Field feedback (issue #151): "Ik mis een help menu" — Settings → Help should
+    /// open a real, non-empty FAQ screen, not a dead link.
+    @MainActor
+    func testSettingsHelpOpensFAQ() throws {
+        let app = makeApp()
+        openSettings(in: app)
+
+        let helpRow = app.staticTexts["Help & FAQ"]
+        scrollDownUntilVisible(helpRow, in: app)
+        XCTAssertTrue(helpRow.exists)
+        helpRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Help"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Where is Read Aloud?"].exists)
     }
 
     @MainActor

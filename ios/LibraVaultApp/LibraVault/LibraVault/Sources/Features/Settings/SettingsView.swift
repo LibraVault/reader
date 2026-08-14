@@ -24,6 +24,7 @@ struct SettingsView: View {
             // dynamic color, which has no iOS equivalent — nothing honest to put here.
             privacySection
             aboutSection
+            helpSection
             supportSection
         }
         .navigationTitle("Settings")
@@ -194,6 +195,23 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Help
+
+    /// Field feedback (issue #151): "Ik mis een help menu" — there was no in-app
+    /// Help/FAQ anywhere. This is a plain static screen, not a support ticket
+    /// system — LibraVault has no networking, so there's nothing honest to wire a
+    /// "contact us" form to (same reasoning as supportSection's missing donate
+    /// button).
+    private var helpSection: some View {
+        Section {
+            NavigationLink(destination: HelpView()) {
+                Text("Help & FAQ")
+            }
+        } header: {
+            sectionHeader("Help")
+        }
+    }
+
     // MARK: - Support Development
 
     private var supportSection: some View {
@@ -337,6 +355,62 @@ struct AboutView: View {
                 .padding()
         }
         .navigationTitle("About LibraVault")
+    }
+}
+
+/// One question in HelpView's FAQ list.
+struct HelpTopic: Identifiable {
+    let id = UUID()
+    let question: String
+    let answer: String
+}
+
+struct HelpView: View {
+    private let topics: [HelpTopic] = [
+        HelpTopic(
+            question: "How do I add books?",
+            answer: "In Settings → Vaults, tap \"Add Vault\" and pick a folder. LibraVault reads every EPUB, PDF, and Markdown file inside it — nothing is copied off your device."
+        ),
+        HelpTopic(
+            question: "How do I turn pages or scroll?",
+            answer: "Tap the left or right edge of the page to go back or forward, or tap the center to show/hide the toolbar. Switch between paginated and continuous-scroll layout from the reader's ⋯ menu → Reading Settings."
+        ),
+        HelpTopic(
+            question: "How do I add or view a bookmark?",
+            answer: "The bookmark icon in the reader's top-right toolbar opens your saved bookmarks — tap it to view, edit, or delete them. Press and hold that same icon to add a new bookmark at your current position."
+        ),
+        HelpTopic(
+            question: "Where is Read Aloud?",
+            answer: "Tap the Play icon in the reader's top-right toolbar (next to the bookmark icon) to start Read Aloud from your current position for EPUB, PDF, or Markdown. Voice and playback speed can be changed from Settings → Text-to-Speech and Playback."
+        ),
+        HelpTopic(
+            question: "How do I change the reading theme or font?",
+            answer: "Use the reader's ⋯ menu to cycle the theme (Dark/Light/Sepia), or open Reading Settings from that same menu for font size, spacing, and font."
+        ),
+        HelpTopic(
+            question: "Does LibraVault need an internet connection?",
+            answer: "No. LibraVault works fully offline — no accounts, no cloud sync, no tracking. Everything, including on-device Read Aloud, runs locally."
+        ),
+    ]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
+                ForEach(topics) { topic in
+                    VStack(alignment: .leading, spacing: LibraVaultSpacing.sm) {
+                        Text(topic.question)
+                            .font(LibraVaultTypography.titleMedium)
+                            .foregroundStyle(LibraVaultColor.onBackground)
+                        Text(topic.answer)
+                            .font(LibraVaultTypography.bodyMedium)
+                            .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(LibraVaultSpacing.lg)
+        }
+        .navigationTitle("Help")
     }
 }
 
