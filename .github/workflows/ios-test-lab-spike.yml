@@ -32,13 +32,6 @@ name: iOS Test Lab Spike (Firebase, real device)
 # that's the finding, not a bug to chase further here.
 
 on:
-  # TEMPORARY: push trigger scoped to this exact branch, so the spike can
-  # actually run before this file exists on dev - workflow_dispatch isn't
-  # dispatchable from a non-default branch until the workflow file is on the
-  # default branch at least once. Removed before merge; see PR #153.
-  push:
-    branches:
-      - feature/ios-test-lab-spike
   workflow_dispatch:
     inputs:
       device_model:
