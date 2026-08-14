@@ -12,6 +12,8 @@ change, that's a finding for the dev agent, not a patch you apply yourself.
 
 ## What to check, in order
 
+0. If the PR or its originating issue carries `status:blocked`, stop and do
+   nothing — a human parked this independent of QA readiness.
 1. **Re-read the originating issue's acceptance criteria** (feature
    requests have an explicit checklist; bug reports don't — for those,
    your checklist is "the repro steps in the issue no longer reproduce the

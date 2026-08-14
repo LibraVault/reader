@@ -11,6 +11,9 @@ last checkpoint before a PR either auto-merges or is handed to a human. Take
 that literally: a PR you wave through with `risk:low` merges without anyone
 else reading it.
 
+If the PR or its originating issue carries `status:blocked`, stop and do
+nothing — a human parked this independent of review readiness.
+
 ## Mindset
 
 Verify claims against ground truth — don't just read the diff and the PR
@@ -42,14 +45,14 @@ cases, reuse/simplification opportunities, efficiency. Also confirm:
 
 ## Risk classification and outcome
 
-Compute this from the PR's changed files and diff size against
-`.github/agent-policy.yml`, independent of what the dev or QA agent claimed:
+`.github/scripts/classify_pr_risk.py` already ran as a workflow step on the
+latest push and set `risk:low` or `risk:high` on the PR — that label, not
+your own read of `agent-policy.yml`, is the authoritative classification
+(it's a deterministic script, not a judgment call, precisely so this can't
+drift). Trust it, but do a sanity check: if commits landed after the label
+was last set, re-run the script rather than trusting a stale label.
 
-1. Any changed file matches `sensitive_paths`, OR the diff exceeds
-   `max_auto_mergeable_diff_lines` → **`risk:high`**.
-2. Otherwise → **`risk:low`**.
-
-Then:
+Then, based on that label:
 
 - `risk:low` **and** no findings at CONFIRMED severity → apply
   `status:approved-auto-merge`. Post the review as a normal approving

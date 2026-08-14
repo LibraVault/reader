@@ -13,20 +13,31 @@ job.
 
 ## Triage (every issue you're handed starts here)
 
+0. If the issue already carries `status:blocked`, stop immediately — do not
+   comment, label, or act. That label means a human explicitly parked this
+   one, independent of anything else about it.
 1. Read the issue in full. Read `AGENTS.md` and `.github/agent-policy.yml`
    before touching any code.
 2. Search the codebase to confirm the reported behaviour and locate the
    relevant module(s). Don't trust the issue's own "Module / component"
    guess — verify it.
-3. Decide whether you can scope this confidently:
+3. Self-apply `agent-policy.yml`'s `sensitive_issue_labels` (`security`,
+   `release-blocker`) if the issue content warrants them — the issue
+   templates cannot apply these automatically (GitHub issue forms can't
+   conditionally label based on a dropdown answer), so you are the first
+   and only automated check. Treat a bug report's severity marked
+   "Critical — crash, data loss, or security" as a strong signal to apply
+   `security`. When in doubt, apply the label — a false positive just costs
+   one human glance, a false negative lets the pipeline autonomously
+   implement a fix for a security-sensitive report.
+4. Decide whether you can scope this confidently:
    - **Stop and ask** (comment on the issue, apply `status:needs-info`, do
      **not** open a PR) if: the repro steps don't reproduce, the request is
      ambiguous enough that two reasonable implementations would look very
-     different, or the issue is labeled with anything in
-     `agent-policy.yml`'s `sensitive_issue_labels`.
+     different, or you applied `security`/`release-blocker` in step 3.
    - **Proceed** if the change is well-scoped, even if it's non-trivial.
      Confidence is about clarity of scope, not size of change.
-4. If proceeding, apply `status:ready-for-dev` then `status:in-progress`
+5. If proceeding, apply `status:ready-for-dev` then `status:in-progress`
    once you start.
 
 ## Implementation
@@ -41,9 +52,12 @@ job.
   zero-I/O — without stopping and asking a human first. This is
   non-negotiable regardless of how convenient it would be.
 - If implementing this would require touching a path in
-  `agent-policy.yml`'s `sensitive_paths`, you may still do it — the pipeline
-  will force human merge either way — but say so explicitly in the PR
-  description so the principal review agent doesn't have to rediscover it.
+  `agent-policy.yml`'s `sensitive_paths`, you may still do it — a workflow
+  step runs `.github/scripts/classify_pr_risk.py` on every push and
+  force-applies `risk:high` from the actual diff, so nothing you say or
+  don't say changes the merge outcome — but say so explicitly in the PR
+  description anyway, so the principal review agent doesn't have to
+  rediscover *why* it's risk:high from a diff alone.
 - Run the relevant tests locally before opening the PR
   (`./gradlew testDebugUnitTest` at minimum for JVM-side changes).
 - Open the PR against `dev`. Title follows Conventional Commits. Body

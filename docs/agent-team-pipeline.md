@@ -36,25 +36,30 @@ status:needs-qa
    ├─ fail (retries exhausted) ─► status:needs-info
    ▼ pass
 status:needs-review
-   │  (principal review agent runs a high-effort review, classifies risk
-   │   against .github/agent-policy.yml)
+   │  (principal review agent runs a high-effort review, reads the
+   │   risk:* label already set by classify_pr_risk.py)
    ├─ risk:low  + no findings ──► status:approved-auto-merge ──► AUTO-MERGE
    └─ risk:high OR any finding ─► status:needs-human-merge ────► you decide
 ```
 
-`agents:paused` on the repo (or a `workflow_dispatch` toggle once the
-workflows exist) stops every stage from picking up new work — the kill
-switch.
+At any point, applying `status:blocked` to an issue or PR stops every agent
+from acting on it — a per-item pause, independent of the repo-wide
+`agents:paused` kill switch (or a `workflow_dispatch` toggle once the
+workflows exist), which stops every stage from picking up any new work.
 
 ## Risk classification
 
-Defined in [`.github/agent-policy.yml`](../.github/agent-policy.yml). A PR is
+Defined in [`.github/agent-policy.yml`](../.github/agent-policy.yml) and
+enforced by [`classify_pr_risk.py`](../.github/scripts/classify_pr_risk.py)
+as a deterministic workflow step, not an LLM judgment call — it runs on
+every push to a PR and sets `risk:low`/`risk:high` directly. A PR is
 `risk:high` — and therefore always ends at `status:needs-human-merge`,
 regardless of what QA or review conclude — if it touches any path on that
-policy's sensitive list (CI/workflow files, signing/fastlane, encryption
-modules, licensing/billing, version catalogs). Everything else defaults to
-`risk:low`, but a CONFIRMED finding from the principal review agent blocks
-auto-merge outright either way.
+policy's sensitive list, or its diff exceeds the configured line threshold.
+See the policy file itself for the exact patterns and threshold; it's the
+single source of truth, not restated here. A CONFIRMED finding from the
+principal review agent blocks auto-merge outright either way, independent
+of risk tier.
 
 ## Non-negotiables every agent inherits
 
