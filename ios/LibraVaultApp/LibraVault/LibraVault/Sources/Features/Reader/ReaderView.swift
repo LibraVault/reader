@@ -110,10 +110,11 @@ struct ReaderView: View {
             // menu, just missing) on smaller real devices. Reported in the field as
             // "there's no + button to add a bookmark" — the button was always there
             // in code, it just didn't fit. That's also why Add/View Bookmark are one
-            // combined icon below rather than two: adding a Play button while
-            // keeping both separate would put the count right back at 4. Everything
-            // lower-frequency lives behind a single overflow Menu, which iOS always
-            // renders as one icon regardless of how many actions are inside it.
+            // combined tap/long-press icon below rather than two: adding a Play
+            // button while keeping both separate would put the count right back at
+            // 4. Everything lower-frequency lives behind a single overflow Menu,
+            // which iOS always renders as one icon regardless of how many actions
+            // are inside it.
             if ReaderSettingsAvailability.showReadAloud(for: book.format) {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: toggleReadAloud) {
@@ -124,23 +125,31 @@ struct ReaderView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                // One combined control rather than separate add/view icons — tap
-                // opens the bookmarks list (view/edit/delete), long-press adds one
-                // at the current position. A tap-to-add would need a second tap to
-                // ever see what got added; this way the low-frequency "manage" path
-                // is the discoverable tap target and "add" is a deliberate gesture,
-                // matching how e.g. Photos' favorite-and-view controls split by
-                // gesture rather than by icon.
-                Image(systemName: hasBookmarks ? "bookmark.fill" : "bookmark")
-                    .foregroundStyle(colors.onBackground)
-                    .contentShape(Rectangle())
-                    .onTapGesture { showBookmarksSheet = true }
-                    .onLongPressGesture(minimumDuration: 0.5) {
+                // One combined control rather than separate add/view icons: a tap
+                // opens the bookmarks sheet (view/edit/delete); holding past the
+                // long-press threshold additionally adds a bookmark at the current
+                // position first (with a haptic to confirm), and the same release
+                // still opens the sheet afterward — so a long-press shows you the
+                // bookmark it just added instead of leaving you to trust the icon
+                // switching to its filled state alone.
+                //
+                // This stays a real Button (with the long-press layered on via
+                // .simultaneousGesture) rather than a bare Image with
+                // .onTapGesture/.onLongPressGesture — the latter computed an
+                // invalid {-1, -1} hit point once hosted inside a nav-bar
+                // ToolbarItem, which CI caught as a real, reproducible
+                // testBookmarksSheetShowsAddedBookmark failure, not flakiness.
+                Button(action: { showBookmarksSheet = true }) {
+                    Image(systemName: hasBookmarks ? "bookmark.fill" : "bookmark")
+                        .foregroundStyle(colors.onBackground)
+                }
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         addBookmark()
                     }
-                    .accessibilityIdentifier("reader.bookmarksButton")
-                    .accessibilityAddTraits(.isButton)
+                )
+                .accessibilityIdentifier("reader.bookmarksButton")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {

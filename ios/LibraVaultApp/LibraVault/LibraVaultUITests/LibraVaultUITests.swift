@@ -147,17 +147,30 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openReaderForMockingbird(in: app)
 
-        // The combined bookmark control: long-press adds a bookmark at the current
-        // position, a plain tap opens the management sheet — see ReaderView's
-        // toolbar doc comment for why these two actions share one icon now.
+        // The combined bookmark control: holding past the long-press threshold
+        // adds a bookmark at the current position, and — since it's still a
+        // normal tap-release underneath — also opens the management sheet
+        // afterward, showing what was just added. See ReaderView's toolbar doc
+        // comment for why these two actions share one Button now.
         let bookmarksButton = app.buttons["reader.bookmarksButton"]
         XCTAssertTrue(bookmarksButton.waitForExistence(timeout: 5))
         bookmarksButton.press(forDuration: 0.6)
 
+        XCTAssertTrue(app.staticTexts["Bookmarks"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Chapter 1"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testBookmarksButtonQuickTapOpensSheetWithoutAdding() throws {
+        let app = makeApp()
+        openReaderForMockingbird(in: app)
+
+        let bookmarksButton = app.buttons["reader.bookmarksButton"]
+        XCTAssertTrue(bookmarksButton.waitForExistence(timeout: 5))
         bookmarksButton.tap()
 
         XCTAssertTrue(app.staticTexts["Bookmarks"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Chapter 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No bookmarks yet. Long-press the bookmark icon while reading to add one."].exists)
     }
 
     @MainActor
