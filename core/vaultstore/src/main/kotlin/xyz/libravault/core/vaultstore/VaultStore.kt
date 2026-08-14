@@ -45,6 +45,18 @@ class VaultAlreadyExistsException(vaultDir: File) : Exception("A vault already e
 /** A call requiring an unlocked vault was made while locked. */
 class VaultLockedException : Exception("Vault is locked")
 
+/** [VaultStore.setCoverArt]/[VaultStore.addHighlight]/[VaultStore.removeHighlight]
+ * called with a [fileId] that isn't in the manifest. */
+class VaultEntryNotFoundException(fileId: ByteArray) :
+    Exception("No manifest entry for fileId ${fileId.joinToString("") { "%02x".format(it) }}")
+
+/** Sanity cap on cover art size — cheap insurance against a caller accidentally
+ * handing this an unprocessed, multi-hundred-MB embedded image (implementation
+ * plan §A.6/Phase 4: cover art is meant to be a small thumbnail, already run
+ * through `core.storage.CoverArtCache`'s downsampling before it reaches here). */
+class CoverArtTooLargeException(sizeBytes: Int, maxBytes: Int) :
+    Exception("Cover art is $sizeBytes bytes, exceeding the $maxBytes byte cap")
+
 /**
  * Vault lifecycle: create, unlock (PIN or recovery key), lock, import,
  * list/read manifest entries.
@@ -208,7 +220,14 @@ class VaultStore(
      * an orphaned content file with no manifest entry pointing at it —
      * wasted space, never a broken reference.
      *
+     * [coverArt], if provided, must already be a small, processed thumbnail —
+     * see [setCoverArt]'s doc for why this class doesn't decode/downsample
+     * cover art itself. Imported alongside the content in one pass rather
+     * than via a separate [setCoverArt] call, so a fresh import only ever
+     * rewrites the manifest once, not twice.
+     *
      * @throws InsufficientStorageException not enough free space for [declaredSize]
+     * @throws CoverArtTooLargeException [coverArt] exceeds [MAX_COVER_ART_BYTES]
      */
     suspend fun importFile(
         input: InputStream,
@@ -216,29 +235,45 @@ class VaultStore(
         title: String,
         author: String?,
         format: String,
+        coverArt: ByteArray? = null,
     ): VaultManifestEntry = withContext(Dispatchers.IO) {
         val vmkNow = requireUnlocked()
+        if (coverArt != null && coverArt.size > MAX_COVER_ART_BYTES) {
+            throw CoverArtTooLargeException(coverArt.size, MAX_COVER_ART_BYTES)
+        }
 
         // A generous margin above the declared size, not just >=: chunking overhead
         // (one AEAD tag per 32 KiB chunk) and the manifest rewrite both cost a
         // little more than the raw content size.
-        val required = declaredSize + declaredSize / 32 + 16 * 1024
+        val required = declaredSize + declaredSize / 32 + (coverArt?.size ?: 0) + 16 * 1024
         val available = usableSpaceBytes()
         if (available < required) throw InsufficientStorageException(required, available)
 
         val fileId = newFileId()
         val tmp = File(vaultDir, "${fileId.toHexForFileName()}.tmp")
         val finalFile = contentFile(fileId)
+        val coverFileId = coverArt?.let { newFileId() }
+        val coverTmp = coverFileId?.let { File(vaultDir, "${it.toHexForFileName()}.tmp") }
+        val coverFinalFile = coverFileId?.let { contentFile(it) }
 
         try {
             ChunkedVaultWriter.encrypt(vmkNow, fileId, declaredSize, input, tmp.outputStream())
+            if (coverArt != null && coverFileId != null && coverTmp != null) {
+                ChunkedVaultWriter.encrypt(
+                    vmkNow, coverFileId, coverArt.size.toLong(), coverArt.inputStream(), coverTmp.outputStream(),
+                )
+            }
         } catch (e: Exception) {
             tmp.delete()
+            coverTmp?.delete()
             throw e
         }
 
         try {
             check(tmp.renameTo(finalFile)) { "Failed to finalize imported file" }
+            if (coverTmp != null && coverFinalFile != null) {
+                check(coverTmp.renameTo(coverFinalFile)) { "Failed to finalize cover art" }
+            }
 
             val entry = VaultManifestEntry(
                 fileId = fileId,
@@ -247,6 +282,7 @@ class VaultStore(
                 format = format,
                 sizeBytes = declaredSize,
                 addedAtEpochMillis = nowEpochMillis(),
+                coverArtFileId = coverFileId,
             )
             val updatedEntries = VaultManifest.read(vaultDir, vmkNow) + entry
             VaultManifest.write(vaultDir, vmkNow, updatedEntries) // atomic — see VaultManifest.write
@@ -254,8 +290,114 @@ class VaultStore(
         } catch (e: Exception) {
             finalFile.delete()
             tmp.delete() // still present if renameTo itself is what failed
+            coverFinalFile?.delete()
+            coverTmp?.delete()
             throw e
         }
+    }
+
+    /**
+     * Sets or replaces [fileId]'s cover art after the fact (e.g. a later
+     * cover-art extraction pass, or a user-supplied cover).
+     *
+     * This class deliberately does NOT decode, downsample, or compress
+     * [jpegBytes] itself — that logic in `core.storage.CoverArtCache` is
+     * security-hardened (OOM defense against malicious/corrupt images, 0×0
+     * header rejection, sample-size capping; see `docs/threat-model.md`) and
+     * is not duplicated here. Callers must run cover bytes through that same
+     * hardened path first and hand this method only the final, small,
+     * already-processed thumbnail.
+     *
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId]
+     * @throws CoverArtTooLargeException [jpegBytes] exceeds [MAX_COVER_ART_BYTES]
+     */
+    suspend fun setCoverArt(fileId: ByteArray, jpegBytes: ByteArray): Unit = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        if (jpegBytes.size > MAX_COVER_ART_BYTES) throw CoverArtTooLargeException(jpegBytes.size, MAX_COVER_ART_BYTES)
+
+        val entries = VaultManifest.read(vaultDir, vmkNow)
+        val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
+        val previousCoverFileId = entry.coverArtFileId
+
+        val newCoverFileId = newFileId()
+        val tmp = File(vaultDir, "${newCoverFileId.toHexForFileName()}.tmp")
+        val finalFile = contentFile(newCoverFileId)
+        try {
+            ChunkedVaultWriter.encrypt(
+                vmkNow, newCoverFileId, jpegBytes.size.toLong(), jpegBytes.inputStream(), tmp.outputStream(),
+            )
+            check(tmp.renameTo(finalFile)) { "Failed to finalize cover art" }
+
+            val updated = entries.map { if (it.fileId.contentEquals(fileId)) it.copy(coverArtFileId = newCoverFileId) else it }
+            VaultManifest.write(vaultDir, vmkNow, updated)
+
+            // Only remove the old cover file once the manifest points at the new
+            // one — deleting it first would risk losing both if the write above
+            // had failed instead.
+            previousCoverFileId?.let { contentFile(it).delete() }
+        } catch (e: Exception) {
+            finalFile.delete()
+            tmp.delete()
+            throw e
+        }
+    }
+
+    /** Decrypts and returns [fileId]'s cover art, or `null` if it has none.
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
+    suspend fun readCoverArt(fileId: ByteArray): ByteArray? = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        val entry = VaultManifest.read(vaultDir, vmkNow).find { it.fileId.contentEquals(fileId) }
+            ?: throw VaultEntryNotFoundException(fileId)
+        val coverFileId = entry.coverArtFileId ?: return@withContext null
+
+        VaultFileReader(contentFile(coverFileId), vmkNow, coverFileId).use { reader ->
+            val out = java.io.ByteArrayOutputStream()
+            var offset = 0L
+            while (offset < reader.plainSize) {
+                val chunk = reader.readAt(offset, VaultFormat.DEFAULT_CHUNK_SIZE)
+                if (chunk.isEmpty()) break
+                out.write(chunk)
+                offset += chunk.size
+            }
+            out.toByteArray()
+        }
+    }
+
+    /** Appends a new highlight to [fileId]'s manifest entry.
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
+    suspend fun addHighlight(
+        fileId: ByteArray,
+        positionRef: String,
+        highlightedText: String,
+        colorHex: String = "#FFE066",
+        note: String? = null,
+    ): VaultHighlight = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        val entries = VaultManifest.read(vaultDir, vmkNow)
+        val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
+
+        val nextId = (entry.highlights.maxOfOrNull { it.id } ?: 0L) + 1L
+        val highlight = VaultHighlight(nextId, positionRef, highlightedText, colorHex, note, nowEpochMillis())
+
+        val updated = entries.map {
+            if (it.fileId.contentEquals(fileId)) it.copy(highlights = it.highlights + highlight) else it
+        }
+        VaultManifest.write(vaultDir, vmkNow, updated)
+        highlight
+    }
+
+    /** Removes a highlight by id. A no-op if [highlightId] doesn't exist —
+     * deleting something already gone isn't an error.
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
+    suspend fun removeHighlight(fileId: ByteArray, highlightId: Long): Unit = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        val entries = VaultManifest.read(vaultDir, vmkNow)
+        if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
+
+        val updated = entries.map {
+            if (it.fileId.contentEquals(fileId)) it.copy(highlights = it.highlights.filterNot { h -> h.id == highlightId }) else it
+        }
+        VaultManifest.write(vaultDir, vmkNow, updated)
     }
 
     /** Opens a seekable decrypting reader for [fileId] — the primitive Phase 3's
@@ -274,6 +416,14 @@ class VaultStore(
             val id = ByteArray(VaultFormat.FILE_ID_SIZE_BYTES).also { random.nextBytes(it) }
             if (!id.contentEquals(VaultManifest.MANIFEST_FILE_ID)) return id
         }
+    }
+
+    companion object {
+        /** 8 MiB — generous for a downsampled thumbnail (`CoverArtCache` caps
+         * the long edge at 512px and JPEG-compresses at quality 85, so a real
+         * cover is normally tens of KB), tight enough to catch a caller
+         * accidentally passing an unprocessed embedded image. */
+        const val MAX_COVER_ART_BYTES: Int = 8 * 1024 * 1024
     }
 }
 
