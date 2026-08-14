@@ -316,7 +316,7 @@ class TTSEngineBridge: TTSEngineProtocol {
         // if nothing matches at all — speak() then falls back to
         // AVSpeechUtterance's own default (today's device-language behaviour),
         // rather than throwing, for a language with no installed voice.
-        AVSpeechSynthesisVoice(language: languageCode)
+        return AVSpeechSynthesisVoice(language: languageCode)
     }
 
     /// Split out from `voice(for:)` as its own pure function so it's unit-testable
