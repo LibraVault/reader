@@ -38,7 +38,9 @@ object ChunkedVaultWriter {
             "fileId must be ${VaultFormat.FILE_ID_SIZE_BYTES} bytes"
         }
         require(totalPlaintextLength >= 0) { "totalPlaintextLength must be >= 0" }
-        require(chunkSize > 0) { "chunkSize must be positive" }
+        require(chunkSize in 1..VaultFormat.MAX_REASONABLE_CHUNK_SIZE) {
+            "chunkSize must be in 1..${VaultFormat.MAX_REASONABLE_CHUNK_SIZE}, got $chunkSize"
+        }
 
         writeHeader(output, fileId, chunkSize, totalPlaintextLength)
 
@@ -54,7 +56,10 @@ object ChunkedVaultWriter {
             readFully(input, buf, wantThisChunk)
             val isFinal = chunkIndex == chunkCount - 1
 
-            val aad = VaultFormat.chunkAad(fileId, totalPlaintextLength, chunkSize, chunkIndex, isFinal)
+            val aad = VaultFormat.chunkAad(
+                VaultFormat.FORMAT_VERSION, VaultFormat.CIPHER_AES_256_GCM,
+                fileId, totalPlaintextLength, chunkSize, chunkIndex, isFinal,
+            )
             val nonce = deriveNonce(fileContentKey, chunkIndex)
             val ciphertext = cipher.encrypt(fileContentKey, nonce, aad, buf.copyOf(wantThisChunk))
             output.write(ciphertext)

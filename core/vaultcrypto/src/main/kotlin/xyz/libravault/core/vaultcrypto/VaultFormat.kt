@@ -74,6 +74,12 @@ object VaultFormat {
      */
     const val HEADER_SIZE_BYTES: Int = 1 + 1 + FILE_ID_SIZE_BYTES + 4 + 8
 
+    /** Chunk size ceiling for header validation. Generous headroom above
+     * [DEFAULT_CHUNK_SIZE] while still catching a corrupted/malicious header
+     * field before it turns into a huge allocation ([VaultFileReader] sizes its
+     * per-chunk buffer directly from this value). */
+    const val MAX_REASONABLE_CHUNK_SIZE: Int = 16 * 1024 * 1024
+
     /**
      * Builds the associated data bound into every chunk's AEAD tag.
      *
@@ -82,8 +88,18 @@ object VaultFormat {
      * there is no separate "header integrity" mechanism to get wrong: corrupting
      * ANY of these fields fails AEAD verification on literally the first chunk
      * decrypted. This is deliberately simpler than a detached header signature.
+     *
+     * [formatVersion] and [cipherId] are taken as explicit parameters — NOT read
+     * from this object's own [FORMAT_VERSION]/[CIPHER_AES_256_GCM] constants —
+     * specifically so a future build that supports reading multiple format
+     * versions computes AAD from what a given file's header actually says, not
+     * from whatever the current build happens to default to. [ChunkedVaultWriter]
+     * always passes the current constants (it only ever writes the newest
+     * format); [VaultFileReader] passes what it parsed from the file.
      */
     fun chunkAad(
+        formatVersion: Byte,
+        cipherId: Byte,
         fileId: ByteArray,
         totalPlaintextLength: Long,
         chunkSize: Int,
@@ -94,8 +110,8 @@ object VaultFormat {
         val buf = java.nio.ByteBuffer.allocate(
             1 + 1 + 4 + FILE_ID_SIZE_BYTES + 8 + 8 + 1,
         )
-        buf.put(FORMAT_VERSION)
-        buf.put(CIPHER_AES_256_GCM)
+        buf.put(formatVersion)
+        buf.put(cipherId)
         buf.putInt(chunkSize)
         buf.put(fileId)
         buf.putLong(totalPlaintextLength)
@@ -132,3 +148,11 @@ class UnsupportedCipherException(val foundCipherId: Byte) :
  * separately only because they're detected at different layers. */
 class VaultTruncatedException(expectedBytes: Long, actualBytes: Long) :
     VaultCryptoException("Vault file truncated: expected at least $expectedBytes bytes, found $actualBytes")
+
+/** A structurally invalid header field (e.g. `chunkSize <= 0`, an unreasonably
+ * huge `chunkSize`, or a negative total length) — caught by validation before
+ * any decryption is attempted. Found during PR review: without this, a
+ * corrupted `chunkSize == 0` field crashed with an unhandled
+ * [ArithmeticException] (division by zero) instead of failing cleanly like
+ * every other tamper case this module defends against. */
+class MalformedVaultHeaderException(message: String) : VaultCryptoException(message)

@@ -24,10 +24,18 @@ import java.nio.ByteBuffer
  * audio playback read sequentially within a chunk far more often than they
  * jump across chunk boundaries.
  *
+ * **Not thread-safe.** One instance wraps one reusable [AesGcmCipher] (itself
+ * not thread-safe — see its doc) plus mutable single-chunk cache state, so
+ * concurrent calls to [readAt] on the same instance from multiple threads are
+ * unsafe. Open one instance per concurrent reader (e.g. per proxy-fd callback
+ * on its own dedicated thread — see implementation plan §D.0.RESULTS); do not
+ * share one instance across simultaneously-active callbacks.
+ *
  * @throws VaultAuthenticationException wrong VMK, or the file was tampered with
  * @throws VaultTruncatedException the file is shorter than the header requires
  * @throws UnsupportedVaultFormatException the header's format version isn't one this build understands
  * @throws UnsupportedCipherException the header's cipher id isn't one this build understands
+ * @throws MalformedVaultHeaderException a header field is structurally invalid (e.g. chunkSize <= 0)
  */
 class VaultFileReader(
     file: java.io.File,
@@ -41,6 +49,8 @@ class VaultFileReader(
     val fileId: ByteArray
     val chunkSize: Int
     val plainSize: Long
+    private val formatVersion: Byte
+    private val cipherId: Byte
     private val fileContentKey: ByteArray
 
     private var cachedChunkIndex = -1L
@@ -86,8 +96,23 @@ class VaultFileReader(
                 IllegalStateException("fileId mismatch: expected != stored header fileId"),
             )
         }
+        // Structural validation BEFORE any arithmetic uses these values. Found
+        // during PR review: chunkSize == 0 previously reached an unguarded
+        // division in chunkCountFor and crashed with an unhandled
+        // ArithmeticException instead of failing the same clean way every other
+        // corrupted-header case does.
+        if (parsedChunkSize <= 0 || parsedChunkSize > VaultFormat.MAX_REASONABLE_CHUNK_SIZE) {
+            raf.close()
+            throw MalformedVaultHeaderException("Invalid chunkSize in header: $parsedChunkSize")
+        }
+        if (parsedTotalLength < 0) {
+            raf.close()
+            throw MalformedVaultHeaderException("Negative totalPlaintextLength in header: $parsedTotalLength")
+        }
 
         this.fileId = parsedFileId
+        this.formatVersion = version
+        this.cipherId = cipherId
         this.chunkSize = parsedChunkSize
         this.plainSize = parsedTotalLength
         this.fileContentKey = deriveFileContentKey(vmk, parsedFileId)
@@ -124,7 +149,7 @@ class VaultFileReader(
             offset += n
         }
 
-        val aad = VaultFormat.chunkAad(fileId, plainSize, chunkSize, index, isFinal)
+        val aad = VaultFormat.chunkAad(formatVersion, cipherId, fileId, plainSize, chunkSize, index, isFinal)
         val nonce = deriveNonce(fileContentKey, index)
         val plaintext = cipher.decrypt(fileContentKey, nonce, aad, ciphertext)
 
