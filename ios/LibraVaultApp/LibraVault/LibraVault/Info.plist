@@ -34,6 +34,7 @@
 				<string>com.adobe.pdf</string>
 				<string>public.mp3</string>
 				<string>public.mpeg-4-audio</string>
+				<string>xyz.libravault.m4b-audio</string>
 				<string>public.aac-audio</string>
 				<string>xyz.libravault.markdown</string>
 				<string>xyz.libravault.mobi</string>
@@ -45,12 +46,32 @@
 		</dict>
 	</array>
 	<!--
-	 Custom UTIs for formats with no suitable system-defined type. epub/pdf/mp3/m4a
-	 (m4b)/aac all have real system UTIs (org.idpf.epub-container, com.adobe.pdf,
-	 public.mp3, public.mpeg-4-audio, public.aac-audio) and need no declaration here.
+	 Custom UTIs for formats with no suitable, verifiable system-defined type.
+	 epub/pdf/mp3/m4a/aac have real system UTIs (org.idpf.epub-container,
+	 com.adobe.pdf, public.mp3, public.mpeg-4-audio, public.aac-audio) and need no
+	 declaration here. m4b gets its own custom type below rather than assuming it's
+	 covered by public.mpeg-4-audio's tag spec too — unverifiable without a real
+	 device/Xcode, and audiobooks are the app's primary use of this whole feature.
 	 -->
 	<key>UTExportedTypeDeclarations</key>
 	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.m4b-audio</string>
+			<key>UTTypeDescription</key>
+			<string>Audiobook</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.mpeg-4-audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>m4b</string>
+				</array>
+			</dict>
+		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
 			<string>xyz.libravault.markdown</string>

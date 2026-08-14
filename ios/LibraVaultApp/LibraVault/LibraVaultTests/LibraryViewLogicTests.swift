@@ -112,6 +112,7 @@ final class LibraryViewLogicTests: XCTestCase {
         XCTAssertEqual(AppError.bookNotFound.errorDescription, "Book not found")
         XCTAssertEqual(AppError.storageAccessDenied.errorDescription, "Storage access denied")
         XCTAssertEqual(AppError.unsupportedFileType.errorDescription, "This file type isn't supported")
+        XCTAssertEqual(AppError.fileImportFailed.errorDescription, "Couldn't import that file")
     }
 
     func testCoverPaletteIndexDiffersForDifferentIds() {

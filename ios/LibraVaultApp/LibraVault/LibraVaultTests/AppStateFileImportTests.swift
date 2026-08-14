@@ -115,7 +115,11 @@ final class AppStateFileImportTests: XCTestCase {
         XCTAssertTrue(state.vaults.isEmpty)
     }
 
-    func testImportingAMissingSourceFileSetsStorageAccessDeniedError() throws {
+    /// The copy itself is what fails here (the source doesn't exist) — distinct from
+    /// the `.unsupportedFileType` guard above, and deliberately not `.storageAccessDenied`
+    /// either (that's reserved for addVault's folder-bookmark failures): a failed copy
+    /// isn't a storage-access denial, so it gets its own message.
+    func testImportingAMissingSourceFileSetsFileImportFailedError() throws {
         let persistence = try makeIsolatedPersistence()
         let missingURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AppStateFileImportTests-missing-\(UUID().uuidString).epub")
@@ -123,6 +127,6 @@ final class AppStateFileImportTests: XCTestCase {
         let state = AppState(vaultPersistence: persistence)
         state.importSharedFile(url: missingURL)
 
-        XCTAssertEqual(state.error?.errorDescription, AppError.storageAccessDenied.errorDescription)
+        XCTAssertEqual(state.error?.errorDescription, AppError.fileImportFailed.errorDescription)
     }
 }

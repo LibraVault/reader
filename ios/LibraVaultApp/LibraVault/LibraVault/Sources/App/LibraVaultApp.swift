@@ -40,9 +40,28 @@ struct RootView: View {
             MiniPlayerBar(onTap: { appState.shouldNavigateToPlayer = true })
         }
         .animation(.easeInOut(duration: 0.2), value: appState.nowPlayingBook?.id)
+        // Lives at the root rather than on any one screen because appState.error can
+        // be set from outside the currently-visible screen entirely — e.g.
+        // importSharedFile firing from LibraVaultApp's `.onOpenURL` while the user is
+        // looking at Settings or the Reader, not the Library. Without this, every
+        // AppState.error assignment (addVault's storageAccessDenied included — this
+        // was already true before importSharedFile existed) failed completely
+        // silently: nothing anywhere read the property.
+        .alert("Error", isPresented: errorAlertBinding) {
+            Button("OK", role: .cancel) { appState.clearError() }
+        } message: {
+            Text(appState.error?.errorDescription ?? "")
+        }
     }
 
     private var navigateToPlayerBinding: Binding<Bool> {
         Binding(get: { appState.shouldNavigateToPlayer }, set: { appState.shouldNavigateToPlayer = $0 })
+    }
+
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { appState.error != nil },
+            set: { isPresented in if !isPresented { appState.clearError() } }
+        )
     }
 }

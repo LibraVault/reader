@@ -272,9 +272,9 @@ final class AppState: ObservableObject {
     /// `VaultPersistence.importedVault()` folder and the library is rescanned, the same
     /// as if it had always lived in a vault.
     ///
-    /// Silently no-ops (via `error`, not a crash) on an extension LibraryFileScanner
-    /// doesn't recognize, or on any failure to create/copy into the Imported vault —
-    /// there's no user-facing recovery step beyond "try sharing a supported file again".
+    /// Reports failure via `error` rather than crashing — RootView surfaces it as an
+    /// alert (see its `errorAlertBinding`) — on an extension LibraryFileScanner doesn't
+    /// recognize, or on any failure to create/copy into the Imported vault.
     func importSharedFile(url: URL) {
         guard LibraryFileScanner.extensionFormats[url.pathExtension.lowercased()] != nil else {
             error = AppError.unsupportedFileType
@@ -282,7 +282,7 @@ final class AppState: ObservableObject {
         }
         guard let vault = try? vaultPersistence.importedVault(),
               let destinationFolder = vaultPersistence.resolvedURL(for: vault) else {
-            error = AppError.storageAccessDenied
+            error = AppError.fileImportFailed
             return
         }
         if !vaults.contains(where: { $0.id == vault.id }) {
@@ -300,7 +300,7 @@ final class AppState: ObservableObject {
         do {
             try FileManager.default.copyItem(at: url, to: destinationURL)
         } catch {
-            self.error = AppError.storageAccessDenied
+            self.error = AppError.fileImportFailed
             return
         }
         Task { await loadLibrary() }
@@ -598,6 +598,7 @@ enum AppError: LocalizedError {
     case bookNotFound
     case storageAccessDenied
     case unsupportedFileType
+    case fileImportFailed
 
     var errorDescription: String? {
         switch self {
@@ -609,6 +610,8 @@ enum AppError: LocalizedError {
             return "Storage access denied"
         case .unsupportedFileType:
             return "This file type isn't supported"
+        case .fileImportFailed:
+            return "Couldn't import that file"
         }
     }
 }
