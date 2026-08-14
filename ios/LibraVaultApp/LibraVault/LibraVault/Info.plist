@@ -176,5 +176,15 @@
 			</dict>
 		</dict>
 	</array>
+	<!--
+	 ITMS-90737: declaring CFBundleDocumentTypes requires also declaring one of
+	 UISupportsDocumentBrowser or LSSupportsOpeningDocumentsInPlace. LibraVault doesn't
+	 use UIDocumentBrowserViewController, and importSharedFile(url:) (LibraVaultApp.swift)
+	 copies incoming files into the sandboxed "Imported" vault rather than editing them
+	 in place — there's no NSFileCoordinator support for true in-place editing — so NO
+	 is the accurate value here, not just Apple's default recommendation of YES.
+	 -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 </dict>
 </plist>
