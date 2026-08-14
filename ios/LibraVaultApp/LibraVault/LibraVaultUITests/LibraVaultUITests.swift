@@ -328,7 +328,14 @@ final class LibraVaultUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["About LibraVault"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Privacy"].exists)
 
-        let githubLink = app.links["GitHub Repository"]
+        // Not `app.links[...]`: this build's accessibility tree doesn't expose
+        // SwiftUI's Link with the `.link` element type XCUITest matches there — that
+        // query never resolved even after repeated swipes on real CI, a false
+        // failure in the test itself, not the app (see run 31824256925). Matching by
+        // label across any element type is what actually finds it.
+        let githubLink = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "GitHub Repository"))
+            .firstMatch
         scrollDownUntilVisible(githubLink, in: app)
         XCTAssertTrue(githubLink.exists, "GitHub Repository link should be reachable by scrolling")
     }
