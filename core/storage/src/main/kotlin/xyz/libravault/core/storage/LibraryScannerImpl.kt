@@ -2,7 +2,6 @@ package xyz.libravault.core.storage
 
 import android.net.Uri
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -15,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.repository.LibraryRepository
@@ -41,9 +42,18 @@ class LibraryScannerImpl @Inject constructor(
         private const val TAG = "LibraryScanner"
     }
 
-    // Prevents concurrent scans across ViewModels (e.g. OnboardingViewModel
+    // Serializes concurrent scans across ViewModels (e.g. OnboardingViewModel
     // and LibraryViewModel both calling scan() within the same session).
-    private val scanInProgress = AtomicBoolean(false)
+    //
+    // This used to be an AtomicBoolean that made a scan() call arriving
+    // mid-scan a silent no-op (Completed(0), vault list never re-read). That
+    // dropped vaults added while a scan was in flight: the in-flight scan's
+    // vault snapshot (see "1. Collect vault URIs" below) was already taken
+    // before the new vault existed, and the second call bailed out instead
+    // of running its own scan against a fresh snapshot. A Mutex fixes this
+    // by making the second call *wait* for the first to finish and then
+    // actually scan with up-to-date vaults, instead of being discarded.
+    private val scanMutex = Mutex()
 
     // Fire-and-forget scope for Phase 2 metadata enrichment — survives flow completion
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -51,15 +61,11 @@ class LibraryScannerImpl @Inject constructor(
     private var enrichmentJob: Job? = null
 
     override fun scan(): Flow<ScanProgress> = flow {
-        if (!scanInProgress.compareAndSet(false, true)) {
-            logger.i(TAG, "Scan already in progress — skipping duplicate trigger")
-            emit(ScanProgress.Completed(0))
-            return@flow
-        }
+        scanMutex.withLock {
         emit(ScanProgress.Started)
         logger.i(TAG, "Scan started")
 
-        try { runCatching {
+        runCatching {
             // ── 1. Collect vault URIs ────────────────────────────────────────
             val vaults = mutableListOf<Pair<Long, Uri>>().apply {
                 addAll(
@@ -172,10 +178,8 @@ class LibraryScannerImpl @Inject constructor(
             logger.e(TAG, "Scan failed", e)
             emit(ScanProgress.Error(e.message ?: "Unknown scan error"))
         }
-        } finally {
-            // Always release the lock — covers success, failure, AND flow cancellation
-            scanInProgress.set(false)
-            logger.d(TAG, "Scan lock released")
+        // No manual lock bookkeeping needed here: Mutex.withLock releases on
+        // success, failure, AND flow cancellation via its own try/finally.
         }
 }
 
