@@ -264,6 +264,103 @@ final class AppState: ObservableObject {
         Task { await loadLibrary() }
     }
 
+    /// Entry point for a file the OS hands LibraVault via "Open In"/"Copy to
+    /// LibraVault" from another app's share sheet (see LibraVaultApp.swift's
+    /// `.onOpenURL` and Info.plist's CFBundleDocumentTypes). Unlike `addVault`, which
+    /// grants access to a whole folder the user picked, this receives a single file —
+    /// so instead of bookmarking it in place, it's copied into the permanent
+    /// `VaultPersistence.importedVault()` folder and the library is rescanned, the same
+    /// as if it had always lived in a vault.
+    ///
+    /// Reports failure via `error` rather than crashing — RootView surfaces it as an
+    /// alert (see its `errorAlertBinding`) — on an extension LibraryFileScanner doesn't
+    /// recognize, or on any failure to create/copy into the Imported vault. Every
+    /// failure path also leaves a trail in LibraVaultLogStore via `bridge.logError` —
+    /// `error` alone tells the user something went wrong, but not *why*, which matters
+    /// for a "sharing a book doesn't work" field report with no other diagnostics.
+    ///
+    /// `async` (called from LibraVaultApp's `.onOpenURL` inside a `Task { }`) rather
+    /// than fire-and-forget: the actual file copy runs off the main actor in a detached
+    /// task below and this awaits it, so a large/slow shared file (a multi-hundred-MB
+    /// audiobook, or one iCloud hasn't finished downloading) can't freeze the UI or trip
+    /// the main-thread hang watchdog just because import was triggered synchronously.
+    func importSharedFile(url: URL) async {
+        guard LibraryFileScanner.extensionFormats[url.pathExtension.lowercased()] != nil else {
+            error = AppError.unsupportedFileType
+            return
+        }
+
+        let vault: Vault
+        let destinationFolder: URL
+        do {
+            vault = try vaultPersistence.importedVault()
+            guard let resolved = vaultPersistence.resolvedURL(for: vault) else {
+                throw AppError.fileImportFailed
+            }
+            destinationFolder = resolved
+        } catch {
+            bridge.logError("Couldn't prepare the Imported vault", tag: "Import", error: error)
+            self.error = AppError.fileImportFailed
+            return
+        }
+
+        if !vaults.contains(where: { $0.id == vault.id }) {
+            vaults.append(vault)
+            vaultPersistence.save(vaults)
+        }
+
+        // `Error` isn't guaranteed Sendable, so the detached task hands back a plain
+        // String (or nil for success) rather than the thrown error itself.
+        let filename = url.lastPathComponent
+        let copyFailureDescription: String? = await Task.detached(priority: .userInitiated) {
+            // The incoming URL (from another app's document provider, e.g. Files/
+            // iCloud Drive) may itself be security-scoped even though the destination
+            // isn't — mirrors the start/stop pairing already used in
+            // makeVault/LibraryFileScanner.
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+
+            let destinationURL = Self.uniqueDestinationURL(for: filename, in: destinationFolder)
+            do {
+                try FileManager.default.copyItem(at: url, to: destinationURL)
+                return nil
+            } catch {
+                return String(describing: error)
+            }
+        }.value
+
+        if let copyFailureDescription {
+            bridge.logError("Couldn't copy shared file \"\(filename)\": \(copyFailureDescription)", tag: "Import")
+            self.error = AppError.fileImportFailed
+        } else {
+            await loadLibrary()
+        }
+    }
+
+    /// Appends " 2", " 3", … before the extension until the name is free, so importing
+    /// two different files that happen to share a filename (e.g. re-sharing what looks
+    /// like "the same" book from a different source) never silently overwrites the
+    /// earlier one.
+    ///
+    /// `nonisolated`: static members of an `@MainActor` type are MainActor-isolated by
+    /// default, but `importSharedFile` calls this from inside its `Task.detached` copy
+    /// step specifically to keep it off the main actor — this touches no actor-isolated
+    /// state (pure FileManager/String work), so it's safe to opt out.
+    private nonisolated static func uniqueDestinationURL(for filename: String, in folder: URL) -> URL {
+        var candidate = folder.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
+
+        let ext = (filename as NSString).pathExtension
+        let base = (filename as NSString).deletingPathExtension
+        var counter = 2
+        repeat {
+            let newName = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+            candidate = folder.appendingPathComponent(newName)
+            counter += 1
+        } while FileManager.default.fileExists(atPath: candidate.path)
+        return candidate
+    }
+
     private func scanVaults() -> [BookData] {
         vaults.flatMap { vault -> [BookData] in
             guard let resolvedURL = vaultPersistence.resolvedURL(for: vault) else { return [] }
@@ -536,6 +633,8 @@ enum AppError: LocalizedError {
     case libraryLoadFailed(String)
     case bookNotFound
     case storageAccessDenied
+    case unsupportedFileType
+    case fileImportFailed
 
     var errorDescription: String? {
         switch self {
@@ -545,6 +644,10 @@ enum AppError: LocalizedError {
             return "Book not found"
         case .storageAccessDenied:
             return "Storage access denied"
+        case .unsupportedFileType:
+            return "This file type isn't supported"
+        case .fileImportFailed:
+            return "Couldn't import that file"
         }
     }
 }

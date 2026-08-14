@@ -18,8 +18,23 @@ struct VaultPersistence {
     private let defaults: UserDefaults
     private let key = "xyz.libravault.vaults"
 
-    init(defaults: UserDefaults = .standard) {
+    /// Stable id for the permanent "Imported" vault (see `importedVault()`) — fixed
+    /// rather than a fresh UUID like `makeVault` generates, so re-deriving it (every
+    /// time a file is shared in) always finds the one already-persisted vault instead
+    /// of minting a duplicate.
+    private static let importedVaultId = "xyz.libravault.importedVault"
+
+    /// Where `importedVault()` creates its backing folder. The real sandboxed
+    /// Documents directory in production; overridable in tests so they don't write
+    /// into the Documents folder the test host process actually uses on disk.
+    private let importedVaultBaseDirectory: URL
+
+    init(
+        defaults: UserDefaults = .standard,
+        importedVaultBaseDirectory: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    ) {
         self.defaults = defaults
+        self.importedVaultBaseDirectory = importedVaultBaseDirectory
     }
 
     func loadVaults() -> [Vault] {
@@ -56,5 +71,24 @@ struct VaultPersistence {
     func resolvedURL(for vault: Vault) -> URL? {
         var isStale = false
         return try? URL(resolvingBookmarkData: vault.bookmarkData, bookmarkDataIsStale: &isStale)
+    }
+
+    /// Returns the permanent, app-owned vault that files opened/shared into LibraVault
+    /// via "Open In"/the share sheet get copied into (see AppState.importSharedFile) —
+    /// created on first use and reused after that, matched by `importedVaultId` rather
+    /// than a fresh UUID so this never mints a second one. Its folder lives inside the
+    /// app's own sandbox, so — unlike `makeVault`, which captures a *security-scoped*
+    /// bookmark for a folder the user picked outside the sandbox — no security scope
+    /// needs to be requested to create this one's bookmark; `startAccessingSecurityScopedResource`
+    /// on an in-sandbox URL is a documented no-op that still returns `true` some of the
+    /// time, so this deliberately doesn't call it at all.
+    func importedVault() throws -> Vault {
+        if let existing = loadVaults().first(where: { $0.id == Self.importedVaultId }) {
+            return existing
+        }
+        let folderURL = importedVaultBaseDirectory.appendingPathComponent("Imported", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let bookmarkData = try folderURL.bookmarkData()
+        return Vault(id: Self.importedVaultId, displayName: "Imported", bookmarkData: bookmarkData)
     }
 }
