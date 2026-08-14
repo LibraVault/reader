@@ -65,6 +65,7 @@ import xyz.libravault.feature.settings.ui.TtsSettingsSection
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onEncryptedVaultsClick: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val prefs by viewModel.preferences.collectAsState()
@@ -302,6 +303,26 @@ fun SettingsScreen(
             )
             TextButton(onClick = viewModel::clearCoverCache) {
                 Text("Clear cover cache")
+            }
+
+            Divider()
+
+            // ── Encrypted Vaults ─────────────────────────────────────────────────
+            // Deliberately its own section, not folded into "Vaults" above: that
+            // section is the unencrypted SAF-folder concept ("Folder" in PRD §9's
+            // still-pending rename), a different guarantee from an Encrypted Vault.
+            SectionHeader("Encrypted Vaults")
+
+            SettingLabel(
+                title    = "PIN-protected, encrypted at rest",
+                subtitle = "Separate from the Folders above — files added to an Encrypted " +
+                        "Vault are unreadable without its PIN, even with direct access to this device's storage.",
+            )
+            OutlinedButton(
+                onClick = onEncryptedVaultsClick,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Manage Encrypted Vaults")
             }
 
             Divider()
