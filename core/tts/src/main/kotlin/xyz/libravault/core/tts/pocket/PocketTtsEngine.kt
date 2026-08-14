@@ -1,6 +1,8 @@
 package xyz.libravault.core.tts.pocket
 
 import android.util.Log
+import com.k2fsa.sherpa.onnx.GenerationConfig
+import com.k2fsa.sherpa.onnx.OfflineTts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -17,11 +19,6 @@ import kotlinx.coroutines.launch
 import xyz.libravault.core.tts.TtsEngine
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
-import xyz.libravault.core.tts.pocket.sherpa.GenerationConfig
-import xyz.libravault.core.tts.pocket.sherpa.OfflineTts
-import xyz.libravault.core.tts.pocket.sherpa.OfflineTtsConfig
-import xyz.libravault.core.tts.pocket.sherpa.OfflineTtsModelConfig
-import xyz.libravault.core.tts.pocket.sherpa.OfflineTtsVitsModelConfig
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -62,7 +59,15 @@ class PocketTtsEngine @Inject constructor(
                                 selectedVoiceId = selectedVoiceId,
                             )
                             Log.d(TAG, "PocketTtsEngine initialized")
-                        } catch (e: Exception) {
+                        } catch (e: Throwable) {
+                            // Throwable, not Exception: loading the model is the
+                            // first thing to touch the native layer, and its
+                            // failures arrive as UnsatisfiedLinkError - an Error.
+                            // Catching only Exception let that escape the
+                            // coroutine and take the whole app down instead of
+                            // surfacing as a TTS error the UI can show. That is
+                            // not hypothetical: it is what a JNI package
+                            // mismatch did until it was fixed (see Tts.kt).
                             Log.e(TAG, "Failed to load model: ${e.message}", e)
                             _state.value = _state.value.copy(status = TtsStatus.ERROR, error = e.message)
                         }
@@ -79,19 +84,8 @@ class PocketTtsEngine @Inject constructor(
         }
     }
 
-    private fun loadModel(modelPath: String): OfflineTts = OfflineTts(
-        config = OfflineTtsConfig(
-            model = OfflineTtsModelConfig(
-                vits = OfflineTtsVitsModelConfig(
-                    model = "$modelPath/${PocketVoiceCatalog.MODEL_FILE_NAME}",
-                    tokens = "$modelPath/${PocketVoiceCatalog.TOKENS_FILE_NAME}",
-                    dataDir = "$modelPath/${PocketVoiceCatalog.DATA_DIR_NAME}",
-                ),
-                numThreads = 2,
-                provider = "cpu",
-            ),
-        ),
-    )
+    private fun loadModel(modelPath: String): OfflineTts =
+        OfflineTts(config = pocketTtsConfig(modelPath))
 
     override fun speak(text: String) {
         val status = _state.value.status
@@ -112,7 +106,9 @@ class PocketTtsEngine @Inject constructor(
                     speed = _state.value.speechRate,
                     sid = PocketVoiceCatalog.DEFAULT_SPEAKER_ID,
                 )
-                playback.play(generateChunks(ttsInstance, text, config)) {
+                // Rate comes from the loaded model, never a constant - see
+                // PocketPlayback.play's KDoc for the mismatch this caused.
+                playback.play(generateChunks(ttsInstance, text, config), ttsInstance.sampleRate()) {
                     _state.value = _state.value.copy(status = TtsStatus.IDLE)
                     _completionEvent.tryEmit(Unit)
                 }
@@ -139,10 +135,13 @@ class PocketTtsEngine @Inject constructor(
     ): Flow<FloatArray> = callbackFlow {
         launch {
             try {
-                ttsInstance.generateWithConfigAndCallback(text, config) { samples ->
-                    trySend(samples)
-                    1 // continue generating
-                }
+                // Must be SherpaGenerationCallback, not a lambda - see that
+                // class for the JNI method-lookup reason.
+                ttsInstance.generateWithConfigAndCallback(
+                    text,
+                    config,
+                    SherpaGenerationCallback { samples -> trySend(samples) },
+                )
             } catch (e: Exception) {
                 close(e)
                 return@launch

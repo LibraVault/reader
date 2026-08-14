@@ -26,6 +26,22 @@ This document describes the unit test strategy, current coverage, deliberate gap
 # Variant-specific (some modules have play/fdroid flavors)
 ./gradlew feature:settings:testPlayDebugUnitTest
 ./gradlew feature:settings:testFdroidDebugUnitTest
+
+# Instrumentation (on-device) tests — needs a connected device or emulator
+./gradlew connectedDebugAndroidTest
+```
+
+**Pocket TTS audio output is arm64-only.** `PocketTtsAudioOutputTest` runs the
+real sherpa-onnx pipeline, and the vendored AAR bundles `arm64-v8a` natives
+only, so on an x86_64 emulator the test *skips* rather than fails. Running it
+for real needs arm64 hardware:
+
+```bash
+# Locally, against a connected arm64 phone
+./gradlew :core:tts:connectedDebugAndroidTest
+
+# In CI, on a Firebase Test Lab physical device
+gh workflow run android-tts-audio-test.yml
 ```
 
 ---
@@ -119,6 +135,18 @@ This document describes the unit test strategy, current coverage, deliberate gap
 - Non-deterministic timing (API callbacks); not JVM-unit-testable
 - Deferred to instrumented tests with device/emulator
 
+**Pocket TTS audio output** (core/tts) — *closed by `PocketTtsAudioOutputTest`*
+- sherpa-onnx synthesis and espeak-ng phonemization are native and arm64-only,
+  so no JVM test can reach them; every other Pocket TTS test asserts on
+  lifecycle and plumbing, never on the audio
+- Covered on-device by `PocketTtsAudioOutputTest` (issue #107), which asserts
+  real English text yields non-silent, plausibly-shaped, input-dependent PCM
+- Assertions are aggregate and relative (RMS, silence fraction, duration vs.
+  text length, duration vs. speed), not golden-waveform: ONNX output is not
+  bit-identical across devices, and VITS samples from a noise distribution
+- The measurement math itself is unit-tested on the JVM against synthetic
+  waveforms (`PcmAnalysisTest`), so it cannot silently rot between arm64 runs
+
 **PDF Rendering** (feature/reader, core/storage)
 - PdfRenderer is device-only (requires Android 21+)
 - Instrumented tests verify on actual device with test PDFs
@@ -173,7 +201,7 @@ This document describes the unit test strategy, current coverage, deliberate gap
 | core/database | 1 | 3 | 100% | 100% | ✅ 100% |
 | core/storage | 3 | 6 | 70% | >80% | 🟡 75% |
 | core/ui | - | 2 | 100% | N/A | ✅ |
-| core/tts | - | 1 | Low | N/A | 🔴 Deferred |
+| core/tts | 10 | 88 + 9 on-device | Medium | >80% | 🟡 audio path now covered on arm64 only |
 | feature/player | 5 | 20 | 70% | >80% | 🟡 70% |
 | feature/reader | 2 | 5 | 60% | >80% | 🟡 60% |
 | feature/settings | 3 | 18 | 75% | >85% | 🟡 75% |
@@ -203,16 +231,18 @@ This document describes the unit test strategy, current coverage, deliberate gap
 
 ## CI/CD Integration
 
-### Recommended GitHub Actions Job
+### Workflows that run tests
 
-```yaml
-- name: Unit Tests
-  run: ./gradlew test
-  
-- name: Coverage Report (Optional)
-  run: ./gradlew test jacocoTestReport
-  # Requires jacoco plugin; can add in future for coverage trends
-```
+| Workflow | Trigger | What it runs |
+|----------|---------|--------------|
+| `jvm-tests.yml` | every push and PR | All JVM unit tests, plus `lint` |
+| `ui-tests.yml` | PRs targeting `main` | `connectedDebugAndroidTest` on an x86_64 API 34 emulator |
+| `android-tts-audio-test.yml` | manual dispatch | `PocketTtsAudioOutputTest` on a Firebase Test Lab **physical arm64** device |
+
+The third exists because `ui-tests.yml`'s emulator is x86_64 and the
+sherpa-onnx AAR is arm64-only, so the audio test can only skip there. Dispatch
+it for release prep and for any change touching the voice model, the
+`espeak-ng-data` bundle, the sherpa-onnx AAR, or `pocketTtsConfig`.
 
 ### Pre-Commit Hook (Suggested)
 

@@ -1,0 +1,120 @@
+name: TTS Audio Test (Firebase Test Lab)
+
+# Runs PocketTtsAudioOutputTest — the only test that puts real text through
+# real sherpa-onnx + espeak-ng and asserts on the audio that comes out
+# (issue #107).
+#
+# Why this needs its own workflow rather than joining ui-tests.yml:
+# third-party/sherpa-onnx/sherpa-onnx-android.aar bundles arm64-v8a natives
+# only (deliberate — see AAR_RESOLUTION.md), so the native library is simply
+# absent on the x86_64 emulator ui-tests.yml boots, and the test self-skips
+# there. Real signal needs real arm64 hardware, which on free infrastructure
+# means a Firebase Test Lab physical device.
+#
+# Manual dispatch only: physical-device runs draw on the project's Test Lab
+# quota and take ~10 min, so this is for release prep and for any change that
+# touches the model, the espeak-ng data, the sherpa-onnx AAR, or the engine
+# config — not for every push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Must be a PHYSICAL device: Test Lab's virtual devices are x86/x86_64
+      # and would just skip the test. Test Lab retires models over time (the
+      # once-standard "redfin" Pixel 5 is already gone), so re-check with
+      #   gcloud firebase test android models list
+      # if a run reports an unknown model. Any arm64-v8a phone at API >= 31
+      # (the project's minSdk) works.
+      device_model:
+        description: "Test Lab physical device model id (must be arm64, API >= 31)"
+        required: false
+        default: "OP535DL1"   # OnePlus Nord CE 2 Lite 5G — arm64-v8a, API 34
+      device_version:
+        description: "Android API level for that device"
+        required: false
+        default: "34"
+
+concurrency:
+  group: tts-audio-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audio-test:
+    name: Pocket TTS audio output (arm64 device)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # core:tts is a library module, so this is the only APK produced: it is
+      # self-instrumenting (targetPackage == its own package) and already
+      # contains the arm64 natives, the ONNX voice model and espeak-ng-data.
+      - name: Assemble instrumentation test APK
+        run: ./gradlew :core:tts:assembleDebugAndroidTest
+
+      - name: Locate test APK
+        id: apk
+        run: |
+          APK=$(find core/tts/build/outputs/apk/androidTest -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No androidTest APK was produced"
+            exit 1
+          fi
+          echo "Built $APK ($(du -h "$APK" | cut -f1))"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      # Reuses the service account already wired up for App Distribution. It
+      # additionally needs roles/cloudtestservice.testAdmin and
+      # roles/viewer on the project, plus the Cloud Testing and Cloud Tool
+      # Results APIs enabled — grant those once if this step 403s.
+      - name: Authenticate to Google Cloud
+        run: |
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" | base64 --decode > "$RUNNER_TEMP/gcp-sa.json"
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/gcp-sa.json"
+          echo "GOOGLE_CLOUD_PROJECT=$(jq -r .project_id "$RUNNER_TEMP/gcp-sa.json")" >> "$GITHUB_ENV"
+
+      # --app and --test are both required by gcloud, and for a self-
+      # instrumenting library test APK they are the same file. Test Lab
+      # installs it once and instruments it in place.
+      - name: Run on Firebase Test Lab
+        run: |
+          gcloud firebase test android run \
+            --type instrumentation \
+            --project "$GOOGLE_CLOUD_PROJECT" \
+            --app "${{ steps.apk.outputs.path }}" \
+            --test "${{ steps.apk.outputs.path }}" \
+            --device "model=${{ inputs.device_model }},version=${{ inputs.device_version }},locale=en,orientation=portrait" \
+            --test-targets "class xyz.libravault.core.tts.pocket.PocketTtsAudioOutputTest" \
+            --timeout 15m \
+            --results-dir "tts-audio-${{ github.run_id }}" \
+            --format json
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/gcp-sa.json"
+
+      - name: Upload test APK for local reproduction
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tts-audio-test-apk-${{ github.run_number }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 7

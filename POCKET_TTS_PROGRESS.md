@@ -46,7 +46,8 @@ end to end:
   turned out to be CC-BY-NC - non-commercial only, can't ship in this app) to
   describe the single bundled VITS voice instead.
 - `PocketTtsEngine.initialize()/speak()/setSpeechRate()` call the real
-  `OfflineTts` API (vendored as `core/tts/.../pocket/sherpa/Tts.kt`).
+  `OfflineTts` API (vendored as `core/tts/src/main/kotlin/com/k2fsa/sherpa/onnx/Tts.kt`
+  — that package is required for JNI symbol resolution, see AAR_RESOLUTION.md).
 
 **iOS** (new):
 - `PocketTTSEngine.swift` wraps the same sherpa-onnx C API (vendored as
