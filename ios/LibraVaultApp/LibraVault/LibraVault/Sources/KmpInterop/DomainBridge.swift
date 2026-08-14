@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import NaturalLanguage
 
 // MARK: - KMP Domain Bridge
 // Provides Swift-friendly wrappers around what was meant to become Kotlin
@@ -297,8 +298,37 @@ class TTSEngineBridge: TTSEngineProtocol {
         guard !Self.isRunningUnderXCTest, !text.isEmpty else { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = Self.scaledRate(for: rate)
+        utterance.voice = Self.voice(for: text)
         synthesizer.stopSpeaking(at: .immediate)
         synthesizer.speak(utterance)
+    }
+
+    /// Left unset, `AVSpeechUtterance.voice` defaults to whatever voice matches the
+    /// *device's* system language (Settings > General > Language & Region) —
+    /// nothing to do with the language of the book actually being read. Reported in
+    /// the field as an English PDF/EPUB being read in a Dutch voice on an iPad set
+    /// to Dutch. Detects the dominant language of the text being spoken instead and
+    /// asks for a voice in that language.
+    static func voice(for text: String) -> AVSpeechSynthesisVoice? {
+        guard let languageCode = detectedLanguageCode(for: text) else { return nil }
+        // AVSpeechSynthesisVoice(language:) does its own fuzzy region matching (an
+        // "en" hit resolves to whichever en-* voice is installed) and returns nil
+        // if nothing matches at all — speak() then falls back to
+        // AVSpeechUtterance's own default (today's device-language behaviour),
+        // rather than throwing, for a language with no installed voice.
+        AVSpeechSynthesisVoice(language: languageCode)
+    }
+
+    /// Split out from `voice(for:)` as its own pure function so it's unit-testable
+    /// without depending on the real device/Simulator voice catalog, which varies
+    /// by installed language packs and isn't something CI controls.
+    static func detectedLanguageCode(for text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        // Capping the sample keeps this fast for a full chapter's worth of text —
+        // NLLanguageRecognizer's accuracy plateaus well before that on ordinary
+        // prose, so there's nothing gained from feeding it more.
+        recognizer.processString(String(text.prefix(1_000)))
+        return recognizer.dominantLanguage?.rawValue
     }
 
     func stop() async {
