@@ -208,4 +208,10 @@ dependencies {
 
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)
+    // Robolectric (JUnit4-only) — ManifestPermissionsTest reads the real merged
+    // manifest. Runs alongside this module's JUnit5 tests via the vintage engine,
+    // same pattern as :feature:library / :feature:settings.
+    testImplementation(libs.bundles.testing.android)
+    testImplementation(libs.junit)
+    testRuntimeOnly(libs.junit5.vintage.engine)
 }
