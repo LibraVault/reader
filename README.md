@@ -203,6 +203,12 @@ Five GitHub Actions workflows (all free for public repos):
 
 ---
 
+## Troubleshooting
+
+**Added a vault but don't see any books on the home screen?** Pull to refresh on the home screen (the refresh icon next to the gear/settings icon), or check Settings → Vaults to confirm the folder was added. A scan runs automatically when a vault is added, but if one was already in progress it may take a refresh to pick up a newly added vault.
+
+---
+
 ## Donate
 
 LibraVault is **free, open source, and has no ads, no tracking, no accounts** — it exists because the people building it believe in it. If it brings you value, consider supporting its development.
