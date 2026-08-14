@@ -9,6 +9,14 @@ struct LibraVaultApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                // Fires when the OS hands LibraVault a file via "Open In"/"Copy to
+                // LibraVault" from another app's share sheet (see Info.plist's
+                // CFBundleDocumentTypes) — the single entry point for every format
+                // LibraryFileScanner knows how to read, whether the app was already
+                // running or just launched to handle this.
+                .onOpenURL { url in
+                    appState.importSharedFile(url: url)
+                }
         }
     }
 }

@@ -69,4 +69,49 @@ final class VaultPersistenceTests: XCTestCase {
         let vault = Vault(id: "1", displayName: "Bad", bookmarkData: Data([0xFF, 0x00, 0x01]))
         XCTAssertNil(VaultPersistence().resolvedURL(for: vault))
     }
+
+    // MARK: - importedVault
+
+    func testImportedVaultCreatesItsBackingFolder() throws {
+        let base = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let vault = try VaultPersistence(importedVaultBaseDirectory: base).importedVault()
+
+        XCTAssertEqual(vault.displayName, "Imported")
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(
+            atPath: base.appendingPathComponent("Imported").path,
+            isDirectory: &isDirectory
+        )
+        XCTAssertTrue(exists)
+        XCTAssertTrue(isDirectory.boolValue)
+    }
+
+    /// Its id is fixed rather than a fresh UUID specifically so a caller that re-derives
+    /// it (as AppState.importSharedFile does on every share) always recognizes an
+    /// already-persisted one instead of minting a duplicate — see
+    /// AppStateFileImportTests for the AppState-level guard on that.
+    func testImportedVaultIdIsStableAcrossSeparatePersistenceInstances() throws {
+        let base = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let first = try VaultPersistence(importedVaultBaseDirectory: base).importedVault()
+        let second = try VaultPersistence(importedVaultBaseDirectory: base).importedVault()
+
+        XCTAssertEqual(first.id, second.id)
+    }
+
+    func testImportedVaultReturnsThePersistedVaultOnceOneHasBeenSaved() throws {
+        let base = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let defaults = makeIsolatedDefaults()
+        let persistence = VaultPersistence(defaults: defaults, importedVaultBaseDirectory: base)
+        let created = try persistence.importedVault()
+        persistence.save([created])
+
+        let reused = try persistence.importedVault()
+
+        XCTAssertEqual(reused, created)
+    }
 }

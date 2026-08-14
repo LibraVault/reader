@@ -264,6 +264,67 @@ final class AppState: ObservableObject {
         Task { await loadLibrary() }
     }
 
+    /// Entry point for a file the OS hands LibraVault via "Open In"/"Copy to
+    /// LibraVault" from another app's share sheet (see LibraVaultApp.swift's
+    /// `.onOpenURL` and Info.plist's CFBundleDocumentTypes). Unlike `addVault`, which
+    /// grants access to a whole folder the user picked, this receives a single file —
+    /// so instead of bookmarking it in place, it's copied into the permanent
+    /// `VaultPersistence.importedVault()` folder and the library is rescanned, the same
+    /// as if it had always lived in a vault.
+    ///
+    /// Silently no-ops (via `error`, not a crash) on an extension LibraryFileScanner
+    /// doesn't recognize, or on any failure to create/copy into the Imported vault —
+    /// there's no user-facing recovery step beyond "try sharing a supported file again".
+    func importSharedFile(url: URL) {
+        guard LibraryFileScanner.extensionFormats[url.pathExtension.lowercased()] != nil else {
+            error = AppError.unsupportedFileType
+            return
+        }
+        guard let vault = try? vaultPersistence.importedVault(),
+              let destinationFolder = vaultPersistence.resolvedURL(for: vault) else {
+            error = AppError.storageAccessDenied
+            return
+        }
+        if !vaults.contains(where: { $0.id == vault.id }) {
+            vaults.append(vault)
+            vaultPersistence.save(vaults)
+        }
+
+        // The incoming URL (from another app's document provider, e.g. Files/iCloud
+        // Drive) may itself be security-scoped even though the destination isn't —
+        // mirrors the start/stop pairing already used in makeVault/LibraryFileScanner.
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+
+        let destinationURL = Self.uniqueDestinationURL(for: url.lastPathComponent, in: destinationFolder)
+        do {
+            try FileManager.default.copyItem(at: url, to: destinationURL)
+        } catch {
+            self.error = AppError.storageAccessDenied
+            return
+        }
+        Task { await loadLibrary() }
+    }
+
+    /// Appends " 2", " 3", … before the extension until the name is free, so importing
+    /// two different files that happen to share a filename (e.g. re-sharing what looks
+    /// like "the same" book from a different source) never silently overwrites the
+    /// earlier one.
+    private static func uniqueDestinationURL(for filename: String, in folder: URL) -> URL {
+        var candidate = folder.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
+
+        let ext = (filename as NSString).pathExtension
+        let base = (filename as NSString).deletingPathExtension
+        var counter = 2
+        repeat {
+            let newName = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+            candidate = folder.appendingPathComponent(newName)
+            counter += 1
+        } while FileManager.default.fileExists(atPath: candidate.path)
+        return candidate
+    }
+
     private func scanVaults() -> [BookData] {
         vaults.flatMap { vault -> [BookData] in
             guard let resolvedURL = vaultPersistence.resolvedURL(for: vault) else { return [] }
@@ -536,6 +597,7 @@ enum AppError: LocalizedError {
     case libraryLoadFailed(String)
     case bookNotFound
     case storageAccessDenied
+    case unsupportedFileType
 
     var errorDescription: String? {
         switch self {
@@ -545,6 +607,8 @@ enum AppError: LocalizedError {
             return "Book not found"
         case .storageAccessDenied:
             return "Storage access denied"
+        case .unsupportedFileType:
+            return "This file type isn't supported"
         }
     }
 }

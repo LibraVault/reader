@@ -12,5 +12,148 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!--
+	 Registers LibraVault as an "Open In"/"Copy to LibraVault" destination for every
+	 format LibraryFileScanner.extensionFormats knows how to scan (see that file's
+	 dictionary — keep these two lists in sync). LSHandlerRank is Alternate rather than
+	 Owner/Default for all of them: LibraVault reads these formats, it doesn't own/author
+	 any of them, so it shouldn't try to claim the OS default for e.g. .pdf.
+	 -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Book</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.idpf.epub-container</string>
+				<string>com.adobe.pdf</string>
+				<string>public.mp3</string>
+				<string>public.mpeg-4-audio</string>
+				<string>public.aac-audio</string>
+				<string>xyz.libravault.markdown</string>
+				<string>xyz.libravault.mobi</string>
+				<string>xyz.libravault.cbz</string>
+				<string>xyz.libravault.ogg-audio</string>
+				<string>xyz.libravault.opus-audio</string>
+				<string>xyz.libravault.flac-audio</string>
+			</array>
+		</dict>
+	</array>
+	<!--
+	 Custom UTIs for formats with no suitable system-defined type. epub/pdf/mp3/m4a
+	 (m4b)/aac all have real system UTIs (org.idpf.epub-container, com.adobe.pdf,
+	 public.mp3, public.mpeg-4-audio, public.aac-audio) and need no declaration here.
+	 -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.markdown</string>
+			<key>UTTypeDescription</key>
+			<string>Markdown Document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.mobi</string>
+			<key>UTTypeDescription</key>
+			<string>Mobipocket eBook</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mobi</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.cbz</string>
+			<key>UTTypeDescription</key>
+			<string>Comic Book Archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbz</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.ogg-audio</string>
+			<key>UTTypeDescription</key>
+			<string>Ogg Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ogg</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.opus-audio</string>
+			<key>UTTypeDescription</key>
+			<string>Opus Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>opus</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.libravault.flac-audio</string>
+			<key>UTTypeDescription</key>
+			<string>FLAC Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>flac</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
