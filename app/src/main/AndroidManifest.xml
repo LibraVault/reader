@@ -7,7 +7,22 @@
           READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE
         File access is granted solely via Storage Access Framework (SAF) URIs
         chosen explicitly by the user.
+
+        AGP's ManifestMerger2 (com.android.manifmerger.XmlDocument) auto-injects
+        READ_PHONE_STATE, READ_EXTERNAL_STORAGE and WRITE_EXTERNAL_STORAGE as a
+        legacy permission-split compatibility shim, keyed off the *lowest*
+        minSdkVersion declared by any merged library manifest (several AndroidX/
+        Readium transitive deps still declare minSdkVersion 14-19), even though
+        this app's own effective minSdk is 31 and nothing in the source tree
+        requests them. Confirmed via a clean build + manifest-merger-blame
+        report: no dependency AAR's own manifest declares any of the three: the
+        strings live in AGP's manifest-merger jar itself, not in any of our
+        dependencies. Explicitly removed here so they don't ship or keep getting
+        flagged in reviews (see F-Droid MR !43520 note_3686431461).
     -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
 
     <!-- Donation payment verification (BTCPay invoice polling) -->
     <uses-permission android:name="android.permission.INTERNET" />
