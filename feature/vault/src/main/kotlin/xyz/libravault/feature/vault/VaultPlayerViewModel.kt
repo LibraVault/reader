@@ -22,7 +22,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import xyz.libravault.core.vaultcontent.VaultDataSource
 import xyz.libravault.core.vaultcrypto.VaultFileReader
+import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.VaultStore
 import javax.inject.Inject
 
 private const val SKIP_MS = 30_000L
@@ -65,9 +67,13 @@ class VaultPlayerViewModel @Inject constructor(
 
     private var reader: VaultFileReader? = null
     private var player: ExoPlayer? = null
+    private var store: VaultStore? = null
 
     private val _uiState = MutableStateFlow(VaultPlayerUiState())
     val uiState: StateFlow<VaultPlayerUiState> = _uiState.asStateFlow()
+
+    private val _bookmarks = MutableStateFlow<List<VaultBookmark>>(emptyList())
+    val bookmarks: StateFlow<List<VaultBookmark>> = _bookmarks.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -75,14 +81,16 @@ class VaultPlayerViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, error = "Vault is locked") }
                 return@launch
             }
-            val store = sessionManager.requireUnlocked(vaultId)
-            val entry = store.listEntries().find { it.fileId.contentEquals(fileId) }
+            val s = sessionManager.requireUnlocked(vaultId)
+            store = s
+            val entry = s.listEntries().find { it.fileId.contentEquals(fileId) }
             if (entry == null) {
                 _uiState.update { it.copy(isLoading = false, error = "File not found in this vault") }
                 return@launch
             }
+            _bookmarks.value = entry.bookmarks
 
-            val r = store.openReader(fileId)
+            val r = s.openReader(fileId)
             reader = r
             val exo = ExoPlayer.Builder(context).build()
             player = exo
@@ -142,6 +150,52 @@ class VaultPlayerViewModel @Inject constructor(
 
     fun onSkipForward() {
         player?.let { exo -> exo.seekTo((exo.currentPosition + SKIP_MS).coerceAtMost(exo.duration.coerceAtLeast(0))) }
+    }
+
+    // ── Bookmarks ─────────────────────────────────────────────────────────────
+
+    /** Bookmarks the current playback position using the `"ms:N"` convention
+     * [VaultBookmark.positionRef] shares with `core.domain.model.Bookmark` —
+     * a no-op if the vault store isn't reachable yet (e.g. tapped before the
+     * entry finished loading). */
+    fun addBookmark(label: String? = null) {
+        val s = store ?: return
+        val positionMs = _uiState.value.positionMs
+        viewModelScope.launch {
+            val bookmark = s.addBookmark(fileId, "ms:$positionMs", label ?: formatPosition(positionMs))
+            _bookmarks.update { it + bookmark }
+        }
+    }
+
+    fun removeBookmark(id: Long) {
+        val s = store ?: return
+        viewModelScope.launch {
+            s.removeBookmark(fileId, id)
+            _bookmarks.update { list -> list.filterNot { it.id == id } }
+        }
+    }
+
+    fun updateBookmarkNote(id: Long, note: String?) {
+        val s = store ?: return
+        viewModelScope.launch {
+            s.updateBookmarkNote(fileId, id, note)
+            _bookmarks.update { list -> list.map { if (it.id == id) it.copy(note = note) else it } }
+        }
+    }
+
+    fun seekToBookmark(bookmark: VaultBookmark) {
+        val ms = bookmark.positionRef.removePrefix("ms:").toLongOrNull() ?: return
+        player?.seekTo(ms)
+        player?.play()
+        _uiState.update { it.copy(positionMs = ms, isPlaying = true) }
+    }
+
+    private fun formatPosition(ms: Long): String {
+        val totalSec = ms / 1000
+        val h = totalSec / 3600
+        val m = (totalSec % 3600) / 60
+        val s = totalSec % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
     }
 
     override fun onCleared() {

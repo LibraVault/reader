@@ -39,7 +39,7 @@ data class VaultHighlight(
  */
 data class VaultBookmark(
     val id: Long,
-    val positionRef: String, // CFI/Locator JSON for EPUB, "page:N" for PDF — same convention as BookmarkEntity
+    val positionRef: String, // CFI/Locator JSON for EPUB, "page:N" for PDF, "ms:N" for audio — same convention as BookmarkEntity
     val label: String? = null,
     val note: String? = null,
     val createdAtEpochMillis: Long,
