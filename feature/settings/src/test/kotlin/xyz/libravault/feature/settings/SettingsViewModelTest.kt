@@ -74,9 +74,6 @@ class SettingsViewModelTest {
     private val scanVaultsUseCase = mockk<ScanVaultUseCase>()
     private val logger     = mockk<LibravaultLogger>(relaxed = true)
     private val supporterRepository = mockk<SupporterRepository>(relaxed = true)
-    private val donationClient = mockk<DonationClient>(relaxed = true)
-    private val staticAddresses = mockk<StaticDonationAddresses>(relaxed = true)
-    private val networkCapability = mockk<NetworkCapability>(relaxed = true)
     private val context = mockk<Context>()
     private val packageManager = mockk<PackageManager>()
 
@@ -103,7 +100,6 @@ class SettingsViewModelTest {
         every { prefsRepo.update(any()) }   just Runs
         every { observeVaults() }           returns vaultsFlow
         every { scanVaultsUseCase() }        returns flowOf(ScanProgress.Completed(0))
-        every { supporterRepository.getPendingInvoiceId() } returns null
 
         every { ttsEngineProvider.engineType } returns ttsEngineTypeFlow
         every { ttsEngineProvider.engine }     returns ttsEngineFlow
@@ -128,9 +124,9 @@ class SettingsViewModelTest {
         return SettingsViewModel(
             prefsRepo, coverCache, libraryRepository, vaultManager,
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
-            supporterRepository, donationClient, staticAddresses,
+            supporterRepository,
             ttsEngineProvider, ttsPreferences, pocketModelManager, pocketVoiceCatalog,
-            networkCapability, context,
+            context,
         )
     }
 
@@ -423,74 +419,21 @@ class SettingsViewModelTest {
             assertEquals("unknown", viewModel().appVersionName)
         }
 
-    @Test
-    fun `hasNetwork reflects the injected NetworkCapability`() = runTest(mainDispatcher) {
-        every { networkCapability.hasNetwork } returns true
-        assertTrue(viewModel().hasNetwork)
-
-        every { networkCapability.hasNetwork } returns false
-        assertFalse(viewModel().hasNetwork)
-    }
-
-    // ── Donation ─────────────────────────────────────────────────────────────
+    // ── Support ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `static invoice marks pending state as static and never polls for status`() = runTest {
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(testDispatcher)
+    fun `isSupporter passes through the repository's stored value without a way to set it`() =
+        runTest(mainDispatcher) {
+            every { supporterRepository.isSupporter() } returns true
+            every { supporterRepository.observe() } returns flowOf(true)
 
-        coEvery { donationClient.createInvoice(10) } returns NewInvoice(id = "", checkoutLink = "")
-        coEvery { donationClient.getPaymentInfo("", "BTC") } returns
-            InvoicePaymentInfo(address = "bc1qstatic", paymentLink = "", cryptoAmount = "0.00042")
+            viewModel().isSupporter.test {
+                assertTrue(awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
 
-        val vm = viewModel()
-        vm.donationState.test {
-            assertEquals(DonationState.Idle, awaitItem())
-
-            vm.createDonationInvoice(10, "BTC")
-            runCurrent()
-
-            assertEquals(DonationState.Creating, awaitItem())
-            val pending = awaitItem() as DonationState.Pending
-            assertTrue(pending.isStatic)
-            assertEquals("bc1qstatic", pending.address)
-
-            cancelAndIgnoreRemainingEvents()
+            // No donation/invoice flow exists anymore to call this — SupporterRepository
+            // itself is still exercised in SupporterRepositoryTest.
+            verify(exactly = 0) { supporterRepository.setSupporter(any()) }
         }
-
-        // No polling should ever be attempted for a static, no-network address —
-        // not even once the (unused) poll interval would have elapsed.
-        testDispatcher.scheduler.advanceTimeBy(60_000)
-        coVerify(exactly = 0) { donationClient.getInvoiceStatus(any()) }
-    }
-
-    @Test
-    fun `live invoice marks pending state as non-static and polls for status`() = runTest {
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(testDispatcher)
-
-        coEvery { donationClient.createInvoice(10) } returns
-            NewInvoice(id = "inv-live", checkoutLink = "https://pay.libravault.xyz/i/inv-live")
-        coEvery { donationClient.getPaymentInfo("inv-live", "BTC") } returns
-            InvoicePaymentInfo(address = "bc1qlive", paymentLink = "", cryptoAmount = "0.00042")
-        coEvery { donationClient.getInvoiceStatus("inv-live") } returns InvoiceStatus.Processing
-
-        val vm = viewModel()
-        vm.donationState.test {
-            assertEquals(DonationState.Idle, awaitItem())
-
-            vm.createDonationInvoice(10, "BTC")
-            runCurrent()
-
-            assertEquals(DonationState.Creating, awaitItem())
-            val pending = awaitItem() as DonationState.Pending
-            assertFalse(pending.isStatic)
-
-            cancelAndIgnoreRemainingEvents()
-        }
-
-        testDispatcher.scheduler.advanceTimeBy(15_000)
-        runCurrent()
-        coVerify(atLeast = 1) { donationClient.getInvoiceStatus("inv-live") }
-    }
 }

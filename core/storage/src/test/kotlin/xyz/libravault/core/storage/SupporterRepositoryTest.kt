@@ -10,9 +10,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -67,37 +65,6 @@ class SupporterRepositoryTest {
         verify { mockEditor.apply() }
     }
 
-    // ── pending invoice id ───────────────────────────────────────────────────
-
-    @Test
-    fun `getPendingInvoiceId returns null when nothing is stored`() {
-        every { mockPrefs.getString("pending_invoice_id", null) } returns null
-        assertNull(repository.getPendingInvoiceId())
-    }
-
-    @Test
-    fun `getPendingInvoiceId reflects stored value`() {
-        every { mockPrefs.getString("pending_invoice_id", null) } returns "inv-42"
-        assertEquals("inv-42", repository.getPendingInvoiceId())
-    }
-
-    @Test
-    fun `setPendingInvoiceId with a value stores it`() {
-        repository.setPendingInvoiceId("inv-42")
-
-        verify { mockEditor.putString("pending_invoice_id", "inv-42") }
-        verify { mockEditor.apply() }
-    }
-
-    @Test
-    fun `setPendingInvoiceId with null removes the key instead of storing it`() {
-        repository.setPendingInvoiceId(null)
-
-        verify { mockEditor.remove("pending_invoice_id") }
-        verify(exactly = 0) { mockEditor.putString("pending_invoice_id", any()) }
-        verify { mockEditor.apply() }
-    }
-
     // ── observe() ─────────────────────────────────────────────────────────────
 
     @Test
@@ -136,9 +103,9 @@ class SupporterRepositoryTest {
         repository.observe().test {
             assertFalse(awaitItem())
 
-            // A change to an unrelated key (e.g. pending_invoice_id) must not
-            // trigger a re-emission of the supporter flag.
-            listenerSlot.captured.onSharedPreferenceChanged(mockPrefs, "pending_invoice_id")
+            // A change to an unrelated key must not trigger a re-emission of
+            // the supporter flag.
+            listenerSlot.captured.onSharedPreferenceChanged(mockPrefs, "some_other_key")
 
             expectNoEvents()
             cancelAndIgnoreRemainingEvents()

@@ -24,9 +24,6 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
 
-    <!-- Donation payment verification (BTCPay invoice polling) -->
-    <uses-permission android:name="android.permission.INTERNET" />
-
     <!-- Background audio playback -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />

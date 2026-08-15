@@ -71,10 +71,8 @@ fun SettingsScreen(
     val prefs by viewModel.preferences.collectAsState()
     val vaultState by viewModel.vaultState.collectAsState()
     val isSupporter by viewModel.isSupporter.collectAsState()
-    val donationState by viewModel.donationState.collectAsState()
     val ttsState by viewModel.ttsState.collectAsState()
     val context = LocalContext.current
-    var showDonateSheet by remember { mutableStateOf(false) }
 
     // SAF folder picker launcher
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -337,14 +335,8 @@ fun SettingsScreen(
             SettingLabel(
                 title    = "Permissions",
                 subtitle = "This app does not request location, contacts, camera, or broad " +
-                        "file access. It reads only folders you explicitly grant it. " +
-                        if (viewModel.hasNetwork) {
-                            "Internet is used only to verify donations via the " +
-                                "self-hosted BTCPay server at pay.libravault.xyz."
-                        } else {
-                            "This build has no internet permission and makes no network " +
-                                "calls of any kind — donations use static addresses only."
-                        },
+                        "file access. It reads only folders you explicitly grant it, and " +
+                        "makes no network calls of any kind.",
             )
 
             Divider()
@@ -365,28 +357,23 @@ fun SettingsScreen(
             SettingLabel(
                 title    = "LibraVault is free",
                 subtitle = "No ads, no tracking, no accounts. If this app brings you " +
-                        "joy, consider supporting its development.",
+                        "joy, consider supporting its development. BTC and XMR " +
+                        "donation addresses are on the website, not in this app.",
             )
 
             OutlinedButton(
-                onClick = { showDonateSheet = true },
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_URL)))
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (isSupporter) "Donate again" else "Donate BTC or XMR")
+                Text("Support the Project")
             }
 
             Spacer(Modifier.height(32.dp))
         }
-    }
-
-    if (showDonateSheet) {
-        DonateSheet(
-            isSupporter = isSupporter,
-            donationState = donationState,
-            onDismiss = { showDonateSheet = false },
-            onCreateInvoice = viewModel::createDonationInvoice,
-            onCancel = viewModel::cancelDonation,
-        )
     }
 }
 

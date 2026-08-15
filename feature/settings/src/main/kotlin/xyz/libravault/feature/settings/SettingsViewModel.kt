@@ -6,8 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -54,29 +52,6 @@ data class TtsSettingsUiState(
     val modelStatus: ModelStatus = ModelStatus.Idle,
 )
 
-sealed class DonationState {
-    object Idle : DonationState()
-    object Creating : DonationState()
-    data class Pending(
-        val invoiceId: String,
-        val address: String,
-        val paymentLink: String,
-        val cryptoAmount: String,
-        val checkoutLink: String,
-        // False for a live BTCPay invoice being polled for payment (Play);
-        // true for a static, no-network donation address (F-Droid) that
-        // will never resolve on its own — the UI must not imply otherwise.
-        val isStatic: Boolean,
-    ) : DonationState()
-    object Paid : DonationState()
-    data class NoMethod(
-        val coin: String,
-        val fallbackAddress: String,
-        val checkoutLink: String,
-    ) : DonationState()
-    data class Error(val message: String) : DonationState()
-}
-
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val prefsRepo: UserPreferencesRepository,
@@ -89,13 +64,10 @@ class SettingsViewModel @Inject constructor(
     private val scanVaultsUseCase: ScanVaultUseCase,
     private val logger: LibravaultLogger,
     private val supporterRepository: SupporterRepository,
-    private val donationClient: DonationClient,
-    private val staticAddresses: StaticDonationAddresses,
     private val ttsEngineProvider: TtsEngineProvider,
     private val ttsPreferences: TtsPreferences,
     private val pocketModelManager: PocketModelManager,
     private val pocketVoiceCatalog: PocketVoiceCatalog,
-    private val networkCapability: NetworkCapability,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -116,9 +88,12 @@ class SettingsViewModel @Inject constructor(
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull() ?: "unknown"
 
-    /** True on the play flavor (BTCPay); false on fdroid (no network calls at all). */
-    val hasNetwork: Boolean = networkCapability.hasNetwork
-
+    /**
+     * Reflects whatever's already stored — this app makes no network calls of any
+     * kind (see [SUPPORT_URL]), so nothing can flip this to `true` going forward.
+     * Kept read-only rather than deleted so donors who earned the badge before
+     * the in-app BTCPay flow was removed keep seeing it.
+     */
     val isSupporter: StateFlow<Boolean> = supporterRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), supporterRepository.isSupporter())
 
@@ -153,31 +128,10 @@ class SettingsViewModel @Inject constructor(
     private val _vaultState = MutableStateFlow(VaultManagementState())
     val vaultState: StateFlow<VaultManagementState> = _vaultState.asStateFlow()
 
-    private val _donationState = MutableStateFlow<DonationState>(DonationState.Idle)
-    val donationState: StateFlow<DonationState> = _donationState.asStateFlow()
-
-    private var donationJob: Job? = null
-
     init {
         viewModelScope.launch {
             observeVaults().collect { vaults ->
                 _vaultState.value = _vaultState.value.copy(vaults = vaults)
-            }
-        }
-        // Resume polling if the app was closed while waiting for a payment
-        val pendingId = supporterRepository.getPendingInvoiceId()
-        if (pendingId != null && !supporterRepository.isSupporter()) {
-            donationJob = viewModelScope.launch { pollUntilPaid(pendingId) }
-        }
-        // Check BTCPay for any settled invoices in case badge was never flipped
-        if (!supporterRepository.isSupporter()) {
-            viewModelScope.launch {
-                try {
-                    if (donationClient.hasAnySettledInvoice()) {
-                        supporterRepository.setSupporter(true)
-                        logger.i("Donation", "Settled invoice found on startup — supporter activated")
-                    }
-                } catch (_: Exception) { }
             }
         }
     }
@@ -307,73 +261,6 @@ class SettingsViewModel @Inject constructor(
                         )
                     }
                 }
-            }
-        }
-    }
-
-    // ── Donation ─────────────────────────────────────────────────────────────
-
-    fun createDonationInvoice(amountUsd: Int, coin: String) {
-        donationJob?.cancel()
-        donationJob = viewModelScope.launch {
-            _donationState.value = DonationState.Creating
-            try {
-                val invoice = donationClient.createInvoice(amountUsd)
-                supporterRepository.setPendingInvoiceId(invoice.id)
-                val paymentInfo = donationClient.getPaymentInfo(invoice.id, coin)
-                if (paymentInfo == null) {
-                    val fallback = if (coin == "XMR") staticAddresses.xmr else staticAddresses.btc
-                    if (fallback.isNotEmpty()) {
-                        _donationState.value = DonationState.NoMethod(coin, fallback, invoice.checkoutLink)
-                    } else {
-                        _donationState.value = DonationState.Error("BTCPay has no ${coin} method; try again later")
-                    }
-                    return@launch
-                }
-                _donationState.value = DonationState.Pending(
-                    invoiceId = invoice.id,
-                    address = paymentInfo.address,
-                    paymentLink = paymentInfo.paymentLink,
-                    cryptoAmount = paymentInfo.cryptoAmount,
-                    checkoutLink = invoice.checkoutLink,
-                    isStatic = invoice.isStatic,
-                )
-                if (!invoice.isStatic) pollUntilPaid(invoice.id)
-            } catch (e: Exception) {
-                logger.e("Donation", "Invoice creation failed", e)
-                _donationState.value = DonationState.Error(e.message ?: "Failed to create payment request")
-            }
-        }
-    }
-
-    fun cancelDonation() {
-        donationJob?.cancel()
-        supporterRepository.setPendingInvoiceId(null)
-        _donationState.value = DonationState.Idle
-    }
-
-    private suspend fun pollUntilPaid(invoiceId: String) {
-        while (true) {
-            delay(15_000)
-            val status = try {
-                donationClient.getInvoiceStatus(invoiceId)
-            } catch (e: Exception) {
-                InvoiceStatus.Unknown
-            }
-            when (status) {
-                InvoiceStatus.Processing, InvoiceStatus.Settled -> {
-                    supporterRepository.setSupporter(true)
-                    supporterRepository.setPendingInvoiceId(null)
-                    logger.i("Donation", "Payment confirmed for invoice $invoiceId")
-                    _donationState.value = DonationState.Paid
-                    return
-                }
-                InvoiceStatus.Expired, InvoiceStatus.Invalid -> {
-                    supporterRepository.setPendingInvoiceId(null)
-                    _donationState.value = DonationState.Idle
-                    return
-                }
-                else -> { /* keep polling */ }
             }
         }
     }
