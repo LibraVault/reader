@@ -110,6 +110,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # This — not the GH_TOKEN env var above — is what actually
+          # controls the identity claude-code-action uses for git/gh
+          # operations: with claude_code_oauth_token set, it defaults to
+          # Claude's own claude[bot] App regardless of GH_TOKEN. Forced to
+          # GITHUB_TOKEN explicitly for consistency with dev-agent.yml
+          # (see that file's matching comment for why).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Read .claude/agents/qa-agent.md in full — it is your complete
             operating persona for this run. Verify PR #${{ steps.guard.outputs.pr_number }}
@@ -171,23 +178,23 @@ jobs:
           if [ "$VERDICT" = "pass" ]; then
             GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-review
           else
-            # Deterministic retry cap: count prior status:in-progress
-            # labeling events on this PR via the timeline API, rather than
-            # trusting the agent to count its own past comments (fragile —
-            # a human echoing a "QA verdict:" line, or a truncated comment
-            # listing, would throw off an LLM's count). One prior event
-            # means this PR already got its one auto-retry and failed
-            # again — exhausted. Zero means this is its first-ever fail.
-            # Piping through a separate jq invocation rather than gh's own
-            # -q: --paginate merges array-returning endpoints into one
-            # array before printing, but -q applies per-page when combined
-            # with --paginate — for a timeline long enough to span pages,
-            # that would print one length per page instead of one total.
-            PRIOR_ROUNDS=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/timeline" --paginate \
-              | jq '[.[] | select(.event == "labeled" and .label.name == "status:in-progress")] | length')
-            echo "Prior QA-fail rounds for #$PR_NUMBER: $PRIOR_ROUNDS"
-            if [ "$PRIOR_ROUNDS" -eq 0 ]; then
+            # Deterministic retry cap: look for a marker comment that only
+            # this exact branch ever posts, rather than (a) trusting the
+            # agent to count its own past comments — fragile, a human
+            # echoing a "QA verdict:" line would throw off an LLM's count —
+            # or (b) paginating the PR's entire issue timeline to count
+            # status:in-progress label events, which conflates ANY reason
+            # that label was ever applied with an actual QA-triggered
+            # retry, and costs a full timeline fetch just to answer a
+            # yes/no question. A single non-paginated comment list, filtered
+            # for a marker this code alone writes, has neither problem.
+            MARKER="<!-- qa-agent:retry-used -->"
+            PRIOR_RETRY=$(gh pr view "$PR_NUMBER" --json comments \
+              -q "[.comments[].body | select(contains(\"$MARKER\"))] | length")
+            echo "Prior QA-triggered retries for #$PR_NUMBER: $PRIOR_RETRY"
+            if [ "$PRIOR_RETRY" -eq 0 ]; then
               GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:in-progress
+              gh pr comment "$PR_NUMBER" --body "$MARKER QA failed its first round — routing back to the dev agent for one automated retry."
             else
               gh pr edit "$PR_NUMBER" --add-label status:needs-info
               gh pr comment "$PR_NUMBER" --body "QA failed for the 2nd time — automated retry budget (1 auto-retry) exhausted, routing to a human instead of trying a 3rd time. See the QA verdict comment(s) above for what's still failing."

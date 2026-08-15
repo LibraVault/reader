@@ -144,8 +144,13 @@ jobs:
         # Deterministic, unlike qa-agent.yml/principal-review.yml this
         # mirrors — don't rely solely on the agent remembering to run
         # `gh pr checkout` from its prompt; actions/checkout@v4 otherwise
-        # leaves the runner in detached HEAD on the PR's merge ref.
-        run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+        # leaves the runner in detached HEAD on the PR's merge ref. Also
+        # clears any dev-agent-pr-number.txt that happens to already be
+        # committed on this branch (e.g. leftover from an earlier round)
+        # so the next step never reads stale scratch state.
+        run: |
+          gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+          rm -f dev-agent-pr-number.txt
 
       - name: Run dev agent
         if: steps.guard.outputs.skip != 'true'
@@ -170,6 +175,18 @@ jobs:
           # up, at the cost of drawing on that subscription's own usage
           # limits. See docs/agent-team-pipeline.md.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # This — not the GH_TOKEN env var above — is what actually
+          # controls the identity claude-code-action uses for git/gh
+          # operations: with claude_code_oauth_token set, it defaults to
+          # Claude's own claude[bot] App regardless of GH_TOKEN (confirmed
+          # empirically: PR #162 shows author app/claude despite this step
+          # already setting GH_TOKEN to GITHUB_TOKEN before this fix).
+          # claude[bot]'s installation token is a real GitHub App token,
+          # not the restricted auto-issued GITHUB_TOKEN — its cross-trigger
+          # behavior isn't guaranteed the same "can't trigger further runs"
+          # protection, so force GITHUB_TOKEN explicitly here to keep the
+          # self-retrigger-avoidance reasoning above actually true.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Read .claude/agents/dev-agent.md in full — it is your complete
             operating persona for this run, including what "triage" and
@@ -203,7 +220,13 @@ jobs:
             --max-turns 40
 
       - name: Mint pipeline App token
-        if: steps.guard.outputs.skip != 'true'
+        # !cancelled() rather than the implicit success()-only default: if
+        # "Run dev agent" fails/errors (max-turns exhausted, crash) rather
+        # than being cancelled, this and the next step must still run —
+        # otherwise a revise-mode failure leaves the PR stuck on
+        # status:in-progress forever with status:needs-qa never reapplied
+        # and no visible signal beyond a red X nobody's watching.
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -211,7 +234,7 @@ jobs:
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
 
       - name: Force-classify risk and advance to QA
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Only for the one call that must cross into qa-agent.yml.
@@ -221,7 +244,29 @@ jobs:
           ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
 
           PR_NUMBER=""
-          if [ -f dev-agent-pr-number.txt ]; then
+          if [ "${{ steps.guard.outputs.mode }}" = "revise" ]; then
+            # Already known and authoritative — this run exists
+            # specifically because this PR was labeled status:in-progress.
+            # Don't re-derive it from the scratch file or a search, which
+            # exist only for triage mode (no PR is known yet there until
+            # the agent creates one).
+            PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+
+            # The agent step itself failed/crashed (max-turns exhausted,
+            # error) — don't advance a PR we can't trust is actually fixed
+            # into QA. Route to a human instead of silently proceeding, and
+            # unlike the old design, this branch now actually gets a
+            # chance to run at all thanks to !cancelled() above.
+            if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+              echo "Dev agent run failed for PR #$PR_NUMBER — routing to status:needs-info instead of advancing to QA." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "The dev agent's run failed (crashed or exhausted its turn budget) while revising this PR — routed to a human instead of silently leaving it on status:in-progress or advancing an unfinished fix to QA. See the workflow run log for what happened."
+              exit 0
+            fi
+          fi
+
+          if [ -z "$PR_NUMBER" ] && [ -f dev-agent-pr-number.txt ]; then
             CONTENT=$(tr -d '[:space:]' < dev-agent-pr-number.txt)
             if [ "$CONTENT" != "none" ] && [ -n "$CONTENT" ]; then
               PR_NUMBER="$CONTENT"
@@ -232,10 +277,14 @@ jobs:
           # Fallback if the agent didn't write the file for some reason:
           # gh's search index can lag a just-created PR by a few seconds,
           # so retry briefly rather than accepting a false "nothing to do".
+          # Broadened beyond a literal "Closes" match, matching
+          # resolve_linked_issue.sh's own recognized keyword set, so this
+          # fallback can't be narrower than the check that got this run
+          # started in the first place.
           if [ -z "$PR_NUMBER" ]; then
             for _ in 1 2 3 4 5; do
               PR_NUMBER=$(gh pr list --state open \
-                --search "Closes #${ISSUE_NUMBER} in:body" \
+                --search "(Closes #${ISSUE_NUMBER} OR Fixes #${ISSUE_NUMBER} OR Resolves #${ISSUE_NUMBER}) in:body" \
                 --json number -q '.[0].number // empty')
               [ -n "$PR_NUMBER" ] && break
               sleep 5

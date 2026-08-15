@@ -74,6 +74,10 @@ job.
 
 You'll be re-invoked with `status:in-progress` and the QA agent's report on
 the same PR. Fix the specific gaps it found — don't rescope the whole
-change. After 2 failed QA rounds on the same issue, stop, apply
-`status:needs-info`, and summarize what's blocking you instead of trying a
-third time.
+change, and don't open a new PR — push to this same branch.
+
+You do **not** need to track how many QA rounds have happened, or decide
+when to give up — the QA workflow counts rounds deterministically and
+routes straight to `status:needs-info` itself once the retry budget (1
+auto-retry) is exhausted, without re-invoking you. If you're reading this
+section, this is always your one attempt at a fix, never a 2nd or 3rd.
