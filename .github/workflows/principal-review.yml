@@ -70,9 +70,19 @@ jobs:
           if echo ",$PR_LABELS," | grep -q ",status:blocked,"; then
             echo "PR #$PR_NUMBER carries status:blocked — a human parked this, skipping." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
+          if [ -n "$ISSUE_NUMBER" ]; then
+            ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+            if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+              echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Check out PR branch
         if: steps.guard.outputs.skip != 'true'
@@ -120,7 +130,7 @@ jobs:
 
           VERDICT="human-merge"
           if [ -f principal-verdict.txt ]; then
-            VERDICT=$(tr -d '[:space:]' < principal-verdict.txt)
+            VERDICT=$(tr -d '[:space:]' < principal-verdict.txt | tr '[:upper:]' '[:lower:]')
             rm -f principal-verdict.txt
           else
             echo "Agent didn't write principal-verdict.txt — defaulting to human-merge." >&2
@@ -147,21 +157,38 @@ jobs:
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
 
-          # Re-check the kill switch right before merging — the pipeline
-          # could have been paused after this run started.
+          # Re-check both kill switches right before merging — the
+          # pipeline could have been paused, or a human could have parked
+          # this specific PR, any time during the run (including during
+          # the CI-wait loop below).
           if [ "${{ vars.AGENTS_PAUSED }}" = "true" ]; then
             echo "AGENTS_PAUSED became true during this run — stopping short of merge." >&2
             gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
             gh pr comment "$PR_NUMBER" --body "Pipeline was paused (AGENTS_PAUSED) after approval but before merge — routed to a human instead of auto-merging."
             exit 0
           fi
+          CURRENT_PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$CURRENT_PR_LABELS," | grep -q ",status:blocked,"; then
+            echo "status:blocked was added during this run — stopping short of merge." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge
+            gh pr comment "$PR_NUMBER" --body "status:blocked was applied after approval but before merge — routed to a human instead of auto-merging."
+            exit 0
+          fi
 
           echo "Waiting for CI to go green on #$PR_NUMBER (up to 20 minutes)..."
+          # Fail-safe by construction: only declare success when every
+          # check is in a known-good terminal state. Any state this
+          # doesn't recognize (CANCELLED, TIMED_OUT, ACTION_REQUIRED,
+          # STALE, an empty check list, or anything GitHub adds later)
+          # falls through to "pending" and eventually the 20-minute
+          # timeout below, rather than being silently treated as success.
           for _ in $(seq 1 40); do
             STATE=$(gh pr checks "$PR_NUMBER" --json state -q '
-              if any(.[]; .state == "FAILURE" or .state == "ERROR") then "failed"
-              elif any(.[]; .state == "PENDING" or .state == "IN_PROGRESS" or .state == "QUEUED") then "pending"
-              else "success" end' 2>/dev/null || echo "pending")
+              if length == 0 then "pending"
+              elif any(.[]; .state == "PENDING" or .state == "IN_PROGRESS" or .state == "QUEUED" or .state == "REQUESTED" or .state == "WAITING") then "pending"
+              elif any(.[]; .state == "FAILURE" or .state == "ERROR") then "failed"
+              elif all(.[]; .state == "SUCCESS" or .state == "NEUTRAL" or .state == "SKIPPED") then "success"
+              else "pending" end' 2>/dev/null || echo "pending")
             echo "CI state: $STATE"
             [ "$STATE" = "success" ] && break
             if [ "$STATE" = "failed" ]; then

@@ -69,6 +69,11 @@ jobs:
 
           ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N') — stopping, same as dev-agent.yml does for this condition." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
           if echo ",$PR_LABELS," | grep -q ",status:blocked,"; then
@@ -76,13 +81,11 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ -n "$ISSUE_NUMBER" ]; then
-            ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null || echo "")
-            if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
-              echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+            echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
@@ -149,7 +152,7 @@ jobs:
 
           VERDICT="fail"
           if [ -f qa-verdict.txt ]; then
-            VERDICT=$(tr -d '[:space:]' < qa-verdict.txt)
+            VERDICT=$(tr -d '[:space:]' < qa-verdict.txt | tr '[:upper:]' '[:lower:]')
             rm -f qa-verdict.txt
           else
             echo "Agent didn't write qa-verdict.txt — defaulting to fail." >&2
@@ -172,8 +175,13 @@ jobs:
             # listing, would throw off an LLM's count). One prior event
             # means this PR already got its one auto-retry and failed
             # again — exhausted. Zero means this is its first-ever fail.
+            # Piping through a separate jq invocation rather than gh's own
+            # -q: --paginate merges array-returning endpoints into one
+            # array before printing, but -q applies per-page when combined
+            # with --paginate — for a timeline long enough to span pages,
+            # that would print one length per page instead of one total.
             PRIOR_ROUNDS=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/timeline" --paginate \
-              -q '[.[] | select(.event == "labeled" and .label.name == "status:in-progress")] | length')
+              | jq '[.[] | select(.event == "labeled" and .label.name == "status:in-progress")] | length')
             echo "Prior QA-fail rounds for #$PR_NUMBER: $PRIOR_ROUNDS"
             if [ "$PRIOR_ROUNDS" -eq 0 ]; then
               GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:in-progress
