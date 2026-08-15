@@ -245,7 +245,25 @@ final class AppState: ObservableObject {
     /// it's the natural place to browse back to) would otherwise double up every file
     /// in it in the Library grid, since each vault gets its own UUID and scans
     /// independently. Mirrors AddVaultFolderUseCase's URI dedup on the Android side.
+    ///
+    /// `allowedContentTypes: [.folder]` on the `.fileImporter` call is meant to keep
+    /// `pickedURL` a directory, but that constraint is enforced by whichever
+    /// document-provider extension is browsing, not the OS — some third-party
+    /// providers (Google Drive being the most commonly reported one) don't honor a
+    /// folder-only UTType filter and can hand back a plain file. Without this check,
+    /// that file becomes a "vault" that looks completely normal in Settings but
+    /// silently scans to 0 books forever, since `LibraryFileScanner.scan` walks it as
+    /// a directory (see issue #185's field report — a tester with 3 such vaults and a
+    /// permanently empty Library).
     func addVault(pickedURL: URL) {
+        let didStartAccessing = pickedURL.startAccessingSecurityScopedResource()
+        let isDirectory = (try? pickedURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        if didStartAccessing { pickedURL.stopAccessingSecurityScopedResource() }
+        guard isDirectory else {
+            error = .invalidVaultSelection
+            return
+        }
+
         guard let vault = try? vaultPersistence.makeVault(from: pickedURL) else {
             error = AppError.storageAccessDenied
             return
@@ -635,6 +653,7 @@ enum AppError: LocalizedError {
     case storageAccessDenied
     case unsupportedFileType
     case fileImportFailed
+    case invalidVaultSelection
 
     var errorDescription: String? {
         switch self {
@@ -646,6 +665,8 @@ enum AppError: LocalizedError {
             return "Storage access denied"
         case .unsupportedFileType:
             return "This file type isn't supported"
+        case .invalidVaultSelection:
+            return "Please select a folder, not a file — pick the folder that contains your books."
         case .fileImportFailed:
             return "Couldn't import that file"
         }
