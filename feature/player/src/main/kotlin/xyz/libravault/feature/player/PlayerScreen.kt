@@ -1,5 +1,6 @@
 package xyz.libravault.feature.player
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,7 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import xyz.libravault.core.ui.LockScreenOrientation
+import androidx.compose.ui.platform.LocalConfiguration
 import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.components.GeneratedCover
 import androidx.compose.ui.layout.ContentScale
@@ -56,6 +58,7 @@ import xyz.libravault.feature.player.components.SleepTimerSheet
 import xyz.libravault.feature.player.components.SpeedPickerSheet
 import xyz.libravault.feature.player.service.SleepTimerState
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
+import xyz.libravault.core.domain.model.LibraryItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,8 +68,6 @@ fun PlayerScreen(
     onBack: () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
-    LockScreenOrientation()
-
     val state     by viewModel.uiState.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     var showChapters    by remember { mutableStateOf(false) }
@@ -159,117 +160,31 @@ fun PlayerScreen(
 
                 state.item != null -> {
                     val item = state.item!!
+                    val isLandscape = isLandscapeOrientation(LocalConfiguration.current)
+                    val actions = PlayerActions(
+                        onSeek             = viewModel::seekTo,
+                        onPlayPause        = viewModel::togglePlayPause,
+                        onSkipBack         = viewModel::skipBack,
+                        onSkipForward      = viewModel::skipForward,
+                        onPreviousChapter  = viewModel::previousChapter,
+                        onNextChapter      = viewModel::nextChapter,
+                        onSpeedClick       = { showSpeedPicker = true },
+                    )
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .padding(horizontal = 32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceEvenly,
-                    ) {
-
-                        // ── Cover art ─────────────────────────────────────────
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.7f)
-                                .aspectRatio(1f)
-                                .clip(MaterialTheme.shapes.large),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (item.coverArtPath != null) {
-                                AsyncImage(
-                                    model = item.coverArtPath,
-                                    contentDescription = item.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                GeneratedCover(
-                                    title = item.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    initialStyle = MaterialTheme.typography.displayLarge,
-                                )
-                            }
-                        }
-
-                        // ── Title + author ────────────────────────────────────
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text      = item.title,
-                                style     = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                maxLines  = 2,
-                                overflow  = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text  = item.author,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                            )
-                            // Chapter name
-                            if (state.chapters.isNotEmpty()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text  = state.chapters
-                                        .getOrNull(state.currentChapterIndex)?.title ?: "",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-
-                        // ── Seek bar ──────────────────────────────────────────
-                        PlayerSeekBar(
-                            positionMs = state.positionMs,
-                            durationMs = state.durationMs,
-                            bufferedMs = state.bufferedMs,
-                            onSeek     = viewModel::seekTo,
+                    if (isLandscape) {
+                        LandscapePlayerContent(
+                            item     = item,
+                            state    = state,
+                            actions  = actions,
+                            modifier = Modifier.fillMaxSize().padding(innerPadding),
                         )
-
-                        // ── Controls with faint grimoire background ──────────
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                        PlaybackControls(
-                            isPlaying          = state.isPlaying,
-                            hasPreviousChapter = state.currentChapterIndex > 0,
-                            hasNextChapter     = state.currentChapterIndex < state.chapters.size - 1,
-                            onPlayPause        = viewModel::togglePlayPause,
-                            onSkipBack         = viewModel::skipBack,
-                            onSkipForward      = viewModel::skipForward,
-                            onPreviousChapter  = viewModel::previousChapter,
-                            onNextChapter      = viewModel::nextChapter,
+                    } else {
+                        PortraitPlayerContent(
+                            item     = item,
+                            state    = state,
+                            actions  = actions,
+                            modifier = Modifier.fillMaxSize().padding(innerPadding),
                         )
-                        } // end grimoire Box
-
-                        // ── Speed button — tap to open speed sheet ────────
-                        TextButton(onClick = { showSpeedPicker = true }) {
-                            Text(
-                                text  = formatPlaybackSpeed(state.playbackSpeed),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-
-                        // ── Sleep timer status ────────────────────────────────
-                        if (state.sleepTimerState is SleepTimerState.Active) {
-                            val remaining = (state.sleepTimerState as SleepTimerState.Active).remainingMs
-                            val min = remaining / 60_000
-                            val sec = (remaining % 60_000) / 1000
-                            Text(
-                                text  = "Sleep in %d:%02d".format(min, sec),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
                     }
                 }
             }
@@ -312,5 +227,219 @@ fun PlayerScreen(
                 onChapterSelected   = viewModel::goToChapter,
                 onDismiss           = { showChapters = false },
             )
+    }
+}
+
+// Split out of the isLandscape val above as a plain (non-Composable) function so
+// the actual routing condition — not just the two layouts it chooses between —
+// has direct test coverage (see PlayerOrientationTest). Inlining the comparison
+// at the call site left it exercised only by manual QA: flip `==` to `!=` or
+// swap the constant and every device would render the wrong layout for its
+// rotation while CI stayed green, since PlayerScreenLandscapeTest calls
+// LandscapePlayerContent/PortraitPlayerContent directly and never routes through
+// this check.
+internal fun isLandscapeOrientation(configuration: Configuration): Boolean =
+    configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+// Bundles the player's callbacks so the layout composables below are pure
+// functions of (item, state, actions) — no PlayerViewModel dependency — and can
+// be exercised directly in a Robolectric Compose test the same way
+// TtsSettingsSection is (see PlayerScreenLandscapeTest).
+internal data class PlayerActions(
+    val onSeek: (Long) -> Unit,
+    val onPlayPause: () -> Unit,
+    val onSkipBack: () -> Unit,
+    val onSkipForward: () -> Unit,
+    val onPreviousChapter: () -> Unit,
+    val onNextChapter: () -> Unit,
+    val onSpeedClick: () -> Unit,
+)
+
+// ── Portrait layout — single scrolling column, as before ───────────────────────
+@Composable
+internal fun PortraitPlayerContent(
+    item: LibraryItem,
+    state: PlayerUiState,
+    actions: PlayerActions,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        PlayerCoverArt(
+            item     = item,
+            modifier = Modifier.fillMaxWidth(0.7f).aspectRatio(1f),
+        )
+        PlayerTitleBlock(item = item, state = state, horizontalAlignment = Alignment.CenterHorizontally)
+        PlayerSeekBar(
+            positionMs = state.positionMs,
+            durationMs = state.durationMs,
+            bufferedMs = state.bufferedMs,
+            onSeek     = actions.onSeek,
+        )
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            PlayerControlsRow(state = state, actions = actions)
+        }
+        PlayerSpeedButton(state = state, onClick = actions.onSpeedClick)
+        PlayerSleepTimerStatus(state = state)
+    }
+}
+
+// ── Landscape layout — cover/title on the left, transport on the right ─────────
+// Rotating mid-playback used to be blocked entirely (see PlayerScreen's git
+// history for the removed LockScreenOrientation() call); now the player rotates
+// freely, so it needs a layout that looks intentional in landscape instead of
+// just squeezing the portrait column sideways into a tall, narrow space.
+@Composable
+internal fun LandscapePlayerContent(
+    item: LibraryItem,
+    state: PlayerUiState,
+    actions: PlayerActions,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            PlayerCoverArt(
+                item     = item,
+                modifier = Modifier.fillMaxHeight(0.65f).aspectRatio(1f),
+            )
+            Spacer(Modifier.height(12.dp))
+            PlayerTitleBlock(item = item, state = state, horizontalAlignment = Alignment.CenterHorizontally)
+        }
+
+        Spacer(Modifier.width(24.dp))
+
+        // No fillMaxHeight() here (unlike the cover/title Column above) — this
+        // Column's height is just its intrinsic content height, so it has no
+        // extra space to distribute and verticalArrangement = Center would be a
+        // no-op. It reads centered anyway because the parent Row's own
+        // verticalAlignment = CenterVertically centers the whole block.
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            PlayerSeekBar(
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                bufferedMs = state.bufferedMs,
+                onSeek     = actions.onSeek,
+            )
+            Spacer(Modifier.height(8.dp))
+            PlayerControlsRow(state = state, actions = actions)
+            Spacer(Modifier.height(8.dp))
+            PlayerSpeedButton(state = state, onClick = actions.onSpeedClick)
+            PlayerSleepTimerStatus(state = state)
+        }
+    }
+}
+
+// ── Shared pieces used by both layouts ──────────────────────────────────────────
+
+@Composable
+private fun PlayerCoverArt(item: LibraryItem, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.clip(MaterialTheme.shapes.large),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (item.coverArtPath != null) {
+            AsyncImage(
+                model = item.coverArtPath,
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            GeneratedCover(
+                title = item.title,
+                modifier = Modifier.fillMaxSize(),
+                initialStyle = MaterialTheme.typography.displayLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerTitleBlock(
+    item: LibraryItem,
+    state: PlayerUiState,
+    horizontalAlignment: Alignment.Horizontal,
+) {
+    Column(horizontalAlignment = horizontalAlignment) {
+        Text(
+            text      = item.title,
+            style     = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines  = 2,
+            overflow  = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text  = item.author,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        // Chapter name
+        if (state.chapters.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text  = state.chapters
+                    .getOrNull(state.currentChapterIndex)?.title ?: "",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerControlsRow(state: PlayerUiState, actions: PlayerActions) {
+    PlaybackControls(
+        isPlaying          = state.isPlaying,
+        hasPreviousChapter = state.currentChapterIndex > 0,
+        hasNextChapter     = state.currentChapterIndex < state.chapters.size - 1,
+        onPlayPause        = actions.onPlayPause,
+        onSkipBack         = actions.onSkipBack,
+        onSkipForward      = actions.onSkipForward,
+        onPreviousChapter  = actions.onPreviousChapter,
+        onNextChapter      = actions.onNextChapter,
+    )
+}
+
+@Composable
+private fun PlayerSpeedButton(state: PlayerUiState, onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text(
+            text  = formatPlaybackSpeed(state.playbackSpeed),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun PlayerSleepTimerStatus(state: PlayerUiState) {
+    if (state.sleepTimerState is SleepTimerState.Active) {
+        val remaining = (state.sleepTimerState as SleepTimerState.Active).remainingMs
+        val min = remaining / 60_000
+        val sec = (remaining % 60_000) / 1000
+        Text(
+            text  = "Sleep in %d:%02d".format(min, sec),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }

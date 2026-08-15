@@ -19,84 +19,33 @@ struct PlayerView: View {
     }
 
     var body: some View {
-        VStack(spacing: LibraVaultSpacing.xl) {
-            Spacer()
-
+        Group {
             if let book {
-                CoverArtView(book: book, cornerRadius: LibraVaultRadius.card)
-                    .frame(width: 220, height: 220)
-                    .shadow(radius: 12)
-
-                VStack(spacing: LibraVaultSpacing.xs) {
-                    Text(book.title)
-                        .font(LibraVaultTypography.headlineSmall)
-                        .foregroundStyle(LibraVaultColor.onBackground)
-                        .multilineTextAlignment(.center)
-                    Text(book.author)
-                        .font(LibraVaultTypography.bodyMedium)
-                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-                    Text("Full Book")
-                        .font(LibraVaultTypography.labelMedium)
-                        .foregroundStyle(LibraVaultColor.primary)
+                // This screen used to lock rotation to portrait for as long as it was
+                // on screen (via OrientationManager, since removed here) — that made
+                // starting Read Aloud from a document already in landscape spin the
+                // screen out from under the user. Now it rotates freely, so a
+                // GeometryReader picks a layout that actually looks intentional in
+                // landscape instead of just squeezing the portrait column sideways.
+                GeometryReader { proxy in
+                    Group {
+                        if isLandscapeOrientation(size: proxy.size) {
+                            landscapeContent(book: book)
+                        } else {
+                            portraitContent(book: book)
+                        }
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                 }
-
-                VStack(spacing: LibraVaultSpacing.xs) {
-                    Slider(value: elapsedBinding, in: 0...max(appState.totalEstimatedSeconds, 1))
-                        .tint(LibraVaultColor.primary)
-                    HStack {
-                        Text(formatPlaybackTime(appState.elapsedSeconds))
-                        Spacer()
-                        Text(formatPlaybackTime(appState.totalEstimatedSeconds))
-                    }
-                    .font(LibraVaultTypography.labelSmall)
-                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-                }
-                .padding(.horizontal, LibraVaultSpacing.xl)
-
-                HStack(spacing: LibraVaultSpacing.xl) {
-                    Button(action: { appState.skipToChapter(appState.nowPlayingChapter - 1) }) {
-                        Image(systemName: "backward.end.fill")
-                    }
-                    .disabled(appState.nowPlayingChapter <= 1)
-
-                    Button(action: { appState.skipBackward(seconds: appState.skipDurationSeconds) }) {
-                        // SF Symbols ships exact variants for 10/15/30/45/60 — the same
-                        // 5 presets Settings' "Skip duration" chips offer, so this never
-                        // needs a fallback for an unsupported number.
-                        Image(systemName: "gobackward.\(Int(appState.skipDurationSeconds))")
-                    }
-
-                    Button(action: appState.togglePlayback) {
-                        Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 56))
-                    }
-                    .accessibilityIdentifier("player.playPauseButton")
-
-                    Button(action: { appState.skipForward(seconds: appState.skipDurationSeconds) }) {
-                        Image(systemName: "goforward.\(Int(appState.skipDurationSeconds))")
-                    }
-
-                    Button(action: { appState.skipToChapter(appState.nowPlayingChapter + 1) }) {
-                        Image(systemName: "forward.end.fill")
-                    }
-                    .disabled(appState.nowPlayingChapter >= appState.nowPlayingChapterCount)
-                }
-                .font(.system(size: 28))
-                .foregroundStyle(LibraVaultColor.onBackground)
-
-                Button(action: { showSpeedSheet = true }) {
-                    Text(formatPlaybackSpeed(appState.playbackSpeed))
-                        .font(LibraVaultTypography.labelLarge)
-                        .foregroundStyle(LibraVaultColor.primary)
-                }
-                .accessibilityIdentifier("player.speedButton")
             } else {
-                Text("Nothing playing")
-                    .font(LibraVaultTypography.bodyLarge)
-                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                VStack {
+                    Spacer()
+                    Text("Nothing playing")
+                        .font(LibraVaultTypography.bodyLarge)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                    Spacer()
+                }
             }
-
-            Spacer()
         }
         .padding(LibraVaultSpacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,14 +70,8 @@ struct PlayerView: View {
                 }
             }
         }
-        .onAppear {
-            appState.isPlayerScreenActive = true
-            OrientationManager.lock(to: .portrait)
-        }
-        .onDisappear {
-            appState.isPlayerScreenActive = false
-            OrientationManager.lock(to: .allButUpsideDown)
-        }
+        .onAppear { appState.isPlayerScreenActive = true }
+        .onDisappear { appState.isPlayerScreenActive = false }
         .sheet(isPresented: $showBookmarksSheet) {
             if let book {
                 BookmarksSheet(bookId: book.id)
@@ -162,6 +105,127 @@ struct PlayerView: View {
         }
     }
 
+    // MARK: - Portrait layout — single scrolling column, as before
+
+    @ViewBuilder
+    private func portraitContent(book: BookItem) -> some View {
+        VStack(spacing: LibraVaultSpacing.xl) {
+            Spacer()
+            coverArt(book: book, side: 220)
+            titleBlock(book: book)
+            sliderSection
+            transportButtons
+            speedButton
+            Spacer()
+        }
+    }
+
+    // MARK: - Landscape layout — cover/title on the left, transport on the right
+
+    @ViewBuilder
+    private func landscapeContent(book: BookItem) -> some View {
+        HStack(spacing: LibraVaultSpacing.xl) {
+            VStack(spacing: LibraVaultSpacing.md) {
+                Spacer()
+                coverArt(book: book, side: 140)
+                titleBlock(book: book)
+                Spacer()
+            }
+
+            VStack(spacing: LibraVaultSpacing.lg) {
+                Spacer()
+                sliderSection
+                transportButtons
+                speedButton
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Shared pieces used by both layouts
+
+    @ViewBuilder
+    private func coverArt(book: BookItem, side: CGFloat) -> some View {
+        CoverArtView(book: book, cornerRadius: LibraVaultRadius.card)
+            .frame(width: side, height: side)
+            .shadow(radius: 12)
+    }
+
+    @ViewBuilder
+    private func titleBlock(book: BookItem) -> some View {
+        VStack(spacing: LibraVaultSpacing.xs) {
+            Text(book.title)
+                .font(LibraVaultTypography.headlineSmall)
+                .foregroundStyle(LibraVaultColor.onBackground)
+                .multilineTextAlignment(.center)
+            Text(book.author)
+                .font(LibraVaultTypography.bodyMedium)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+            Text("Full Book")
+                .font(LibraVaultTypography.labelMedium)
+                .foregroundStyle(LibraVaultColor.primary)
+        }
+    }
+
+    @ViewBuilder
+    private var sliderSection: some View {
+        VStack(spacing: LibraVaultSpacing.xs) {
+            Slider(value: elapsedBinding, in: 0...max(appState.totalEstimatedSeconds, 1))
+                .tint(LibraVaultColor.primary)
+            HStack {
+                Text(formatPlaybackTime(appState.elapsedSeconds))
+                Spacer()
+                Text(formatPlaybackTime(appState.totalEstimatedSeconds))
+            }
+            .font(LibraVaultTypography.labelSmall)
+            .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+        }
+        .padding(.horizontal, LibraVaultSpacing.xl)
+    }
+
+    @ViewBuilder
+    private var transportButtons: some View {
+        HStack(spacing: LibraVaultSpacing.xl) {
+            Button(action: { appState.skipToChapter(appState.nowPlayingChapter - 1) }) {
+                Image(systemName: "backward.end.fill")
+            }
+            .disabled(appState.nowPlayingChapter <= 1)
+
+            Button(action: { appState.skipBackward(seconds: appState.skipDurationSeconds) }) {
+                // SF Symbols ships exact variants for 10/15/30/45/60 — the same
+                // 5 presets Settings' "Skip duration" chips offer, so this never
+                // needs a fallback for an unsupported number.
+                Image(systemName: "gobackward.\(Int(appState.skipDurationSeconds))")
+            }
+
+            Button(action: appState.togglePlayback) {
+                Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 56))
+            }
+            .accessibilityIdentifier("player.playPauseButton")
+
+            Button(action: { appState.skipForward(seconds: appState.skipDurationSeconds) }) {
+                Image(systemName: "goforward.\(Int(appState.skipDurationSeconds))")
+            }
+
+            Button(action: { appState.skipToChapter(appState.nowPlayingChapter + 1) }) {
+                Image(systemName: "forward.end.fill")
+            }
+            .disabled(appState.nowPlayingChapter >= appState.nowPlayingChapterCount)
+        }
+        .font(.system(size: 28))
+        .foregroundStyle(LibraVaultColor.onBackground)
+    }
+
+    @ViewBuilder
+    private var speedButton: some View {
+        Button(action: { showSpeedSheet = true }) {
+            Text(formatPlaybackSpeed(appState.playbackSpeed))
+                .font(LibraVaultTypography.labelLarge)
+                .foregroundStyle(LibraVaultColor.primary)
+        }
+        .accessibilityIdentifier("player.speedButton")
+    }
 }
 
 #Preview {
