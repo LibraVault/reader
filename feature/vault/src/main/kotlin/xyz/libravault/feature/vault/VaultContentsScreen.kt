@@ -37,8 +37,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -51,6 +53,10 @@ import xyz.libravault.core.vaultstore.VaultManifestEntry
  * encrypted into the vault, never re-read from the source later). Locking
  * (explicitly, or via auto-lock firing while this screen is in front) pops
  * back to [VaultListScreen] rather than showing a stale list.
+ *
+ * `FLAG_SECURE` applies here (Phase 5c, PRD §7.3) — even just the list of
+ * titles/authors is content someone encrypted a vault specifically to hide,
+ * not merely the reader/player screens that show it in full.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +66,8 @@ fun VaultContentsScreen(
     viewModel: VaultContentsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
 
     LaunchedEffect(state.wasLocked) {
         if (state.wasLocked) onBack()

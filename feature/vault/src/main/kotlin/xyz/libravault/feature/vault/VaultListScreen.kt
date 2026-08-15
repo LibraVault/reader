@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,10 @@ fun VaultListScreen(
     viewModel: VaultListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+
+    if (state.showExplainer) {
+        FolderVsVaultExplainerDialog(onDismiss = viewModel::dismissExplainer)
+    }
 
     // Locked/unlocked state can drift while this screen isn't the front-most
     // destination (see VaultListViewModel's doc comment) — refresh every time
@@ -105,6 +110,33 @@ fun VaultListScreen(
             }
         }
     }
+}
+
+/**
+ * Shown once, the first time the user opens this screen (PRD §9's
+ * naming decision) — explains that "Vault" (this screen, encrypted, PIN-
+ * protected) and "Folder" (the unencrypted SAF-tree concept, shown
+ * elsewhere in the app) are two different guarantees, not two names for
+ * the same thing.
+ */
+@Composable
+private fun FolderVsVaultExplainerDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Folders and Vaults are different") },
+        text = {
+            Text(
+                "A Folder is a location you point LibraVault at — its files stay exactly " +
+                    "where they are, unencrypted, same as any file manager.\n\n" +
+                    "A Vault is different: files you import are encrypted and stored inside " +
+                    "LibraVault itself, unreadable without its PIN — even with direct access " +
+                    "to this device's storage.",
+            )
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) { Text("Got it") }
+        },
+    )
 }
 
 @Composable

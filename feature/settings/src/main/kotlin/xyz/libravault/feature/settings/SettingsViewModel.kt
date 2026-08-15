@@ -155,6 +155,10 @@ class SettingsViewModel @Inject constructor(
         it.copy(dynamicColorEnabled = enabled)
     }
 
+    fun onScreenSecurityToggled(enabled: Boolean) = update {
+        it.copy(screenSecurityEnabled = enabled)
+    }
+
     // ── Text-to-Speech ───────────────────────────────────────────────────────
 
     /**

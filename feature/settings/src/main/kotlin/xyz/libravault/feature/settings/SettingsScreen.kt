@@ -323,6 +323,16 @@ fun SettingsScreen(
                 Text("Manage Encrypted Vaults")
             }
 
+            Spacer(Modifier.height(8.dp))
+
+            SwitchSetting(
+                title    = "Screen Security",
+                subtitle = "Block screenshots and screen recording while viewing or listening " +
+                        "to Encrypted Vault content. Applies to all vaults; on by default.",
+                checked  = prefs.screenSecurityEnabled,
+                onCheckedChange = viewModel::onScreenSecurityToggled,
+            )
+
             Divider()
 
             // ── About ─────────────────────────────────────────────────────────

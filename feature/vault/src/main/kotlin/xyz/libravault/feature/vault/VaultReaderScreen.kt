@@ -44,7 +44,9 @@ fun VaultReaderScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var showToolbar by remember { mutableStateOf(true) }
-    val activity = LocalContext.current as? FragmentActivity
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
 
     LaunchedEffect(state) {
         if (state is VaultReaderState.WrongScreen) onBack()
