@@ -10,18 +10,26 @@ name: Principal Review Agent
 # outcome here needs to trigger a further workflow run (auto-merge happens
 # inline in this same job; human-merge is terminal until a person acts).
 #
-# History worth recording: this briefly used the pipeline App token for
-# the review step instead, reasoning that GITHUB_TOKEN (github-actions[bot])
-# would collide with the PR's own author identity. That reasoning was
-# right at the time but became wrong once PR #184 changed *dev-agent.yml's*
-# PR-creation to also use the App token — PRs are now authored as the App,
-# so giving the App token to *this* review step made it collide with the
-# PR author instead (confirmed live: PR #187 — GitHub rejected
-# `gh pr review --approve` as self-approval, "viewerDidAuthor: true",
-# diagnosed correctly by a real principal-review run itself, which routed
-# to status:needs-human-merge rather than guess). GITHUB_TOKEN
-# (github-actions[bot]) is the one that's actually distinct from the PR
-# author now, so that's what this step uses.
+# History worth recording (both found live, by real principal-review runs
+# on PR #187, which correctly diagnosed each and routed to
+# status:needs-human-merge rather than guess):
+# 1. This briefly used the pipeline App token for the review step,
+#    reasoning GITHUB_TOKEN (github-actions[bot]) would collide with the
+#    PR's own author identity. Right at the time, wrong once PR #184
+#    changed dev-agent.yml's PR-creation to also use the App token — PRs
+#    are now authored as the App, so the App token collided with the PR
+#    author instead ("viewerDidAuthor: true" on `gh pr review --approve`).
+#    Reverted to GITHUB_TOKEN, which is the one actually distinct from the
+#    PR author now.
+# 2. Even with the right identity, `gh pr review --approve` still fails —
+#    this repo's Actions settings block GITHUB_TOKEN from approving PRs
+#    outright ("GitHub Actions is not permitted to approve pull requests"),
+#    independent of identity, and the same setting #184 worked around for
+#    PR creation. There's no branch protection requiring a formal approval
+#    here, so the fix is simpler than another token dance: post findings
+#    via `gh pr comment`/`--request-changes` (both unaffected) instead of
+#    `--approve`, and let the verdict file (not GitHub's review state)
+#    drive the actual merge decision, as it already did.
 
 on:
   pull_request:
@@ -142,12 +150,15 @@ jobs:
             your complete operating persona for this run. Review PR
             #${{ steps.guard.outputs.pr_number }} in this repository (the
             branch is already checked out; use `gh pr view --json` /
-            `gh pr diff` to read the PR itself). Post your review with
-            `gh pr review --approve` or `gh pr review --request-changes` as
-            appropriate, per the persona. Do not apply status:approved-auto-merge
-            or status:needs-human-merge yourself — the workflow applies
-            whichever one matches your verdict, based on the verdict file
-            you write below.
+            `gh pr diff` to read the PR itself). Post your findings with
+            `gh pr comment` for auto-merge, or `gh pr review --request-changes`
+            for human-merge, per the persona — do NOT use
+            `gh pr review --approve`; this repo's Actions settings block
+            GITHUB_TOKEN from approving PRs outright, and there's no
+            branch protection requiring a formal approval anyway. Do not
+            apply status:approved-auto-merge or status:needs-human-merge
+            yourself — the workflow applies whichever one matches your
+            verdict, based on the verdict file you write below.
 
             As your very last action, write a single line to the file
             `principal-verdict.txt` in the repo root: exactly one of
