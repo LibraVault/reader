@@ -43,6 +43,7 @@ class UserPreferencesRepository @Inject constructor(
         defaultSkipDurationSec = prefs.getInt(LibravaultPreferences.KEY_SKIP_DURATION_SEC, 30),
         loggingEnabled       = prefs.getBoolean(KEY_LOGGING_ENABLED, false),
         dynamicColorEnabled  = prefs.getBoolean(KEY_DYNAMIC_COLOR, true),
+        screenSecurityEnabled = prefs.getBoolean(LibravaultPreferences.KEY_SCREEN_SECURITY_ENABLED, true),
     )
 
     fun update(prefs: UserPreferences) {
@@ -52,6 +53,7 @@ class UserPreferencesRepository @Inject constructor(
             .putInt(LibravaultPreferences.KEY_SKIP_DURATION_SEC, prefs.defaultSkipDurationSec)
             .putBoolean(KEY_LOGGING_ENABLED, prefs.loggingEnabled)
             .putBoolean(KEY_DYNAMIC_COLOR, prefs.dynamicColorEnabled)
+            .putBoolean(LibravaultPreferences.KEY_SCREEN_SECURITY_ENABLED, prefs.screenSecurityEnabled)
             .apply()
     }
 }

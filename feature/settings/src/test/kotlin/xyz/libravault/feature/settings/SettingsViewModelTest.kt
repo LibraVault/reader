@@ -183,6 +183,13 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `screen security toggle persists`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onScreenSecurityToggled(false)
+        verify { prefsRepo.update(match { !it.screenSecurityEnabled }) }
+    }
+
+    @Test
     fun `clear cover cache wipes files AND nulls coverArtPaths so refresh can recover`() =
         runTest(mainDispatcher) {
             val vm = viewModel()

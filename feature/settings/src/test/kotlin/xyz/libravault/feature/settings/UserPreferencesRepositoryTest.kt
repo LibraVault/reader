@@ -51,6 +51,7 @@ class UserPreferencesRepositoryTest {
         every { mockPrefs.getInt("skip_duration_sec", 30) } returns 30
         every { mockPrefs.getBoolean("logging_enabled", false) } returns false
         every { mockPrefs.getBoolean("dynamic_color", true) } returns true
+        every { mockPrefs.getBoolean("screen_security_enabled", true) } returns true
 
         val prefs = repository.read()
 
@@ -63,6 +64,7 @@ class UserPreferencesRepositoryTest {
         every { mockPrefs.getInt("skip_duration_sec", 30) } returns 30
         every { mockPrefs.getBoolean("logging_enabled", false) } returns false
         every { mockPrefs.getBoolean("dynamic_color", true) } returns true
+        every { mockPrefs.getBoolean("screen_security_enabled", true) } returns true
 
         for (theme in AppReadingTheme.values()) {
             every { mockPrefs.getString("reading_theme", "DARK") } returns theme.name
@@ -77,6 +79,7 @@ class UserPreferencesRepositoryTest {
         every { mockPrefs.getInt("skip_duration_sec", 30) } returns 30
         every { mockPrefs.getBoolean("logging_enabled", false) } returns false
         every { mockPrefs.getBoolean("dynamic_color", true) } returns true
+        every { mockPrefs.getBoolean("screen_security_enabled", true) } returns true
 
         // 1.1 snaps to the nearest quarter-step, 1.0 or 1.25 — never the raw 1.1.
         val result = repository.read().defaultPlaybackSpeed
@@ -90,6 +93,7 @@ class UserPreferencesRepositoryTest {
         every { mockPrefs.getInt("skip_duration_sec", 30) } returns 60
         every { mockPrefs.getBoolean("logging_enabled", false) } returns true
         every { mockPrefs.getBoolean("dynamic_color", true) } returns false
+        every { mockPrefs.getBoolean("screen_security_enabled", true) } returns false
 
         val prefs = repository.read()
 
@@ -100,6 +104,7 @@ class UserPreferencesRepositoryTest {
                 defaultSkipDurationSec = 60,
                 loggingEnabled = true,
                 dynamicColorEnabled = false,
+                screenSecurityEnabled = false,
             ),
             prefs,
         )
@@ -130,6 +135,7 @@ class UserPreferencesRepositoryTest {
                 defaultSkipDurationSec = 45,
                 loggingEnabled = true,
                 dynamicColorEnabled = false,
+                screenSecurityEnabled = false,
             ),
         )
 
@@ -139,8 +145,8 @@ class UserPreferencesRepositoryTest {
         assertEquals(1.25f, floatValue.captured, 0.001f)
         assertEquals("skip_duration_sec", intKey.captured)
         assertEquals(45, intValue.captured)
-        assertEquals(listOf("logging_enabled", "dynamic_color"), boolKeys)
-        assertEquals(listOf(true, false), boolValues)
+        assertEquals(listOf("logging_enabled", "dynamic_color", "screen_security_enabled"), boolKeys)
+        assertEquals(listOf(true, false, false), boolValues)
         verify { mockEditor.apply() }
     }
 }

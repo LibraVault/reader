@@ -15,6 +15,15 @@ data class UserPreferences(
     val defaultSkipDurationSec: Int           = 30,
     val loggingEnabled: Boolean               = false,
     val dynamicColorEnabled: Boolean          = true,
+    /** PRD §7.3 — `FLAG_SECURE` while rendering decrypted Encrypted Vault
+     * content (blocks screenshots/screen recording/non-secure mirroring).
+     * Default on; a global toggle, not per-vault (implementation plan's
+     * reasoning: if you have multiple vaults you almost certainly want the
+     * same posture for all of them). Read directly by `feature:vault` via
+     * `core.storage.LibravaultPreferences`'s shared key, the same
+     * no-cross-module-dependency pattern `defaultSkipDurationSec` uses for
+     * `feature:player`. */
+    val screenSecurityEnabled: Boolean        = true,
 )
 
 enum class AppReadingTheme { DARK, LIGHT, SEPIA }
