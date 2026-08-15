@@ -10,10 +10,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val PREFS_NAME          = "libravault_prefs"
-private const val KEY_SUPPORTER       = "is_supporter"
-private const val KEY_PENDING_INVOICE = "pending_invoice_id"
+private const val PREFS_NAME    = "libravault_prefs"
+private const val KEY_SUPPORTER = "is_supporter"
 
+/**
+ * Whether the user has earned the Supporter badge. Read/write is preserved
+ * even though nothing in the app calls [setSupporter] anymore (the in-app
+ * BTCPay invoice flow that used to set it was removed — see
+ * `SUPPORT_URL`/`fix/donation-external-link-only`) — this keeps the badge
+ * showing for anyone who already earned it, and leaves the door open for a
+ * future legitimate way to set it (e.g. Play Billing) without another storage
+ * migration.
+ */
 @Singleton
 class SupporterRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -25,15 +33,6 @@ class SupporterRepository @Inject constructor(
 
     fun setSupporter(value: Boolean) {
         prefs.edit().putBoolean(KEY_SUPPORTER, value).apply()
-    }
-
-    fun getPendingInvoiceId(): String? = prefs.getString(KEY_PENDING_INVOICE, null)
-
-    fun setPendingInvoiceId(id: String?) {
-        prefs.edit().apply {
-            if (id == null) remove(KEY_PENDING_INVOICE) else putString(KEY_PENDING_INVOICE, id)
-            apply()
-        }
     }
 
     fun observe(): Flow<Boolean> = callbackFlow {

@@ -214,6 +214,16 @@ struct SettingsView: View {
 
     // MARK: - Support Development
 
+    /// Identical on every flavor and platform (Android Play, Android F-Droid,
+    /// iOS) — see feature:settings's `SUPPORT_URL` on the Android side (kept
+    /// in sync by hand, since Kotlin and Swift can't share a constant here).
+    /// Apple rejects apps that show crypto addresses/QR codes inside the app's
+    /// own UI (unapproved tipping / IAP bypass); the consistent answer, not
+    /// just the Apple-compliant one, is that no platform renders an address
+    /// in-app — this hands off to the website instead, which is free to show
+    /// BTC/XMR addresses since it isn't inside the app binary.
+    static let supportURL = URL(string: "https://libravault.xyz/support.html")!
+
     private var supportSection: some View {
         Section {
             if appState.isSupporter {
@@ -221,13 +231,12 @@ struct SettingsView: View {
                     .font(LibraVaultTypography.bodyMedium.weight(.semibold))
                     .foregroundStyle(LibraVaultColor.secondary)
             }
-            // No donate button here: Android's is backed by a real BTCPay-verified
-            // BTC/XMR flow (SettingsScreen.kt's DonateSheet) — there's nothing honest
-            // to wire that button to on iOS yet, and a button that does nothing when
-            // tapped is worse than not having it.
-            Text("LibraVault is free — no ads, no tracking, no accounts. If this app brings you joy, consider supporting its development.")
+            Text("LibraVault is free — no ads, no tracking, no accounts. If this app brings you joy, consider supporting its development. BTC and XMR donation addresses are on the website, not in this app.")
                 .font(LibraVaultTypography.bodySmall)
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+            Link(destination: Self.supportURL) {
+                Text("Support the Project")
+            }
         } header: {
             sectionHeader("Support Development")
         }

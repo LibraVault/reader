@@ -53,5 +53,11 @@ class ManifestPermissionsTest {
             "READ_PHONE_STATE must not be requested — see PERMISSIONS POLICY in AndroidManifest.xml",
             requested.contains("android.permission.READ_PHONE_STATE"),
         )
+        assertFalse(
+            "INTERNET must not be requested — the app makes zero network calls now that " +
+                "the in-app BTCPay donation flow was removed in favor of an external " +
+                "Support link (see SUPPORT_URL in feature:settings)",
+            requested.contains("android.permission.INTERNET"),
+        )
     }
 }
