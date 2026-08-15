@@ -21,7 +21,7 @@ don't let it silently go stale.
 | Bookmarks / highlights | ✅ persisted (Room) | ✅ persisted (`ReadingDataPersistence`, file-backed) | |
 | Reading/listening progress | ✅ persisted | ✅ persisted | |
 | Lockscreen / background audio controls | ✅ | ✅ | |
-| Encrypted Vaults | ✅ full: create/unlock/list, import, read/play (EPUB/PDF/audio), Screen Security toggle | ❌ not started | Android-only so far — no Pro tier gates it on either platform (see next row) |
+| Encrypted Vaults | ✅ full: create/unlock/list, import, read/play (EPUB/PDF/audio), cover-art thumbnails, bookmarks (EPUB+PDF)/highlights (EPUB), per-user reading settings (EPUB), Screen Security toggle | ❌ not started | Android-only so far — no Pro tier gates it on either platform (see next row). Not yet on Android either: vault audio bookmarks (#177), a paginated non-scrolling vault PDF mode (#178) |
 | Licensing / Pro unlock | N/A — no Pro tier | N/A — no Pro tier | The Ed25519-key/Play Billing infrastructure this row used to describe was removed; all features (incl. Encrypted Vaults) are free everywhere, donation-funded. A subscription may return once there's a real install base to justify it. |
 | Donations (BTC/XMR) | ✅ BTCPay-verified flow (`SettingsScreen.kt`'s `DonateSheet`) | ❌ deliberately absent | iOS explicitly omits the donate button rather than show one that does nothing — see `SettingsView.swift`'s `supportSection` comment |
 | CBZ / MOBI / DJVU | ❌ (not supported on either platform — see `KNOWN_LIMITATIONS.md`) | ❌ | Both scanners recognize `.cbz`/`.mobi` extensions for future use but don't parse them yet |
