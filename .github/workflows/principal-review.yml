@@ -33,6 +33,13 @@ concurrency:
 
 jobs:
   review:
+    # No author_association check on the PR here, deliberately — every PR
+    # in this pipeline is opened by the dev agent via GITHUB_TOKEN, whose
+    # author_association is not "COLLABORATOR", so that check would make
+    # this trigger never fire for any pipeline-produced PR. Trust rests on
+    # GitHub's own enforcement of who can add a label (requires
+    # triage/write access) plus the same-repo check below. See the
+    # matching comment in dev-agent.yml.
     if: >-
       vars.AGENTS_PAUSED != 'true' &&
       (
@@ -41,8 +48,7 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.action == 'labeled' &&
           github.event.label.name == 'status:needs-review' &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+          github.event.pull_request.head.repo.full_name == github.repository
         )
       )
     runs-on: ubuntu-latest
@@ -172,5 +178,10 @@ jobs:
             exit 0
           fi
 
-          gh pr merge "$PR_NUMBER" --squash --delete-branch=false
+          if ! gh pr merge "$PR_NUMBER" --squash --delete-branch=false; then
+            echo "gh pr merge failed (conflict, branch protection, or stale approval) — see the log above for the exact error." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "Auto-merge failed (see the workflow run log for the exact error) — routed to a human instead of leaving this stuck on status:approved-auto-merge."
+            exit 0
+          fi
           echo "Merged #$PR_NUMBER."

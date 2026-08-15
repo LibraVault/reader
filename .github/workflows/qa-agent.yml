@@ -34,6 +34,13 @@ concurrency:
 
 jobs:
   verify:
+    # No author_association check on the PR here, deliberately — every PR
+    # in this pipeline is opened by the dev agent via GITHUB_TOKEN, whose
+    # author_association is not "COLLABORATOR", so that check would make
+    # this trigger never fire for any pipeline-produced PR. Trust rests on
+    # GitHub's own enforcement of who can add a label (requires
+    # triage/write access) plus the same-repo check below. See the
+    # matching comment in dev-agent.yml.
     if: >-
       vars.AGENTS_PAUSED != 'true' &&
       (
@@ -42,8 +49,7 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.action == 'labeled' &&
           github.event.label.name == 'status:needs-qa' &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+          github.event.pull_request.head.repo.full_name == github.repository
         )
       )
     runs-on: ubuntu-latest
@@ -61,9 +67,7 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
-          ISSUE_NUMBER=$(gh pr view "$PR_NUMBER" --json body -q '.body' \
-            | grep -ioE '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' \
-            | head -1 | grep -oE '[0-9]+' || true)
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
           PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
@@ -108,21 +112,16 @@ jobs:
             `gh issue view` to read them; the PR branch is already checked
             out in the working directory).
 
-            To determine which QA round this is, count how many previous
-            PR comments start with the literal line "QA verdict:" — this
-            is your 1st round if zero, 2nd if one. Do not apply any labels
-            yourself; the workflow does that based on the verdict file you
-            write (see below). Post your normal PR comment per the
-            persona's "Reporting" section (starting with "QA verdict:
-            PASS" or "QA verdict: FAIL (round N)" as its first line, so
-            future rounds can count it), using `gh pr comment`.
+            Do not apply any labels yourself and don't try to track which
+            QA round this is — the workflow determines the retry count
+            deterministically from label history and applies whichever
+            label matches your verdict. Post your PR comment per the
+            persona's "Reporting" section, using `gh pr comment`.
 
             As your very last action, write a single line to the file
-            `qa-verdict.txt` in the repo root: exactly one of `pass`,
-            `fail-retry` (fewer than 2 failed rounds so far), or
-            `fail-exhausted` (this was the 2nd failed round). Always write
-            this file, even if something went wrong earlier — default to
-            `fail-exhausted` if you're not confident enough to say `pass`.
+            `qa-verdict.txt` in the repo root: exactly `pass` or `fail`.
+            Always write this file, even if something went wrong earlier —
+            default to `fail` if you're not confident enough to say `pass`.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,WebSearch"
             --max-turns 40
@@ -148,28 +147,37 @@ jobs:
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
 
-          VERDICT="fail-exhausted"
+          VERDICT="fail"
           if [ -f qa-verdict.txt ]; then
             VERDICT=$(tr -d '[:space:]' < qa-verdict.txt)
             rm -f qa-verdict.txt
           else
-            echo "Agent didn't write qa-verdict.txt — defaulting to fail-exhausted." >&2
+            echo "Agent didn't write qa-verdict.txt — defaulting to fail." >&2
+          fi
+          if [ "$VERDICT" != "pass" ] && [ "$VERDICT" != "fail" ]; then
+            echo "Unrecognized verdict '$VERDICT' — treating as fail." >&2
+            VERDICT="fail"
           fi
           echo "QA verdict for #$PR_NUMBER: $VERDICT"
 
           gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
 
-          case "$VERDICT" in
-            pass)
-              GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-review
-              ;;
-            fail-retry)
+          if [ "$VERDICT" = "pass" ]; then
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-review
+          else
+            # Deterministic retry cap: count prior status:in-progress
+            # labeling events on this PR via the timeline API, rather than
+            # trusting the agent to count its own past comments (fragile —
+            # a human echoing a "QA verdict:" line, or a truncated comment
+            # listing, would throw off an LLM's count). One prior event
+            # means this PR already got its one auto-retry and failed
+            # again — exhausted. Zero means this is its first-ever fail.
+            PRIOR_ROUNDS=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/timeline" --paginate \
+              -q '[.[] | select(.event == "labeled" and .label.name == "status:in-progress")] | length')
+            echo "Prior QA-fail rounds for #$PR_NUMBER: $PRIOR_ROUNDS"
+            if [ "$PRIOR_ROUNDS" -eq 0 ]; then
               GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:in-progress
-              ;;
-            fail-exhausted|*)
-              if [ "$VERDICT" != "fail-exhausted" ]; then
-                echo "Unrecognized verdict '$VERDICT' — treating as fail-exhausted." >&2
-              fi
+            else
               gh pr edit "$PR_NUMBER" --add-label status:needs-info
-              ;;
-          esac
+            fi
+          fi

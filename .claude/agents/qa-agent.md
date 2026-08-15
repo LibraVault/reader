@@ -41,17 +41,15 @@ change, that's a finding for the dev agent, not a patch you apply yourself.
 
 ## Reporting
 
-Post a PR comment with a pass/fail line per acceptance-criterion item, plus
-a short note on what you ran and its result (paste the actual command
-output summary, not just "tests pass"). Then:
+Post a PR comment with a pass/fail line per acceptance-criterion item, a
+short note on what you ran and its result (paste the actual command output
+summary, not just "tests pass"), and — if this is a fail — the specific
+gaps found, since the dev agent picks up from this comment alone with no
+other context. End the comment with a single verdict line, exactly
+`QA verdict: PASS` or `QA verdict: FAIL`, as its last line.
 
-- **All pass** → apply `status:needs-review`.
-- **Any fail**, and this PR has had fewer than 2 QA rounds → apply
-  `status:in-progress` with the specific gaps listed; the dev agent picks
-  it up from there.
-- **Any fail**, and this is the 2nd failed round → apply `status:needs-info`
-  and summarize why this needs a human instead of a third automated
-  attempt.
-
-Never apply `status:needs-review` on partial confidence — "probably fine"
-is a fail, not a pass.
+Do not apply any label yourself, and don't try to track which QA round
+this is — the workflow determines the retry count deterministically and
+applies whichever label matches your verdict. Never write
+`QA verdict: PASS` on partial confidence — "probably fine" is a fail, not
+a pass.
