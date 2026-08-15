@@ -37,8 +37,8 @@ sensitive_paths:
   - "core/vaultcrypto/**"
   - "core/vaultstore/**"
 
-  # Licensing / billing / payments
-  - "core/licensing/**"
+  # Billing / payments (no core/licensing module anymore — no Pro tier
+  # for now, donation-only; these globs are for the still-live donation flow)
   - "**/BtcPayClient*"
   - "**/*Billing*"
 

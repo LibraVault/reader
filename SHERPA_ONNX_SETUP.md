@@ -42,12 +42,12 @@ they already do for engine binaries); `core/tts/build.gradle.kts`'s
 checks after copying from assets into app storage.
 
 This specific voice was a deliberate choice, not the first thing tried.
-LibraVault doesn't have a live paid tier today (per `KNOWN_LIMITATIONS.md`:
-"no Pro tier beyond the simple unlock"), but it does ship Play Billing /
-license-verification infrastructure (`core/licensing`) toward one that isn't
-launched yet — so the model's license needed checking before shipping it
-regardless, to avoid a licensing cleanup once that goes live. Two more
-"obvious" options were looked at and ruled out:
+LibraVault has no paid tier today — the Ed25519-license-key/Play Billing
+infrastructure this note originally referenced (`core/licensing`) was
+removed; all features are free, donation-funded, and a subscription tier
+is a possible future direction, not a near-term one. The model's license
+still needed checking before shipping it regardless. Two more "obvious"
+options were looked at and ruled out:
 
 - **sherpa-onnx's own "Pocket TTS" model family** (`sherpa-onnx-pocket-tts-*`)
   — same name as this feature, and `PocketVoiceCatalog`'s original design

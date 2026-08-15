@@ -38,7 +38,7 @@ body:
         - iOS app
         - core:tts (Read Aloud)
         - core:vaultcrypto / vaultstore (Encrypted Vaults)
-        - core:licensing / billing
+        - Donations / billing
         - EPUB reader
         - PDF reader
         - Markdown viewer
