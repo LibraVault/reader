@@ -13,8 +13,11 @@ android {
     // Standard Android unit-test config: android.os.Bundle / android.util.Log etc.
     // return defaults instead of throwing "not mocked" RuntimeExceptions. Required
     // for tests that touch the Media3 CommandButton / SessionCommand API surface.
+    // isIncludeAndroidResources additionally lets Robolectric resolve the merged
+    // manifest/resources PlayerScreenLandscapeTest's createComposeRule() needs.
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -42,4 +45,16 @@ dependencies {
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation(libs.bundles.testing.jvm)
+
+    // Compose UI test for the landscape player layout (PlayerScreenLandscapeTest)
+    // — Robolectric hosts a real Compose tree on the JVM, same setup as
+    // feature:settings' TtsSettingsSectionTest. JUnit4 (Compose test rules are
+    // JUnit4-only) runs alongside this module's JUnit5 tests via the vintage engine.
+    testImplementation(libs.bundles.testing.android)
+    testImplementation(libs.junit)
+    testRuntimeOnly(libs.junit5.vintage.engine)
+    // Debug-only manifest declaring the ComponentActivity that Compose's
+    // createComposeRule() launches to host test content — picked up by unit
+    // tests too via testOptions.unitTests.isIncludeAndroidResources above.
+    debugImplementation(libs.compose.ui.test.manifest)
 }
