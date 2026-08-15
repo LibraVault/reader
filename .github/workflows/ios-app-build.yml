@@ -196,8 +196,7 @@ jobs:
           ./gradlew :core:domain:assembleDebug \
                     :core:tts:assembleDebug \
                     :core:logger:assembleDebug \
-                    :core:storage:assembleDebug \
-                    :core:licensing:assembleDebug -q
+                    :core:storage:assembleDebug -q
 
       - name: Run Unit Tests
         run: |

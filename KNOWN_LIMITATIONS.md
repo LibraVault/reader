@@ -63,8 +63,11 @@ contributors don't mistake them for gaps, and so users don't ask
 
 - The Play flavor's donation flow uses BTCPay (self-hosted). It's
   not a one-tap "Buy Pro" — it's a manual crypto transfer.
-- There is no Pro tier beyond the simple unlock. No subscription, no
-  monthly tier, no per-book purchase.
+- There is no Pro tier at all right now, on any flavor. No unlock, no
+  subscription, no monthly tier, no per-book purchase — every feature,
+  including Encrypted Vaults, is free and donation-funded. A subscription
+  is a possible future direction once there's a real install base to
+  justify it, not before.
 
 ## Accessibility
 

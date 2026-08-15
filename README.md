@@ -104,17 +104,20 @@ libravault/
 ├── core/
 │   ├── database/               # Room entities, DAOs, repositories (KMP commonMain)
 │   ├── domain/                 # Models, interfaces, use cases (KMP commonMain)
-│   ├── licensing/              # Play Billing + F-Droid Ed25519 license key (KMP)
 │   ├── logger/                 # Local opt-in crash logger (KMP commonMain)
 │   ├── storage/                # SAF vault manager, file scanner, metadata extractor
 │   ├── tts/                    # Text-to-speech reader support (KMP commonMain)
-│   └── ui/                     # Material3 theme, colours, typography
+│   ├── ui/                     # Material3 theme, colours, typography
+│   ├── vaultcrypto/            # Encrypted Vaults: chunked AES-256-GCM format, key hierarchy
+│   ├── vaultstore/             # Encrypted Vaults: lifecycle, Keystore wrap, manifest
+│   └── vaultcontent/           # Encrypted Vaults: Readium/Media3/PDF content adapters
 └── feature/
     ├── onboarding/             # First-launch vault setup
     ├── library/                # Home screen, search, scan trigger
     ├── reader/                 # EPUB + PDF reader
     ├── player/                 # Audio player, sleep timer, chapters
-    └── settings/               # App preferences, logging, cache management
+    ├── settings/               # App preferences, logging, cache management
+    └── vault/                  # Encrypted Vaults UI: create/unlock/list, import, read/play
 ```
 
 ---

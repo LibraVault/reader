@@ -44,17 +44,17 @@ jobs:
       #
       # `testDebugUnitTest` is a task NAME, not a path — Gradle runs it in every
       # subproject that has a task by that exact name and *silently* skips any
-      # subproject that doesn't, with no error and no log line. core:licensing,
-      # feature:settings, and app all have `flavorDimensions` (fdroid/play), so
-      # they only have `test{Fdroid,Play}{Debug,Release}UnitTest` tasks — no plain
+      # subproject that doesn't, with no error and no log line. feature:settings
+      # and app both have `flavorDimensions` (fdroid/play), so they only have
+      # `test{Fdroid,Play}{Debug,Release}UnitTest` tasks — no plain
       # `testDebugUnitTest` — and were never actually exercised by this step
       # despite having real, passing-when-run-directly tests. Call out their
       # flavor-specific debug tasks explicitly so this can't recur silently.
+      # (core:licensing used to be listed here too — deleted, no Pro tier for
+      # now, see the Encrypted Vaults Phase 6 cleanup.)
       - name: Run JVM tests
         run: |
           ./gradlew testDebugUnitTest \
-            :core:licensing:testFdroidDebugUnitTest \
-            :core:licensing:testPlayDebugUnitTest \
             :feature:settings:testFdroidDebugUnitTest \
             :feature:settings:testPlayDebugUnitTest \
             :app:testFdroidDebugUnitTest \

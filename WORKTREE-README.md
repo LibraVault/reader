@@ -81,7 +81,6 @@ Full details: `docs/v3-ios-ci-setup.md`
 - `core/database` — SQLite schema, DAOs, migrations (Room KMP)
 - `core/storage` — File scanning, metadata extraction (interfaces + platform `actual`s)
 - `core/tts` — Text-to-speech interface (iOS implementation deferred to v3.1)
-- `core/licensing` — Licensing interfaces (iOS implementation in v3.1)
 - `core/logger` — Local-only logging interface
 
 ### iOS-Only Modules

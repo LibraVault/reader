@@ -1,5 +1,15 @@
 # LibraVault Test Plan
 
+> **Stale as of the Encrypted Vaults work (2026-08)**: the module list,
+> file/test counts, and "v0.3.0-alpha" metrics below predate `core:vaultcrypto`/
+> `core:vaultstore`/`core:vaultcontent`/`feature:vault` (and several other
+> modules) entirely — treat the specific numbers as historical, not current.
+> The `core/licensing` references have been removed (module deleted, no
+> Pro/paid tier for now — see `docs/threat-model.md`'s "Out of scope"
+> section), but this document otherwise still needs a full refresh against
+> the current module set. Not done here — out of scope for the change that
+> prompted this note.
+
 ## Overview
 
 This document describes the unit test strategy, current coverage, deliberate gaps, and future priorities for the LibraVault reader app. All unit tests use **JUnit 5 (Jupiter) + MockK + Turbine + kotlinx-coroutines-test** following a consistent house style across modules.
@@ -56,11 +66,6 @@ gh workflow run android-tts-audio-test.yml
 - **AddVaultFolderUseCaseTest** ✅: existing-URI deduplication, new-URI insertion
 - **ScanVaultUseCaseTest** (pre-existing): Observable scan flow with error handling
 - **Status**: All pure functions testable without Android framework. ✅ COMPLETE.
-
-#### core/licensing
-- **LicenseVerifierTest** ✅: 15 active tests + 2 disabled tests covering valid signatures, tampering detection, format validation, Ed25519 round-trip verification, base32 encoding edge cases
-- **Note**: Two tests for untested error branches (malformed part count, unknown tier prefix) are `@Disabled` pending Ed25519-signed test vectors. Generate via `tools/sign_key.py --seed 5b8a9c1d... <payload>` then uncomment tests and update MALFORMED_PARTS_COUNT_KEY / UNKNOWN_TIER_PREFIX_KEY constants
-- **Status**: Core crypto logic well-tested; licensing state (EncryptedSharedPreferences, KeyProGate) deferred to instrumented tests. ✅ 95% COMPLETE.
 
 #### core/storage
 - **CoverArtCacheTest** (pre-existing): `calculateSampleSize()` logic (power-of-two invariant, 16x cap, 0/negative inputs)
@@ -120,10 +125,14 @@ gh workflow run android-tts-audio-test.yml
 - Room's own test harness validates SQL correctness; we verify via instrumented tests
 - Covered by integration tests with in-memory Room databases
 
-**EncryptedSharedPreferences & Android Keystore** (core/licensing)
-- `ProStateManager`, `KeyProGate` depend on OS-level Keystore APIs
-- Requires Robolectric or device/emulator for testing
-- Deferred to instrumented tests or manual device verification
+**Android Keystore (real hardware-backed keys)** (core/vaultstore)
+- `AndroidKeystoreHardwareKeyWrap` depends on OS-level Keystore APIs
+  (StrongBox/TEE) — not mockable in a plain JVM test
+- `VaultStore`'s own create/unlock/lock orchestration is unit-tested
+  against `FakeHardwareKeyWrapFactory` instead (`VaultStoreTest.kt`); only
+  `AndroidKeystoreHardwareKeyWrap` itself needs a real device, verified
+  once via the Encrypted Vaults Phase 0 spike (both a budget and a
+  flagship device confirmed hardware-backed keys)
 
 **Media3 Framework Integration** (feature/player)
 - MediaController callbacks, session/playback state serialization
@@ -196,7 +205,6 @@ gh workflow run android-tts-audio-test.yml
 | Module | Files | Tests | Branches | Coverage Goal | Status |
 |--------|-------|-------|----------|---------------|--------|
 | core/domain | 3 | 20 | 100% | >90% | ✅ 95% |
-| core/licensing | 1 | 15 | 95% | >85% | ✅ 90% |
 | core/logger | 1 | 6 | 100% | >90% | ✅ 95% |
 | core/database | 1 | 3 | 100% | 100% | ✅ 100% |
 | core/storage | 3 | 6 | 70% | >80% | 🟡 75% |
@@ -217,7 +225,7 @@ gh workflow run android-tts-audio-test.yml
 - ✅ **XXE Prevention** (core/storage): FEATURE_PROCESS_DOCDECL=false prevents DOCTYPE entity resolution in EPUB OPF parsing (MetadataExtractorOpfTest)
 - ✅ **HTML Sanitization** (feature/reader): Jsoup script/style/iframe/SVG removal + text-only extraction for TTS (EpubStripHtmlTest)
 - ✅ **Migration Idempotency** (core/database): MIGRATION_4_5 PRAGMA check prevents duplicate-column crash (MigrationsTest)
-- ✅ **Crypto Verification** (core/licensing): Ed25519 signature validation over payload (LicenseVerifierTest)
+- ✅ **Encrypted Vault crypto** (core/vaultcrypto): chunked AES-256-GCM round-trip, tamper detection, deterministic per-chunk nonce derivation, a real Project Wycheproof known-answer vector — see `docs/threat-model.md`'s Encrypted Vaults rows for the full list
 - ✅ **URL Validation** (feature/settings): Checkout-link HTTPS-only scheme allowlist (SafeCheckoutLinkTest)
 
 ### Regressions Protected
