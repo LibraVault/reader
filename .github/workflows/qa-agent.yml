@@ -98,9 +98,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
 
+      - name: Record run start time
+        # Timestamp boundary for the comment-verdict fallback below — lets
+        # "Advance PR" tell this run's own PR comment apart from a stale one
+        # left over from an earlier QA round on the same PR.
+        if: steps.guard.outputs.skip != 'true'
+        id: run-start
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Run QA agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
+        # Without this, a hard crash (max-turns exhausted, tool error) skips
+        # every step below by GitHub Actions' default job-status semantics —
+        # the PR is left stuck on status:needs-qa forever with no comment
+        # and no human signal. Mirrors dev-agent.yml's identical fix for the
+        # same failure mode (see that workflow's "Force-classify risk and
+        # advance to QA" step comment) — "Advance PR" below checks
+        # steps.agent.outcome to react to it instead of silently continuing.
+        continue-on-error: true
         env:
           # Safe default token: this step only comments and reports a
           # verdict to a file. The labels that need to cross into
@@ -128,19 +144,25 @@ jobs:
             Do not apply any labels yourself and don't try to track which
             QA round this is — the workflow determines the retry count
             deterministically from label history and applies whichever
-            label matches your verdict. Post your PR comment per the
-            persona's "Reporting" section, using `gh pr comment`.
+            label matches your verdict.
 
-            As your very last action, write a single line to the file
-            `qa-verdict.txt` in the repo root: exactly `pass` or `fail`.
-            Always write this file, even if something went wrong earlier —
-            default to `fail` if you're not confident enough to say `pass`.
+            The persona's "Reporting is mandatory" section is not
+            optional framing — read it first and budget your turns to it
+            before you start investigating. This workflow step has its own
+            hard --max-turns 40 below; if you exhaust it without having
+            posted the PR comment and written qa-verdict.txt, the PR is
+            left with no usable signal at all, which is worse than a fast,
+            low-confidence FAIL.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,WebSearch"
             --max-turns 40
 
       - name: Mint pipeline App token
-        if: steps.guard.outputs.skip != 'true'
+        # !cancelled(): must still run even if "Run QA agent" failed/crashed
+        # (see that step's continue-on-error comment) — "Advance PR" needs
+        # this token either way, to route a crash to status:needs-info just
+        # as much as a real pass/fail verdict.
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -148,7 +170,7 @@ jobs:
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
 
       - name: Advance PR based on QA verdict
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Needed for status:needs-review (crosses into principal-review.yml)
@@ -159,18 +181,74 @@ jobs:
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          VERDICT="fail"
+          # A genuine crash (max-turns exhausted, tool error) is a pipeline
+          # failure, not a QA finding — there's nothing for dev-agent's
+          # automated retry to act on, so route straight to a human instead
+          # of spending that retry on a blank slate. Mirrors dev-agent.yml's
+          # identical steps.agent.outcome check for the same reason.
+          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+            echo "QA agent run crashed for PR #$PR_NUMBER — routing to status:needs-info instead of a scored verdict." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
+            gh pr comment "$PR_NUMBER" --body "qa-agent's run crashed or exhausted its turn budget (see the [workflow run]($RUN_URL)) before reaching a verdict — routed to a human instead of silently leaving this on status:needs-qa or spending the automated dev-agent retry on a run that found nothing. Needs a human to either re-run QA (re-add \`status:needs-qa\`) or review this PR directly."
+            exit 0
+          fi
+
+          # Primary signal: qa-verdict.txt, written as the agent's mandated
+          # last action.
+          FILE_VERDICT=""
           if [ -f qa-verdict.txt ]; then
-            VERDICT=$(tr -d '[:space:]' < qa-verdict.txt | tr '[:upper:]' '[:lower:]')
+            FILE_VERDICT=$(tr -d '[:space:]' < qa-verdict.txt | tr '[:upper:]' '[:lower:]')
             rm -f qa-verdict.txt
+            if [ "$FILE_VERDICT" != "pass" ] && [ "$FILE_VERDICT" != "fail" ]; then
+              echo "qa-verdict.txt contained an unrecognized value ('$FILE_VERDICT') — ignoring it." >&2
+              FILE_VERDICT=""
+            fi
           else
-            echo "Agent didn't write qa-verdict.txt — defaulting to fail." >&2
+            echo "Agent didn't write qa-verdict.txt." >&2
           fi
-          if [ "$VERDICT" != "pass" ] && [ "$VERDICT" != "fail" ]; then
-            echo "Unrecognized verdict '$VERDICT' — treating as fail." >&2
-            VERDICT="fail"
+
+          # Fallback signal: the persona is also required to end its PR
+          # comment with an exact "QA verdict: PASS"/"QA verdict: FAIL"
+          # line. A real run of this pipeline (PR #186, 2026-08-15) hit
+          # exactly the gap this covers — the agent step completed cleanly
+          # (no crash, so the check above didn't fire) but wrote neither the
+          # file nor a comment, and the workflow silently defaulted to
+          # "fail" with no way to tell that apart from a genuine finding.
+          # Restricted to comments posted after this run started, so a
+          # match here is never a stale verdict left over from an earlier
+          # QA round on the same PR (which already advanced the PR out of
+          # status:needs-qa once).
+          COMMENT_VERDICT=""
+          if [ -z "$FILE_VERDICT" ]; then
+            RECENT_COMMENTS=$(gh pr view "$PR_NUMBER" --json comments \
+              -q "[.comments[] | select(.createdAt > \"${{ steps.run-start.outputs.started_at }}\") | .body] | join(\"\n\")")
+            if echo "$RECENT_COMMENTS" | grep -qE '^QA verdict: PASS[[:space:]]*$'; then
+              COMMENT_VERDICT="pass"
+            elif echo "$RECENT_COMMENTS" | grep -qE '^QA verdict: FAIL[[:space:]]*$'; then
+              COMMENT_VERDICT="fail"
+            fi
+            if [ -n "$COMMENT_VERDICT" ]; then
+              echo "qa-verdict.txt was missing, but this run's PR comment ended with an explicit verdict line — using that: $COMMENT_VERDICT" >&2
+            fi
           fi
+
+          VERDICT="${FILE_VERDICT:-$COMMENT_VERDICT}"
+
+          # Neither signal present: the agent's run reported nothing at all.
+          # Same reasoning as the crash branch above — this is an agent
+          # malfunction, not a QA finding, so it doesn't burn the automated
+          # dev-agent retry or get labeled as an ordinary QA failure.
+          if [ -z "$VERDICT" ]; then
+            echo "QA agent produced neither a verdict file nor a verdict comment line — treating as an agent malfunction, not a QA finding." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
+            gh pr comment "$PR_NUMBER" --body "qa-agent's run completed (see the [workflow run]($RUN_URL)) without producing a verdict — no \`qa-verdict.txt\` and no \"QA verdict: PASS/FAIL\" line in any comment it posted. This is an agent-level failure, not a real QA finding, so it isn't being sent through the automated dev-agent retry — nothing was actually found to fix. Needs a human to either re-run QA (re-add \`status:needs-qa\`) or review this PR directly."
+            exit 0
+          fi
+
           echo "QA verdict for #$PR_NUMBER: $VERDICT"
 
           gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
