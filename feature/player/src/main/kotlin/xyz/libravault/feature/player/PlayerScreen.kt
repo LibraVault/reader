@@ -160,8 +160,7 @@ fun PlayerScreen(
 
                 state.item != null -> {
                     val item = state.item!!
-                    val isLandscape = LocalConfiguration.current.orientation ==
-                        Configuration.ORIENTATION_LANDSCAPE
+                    val isLandscape = isLandscapeOrientation(LocalConfiguration.current)
                     val actions = PlayerActions(
                         onSeek             = viewModel::seekTo,
                         onPlayPause        = viewModel::togglePlayPause,
@@ -230,6 +229,17 @@ fun PlayerScreen(
             )
     }
 }
+
+// Split out of the isLandscape val above as a plain (non-Composable) function so
+// the actual routing condition — not just the two layouts it chooses between —
+// has direct test coverage (see PlayerOrientationTest). Inlining the comparison
+// at the call site left it exercised only by manual QA: flip `==` to `!=` or
+// swap the constant and every device would render the wrong layout for its
+// rotation while CI stayed green, since PlayerScreenLandscapeTest calls
+// LandscapePlayerContent/PortraitPlayerContent directly and never routes through
+// this check.
+internal fun isLandscapeOrientation(configuration: Configuration): Boolean =
+    configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
 // Bundles the player's callbacks so the layout composables below are pure
 // functions of (item, state, actions) — no PlayerViewModel dependency — and can
@@ -308,10 +318,14 @@ internal fun LandscapePlayerContent(
 
         Spacer(Modifier.width(24.dp))
 
+        // No fillMaxHeight() here (unlike the cover/title Column above) — this
+        // Column's height is just its intrinsic content height, so it has no
+        // extra space to distribute and verticalArrangement = Center would be a
+        // no-op. It reads centered anyway because the parent Row's own
+        // verticalAlignment = CenterVertically centers the whole block.
         Column(
             modifier = Modifier.weight(1f),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
         ) {
             PlayerSeekBar(
                 positionMs = state.positionMs,

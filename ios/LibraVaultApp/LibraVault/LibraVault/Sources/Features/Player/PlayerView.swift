@@ -29,7 +29,7 @@ struct PlayerView: View {
                 // landscape instead of just squeezing the portrait column sideways.
                 GeometryReader { proxy in
                     Group {
-                        if proxy.size.width > proxy.size.height {
+                        if isLandscapeOrientation(size: proxy.size) {
                             landscapeContent(book: book)
                         } else {
                             portraitContent(book: book)
