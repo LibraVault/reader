@@ -45,10 +45,13 @@ import org.readium.r2.navigator.input.DragEvent as ReadiumDragEvent
 import org.readium.r2.navigator.input.InputListener as ReadiumInputListener
 import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
 import org.readium.r2.navigator.input.TapEvent
+import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
+import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.core.vaultstore.VaultHighlight
 
 private const val VAULT_EPUB_FRAGMENT_TAG = "vault_epub_navigator"
@@ -63,15 +66,15 @@ private val VAULT_HIGHLIGHT_COLORS = listOf("#FFE066", "#90EE90", "#87CEEB", "#F
 /**
  * Readium navigator host for vault EPUBs — paginated reading with left/right
  * tap-to-turn and centre-tap-to-toggle-toolbar. Supports bookmark navigation,
- * a text-selection color picker, and highlight decorations (issue: vault
- * bookmarks/highlights UI) — still deliberately smaller than `feature:reader`'s
- * `EpubNavigatorView` in one respect: no per-user `ReaderSettings` hot-reload
- * (separate follow-up).
+ * a text-selection color picker, highlight decorations, and per-user
+ * [VaultReaderSettings] hot-reload — the same feature set
+ * `feature:reader`'s `EpubNavigatorView` has, now at parity.
  */
 @Composable
 fun VaultEpubReaderScreen(
     publication: Publication,
     fragmentManager: FragmentManager,
+    settings: VaultReaderSettings,
     highlights: List<VaultHighlight>,
     pendingLocatorJson: String?,
     onPendingLocatorConsumed: () -> Unit,
@@ -181,7 +184,7 @@ fun VaultEpubReaderScreen(
 
         val factory = EpubNavigatorFactory(publication).createFragmentFactory(
             initialLocator     = null,
-            initialPreferences = EpubPreferences(),
+            initialPreferences = settings.toVaultEpubPreferences(),
             listener           = listener,
             configuration      = config,
         )
@@ -221,6 +224,16 @@ fun VaultEpubReaderScreen(
         }
     }
 
+    // ── Settings hot-reload ───────────────────────────────────────────────────
+    // Keyed on both settings and navigator: navigator starts null and is set
+    // inside DisposableEffect above, so LaunchedEffect(settings) alone would
+    // miss applying the very first settings change if it landed before the
+    // fragment finished committing (same reasoning feature:reader's
+    // EpubNavigatorView documents for its own identical effect).
+    LaunchedEffect(settings, navigator) {
+        navigator?.submitPreferences(settings.toVaultEpubPreferences())
+    }
+
     // ── Bookmark navigation ──────────────────────────────────────────────────
     LaunchedEffect(pendingLocatorJson, navigator) {
         val json = pendingLocatorJson ?: return@LaunchedEffect
@@ -256,3 +269,27 @@ fun VaultEpubReaderScreen(
         nav.applyDecorations(decorations, DECORATION_GROUP_HIGHLIGHTS)
     }
 }
+
+/**
+ * Maps [VaultReaderSettings] to Readium's [EpubPreferences] — same mapping
+ * `feature:reader`'s private `ReaderSettings.toEpubPreferences()` uses (see
+ * that function's doc for the font-size/percentage rationale); duplicated
+ * here for the same "parallel, not shared" reason as the rest of this file.
+ */
+@OptIn(ExperimentalReadiumApi::class)
+private fun VaultReaderSettings.toVaultEpubPreferences(): EpubPreferences = EpubPreferences(
+    theme = when (theme) {
+        ReadingTheme.DARK  -> Theme.DARK
+        ReadingTheme.LIGHT -> Theme.LIGHT
+        ReadingTheme.SEPIA -> Theme.SEPIA
+    },
+    publisherStyles = false,
+    fontSize   = fontSize.toDouble(),
+    lineHeight = lineSpacing.toDouble(),
+    fontFamily = when (fontFamily) {
+        VaultReaderFontFamily.SERIF      -> ReadiumFontFamily.SERIF
+        VaultReaderFontFamily.SANS_SERIF -> ReadiumFontFamily.SANS_SERIF
+        VaultReaderFontFamily.MONOSPACE  -> ReadiumFontFamily.MONOSPACE
+        VaultReaderFontFamily.SYSTEM     -> null
+    },
+)

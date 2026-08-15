@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.readium.r2.shared.publication.Publication
+import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.core.vaultcrypto.VaultFileReader
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultHighlight
@@ -298,5 +299,83 @@ class VaultReaderViewModelTest {
 
         vm.clearPendingNavigation()
         assertNull(vm.pendingNavigationRef.value)
+    }
+
+    // ── Reading settings ──────────────────────────────────────────────────────
+
+    @Test
+    fun `settings default to dark theme, 1x font size, system font, 1_4x line spacing`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        val defaults = vm.settings.value
+        assertEquals(ReadingTheme.DARK, defaults.theme)
+        assertEquals(1.0f, defaults.fontSize)
+        assertEquals(VaultReaderFontFamily.SYSTEM, defaults.fontFamily)
+        assertEquals(1.4f, defaults.lineSpacing)
+    }
+
+    @Test
+    fun `onThemeChanged updates only the theme field`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onThemeChanged(ReadingTheme.SEPIA)
+
+        assertEquals(ReadingTheme.SEPIA, vm.settings.value.theme)
+        assertEquals(1.0f, vm.settings.value.fontSize)
+    }
+
+    @Test
+    fun `onFontSizeChanged clamps to the 0_8 to 2_0 range`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.onFontSizeChanged(5.0f)
+        assertEquals(2.0f, vm.settings.value.fontSize)
+
+        vm.onFontSizeChanged(-1.0f)
+        assertEquals(0.8f, vm.settings.value.fontSize)
+    }
+
+    @Test
+    fun `onLineSpacingChanged clamps to the 1_0 to 2_5 range`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.onLineSpacingChanged(10.0f)
+        assertEquals(2.5f, vm.settings.value.lineSpacing)
+
+        vm.onLineSpacingChanged(0.0f)
+        assertEquals(1.0f, vm.settings.value.lineSpacing)
+    }
+
+    @Test
+    fun `onFontFamilyChanged updates only the font family field`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onFontFamilyChanged(VaultReaderFontFamily.SERIF)
+
+        assertEquals(VaultReaderFontFamily.SERIF, vm.settings.value.fontFamily)
+        assertEquals(1.4f, vm.settings.value.lineSpacing)
     }
 }
