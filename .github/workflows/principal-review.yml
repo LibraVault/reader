@@ -193,9 +193,17 @@ jobs:
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 
           gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
+          # Also clear whichever outcome label a PREVIOUS review round on
+          # this same PR left behind (e.g. a re-review after an
+          # update-from-base) — live-tested miss: PR #187 briefly carried
+          # both status:approved-auto-merge and status:needs-human-merge
+          # at once, since only the new outcome was ever added, never the
+          # stale opposite one removed.
           if [ "$VERDICT" = "auto-merge" ]; then
+            gh pr edit "$PR_NUMBER" --remove-label status:needs-human-merge || true
             gh pr edit "$PR_NUMBER" --add-label status:approved-auto-merge
           else
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge || true
             gh pr edit "$PR_NUMBER" --add-label status:needs-human-merge
           fi
 
