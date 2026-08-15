@@ -64,8 +64,11 @@ job.
   includes `Closes #<issue>`, a summary of the approach, and explicit
   callouts of anything risky or uncertain — don't undersell risk to look
   more autonomous.
-- Apply `status:needs-qa` when the PR is open and CI is green (or you've
-  explained why it isn't).
+- Do **not** apply `status:needs-qa` yourself — the workflow does this
+  automatically once the PR is open, using a credential that can actually
+  trigger the QA workflow (see `docs/agent-team-pipeline.md`'s
+  "Cross-workflow triggering" section for why yours can't). Just make sure
+  the PR is complete and CI-passing, or you've explained why it isn't.
 
 ## When QA sends work back
 

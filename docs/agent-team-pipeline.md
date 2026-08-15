@@ -3,9 +3,9 @@
 Status: **Phase 1 proven live** (`.github/workflows/dev-agent.yml`) — first
 real triage run
 ([31832792052](https://github.com/LibraVault/reader/actions/runs/31832792052))
-triaged a disposable issue and opened PR #162, later merged. Phases 2-3 (QA,
-principal review workflows) don't exist yet; everything past `status:needs-qa`
-today still needs a human.
+triaged a disposable issue and opened PR #162, later merged. **Phases 2-3
+built, not yet proven live** (`.github/workflows/qa-agent.yml`,
+`.github/workflows/principal-review.yml`) — see the rollout plan below.
 
 **Auth: subscription OAuth token, not an API key.** The workflow runs on
 GitHub-hosted (ephemeral) runners and authenticates via
@@ -135,6 +135,23 @@ scoped to the `reader` repository only, with read/write on code, issues,
 and pull requests. Credentials: `PIPELINE_APP_ID` (repo variable) and
 `PIPELINE_APP_PRIVATE_KEY` (repo secret).
 
+**Not every label transition uses the App token, on purpose.** A workflow
+that self-applies, with the App token, a label matching its *own* trigger
+condition would fire a duplicate run of itself (`labeled` events aren't
+deduped by content, only suppressed when the token can't trigger runs at
+all). Concretely: `dev-agent.yml` self-applies `status:ready-for-dev` to
+the issue it's already processing — that must stay on `GITHUB_TOKEN`, or it
+would re-trigger itself mid-run. Each workflow below uses the App token
+*only* for the specific label(s) that need to reach a *different* workflow,
+via a deterministic step that runs after the agent itself is done (the
+agent's own step always keeps the safe default token):
+
+| Workflow | Safe (`GITHUB_TOKEN`) | Crosses phases (App token) |
+|---|---|---|
+| `dev-agent.yml` | `status:ready-for-dev`, `status:in-progress` (issue), `status:needs-info`, comments | `status:needs-qa` (→ qa-agent.yml) |
+| `qa-agent.yml` | `status:needs-info`, comments | `status:needs-review` (→ principal-review.yml), `status:in-progress` on the PR (→ dev-agent.yml) |
+| `principal-review.yml` | everything — both outcomes are terminal (auto-merge happens inline in the same job; human-merge waits for a person) | *(none needed)* |
+
 ## Rollout plan
 
 1. **Phase 0 (PR #146)** — issue templates, label taxonomy, agent-policy.yml,
@@ -143,9 +160,12 @@ and pull requests. Credentials: `PIPELINE_APP_ID` (repo variable) and
    fix), triggered on issue open / `status:ready-for-dev` label, or
    manually via `workflow_dispatch` for testing against a specific issue
    number. Needs a `CLAUDE_CODE_OAUTH_TOKEN` repo secret to run at all.
-3. **Phase 2** — `qa-agent.yml` workflow, triggered on `status:needs-qa`.
-4. **Phase 3** — `principal-review.yml` workflow, triggered on
-   `status:needs-review`; implements the auto-merge/human-merge split.
+3. **Phase 2 (built, unproven)** — `qa-agent.yml` workflow, triggered on
+   PRs labeled `status:needs-qa`, or manually via `workflow_dispatch` for
+   testing against a specific PR number.
+4. **Phase 3 (built, unproven)** — `principal-review.yml` workflow,
+   triggered on PRs labeled `status:needs-review`; implements the
+   auto-merge/human-merge split, including waiting for CI before merging.
 5. **Phase 4** — guardrails: concurrency cap, `AGENTS_PAUSED` kill switch,
    auto-merge log.
 6. **Phase 5** — pilot on 2-3 low-risk open `reader` issues with auto-merge
