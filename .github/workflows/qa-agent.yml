@@ -81,7 +81,10 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+            echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+            ISSUE_LABELS=""
+          }
           if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
             echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -187,5 +190,6 @@ jobs:
               GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:in-progress
             else
               gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "QA failed for the 2nd time — automated retry budget (1 auto-retry) exhausted, routing to a human instead of trying a 3rd time. See the QA verdict comment(s) above for what's still failing."
             fi
           fi

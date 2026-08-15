@@ -6,10 +6,13 @@ name: Principal Review Agent
 # the actual review logic; this workflow only wires triggers, guardrails,
 # and the auto-merge/human-merge split around it.
 #
-# Neither outcome here needs to trigger a further workflow run (auto-merge
-# happens inline in this same job; human-merge is terminal until a person
-# acts), so — unlike dev-agent.yml/qa-agent.yml — this workflow never needs
-# the pipeline App token. Plain GITHUB_TOKEN throughout.
+# Uses the pipeline App token too, but for a different reason than
+# dev-agent.yml/qa-agent.yml: neither outcome here needs to trigger a
+# further workflow run, but the review itself does need a non-author
+# identity. Every PR in this pipeline is opened/pushed by GITHUB_TOKEN
+# (github-actions[bot]), and GitHub refuses to let an actor approve or
+# request changes on its own PR — posting the review as GITHUB_TOKEN would
+# fail on every run. The App is a distinct identity, so it can review.
 
 on:
   pull_request:
@@ -75,7 +78,10 @@ jobs:
 
           ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
           if [ -n "$ISSUE_NUMBER" ]; then
-            ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+            ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+              echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+              ISSUE_LABELS=""
+            }
             if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
               echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
               echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -90,11 +96,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
 
+      - name: Mint pipeline App token
+        if: steps.guard.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
       - name: Run principal review agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Must be the App token, not GITHUB_TOKEN — see the file header
+          # comment for why (self-approval is otherwise rejected).
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -123,7 +139,7 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         id: verdict
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
@@ -152,28 +168,10 @@ jobs:
       - name: Auto-merge if approved
         if: steps.guard.outputs.skip != 'true' && steps.verdict.outputs.verdict == 'auto-merge'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
-
-          # Re-check both kill switches right before merging — the
-          # pipeline could have been paused, or a human could have parked
-          # this specific PR, any time during the run (including during
-          # the CI-wait loop below).
-          if [ "${{ vars.AGENTS_PAUSED }}" = "true" ]; then
-            echo "AGENTS_PAUSED became true during this run — stopping short of merge." >&2
-            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
-            gh pr comment "$PR_NUMBER" --body "Pipeline was paused (AGENTS_PAUSED) after approval but before merge — routed to a human instead of auto-merging."
-            exit 0
-          fi
-          CURRENT_PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
-          if echo ",$CURRENT_PR_LABELS," | grep -q ",status:blocked,"; then
-            echo "status:blocked was added during this run — stopping short of merge." >&2
-            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge
-            gh pr comment "$PR_NUMBER" --body "status:blocked was applied after approval but before merge — routed to a human instead of auto-merging."
-            exit 0
-          fi
 
           echo "Waiting for CI to go green on #$PR_NUMBER (up to 20 minutes)..."
           # Fail-safe by construction: only declare success when every
@@ -202,6 +200,24 @@ jobs:
           if [ "$STATE" != "success" ]; then
             gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
             gh pr comment "$PR_NUMBER" --body "CI didn't finish within 20 minutes of auto-merge approval — routed to a human instead of waiting indefinitely."
+            exit 0
+          fi
+
+          # Re-check both kill switches immediately before merging, not
+          # just once at the top of this step — the pipeline could have
+          # been paused, or a human could have parked this specific PR,
+          # at any point during the up-to-20-minute wait above.
+          if [ "${{ vars.AGENTS_PAUSED }}" = "true" ]; then
+            echo "AGENTS_PAUSED became true during this run — stopping short of merge." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "Pipeline was paused (AGENTS_PAUSED) after approval but before merge — routed to a human instead of auto-merging."
+            exit 0
+          fi
+          CURRENT_PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$CURRENT_PR_LABELS," | grep -q ",status:blocked,"; then
+            echo "status:blocked was added during this run — stopping short of merge." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge
+            gh pr comment "$PR_NUMBER" --body "status:blocked was applied after approval but before merge — routed to a human instead of auto-merging."
             exit 0
           fi
 

@@ -32,6 +32,15 @@ permissions:
   id-token: write
 
 concurrency:
+  # Known gap, accepted rather than engineered around: a triage run (keyed
+  # by issue number) and a later revise run for a PR against that same
+  # issue (keyed by PR number) use different concurrency groups, since
+  # concurrency.group is fixed from raw event context before any step
+  # runs — it can't call the script that resolves a PR back to its issue.
+  # In practice this only matters if a human manually re-triggers triage
+  # (e.g. re-applying status:ready-for-dev) while a revise run for the
+  # same issue's PR is already in flight; AGENTS_PAUSED / status:blocked
+  # are the intended manual override if that's ever actually hit.
   group: ${{ github.event_name == 'pull_request' && format('dev-agent-pr-{0}', github.event.pull_request.number) || format('dev-agent-issue-{0}', github.event.issue.number || github.event.inputs.issue_number) }}
   cancel-in-progress: false
 
@@ -112,7 +121,14 @@ jobs:
           fi
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
-          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          # Guarded rather than left to fail under set -e: in revise mode,
+          # ISSUE_NUMBER came from regex-parsing free text in the PR body,
+          # so a deleted/transferred issue or a stale reference shouldn't
+          # hard-crash this step — just treat it as unblocked and proceed.
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+            echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+            LABELS=""
+          }
           echo "Issue #$ISSUE_NUMBER labels: $LABELS"
           if echo ",$LABELS," | grep -q ",status:blocked,"; then
             echo "status:blocked is set — a human parked this, skipping." >&2
@@ -120,6 +136,16 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Check out PR branch (revise mode only)
+        if: steps.guard.outputs.skip != 'true' && steps.guard.outputs.mode == 'revise'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Deterministic, unlike qa-agent.yml/principal-review.yml this
+        # mirrors — don't rely solely on the agent remembering to run
+        # `gh pr checkout` from its prompt; actions/checkout@v4 otherwise
+        # leaves the runner in detached HEAD on the PR's merge ref.
+        run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
 
       - name: Run dev agent
         if: steps.guard.outputs.skip != 'true'
@@ -155,7 +181,7 @@ jobs:
             and CI-passing (or you've explained why it isn't) before you
             finish.
 
-            ${{ steps.guard.outputs.mode == 'revise' && format('You are being RE-INVOKED: QA sent PR #{0} back with status:in-progress against issue #{1}. Read the persona''s "When QA sends work back" section. Run `gh pr checkout {0}`, read the QA agent''s latest PR comment for the specific gaps it found, and fix only those — do not rescope the whole change. After 2 failed QA rounds on this issue, stop, apply status:needs-info to the issue instead, and summarize what''s blocking you rather than trying again.', steps.guard.outputs.pr_number, steps.guard.outputs.issue_number) || format('Triage and, if scoped confidently, implement issue #{0} in this repository (use `gh issue view` to read it).', steps.guard.outputs.issue_number) }}
+            ${{ steps.guard.outputs.mode == 'revise' && format('You are being RE-INVOKED: QA sent PR #{0} back with status:in-progress against issue #{1}. Read the persona''s "When QA sends work back" section. The PR''s branch is already checked out in the working directory — read the QA agent''s latest PR comment for the specific gaps it found, and fix only those. Do not rescope the whole change and do not open a new PR; push commits to this same branch.', steps.guard.outputs.pr_number, steps.guard.outputs.issue_number) || format('Triage and, if scoped confidently, implement issue #{0} in this repository (use `gh issue view` to read it).', steps.guard.outputs.issue_number) }}
 
             Use `gh issue comment`, `gh issue edit --add-label` / `--remove-label`
             for issue interaction, `gh pr comment` for PR interaction, and
