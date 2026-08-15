@@ -121,6 +121,14 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # claude-code-action refuses to run at all when triggered by a
+          # non-human actor by default (its own anti-recursion guard) —
+          # confirmed live via qa-agent.yml hitting this exact error:
+          # "Workflow initiated by non-human actor: libravault-pipeline-bot
+          # (type: Bot)." The trigger here IS the pipeline App applying
+          # status:needs-review, so without this Phase 3 could never run.
+          # Scoped to our own bot by name, not '*'.
+          allowed_bots: libravault-pipeline-bot
           # This — not the GH_TOKEN env var above — is what actually
           # controls the identity claude-code-action uses for git/gh
           # operations when claude_code_oauth_token is set: it defaults to
