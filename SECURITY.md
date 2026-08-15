@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 0.2.x | ✅ Yes |
-| 0.1.x | ✅ Yes |
+| 0.4.x | ✅ Yes |
+| < 0.4.0 | ❌ No — upgrade first; pre-Encrypted-Vaults builds don't have the current threat model's mitigations |
 
 ## Reporting a vulnerability
 
