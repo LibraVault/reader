@@ -50,6 +50,24 @@ final class AppStateVaultTests: XCTestCase {
         XCTAssertEqual(state.vaults.count, 1)
     }
 
+    /// Regression guard for issue #185: a document-provider extension (Google Drive
+    /// being the commonly reported offender) can hand `.fileImporter` a plain file
+    /// even though `allowedContentTypes: [.folder]` asked for a folder. Previously
+    /// this silently became a "vault" that scanned to 0 books forever — now it's
+    /// rejected up front with an actionable error instead.
+    func testAddVaultRejectsAPlainFileInsteadOfSilentlyCreatingADeadVault() throws {
+        let state = AppState(vaultPersistence: makeIsolatedPersistence())
+        let folder = try makeTempVaultFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let fileURL = folder.appendingPathComponent("SomeBook.pdf")
+        try Data().write(to: fileURL)
+
+        state.addVault(pickedURL: fileURL)
+
+        XCTAssertTrue(state.vaults.isEmpty)
+        XCTAssertEqual(state.error?.errorDescription, AppError.invalidVaultSelection.errorDescription)
+    }
+
     func testRemoveVaultRemovesItFromTheList() throws {
         let state = AppState(vaultPersistence: makeIsolatedPersistence())
         let folder = try makeTempVaultFolder()
