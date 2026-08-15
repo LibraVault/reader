@@ -1,7 +1,9 @@
 package xyz.libravault.feature.vault
 
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -40,6 +43,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -118,8 +124,11 @@ fun VaultContentsScreen(
                     )
                 }
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.entries, key = { it.fileId.joinToString("") { b -> "%02x".format(b) } }) { entry ->
+                    items(state.entries, key = { it.fileId.toHexString() }) { entry ->
                         ListItem(
+                            leadingContent = {
+                                VaultEntryThumbnail(entry = entry, coverJpeg = state.coverArt[entry.fileId.toHexString()])
+                            },
                             headlineContent = { Text(entry.title) },
                             supportingContent = entry.author?.let { { Text(it) } },
                             modifier = Modifier
@@ -153,6 +162,31 @@ private fun ImportProgressSheet(items: List<ImportItemUiState>, onDismiss: () ->
             if (allSettled) {
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Done") }
             }
+        }
+    }
+}
+
+/** A single vault entry's row thumbnail (issue #169). [coverJpeg] is decrypted,
+ * already-downsampled JPEG bytes from [VaultContentsViewModel]'s cover-art
+ * map — decoded to a bitmap here, in Compose, rather than in the ViewModel,
+ * so the plaintext `Bitmap` never outlives this composition and is never
+ * written anywhere. A `null`/failed-to-decode cover falls back to
+ * [VaultCoverPlaceholder], the padlock-badged "no cover" treatment. */
+@Composable
+private fun VaultEntryThumbnail(entry: VaultManifestEntry, coverJpeg: ByteArray?) {
+    val bitmap = remember(coverJpeg) {
+        coverJpeg?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
+    }
+    Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = entry.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            VaultCoverPlaceholder(title = entry.title, modifier = Modifier.fillMaxSize())
         }
     }
 }
