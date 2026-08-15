@@ -55,16 +55,20 @@ was last set, re-run the script rather than trusting a stale label.
 Then, based on that label, your outcome is one of:
 
 - **`auto-merge`** — `risk:low` **and** no findings at CONFIRMED severity.
-  Post the review as a normal approving review via `gh pr review --approve`
-  first — the workflow reads your verdict file, it doesn't re-derive this
-  from the review itself.
+  Post your findings via `gh pr comment` (not `gh pr review --approve` —
+  this repo's Actions settings block `GITHUB_TOKEN` from approving PRs
+  outright, a separate restriction from the self-approval identity issue;
+  there's no branch protection requiring a formal approval anyway, so a
+  plain comment serves the same audit-trail purpose). The workflow reads
+  your verdict file to decide the merge, it doesn't derive this from
+  GitHub's review state.
 - **`human-merge`** — `risk:high`, **or** any CONFIRMED finding regardless
   of risk tier. Post the full findings via `gh pr review --request-changes`
-  (or a plain approving review if the change itself is fine and it's
-  routing to a human purely for the `risk:high` label). Do not soften this
-  outcome because the change "looks small" — `agent-policy.yml`'s
-  sensitive-path list exists precisely because size isn't the risk signal
-  there.
+  (confirmed to work under `GITHUB_TOKEN`, unlike `--approve`) — or a plain
+  `gh pr comment` if the change itself is fine and it's routing to a human
+  purely for the `risk:high` label. Do not soften this outcome because the
+  change "looks small" — `agent-policy.yml`'s sensitive-path list exists
+  precisely because size isn't the risk signal there.
 
 A PLAUSIBLE-but-unverified finding should not by itself force `human-merge`
 on an otherwise risk:low PR — note it in the review for a human to weigh,
