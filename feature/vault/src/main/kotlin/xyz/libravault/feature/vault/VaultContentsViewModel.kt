@@ -18,6 +18,7 @@ import xyz.libravault.core.storage.MetadataExtractor
 import xyz.libravault.core.storage.model.ScannedFile
 import xyz.libravault.core.vaultstore.VaultManifestEntry
 import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.VaultStore
 import javax.inject.Inject
 import xyz.libravault.core.storage.model.MediaFormat as StorageMediaFormat
 
@@ -43,6 +44,13 @@ data class VaultContentsUiState(
      * just a single spinner, since one bad file in a multi-file pick shouldn't
      * hide whether the others succeeded. */
     val importItems: List<ImportItemUiState> = emptyList(),
+    /** Decrypted cover-art JPEG bytes, keyed by [VaultManifestEntry.fileId]'s
+     * [toHexString], for entries that have one (issue #169). Populated by
+     * [refresh] — never written to disk, decoded to a bitmap only in Compose
+     * (see [VaultContentsScreen]), same "plaintext image bytes never touch
+     * unencrypted storage" rule as the import path's [CoverArtCache]. Entries
+     * with no cover, or whose decrypt failed, simply have no map entry. */
+    val coverArt: Map<String, ByteArray> = emptyMap(),
 )
 
 /**
@@ -86,9 +94,30 @@ class VaultContentsViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, wasLocked = true) }
                 return@launch
             }
-            val entries = sessionManager.requireUnlocked(vaultId).listEntries()
-            _uiState.update { it.copy(entries = entries, isLoading = false) }
+            val store = sessionManager.requireUnlocked(vaultId)
+            val entries = store.listEntries()
+            val coverArt = loadCoverThumbnails(store, entries)
+            _uiState.update { it.copy(entries = entries, coverArt = coverArt, isLoading = false) }
         }
+    }
+
+    /** Decrypts every entry's cover art, one at a time — [VaultStore] isn't
+     * safe for concurrent callers (see [importOne]'s sequential loop for the
+     * same reason), so this can't `async`/`awaitAll`. A single bad cover
+     * (corrupt content, mid-write torn read) is dropped rather than failing
+     * the whole list — [entries] still needs to render either way. */
+    private suspend fun loadCoverThumbnails(
+        store: VaultStore,
+        entries: List<VaultManifestEntry>,
+    ): Map<String, ByteArray> {
+        val covers = mutableMapOf<String, ByteArray>()
+        for (entry in entries) {
+            if (entry.coverArtFileId == null) continue
+            runCatching { store.readCoverArt(entry.fileId) }
+                .getOrNull()
+                ?.let { covers[entry.fileId.toHexString()] = it }
+        }
+        return covers
     }
 
     fun lock() {

@@ -184,6 +184,59 @@ class VaultContentsViewModelTest {
         assertTrueWasLocked(vm)
     }
 
+    // ── Cover art thumbnails (issue #169) ──────────────────────────────────────
+
+    @Test
+    fun `refresh decrypts cover art only for entries that have a coverArtFileId`() = runTest {
+        val withCover = fakeEntry(fileId = byteArrayOf(1), coverArtFileId = byteArrayOf(9))
+        val withoutCover = fakeEntry(fileId = byteArrayOf(2), coverArtFileId = null)
+        val coverBytes = byteArrayOf(0x11, 0x22)
+        coEvery { vaultStore.listEntries() } returns listOf(withCover, withoutCover)
+        coEvery { vaultStore.readCoverArt(byteArrayOf(1)) } returns coverBytes
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.coverArt.size)
+        assertEquals(coverBytes, vm.uiState.value.coverArt[byteArrayOf(1).toHexString()])
+        coVerify(exactly = 0) { vaultStore.readCoverArt(byteArrayOf(2)) }
+    }
+
+    @Test
+    fun `refresh drops an entry whose cover decrypt fails, rather than failing the whole list`() = runTest {
+        val bad = fakeEntry(fileId = byteArrayOf(3), coverArtFileId = byteArrayOf(9))
+        coEvery { vaultStore.listEntries() } returns listOf(bad)
+        coEvery { vaultStore.readCoverArt(byteArrayOf(3)) } throws RuntimeException("torn read")
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(emptyMap<String, ByteArray>(), vm.uiState.value.coverArt)
+        assertEquals(listOf(bad), vm.uiState.value.entries)
+    }
+
+    @Test
+    fun `refresh with no covers at all leaves coverArt empty`() = runTest {
+        val entry = fakeEntry(fileId = byteArrayOf(4), coverArtFileId = null)
+        coEvery { vaultStore.listEntries() } returns listOf(entry)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(emptyMap<String, ByteArray>(), vm.uiState.value.coverArt)
+        coVerify(exactly = 0) { vaultStore.readCoverArt(any()) }
+    }
+
+    private fun fakeEntry(fileId: ByteArray, coverArtFileId: ByteArray?) = VaultManifestEntry(
+        fileId = fileId,
+        title = "Title",
+        author = "Author",
+        format = "EPUB",
+        sizeBytes = 100L,
+        addedAtEpochMillis = 0L,
+        coverArtFileId = coverArtFileId,
+    )
+
     private fun assertTrueWasLocked(vm: VaultContentsViewModel) {
         org.junit.jupiter.api.Assertions.assertTrue(vm.uiState.value.wasLocked)
     }
