@@ -1,4 +1,4 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.vaultstore
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,8 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import xyz.libravault.core.vaultstore.UnlockOutcome
-import xyz.libravault.feature.vault.testing.FakeHardwareKeyWrapFactory
+import xyz.libravault.core.vaultstore.testing.FakeHardwareKeyWrapFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlin.io.path.createTempDirectory

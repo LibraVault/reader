@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import xyz.libravault.core.vaultstore.VaultRegistryEntryDto
+import xyz.libravault.core.vaultstore.VaultSessionManager
 
 class VaultListViewModelTest {
 

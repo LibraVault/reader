@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import xyz.libravault.core.vaultstore.UnlockOutcome
 import xyz.libravault.core.vaultstore.VaultRegistryEntryDto
+import xyz.libravault.core.vaultstore.VaultSessionManager
 import java.security.SecureRandom
 
 class UnlockVaultViewModelTest {

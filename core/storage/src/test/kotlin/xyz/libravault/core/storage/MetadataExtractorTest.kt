@@ -8,6 +8,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -181,6 +182,65 @@ class MetadataExtractorTest {
         assertEquals("Zipped Author", result.author)
     }
 
+    // ── extractWithoutCaching() — Encrypted Vault import path ────────────────
+
+    @Test
+    fun `extractWithoutCaching returns raw cover bytes and never touches CoverArtCache`() = runTest {
+        val coverBytes = byteArrayOf(9, 9, 9)
+        val opf = """<?xml version="1.0"?>
+            <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
+              <metadata>
+                <dc:title>Vault Book</dc:title>
+                <dc:creator>Vault Author</dc:creator>
+                <meta name="cover" content="cover-image"/>
+              </metadata>
+              <manifest>
+                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg"/>
+              </manifest>
+            </package>""".trimIndent()
+        val fullZip = buildEpubZipBinary(
+            "META-INF/container.xml" to """<?xml version="1.0"?>
+                <container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>""".trimIndent().toByteArray(),
+            "OEBPS/content.opf" to opf.toByteArray(),
+            "OEBPS/images/cover.jpg" to coverBytes,
+        )
+
+        val uri = mockk<Uri>(relaxed = true)
+        val contentResolver = mockk<ContentResolver>()
+        val context = mockk<Context> { every { this@mockk.contentResolver } returns contentResolver }
+        every { contentResolver.openInputStream(uri) } returns fullZip.inputStream()
+        val strictCoverArtCache = mockk<CoverArtCache>() // no stubs — any call fails the test
+        val extractorWithRealZip = MetadataExtractor(context, strictCoverArtCache, mockk(relaxed = true))
+        val file = ScannedFile(uri, "book.epub", "application/epub+zip", MediaFormat.EPUB, 1234L)
+
+        val (metadata, rawCover) = extractorWithRealZip.extractWithoutCaching(file)
+
+        assertEquals("Vault Book", metadata.title)
+        assertEquals("Vault Author", metadata.author)
+        assertNull(metadata.coverArtPath)
+        assertArrayEquals(coverBytes, rawCover)
+        // mockk without any `every`/`coEvery` stub throws on first invocation —
+        // the test failing with that exception (rather than a clean assertion
+        // failure) IS the proof this path never called CoverArtCache at all.
+    }
+
+    @Test
+    fun `extractWithoutCaching falls back cleanly when the EPUB has no OPF, still touches no cache`() = runTest {
+        val zipBytes = buildEpubZip("README.txt" to "not an epub")
+        val uri = mockk<Uri>(relaxed = true)
+        val contentResolver = mockk<ContentResolver>()
+        val context = mockk<Context> { every { this@mockk.contentResolver } returns contentResolver }
+        every { contentResolver.openInputStream(uri) } returns zipBytes.inputStream()
+        val strictCoverArtCache = mockk<CoverArtCache>()
+        val extractor = MetadataExtractor(context, strictCoverArtCache, mockk(relaxed = true))
+        val file = ScannedFile(uri, "broken.epub", "application/epub+zip", MediaFormat.EPUB, 10L)
+
+        val (metadata, rawCover) = extractor.extractWithoutCaching(file)
+
+        assertEquals("broken", metadata.title)
+        assertNull(rawCover)
+    }
+
     // ── extractMarkdownTitle ────────────────────────────────────────────────
 
     @Test
@@ -255,12 +315,15 @@ class MetadataExtractorTest {
           </metadata>
         </package>""".trimIndent()
 
-    private fun buildEpubZip(vararg entries: Pair<String, String>): ByteArray {
+    private fun buildEpubZip(vararg entries: Pair<String, String>): ByteArray =
+        buildEpubZipBinary(*entries.map { (name, content) -> name to content.toByteArray() }.toTypedArray())
+
+    private fun buildEpubZipBinary(vararg entries: Pair<String, ByteArray>): ByteArray {
         val out = java.io.ByteArrayOutputStream()
         ZipOutputStream(out).use { zip ->
             for ((name, content) in entries) {
                 zip.putNextEntry(ZipEntry(name))
-                zip.write(content.toByteArray())
+                zip.write(content)
                 zip.closeEntry()
             }
         }
