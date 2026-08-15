@@ -1,0 +1,202 @@
+name: QA Agent
+
+# Phase 2 of docs/agent-team-pipeline.md. Verifies a PR the dev agent
+# marked status:needs-qa against its originating issue's acceptance
+# criteria and runs the real test suites (see .claude/agents/qa-agent.md
+# for the actual verification logic — this workflow only wires triggers,
+# guardrails, and label transitions around it).
+#
+# Runs on ubuntu-latest, so it can run JVM/Android suites directly; iOS
+# XCTest verification (when relevant) relies on the persona reading the
+# repo's own ios-app-build.yml CI results via `gh pr checks` rather than
+# re-running the suite here — a macOS runner for every QA pass wasn't
+# judged worth the added cost/complexity for this phase.
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to QA (manual test trigger)"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: qa-agent-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # No author_association check on the PR here, deliberately — every PR
+    # in this pipeline is opened by the dev agent via GITHUB_TOKEN, whose
+    # author_association is not "COLLABORATOR", so that check would make
+    # this trigger never fire for any pipeline-produced PR. Trust rests on
+    # GitHub's own enforcement of who can add a label (requires
+    # triage/write access) plus the same-repo check below. See the
+    # matching comment in dev-agent.yml.
+    if: >-
+      vars.AGENTS_PAUSED != 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'status:needs-qa' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve target and check for status:blocked
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N') — stopping, same as dev-agent.yml does for this condition." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$PR_LABELS," | grep -q ",status:blocked,"; then
+            echo "PR #$PR_NUMBER carries status:blocked — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+            echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+            ISSUE_LABELS=""
+          }
+          if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+            echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Check out PR branch
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+
+      - name: Run QA agent
+        if: steps.guard.outputs.skip != 'true'
+        id: agent
+        env:
+          # Safe default token: this step only comments and reports a
+          # verdict to a file. The labels that need to cross into
+          # principal-review.yml or back into dev-agent.yml are applied by
+          # a separate step below, with the App token.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # This — not the GH_TOKEN env var above — is what actually
+          # controls the identity claude-code-action uses for git/gh
+          # operations: with claude_code_oauth_token set, it defaults to
+          # Claude's own claude[bot] App regardless of GH_TOKEN. Forced to
+          # GITHUB_TOKEN explicitly for consistency with dev-agent.yml
+          # (see that file's matching comment for why).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Read .claude/agents/qa-agent.md in full — it is your complete
+            operating persona for this run. Verify PR #${{ steps.guard.outputs.pr_number }}
+            in this repository against its originating issue
+            #${{ steps.guard.outputs.issue_number }} (use `gh pr view` and
+            `gh issue view` to read them; the PR branch is already checked
+            out in the working directory).
+
+            Do not apply any labels yourself and don't try to track which
+            QA round this is — the workflow determines the retry count
+            deterministically from label history and applies whichever
+            label matches your verdict. Post your PR comment per the
+            persona's "Reporting" section, using `gh pr comment`.
+
+            As your very last action, write a single line to the file
+            `qa-verdict.txt` in the repo root: exactly `pass` or `fail`.
+            Always write this file, even if something went wrong earlier —
+            default to `fail` if you're not confident enough to say `pass`.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash,WebSearch"
+            --max-turns 40
+
+      - name: Mint pipeline App token
+        if: steps.guard.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - name: Advance PR based on QA verdict
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Needed for status:needs-review (crosses into principal-review.yml)
+          # and status:in-progress (crosses into dev-agent.yml's
+          # pull_request:labeled listener) — see
+          # docs/agent-team-pipeline.md's "Cross-workflow triggering".
+          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+
+          VERDICT="fail"
+          if [ -f qa-verdict.txt ]; then
+            VERDICT=$(tr -d '[:space:]' < qa-verdict.txt | tr '[:upper:]' '[:lower:]')
+            rm -f qa-verdict.txt
+          else
+            echo "Agent didn't write qa-verdict.txt — defaulting to fail." >&2
+          fi
+          if [ "$VERDICT" != "pass" ] && [ "$VERDICT" != "fail" ]; then
+            echo "Unrecognized verdict '$VERDICT' — treating as fail." >&2
+            VERDICT="fail"
+          fi
+          echo "QA verdict for #$PR_NUMBER: $VERDICT"
+
+          gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
+
+          if [ "$VERDICT" = "pass" ]; then
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-review
+          else
+            # Deterministic retry cap: look for a marker comment that only
+            # this exact branch ever posts, rather than (a) trusting the
+            # agent to count its own past comments — fragile, a human
+            # echoing a "QA verdict:" line would throw off an LLM's count —
+            # or (b) paginating the PR's entire issue timeline to count
+            # status:in-progress label events, which conflates ANY reason
+            # that label was ever applied with an actual QA-triggered
+            # retry, and costs a full timeline fetch just to answer a
+            # yes/no question. A single non-paginated comment list, filtered
+            # for a marker this code alone writes, has neither problem.
+            MARKER="<!-- qa-agent:retry-used -->"
+            PRIOR_RETRY=$(gh pr view "$PR_NUMBER" --json comments \
+              -q "[.comments[].body | select(contains(\"$MARKER\"))] | length")
+            echo "Prior QA-triggered retries for #$PR_NUMBER: $PRIOR_RETRY"
+            if [ "$PRIOR_RETRY" -eq 0 ]; then
+              GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:in-progress
+              gh pr comment "$PR_NUMBER" --body "$MARKER QA failed its first round — routing back to the dev agent for one automated retry."
+            else
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "QA failed for the 2nd time — automated retry budget (1 auto-retry) exhausted, routing to a human instead of trying a 3rd time. See the QA verdict comment(s) above for what's still failing."
+            fi
+          fi

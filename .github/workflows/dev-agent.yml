@@ -2,13 +2,17 @@ name: Dev Agent
 
 # Phase 1 of docs/agent-team-pipeline.md. Triages a filed issue and, if the
 # dev-agent persona (.claude/agents/dev-agent.md) can scope it confidently,
-# implements a fix/feature and opens a PR. See that persona file for what
-# it actually does — this workflow only wires triggers, guardrails, and the
-# deterministic risk-classification backstop around it.
+# implements a fix/feature and opens a PR. Also re-invoked when the qa agent
+# sends a PR back with status:in-progress (see that persona's "When QA
+# sends work back" section). See the persona file for what it actually
+# does — this workflow only wires triggers, guardrails, and the
+# deterministic risk/needs-qa backstops around it.
 
 on:
   issues:
     types: [opened, labeled]
+  pull_request:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -28,29 +32,54 @@ permissions:
   id-token: write
 
 concurrency:
-  group: dev-agent-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  # Known gap, accepted rather than engineered around: a triage run (keyed
+  # by issue number) and a later revise run for a PR against that same
+  # issue (keyed by PR number) use different concurrency groups, since
+  # concurrency.group is fixed from raw event context before any step
+  # runs — it can't call the script that resolves a PR back to its issue.
+  # In practice this only matters if a human manually re-triggers triage
+  # (e.g. re-applying status:ready-for-dev) while a revise run for the
+  # same issue's PR is already in flight; AGENTS_PAUSED / status:blocked
+  # are the intended manual override if that's ever actually hit.
+  group: ${{ github.event_name == 'pull_request' && format('dev-agent-pr-{0}', github.event.pull_request.number) || format('dev-agent-issue-{0}', github.event.issue.number || github.event.inputs.issue_number) }}
   cancel-in-progress: false
 
 jobs:
   triage-and-implement:
     # SECURITY-CRITICAL gate, not just a convenience filter: this repo is
     # public, so `issues: opened` fires for literally anyone who opens an
-    # issue, with no permission required. Without the author_association
-    # check below, any stranger's issue body would be handed to an agent
-    # holding contents:write/pull-requests:write/issues:write and a Bash
-    # tool — a trivial prompt-injection-to-RCE-ish path. workflow_dispatch
-    # is exempt because GitHub itself already requires write access to
-    # trigger it manually, so it's inherently trusted.
+    # issue, with no permission required, and `pull_request: labeled` fires
+    # for PRs from forks too. Without the checks below, an untrusted
+    # issue/PR would be handed to an agent holding contents:write and a
+    # Bash tool. workflow_dispatch is exempt because GitHub itself already
+    # requires write access to trigger it manually, so it's inherently
+    # trusted.
+    #
+    # The issues-trigger case checks the ISSUE author's association
+    # (a human filing an issue). The pull_request-trigger case deliberately
+    # does NOT check the PR author's association — every PR in this
+    # pipeline is opened by the dev agent itself via GITHUB_TOKEN, whose
+    # author_association is NOT "COLLABORATOR" (that check would make this
+    # trigger never fire for any PR the pipeline itself produces). Trust
+    # here instead rests on GitHub's own enforcement of who can add a label
+    # at all (requires triage/write access) plus the same-repo check below.
     if: >-
       vars.AGENTS_PAUSED != 'true' &&
       (
         github.event_name == 'workflow_dispatch' ||
         (
+          github.event_name == 'issues' &&
           contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
           (
             github.event.action == 'opened' ||
             (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
           )
+        ) ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'status:in-progress' &&
+          github.event.pull_request.head.repo.full_name == github.repository
         )
       )
     runs-on: ubuntu-latest
@@ -59,16 +88,47 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve issue number and check for status:blocked
+      - name: Resolve target, mode, and check for status:blocked
         id: guard
         env:
+          # Read-only lookups plus label reads — the safe default token is
+          # enough here. Nothing in this step needs to trigger a further
+          # workflow run.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ISSUE_NUMBER="${{ github.event.issue.number || github.event.inputs.issue_number }}"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
+            if [ -z "$ISSUE_NUMBER" ]; then
+              echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N') — stopping." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "mode=revise" >> "$GITHUB_OUTPUT"
+            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+            PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+            if echo ",$PR_LABELS," | grep -q ",status:blocked,"; then
+              echo "PR #$PR_NUMBER carries status:blocked — a human parked this, skipping." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            ISSUE_NUMBER="${{ github.event.issue.number || github.event.inputs.issue_number }}"
+            echo "mode=triage" >> "$GITHUB_OUTPUT"
+          fi
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
-          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          # Guarded rather than left to fail under set -e: in revise mode,
+          # ISSUE_NUMBER came from regex-parsing free text in the PR body,
+          # so a deleted/transferred issue or a stale reference shouldn't
+          # hard-crash this step — just treat it as unblocked and proceed.
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+            echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+            LABELS=""
+          }
           echo "Issue #$ISSUE_NUMBER labels: $LABELS"
           if echo ",$LABELS," | grep -q ",status:blocked,"; then
             echo "status:blocked is set — a human parked this, skipping." >&2
@@ -77,14 +137,35 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check out PR branch (revise mode only)
+        if: steps.guard.outputs.skip != 'true' && steps.guard.outputs.mode == 'revise'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Deterministic, unlike qa-agent.yml/principal-review.yml this
+        # mirrors — don't rely solely on the agent remembering to run
+        # `gh pr checkout` from its prompt; actions/checkout@v4 otherwise
+        # leaves the runner in detached HEAD on the PR's merge ref. Also
+        # clears any dev-agent-pr-number.txt that happens to already be
+        # committed on this branch (e.g. leftover from an earlier round)
+        # so the next step never reads stale scratch state.
+        run: |
+          gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+          rm -f dev-agent-pr-number.txt
+
       - name: Run dev agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
         env:
-          # Belt-and-suspenders: claude-code-action likely wires this in
-          # for its own tools already, but the persona also shells out to
-          # the `gh` CLI directly via Bash, which needs it explicitly to
-          # authenticate — don't rely on an undocumented default.
+          # Deliberately the default GITHUB_TOKEN, not the pipeline App
+          # token — this step self-applies status:ready-for-dev /
+          # status:in-progress to the SAME issue this run is already
+          # processing. Using a token capable of triggering further runs
+          # here would fire a duplicate dev-agent.yml invocation for an
+          # issue already mid-run (the issues:labeled trigger matches
+          # status:ready-for-dev). status:needs-qa — the one label that
+          # legitimately needs to cross into Phase 2 — is applied by a
+          # separate step below, after this one finishes, specifically
+          # with the App token.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: anthropics/claude-code-action@v1
         with:
@@ -94,40 +175,98 @@ jobs:
           # up, at the cost of drawing on that subscription's own usage
           # limits. See docs/agent-team-pipeline.md.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # This — not the GH_TOKEN env var above — is what actually
+          # controls the identity claude-code-action uses for git/gh
+          # operations: with claude_code_oauth_token set, it defaults to
+          # Claude's own claude[bot] App regardless of GH_TOKEN (confirmed
+          # empirically: PR #162 shows author app/claude despite this step
+          # already setting GH_TOKEN to GITHUB_TOKEN before this fix).
+          # claude[bot]'s installation token is a real GitHub App token,
+          # not the restricted auto-issued GITHUB_TOKEN — its cross-trigger
+          # behavior isn't guaranteed the same "can't trigger further runs"
+          # protection, so force GITHUB_TOKEN explicitly here to keep the
+          # self-retrigger-avoidance reasoning above actually true.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Read .claude/agents/dev-agent.md in full — it is your complete
             operating persona for this run, including what "triage" and
             "implementation" mean and when to stop instead of proceeding.
-            Then follow it for issue #${{ steps.guard.outputs.issue_number }}
-            in this repository (use `gh issue view` to read it).
+            Do NOT apply status:needs-qa yourself even though the persona
+            mentions it — the workflow applies that label automatically in
+            a later step, using a credential that can actually trigger the
+            QA workflow (yours can't). Just make sure the PR is complete
+            and CI-passing (or you've explained why it isn't) before you
+            finish.
+
+            ${{ steps.guard.outputs.mode == 'revise' && format('You are being RE-INVOKED: QA sent PR #{0} back with status:in-progress against issue #{1}. Read the persona''s "When QA sends work back" section. The PR''s branch is already checked out in the working directory — read the QA agent''s latest PR comment for the specific gaps it found, and fix only those. Do not rescope the whole change and do not open a new PR; push commits to this same branch.', steps.guard.outputs.pr_number, steps.guard.outputs.issue_number) || format('Triage and, if scoped confidently, implement issue #{0} in this repository (use `gh issue view` to read it).', steps.guard.outputs.issue_number) }}
 
             Use `gh issue comment`, `gh issue edit --add-label` / `--remove-label`
-            for all issue interaction, and normal git + `gh pr create --base dev`
-            for branching, committing, and opening the PR. You are running
-            non-interactively in CI — there is no human to ask a follow-up
-            question. If the persona says to stop and ask, do that by
-            commenting on the issue and applying status:needs-info; do not
-            wait for a reply.
+            for issue interaction, `gh pr comment` for PR interaction, and
+            normal git + `gh pr create --base dev` for branching, committing,
+            and opening a *new* PR (only in triage mode — in revise mode,
+            push commits to the existing PR's branch instead of opening a
+            new one). You are running non-interactively in CI — there is no
+            human to ask a follow-up question. If the persona says to stop
+            and ask, do that by commenting and applying status:needs-info;
+            do not wait for a reply.
 
             As your very last action, write a single line to the file
-            `dev-agent-pr-number.txt` in the repo root: the PR number if you
-            opened one, or the word `none` if you stopped at triage without
-            opening a PR. The workflow reads this file to know what to do
+            `dev-agent-pr-number.txt` in the repo root: the PR number (new
+            or revised) if one is open, or the word `none` if you stopped
+            without one. The workflow reads this file to know what to do
             next, so always write it, even if something went wrong earlier.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
             --max-turns 40
 
-      - name: Force-classify risk on any PR the dev agent opened
-        if: steps.guard.outputs.skip != 'true'
+      - name: Mint pipeline App token
+        # !cancelled() rather than the implicit success()-only default: if
+        # "Run dev agent" fails/errors (max-turns exhausted, crash) rather
+        # than being cancelled, this and the next step must still run —
+        # otherwise a revise-mode failure leaves the PR stuck on
+        # status:in-progress forever with status:needs-qa never reapplied
+        # and no visible signal beyond a red X nobody's watching.
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - name: Force-classify risk and advance to QA
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only for the one call that must cross into qa-agent.yml.
+          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
 
           PR_NUMBER=""
-          if [ -f dev-agent-pr-number.txt ]; then
+          if [ "${{ steps.guard.outputs.mode }}" = "revise" ]; then
+            # Already known and authoritative — this run exists
+            # specifically because this PR was labeled status:in-progress.
+            # Don't re-derive it from the scratch file or a search, which
+            # exist only for triage mode (no PR is known yet there until
+            # the agent creates one).
+            PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+
+            # The agent step itself failed/crashed (max-turns exhausted,
+            # error) — don't advance a PR we can't trust is actually fixed
+            # into QA. Route to a human instead of silently proceeding, and
+            # unlike the old design, this branch now actually gets a
+            # chance to run at all thanks to !cancelled() above.
+            if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+              echo "Dev agent run failed for PR #$PR_NUMBER — routing to status:needs-info instead of advancing to QA." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "The dev agent's run failed (crashed or exhausted its turn budget) while revising this PR — routed to a human instead of silently leaving it on status:in-progress or advancing an unfinished fix to QA. See the workflow run log for what happened."
+              exit 0
+            fi
+          fi
+
+          if [ -z "$PR_NUMBER" ] && [ -f dev-agent-pr-number.txt ]; then
             CONTENT=$(tr -d '[:space:]' < dev-agent-pr-number.txt)
             if [ "$CONTENT" != "none" ] && [ -n "$CONTENT" ]; then
               PR_NUMBER="$CONTENT"
@@ -138,10 +277,14 @@ jobs:
           # Fallback if the agent didn't write the file for some reason:
           # gh's search index can lag a just-created PR by a few seconds,
           # so retry briefly rather than accepting a false "nothing to do".
+          # Broadened beyond a literal "Closes" match, matching
+          # resolve_linked_issue.sh's own recognized keyword set, so this
+          # fallback can't be narrower than the check that got this run
+          # started in the first place.
           if [ -z "$PR_NUMBER" ]; then
             for _ in 1 2 3 4 5; do
               PR_NUMBER=$(gh pr list --state open \
-                --search "Closes #${ISSUE_NUMBER} in:body" \
+                --search "(Closes #${ISSUE_NUMBER} OR Fixes #${ISSUE_NUMBER} OR Resolves #${ISSUE_NUMBER}) in:body" \
                 --json number -q '.[0].number // empty')
               [ -n "$PR_NUMBER" ] && break
               sleep 5
@@ -161,3 +304,21 @@ jobs:
           pip install --quiet pyyaml
           python3 .github/scripts/classify_pr_risk.py \
             "origin/dev" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"
+
+          # status:needs-qa must be applied with the App token, not
+          # GITHUB_TOKEN — see docs/agent-team-pipeline.md's
+          # "Cross-workflow triggering" section for why. Idempotent: if
+          # it's already present (shouldn't be, but just in case), skip
+          # rather than no-op-adding it, since a no-op add fires no event.
+          # Clear status:in-progress in case this is a revise-mode run —
+          # a fresh triage run never has it, so this is a harmless no-op
+          # there.
+          gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+
+          CURRENT_LABELS=$(GH_TOKEN="$GH_TOKEN" gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$CURRENT_LABELS," | grep -q ",status:needs-qa,"; then
+            echo "status:needs-qa already present on #$PR_NUMBER — leaving as-is."
+          else
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
+            echo "Applied status:needs-qa to #$PR_NUMBER."
+          fi

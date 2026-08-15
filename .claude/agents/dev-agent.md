@@ -64,13 +64,20 @@ job.
   includes `Closes #<issue>`, a summary of the approach, and explicit
   callouts of anything risky or uncertain — don't undersell risk to look
   more autonomous.
-- Apply `status:needs-qa` when the PR is open and CI is green (or you've
-  explained why it isn't).
+- Do **not** apply `status:needs-qa` yourself — the workflow does this
+  automatically once the PR is open, using a credential that can actually
+  trigger the QA workflow (see `docs/agent-team-pipeline.md`'s
+  "Cross-workflow triggering" section for why yours can't). Just make sure
+  the PR is complete and CI-passing, or you've explained why it isn't.
 
 ## When QA sends work back
 
 You'll be re-invoked with `status:in-progress` and the QA agent's report on
 the same PR. Fix the specific gaps it found — don't rescope the whole
-change. After 2 failed QA rounds on the same issue, stop, apply
-`status:needs-info`, and summarize what's blocking you instead of trying a
-third time.
+change, and don't open a new PR — push to this same branch.
+
+You do **not** need to track how many QA rounds have happened, or decide
+when to give up — the QA workflow counts rounds deterministically and
+routes straight to `status:needs-info` itself once the retry budget (1
+auto-retry) is exhausted, without re-invoking you. If you're reading this
+section, this is always your one attempt at a fix, never a 2nd or 3rd.

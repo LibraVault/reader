@@ -1,0 +1,248 @@
+name: Principal Review Agent
+
+# Phase 3 of docs/agent-team-pipeline.md. Runs the last automated gate on a
+# QA-passed PR (labeled status:needs-review), then either auto-merges it or
+# hands it to a human — see .claude/agents/principal-review-agent.md for
+# the actual review logic; this workflow only wires triggers, guardrails,
+# and the auto-merge/human-merge split around it.
+#
+# Uses the pipeline App token too, but for a different reason than
+# dev-agent.yml/qa-agent.yml: neither outcome here needs to trigger a
+# further workflow run, but the review itself does need a non-author
+# identity. Every PR in this pipeline is opened/pushed by GITHUB_TOKEN
+# (github-actions[bot]), and GitHub refuses to let an actor approve or
+# request changes on its own PR — posting the review as GITHUB_TOKEN would
+# fail on every run. The App is a distinct identity, so it can review.
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (manual test trigger)"
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: principal-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # No author_association check on the PR here, deliberately — every PR
+    # in this pipeline is opened by the dev agent via GITHUB_TOKEN, whose
+    # author_association is not "COLLABORATOR", so that check would make
+    # this trigger never fire for any pipeline-produced PR. Trust rests on
+    # GitHub's own enforcement of who can add a label (requires
+    # triage/write access) plus the same-repo check below. See the
+    # matching comment in dev-agent.yml.
+    if: >-
+      vars.AGENTS_PAUSED != 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'status:needs-review' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve target and check for status:blocked
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$PR_LABELS," | grep -q ",status:blocked,"; then
+            echo "PR #$PR_NUMBER carries status:blocked — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
+          if [ -n "$ISSUE_NUMBER" ]; then
+            ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+              echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+              ISSUE_LABELS=""
+            }
+            if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+              echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            # Deliberately non-fatal here, unlike dev-agent.yml/qa-agent.yml
+            # (which stop entirely on this) — by the time a PR reaches
+            # status:needs-review it's already passed QA, so an unresolved
+            # link at this last gate more likely means the body was edited
+            # than that this PR is illegitimate. Still logged, so a
+            # skipped issue-blocked check is visible in the run log rather
+            # than silent.
+            echo "Could not resolve the originating issue from PR #$PR_NUMBER's body — proceeding without the issue-level status:blocked check." >&2
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Check out PR branch
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+
+      - name: Mint pipeline App token
+        if: steps.guard.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - name: Run principal review agent
+        if: steps.guard.outputs.skip != 'true'
+        id: agent
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # This — not the GH_TOKEN env var above — is what actually
+          # controls the identity claude-code-action uses for git/gh
+          # operations when claude_code_oauth_token is set: it defaults to
+          # Claude's own claude[bot] App regardless of GH_TOKEN, which is
+          # also the identity dev-agent.yml's PRs are authored under
+          # (confirmed empirically: PR #162 shows author app/claude despite
+          # that workflow explicitly setting GH_TOKEN to a different
+          # value). Without this override, "gh pr review --approve" here
+          # would be claude[bot] approving a PR claude[bot] itself opened —
+          # GitHub rejects that as self-approval on every run.
+          github_token: ${{ steps.app-token.outputs.token }}
+          prompt: |
+            Read .claude/agents/principal-review-agent.md in full — it is
+            your complete operating persona for this run. Review PR
+            #${{ steps.guard.outputs.pr_number }} in this repository (the
+            branch is already checked out; use `gh pr view --json` /
+            `gh pr diff` to read the PR itself). Post your review with
+            `gh pr review --approve` or `gh pr review --request-changes` as
+            appropriate, per the persona. Do not apply status:approved-auto-merge
+            or status:needs-human-merge yourself — the workflow applies
+            whichever one matches your verdict, based on the verdict file
+            you write below.
+
+            As your very last action, write a single line to the file
+            `principal-verdict.txt` in the repo root: exactly one of
+            `auto-merge` or `human-merge`. Always write this file, even if
+            something went wrong earlier — default to `human-merge` if
+            you're not fully confident.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash"
+            --max-turns 40
+
+      - name: Advance PR based on review verdict
+        if: steps.guard.outputs.skip != 'true'
+        id: verdict
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+
+          VERDICT="human-merge"
+          if [ -f principal-verdict.txt ]; then
+            VERDICT=$(tr -d '[:space:]' < principal-verdict.txt | tr '[:upper:]' '[:lower:]')
+            rm -f principal-verdict.txt
+          else
+            echo "Agent didn't write principal-verdict.txt — defaulting to human-merge." >&2
+          fi
+          if [ "$VERDICT" != "auto-merge" ] && [ "$VERDICT" != "human-merge" ]; then
+            echo "Unrecognized verdict '$VERDICT' — treating as human-merge." >&2
+            VERDICT="human-merge"
+          fi
+          echo "Principal review verdict for #$PR_NUMBER: $VERDICT"
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+
+          gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
+          if [ "$VERDICT" = "auto-merge" ]; then
+            gh pr edit "$PR_NUMBER" --add-label status:approved-auto-merge
+          else
+            gh pr edit "$PR_NUMBER" --add-label status:needs-human-merge
+          fi
+
+      - name: Auto-merge if approved
+        if: steps.guard.outputs.skip != 'true' && steps.verdict.outputs.verdict == 'auto-merge'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+
+          echo "Waiting for CI to go green on #$PR_NUMBER (up to 20 minutes)..."
+          # Fail-safe by construction: only declare success when every
+          # check is in a known-good terminal state. Any state this
+          # doesn't recognize (CANCELLED, TIMED_OUT, ACTION_REQUIRED,
+          # STALE, an empty check list, or anything GitHub adds later)
+          # falls through to "pending" and eventually the 20-minute
+          # timeout below, rather than being silently treated as success.
+          for _ in $(seq 1 40); do
+            STATE=$(gh pr checks "$PR_NUMBER" --json state -q '
+              if length == 0 then "pending"
+              elif any(.[]; .state == "PENDING" or .state == "IN_PROGRESS" or .state == "QUEUED" or .state == "REQUESTED" or .state == "WAITING") then "pending"
+              elif any(.[]; .state == "FAILURE" or .state == "ERROR") then "failed"
+              elif all(.[]; .state == "SUCCESS" or .state == "NEUTRAL" or .state == "SKIPPED") then "success"
+              else "pending" end' 2>/dev/null || echo "pending")
+            echo "CI state: $STATE"
+            [ "$STATE" = "success" ] && break
+            if [ "$STATE" = "failed" ]; then
+              gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+              gh pr comment "$PR_NUMBER" --body "CI failed after principal review approved auto-merge — routed to a human instead of merging on red CI."
+              exit 0
+            fi
+            sleep 30
+          done
+
+          if [ "$STATE" != "success" ]; then
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "CI didn't finish within 20 minutes of auto-merge approval — routed to a human instead of waiting indefinitely."
+            exit 0
+          fi
+
+          # Re-check both kill switches immediately before merging, not
+          # just once at the top of this step — the pipeline could have
+          # been paused, or a human could have parked this specific PR,
+          # at any point during the up-to-20-minute wait above.
+          if [ "${{ vars.AGENTS_PAUSED }}" = "true" ]; then
+            echo "AGENTS_PAUSED became true during this run — stopping short of merge." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "Pipeline was paused (AGENTS_PAUSED) after approval but before merge — routed to a human instead of auto-merging."
+            exit 0
+          fi
+          CURRENT_PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$CURRENT_PR_LABELS," | grep -q ",status:blocked,"; then
+            echo "status:blocked was added during this run — stopping short of merge." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "status:blocked was applied after approval but before merge — routed to a human instead of auto-merging."
+            exit 0
+          fi
+
+          if ! gh pr merge "$PR_NUMBER" --squash --delete-branch=false; then
+            echo "gh pr merge failed (conflict, branch protection, or stale approval) — see the log above for the exact error." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "Auto-merge failed (see the workflow run log for the exact error) — routed to a human instead of leaving this stuck on status:approved-auto-merge."
+            exit 0
+          fi
+          echo "Merged #$PR_NUMBER."

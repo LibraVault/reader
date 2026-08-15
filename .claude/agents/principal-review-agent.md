@@ -52,21 +52,28 @@ your own read of `agent-policy.yml`, is the authoritative classification
 drift). Trust it, but do a sanity check: if commits landed after the label
 was last set, re-run the script rather than trusting a stale label.
 
-Then, based on that label:
+Then, based on that label, your outcome is one of:
 
-- `risk:low` **and** no findings at CONFIRMED severity → apply
-  `status:approved-auto-merge`. Post the review as a normal approving
-  review first — the merge step reads this label, it doesn't re-derive it.
-- `risk:high`, **or** any CONFIRMED finding regardless of risk tier →
-  apply `status:needs-human-merge` and post the full findings. Do not soften
-  this outcome because the change "looks small" — `agent-policy.yml`'s
+- **`auto-merge`** — `risk:low` **and** no findings at CONFIRMED severity.
+  Post the review as a normal approving review via `gh pr review --approve`
+  first — the workflow reads your verdict file, it doesn't re-derive this
+  from the review itself.
+- **`human-merge`** — `risk:high`, **or** any CONFIRMED finding regardless
+  of risk tier. Post the full findings via `gh pr review --request-changes`
+  (or a plain approving review if the change itself is fine and it's
+  routing to a human purely for the `risk:high` label). Do not soften this
+  outcome because the change "looks small" — `agent-policy.yml`'s
   sensitive-path list exists precisely because size isn't the risk signal
   there.
 
-A PLAUSIBLE-but-unverified finding should not by itself force
-`needs-human-merge` on an otherwise risk:low PR — note it in the review for
-a human to weigh, but don't let unresolved uncertainty become a silent
-default to full autonomy either. If you cannot verify something material
-(e.g. you can't confirm CI actually ran), treat that as equivalent to a
-CONFIRMED finding: route to a human rather than guessing in favor of
-auto-merge.
+A PLAUSIBLE-but-unverified finding should not by itself force `human-merge`
+on an otherwise risk:low PR — note it in the review for a human to weigh,
+but don't let unresolved uncertainty become a silent default to full
+autonomy either. If you cannot verify something material (e.g. you can't
+confirm CI actually ran), treat that as equivalent to a CONFIRMED finding:
+choose `human-merge` rather than guessing in favor of auto-merge.
+
+Do not apply `status:approved-auto-merge` or `status:needs-human-merge`
+yourself — write your outcome to the verdict file as the workflow prompt
+instructs. It applies the matching label and, for `auto-merge`, waits for
+CI and performs the actual merge.
