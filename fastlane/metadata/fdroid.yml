@@ -31,8 +31,9 @@ Description: |-
   Permissions: FOREGROUND_SERVICE (background audio), POST_NOTIFICATIONS
   (media controls on Android 13+), and SAF URI grants for folders you choose.
   READ_EXTERNAL_STORAGE, INTERNET, CAMERA, CONTACTS, and LOCATION are never
-  requested in the F-Droid build. BTC/XMR donation addresses are shown
-  statically; no network calls are made.
+  requested — no network calls are made by this app at all. A "Support the
+  Project" button in Settings links out to libravault.xyz/support for anyone
+  who wants to donate BTC/XMR; no address or QR code is shown in-app.
 
 RepoType: git
 Repo: https://github.com/LibraVault/reader
