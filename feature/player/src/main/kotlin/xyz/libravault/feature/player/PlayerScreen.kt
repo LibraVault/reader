@@ -40,7 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import xyz.libravault.core.ui.LockScreenOrientation
 import xyz.libravault.core.ui.components.BookmarkAddedToast
-import xyz.libravault.core.ui.components.GeneratedCover
+import xyz.libravault.core.ui.components.NoCoverArtPlaceholder
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -185,11 +185,7 @@ fun PlayerScreen(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
-                                GeneratedCover(
-                                    title = item.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    initialStyle = MaterialTheme.typography.displayLarge,
-                                )
+                                NoCoverArtPlaceholder(modifier = Modifier.fillMaxSize())
                             }
                         }
 

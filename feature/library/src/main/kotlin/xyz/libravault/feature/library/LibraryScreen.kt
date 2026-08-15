@@ -100,7 +100,7 @@ import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.BookmarkWithItemInfo
-import xyz.libravault.core.ui.components.GeneratedCover
+import xyz.libravault.core.ui.components.NoCoverArtPlaceholder
 import xyz.libravault.core.ui.theme.Dimens
 import xyz.libravault.feature.library.R
 import xyz.libravault.feature.player.service.PlaybackStateHolder
@@ -927,10 +927,7 @@ private fun ContinueCard(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    GeneratedCover(
-                        title = item.title,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    NoCoverArtPlaceholder(modifier = Modifier.fillMaxSize())
                 }
 
                 // In-progress indicator — thin strip along the cover's bottom edge.
@@ -1007,10 +1004,7 @@ private fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    GeneratedCover(
-                        title = item.title,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    NoCoverArtPlaceholder(modifier = Modifier.fillMaxSize())
                 }
             }
             Spacer(Modifier.height(Dimens.spaceSm))
@@ -1255,10 +1249,7 @@ private fun MiniPlayerBar(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    GeneratedCover(
-                        title = title,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    NoCoverArtPlaceholder(modifier = Modifier.fillMaxSize())
                 }
             }
 
