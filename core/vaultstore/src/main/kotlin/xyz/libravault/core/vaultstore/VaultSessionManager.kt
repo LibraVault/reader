@@ -1,4 +1,4 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.vaultstore
 
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -7,12 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import xyz.libravault.core.vaultstore.HardwareKeyWrapFactory
-import xyz.libravault.core.vaultstore.KeystoreHardwareUnavailableException
-import xyz.libravault.core.vaultstore.UnlockOutcome
-import xyz.libravault.core.vaultstore.VaultRegistry
-import xyz.libravault.core.vaultstore.VaultRegistryEntryDto
-import xyz.libravault.core.vaultstore.VaultStore
 import xyz.libravault.core.vaultstore.di.VaultsRootDir
 import java.io.File
 import java.util.UUID
@@ -34,6 +28,15 @@ sealed class CreateVaultResult {
  * App-wide entry point for Encrypted Vaults: owns the [VaultRegistry] (which
  * vaults exist) plus one [VaultStore] instance per vault the user has
  * touched this session (locked or unlocked).
+ *
+ * Lives in `core:vaultstore`, not `feature:vault` (moved here in Phase 5b) —
+ * it has zero UI/Compose dependencies, and Phase 5b's content-adapter wiring
+ * needs it reachable from `feature:reader`/`feature:player`/`core:storage`
+ * too. Keeping it in a feature module would have meant those depending on
+ * `feature:vault`, a feature-to-feature edge with no precedent pointing the
+ * wrong way (the existing precedent, `feature:reader`/`feature:library` →
+ * `feature:player`, is UI reusing UI — this is UI reusing a session/business
+ * class, which belongs in core).
  *
  * A single [Mutex] serializes every vault operation across the whole
  * manager, not per-vault. Simpler than a per-vault lock map, and cheap here:

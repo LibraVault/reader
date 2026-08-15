@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import xyz.libravault.core.vaultstore.CreateVaultResult
+import xyz.libravault.core.vaultstore.VaultSessionManager
 import javax.inject.Inject
 
 /** Minimum PIN/passphrase length — PRD §7.2's 4-digit PIN is the *suggested*

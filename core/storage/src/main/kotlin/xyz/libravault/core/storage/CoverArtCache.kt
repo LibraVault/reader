@@ -56,6 +56,33 @@ class CoverArtCache @Inject constructor(
             }.getOrNull()
         }
 
+    /**
+     * Decodes and downsamples [imageBytes] exactly like [save] — same
+     * hardened [decode] step, same JPEG quality-85 convention — but returns
+     * the result as bytes instead of writing anything to [cacheDir].
+     *
+     * For callers that must never let a plaintext copy of an image touch
+     * disk (Encrypted Vault import — see `VaultStore.setCoverArt`'s doc
+     * comment, which explicitly expects a caller to reuse this hardened
+     * decode step rather than duplicate it). [logKey] is used only for the
+     * failure log line, exactly like [save]'s `key`; it is never persisted
+     * anywhere.
+     */
+    suspend fun downsampleToJpeg(imageBytes: ByteArray, logKey: String = "external"): ByteArray? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val bitmap = decode(logKey, imageBytes) ?: return@runCatching null
+                val bytes = java.io.ByteArrayOutputStream().use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    out.toByteArray()
+                }
+                bitmap.recycle()
+                bytes
+            }.onFailure { e ->
+                logger.w(TAG, "downsampleToJpeg: failed to decode cover for $logKey (${imageBytes.size}B): ${e.javaClass.simpleName}: ${e.message}")
+            }.getOrNull()
+        }
+
     /** Returns cached cover path if it already exists — avoids re-extraction. */
     fun getCachedPath(key: String): String? {
         val file = File(cacheDir, "${keyHash(key)}.jpg")

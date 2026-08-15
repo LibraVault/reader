@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.libravault.core.vaultstore.UnlockOutcome
+import xyz.libravault.core.vaultstore.VaultSessionManager
 import javax.inject.Inject
 
 enum class UnlockMode { PIN, RECOVERY_KEY }

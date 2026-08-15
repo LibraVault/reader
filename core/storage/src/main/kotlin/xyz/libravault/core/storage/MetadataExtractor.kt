@@ -66,6 +66,48 @@ class MetadataExtractor @Inject constructor(
             }
         }
 
+    /**
+     * Like [extract], but for the Encrypted Vault import path (`feature:vault`),
+     * which must never let a plaintext copy of a cover image touch
+     * [CoverArtCache]'s disk cache — that cache is deliberately unencrypted
+     * app-private storage, a reasonable tradeoff for the normal library
+     * (source files already sit in the clear in their Folder) but a real leak
+     * for content a user is specifically encrypting.
+     *
+     * Returns the same fields [extract] would, except
+     * [ExtractedMetadata.coverArtPath] is always null; the cover's raw,
+     * still-undecoded/unresized bytes (if any) come back as the second
+     * element instead. Callers must run them through
+     * [CoverArtCache.downsampleToJpeg] — never [CoverArtCache.save] — before
+     * handing the result to `VaultStore.importFile`/`setCoverArt`.
+     *
+     * A deliberately separate set of `xxxRaw` methods below, not a
+     * `persistCover` flag threaded through the existing `extractAudio`/
+     * `extractEpub`/`extractPdf` — those stay exactly as they were (verified
+     * by [MetadataExtractorTest]'s existing coverage), and this path reuses
+     * only the pieces that don't touch the cache ([parseOpfMetadataOnly],
+     * [findEpubCoverBytes], [renderPdfFirstPageJpeg]).
+     */
+    suspend fun extractWithoutCaching(file: ScannedFile): Pair<ExtractedMetadata, ByteArray?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                when (file.format) {
+                    MediaFormat.MP3,
+                    MediaFormat.M4B,
+                    MediaFormat.OGG,
+                    MediaFormat.FLAC,
+                    MediaFormat.OPUS,
+                    MediaFormat.AAC  -> extractAudioRaw(file)
+                    MediaFormat.EPUB     -> extractEpubRaw(file)
+                    MediaFormat.PDF      -> extractPdfRaw(file)
+                    MediaFormat.MARKDOWN -> extractMarkdown(file) to null
+                }
+            }.getOrElse { e ->
+                logger.e(TAG, "Failed to extract metadata from ${file.displayName}", e)
+                fallback(file) to null
+            }
+        }
+
     // ── Audio (MediaMetadataRetriever) ───────────────────────────────────────
 
     private suspend fun extractAudio(file: ScannedFile): ExtractedMetadata {
@@ -103,6 +145,31 @@ class MetadataExtractor @Inject constructor(
         } catch (_: TimeoutCancellationException) {
             logger.w(TAG, "Metadata extraction timed out for ${file.displayName}")
             fallback(file)
+        } finally {
+            retriever.release()
+        }
+    }
+
+    /** [extractAudio], minus the [CoverArtCache.save] call — see [extractWithoutCaching]. */
+    private suspend fun extractAudioRaw(file: ScannedFile): Pair<ExtractedMetadata, ByteArray?> {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            withTimeout(10_000L) {
+                retriever.setDataSource(context, file.uri)
+
+                val title    = retriever.extract(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?: file.displayName.substringBeforeLast('.')
+                val author   = retriever.extract(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?: retriever.extract(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
+                    ?: UNKNOWN
+                val duration = retriever.extract(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+
+                ExtractedMetadata(title = title, author = author, durationMs = duration) to retriever.embeddedPicture
+            }
+        } catch (_: TimeoutCancellationException) {
+            logger.w(TAG, "Metadata extraction timed out for ${file.displayName}")
+            fallback(file) to null
         } finally {
             retriever.release()
         }
@@ -147,6 +214,50 @@ class MetadataExtractor @Inject constructor(
         }
     }
 
+    /** [extractEpub], minus the [CoverArtCache.save] call — see [extractWithoutCaching].
+     * The zip-reading loop is duplicated from [extractEpub] rather than shared
+     * (it's small and mechanical); the actual OPF-parsing logic is not
+     * duplicated — both paths go through [parseOpfMetadataOnly]. */
+    private suspend fun extractEpubRaw(file: ScannedFile): Pair<ExtractedMetadata, ByteArray?> {
+        val inputStream = context.contentResolver.openInputStream(file.uri)
+            ?: return fallback(file) to null
+
+        return inputStream.use { stream ->
+            ZipInputStream(stream).use { zip ->
+                val entries = mutableMapOf<String, ByteArray>()
+
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (name.endsWith(".opf") ||
+                        name == "META-INF/container.xml" ||
+                        name.contains("cover", ignoreCase = true) &&
+                        (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png"))
+                    ) {
+                        entries[name] = zip.readBytes()
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+
+                val containerXml = entries["META-INF/container.xml"]
+                val opfPath = containerXml?.let { findOpfPath(it.inputStream()) }
+                val opfBytes = opfPath?.let { entries[it] }
+                    ?: entries.entries.firstOrNull { it.key.endsWith(".opf") }?.value
+                    ?: return@use (fallback(file) to null)
+
+                val meta = parseOpfMetadataOnly(opfBytes.inputStream())
+                val coverBytes = findEpubCoverBytes(meta.coverImageId, meta.manifestItems, entries)
+                ExtractedMetadata(
+                    title       = meta.title ?: UNKNOWN,
+                    author      = meta.author ?: UNKNOWN,
+                    series      = meta.series,
+                    seriesIndex = meta.seriesIndex,
+                ) to coverBytes
+            }
+        }
+    }
+
     internal fun findOpfPath(stream: InputStream): String? {
         val parser = newParser(stream)
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -160,11 +271,19 @@ class MetadataExtractor @Inject constructor(
         return null
     }
 
-    internal suspend fun parseOpf(
-        stream: InputStream,
-        zipEntries: Map<String, ByteArray>,
-        cacheKey: String,
-    ): ExtractedMetadata {
+    /** Everything [parseOpf] parses out of the OPF XML itself, before any
+     * cover-art lookup/caching decision — shared by [parseOpf] (persists to
+     * [CoverArtCache]) and [extractEpubRaw] (never does). */
+    private data class OpfMetadata(
+        val title: String?,
+        val author: String?,
+        val series: String?,
+        val seriesIndex: Float?,
+        val coverImageId: String?,
+        val manifestItems: Map<String, String>, // id → href
+    )
+
+    private fun parseOpfMetadataOnly(stream: InputStream): OpfMetadata {
         val parser = newParser(stream)
 
         var title: String?       = null
@@ -213,28 +332,44 @@ class MetadataExtractor @Inject constructor(
             parser.next()
         }
 
-        // Try to extract cover
-        val coverPath = run {
-            val coverHref = coverImageId?.let { manifestItems[it] }
-                ?: manifestItems.entries
-                    .firstOrNull { it.key.contains("cover", ignoreCase = true) }
-                    ?.value
+        return OpfMetadata(title, author, series, seriesIndex, coverImageId, manifestItems)
+    }
 
-            val coverBytes = coverHref?.let { href ->
-                zipEntries.entries.firstOrNull { it.key.endsWith(href) }?.value
-            }
+    /** Resolves the OPF's declared cover (EPUB3 `<meta name="cover">`, falling
+     * back to any manifest item whose id/href contains "cover") to its raw
+     * bytes from the already-read [zipEntries] map — shared by [parseOpf] and
+     * [extractEpubRaw]. */
+    private fun findEpubCoverBytes(
+        coverImageId: String?,
+        manifestItems: Map<String, String>,
+        zipEntries: Map<String, ByteArray>,
+    ): ByteArray? {
+        val coverHref = coverImageId?.let { manifestItems[it] }
+            ?: manifestItems.entries
+                .firstOrNull { it.key.contains("cover", ignoreCase = true) }
+                ?.value
 
-            coverBytes?.let { bytes ->
-                coverArtCache.getCachedPath(cacheKey)
-                    ?: coverArtCache.save(cacheKey, bytes)
-            }
+        return coverHref?.let { href ->
+            zipEntries.entries.firstOrNull { it.key.endsWith(href) }?.value
+        }
+    }
+
+    internal suspend fun parseOpf(
+        stream: InputStream,
+        zipEntries: Map<String, ByteArray>,
+        cacheKey: String,
+    ): ExtractedMetadata {
+        val meta = parseOpfMetadataOnly(stream)
+        val coverBytes = findEpubCoverBytes(meta.coverImageId, meta.manifestItems, zipEntries)
+        val coverPath = coverBytes?.let { bytes ->
+            coverArtCache.getCachedPath(cacheKey) ?: coverArtCache.save(cacheKey, bytes)
         }
 
         return ExtractedMetadata(
-            title        = title ?: UNKNOWN,
-            author       = author ?: UNKNOWN,
-            series       = series,
-            seriesIndex  = seriesIndex,
+            title        = meta.title ?: UNKNOWN,
+            author       = meta.author ?: UNKNOWN,
+            series       = meta.series,
+            seriesIndex  = meta.seriesIndex,
             coverArtPath = coverPath,
         )
     }
@@ -252,24 +387,8 @@ class MetadataExtractor @Inject constructor(
             val cacheKey  = file.uri.toString()
 
             val coverPath = if (pageCount > 0) {
-                coverArtCache.getCachedPath(cacheKey) ?: run {
-                    val page   = renderer.openPage(0)
-                    // Render at a fixed thumbnail width; maintain aspect ratio
-                    val width  = 256
-                    val height = (page.height.toFloat() / page.width * width).toInt()
-                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    // Fill white background (PDF pages are transparent by default)
-                    Canvas(bitmap).drawColor(Color.WHITE)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    page.close()
-
-                    val bytes = ByteArrayOutputStream().use { out ->
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                        bitmap.recycle()
-                        out.toByteArray()
-                    }
-                    coverArtCache.save(cacheKey, bytes)
-                }
+                coverArtCache.getCachedPath(cacheKey)
+                    ?: renderPdfFirstPageJpeg(renderer)?.let { coverArtCache.save(cacheKey, it) }
             } else null
 
             renderer.close()
@@ -280,6 +399,43 @@ class MetadataExtractor @Inject constructor(
                 pageCount    = pageCount,
                 coverArtPath = coverPath,
             )
+        }
+    }
+
+    /** [extractPdf], minus the [CoverArtCache.save] call — see [extractWithoutCaching]. */
+    private suspend fun extractPdfRaw(file: ScannedFile): Pair<ExtractedMetadata, ByteArray?> {
+        val pfd = context.contentResolver.openFileDescriptor(file.uri, "r")
+            ?: return fallback(file) to null
+
+        return pfd.use { descriptor ->
+            val renderer  = PdfRenderer(descriptor)
+            val pageCount = renderer.pageCount
+            val title     = file.displayName.substringBeforeLast('.')
+            val coverBytes = if (pageCount > 0) renderPdfFirstPageJpeg(renderer) else null
+            renderer.close()
+
+            ExtractedMetadata(title = title, author = UNKNOWN, pageCount = pageCount) to coverBytes
+        }
+    }
+
+    /** Renders page 0 to a fixed-width JPEG thumbnail — the hardened,
+     * tested behavior [extractPdf]/[extractPdfRaw] share. Assumes
+     * `renderer.pageCount > 0`; callers check that first. */
+    private fun renderPdfFirstPageJpeg(renderer: PdfRenderer): ByteArray {
+        val page   = renderer.openPage(0)
+        // Render at a fixed thumbnail width; maintain aspect ratio
+        val width  = 256
+        val height = (page.height.toFloat() / page.width * width).toInt()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        // Fill white background (PDF pages are transparent by default)
+        Canvas(bitmap).drawColor(Color.WHITE)
+        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        page.close()
+
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            bitmap.recycle()
+            out.toByteArray()
         }
     }
 

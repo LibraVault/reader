@@ -16,8 +16,12 @@ import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
 import xyz.libravault.feature.vault.CreateVaultScreen
 import xyz.libravault.feature.vault.UnlockVaultScreen
+import xyz.libravault.feature.vault.VAULT_AUDIO_FORMAT_NAMES
 import xyz.libravault.feature.vault.VaultContentsScreen
 import xyz.libravault.feature.vault.VaultListScreen
+import xyz.libravault.feature.vault.VaultPlayerScreen
+import xyz.libravault.feature.vault.VaultReaderScreen
+import xyz.libravault.feature.vault.toHexString
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
@@ -36,6 +40,12 @@ sealed class Screen(val route: String) {
     }
     data object VaultContents : Screen("vaults/{vaultId}") {
         fun createRoute(vaultId: String) = "vaults/$vaultId"
+    }
+    data object VaultRead : Screen("vaults/{vaultId}/read/{fileId}") {
+        fun createRoute(vaultId: String, fileId: String) = "vaults/$vaultId/read/$fileId"
+    }
+    data object VaultPlay : Screen("vaults/{vaultId}/play/{fileId}") {
+        fun createRoute(vaultId: String, fileId: String) = "vaults/$vaultId/play/$fileId"
     }
 
     /** Open a library item by its Room ID (normal flow). */
@@ -142,10 +152,40 @@ fun LibravaultNavHost(
         composable(
             route     = Screen.VaultContents.route,
             arguments = listOf(navArgument("vaultId") { type = NavType.StringType }),
-        ) {
+        ) { backStackEntry ->
+            val vaultId = backStackEntry.arguments!!.getString("vaultId")!!
             VaultContentsScreen(
                 onBack = { navController.popBackStack(Screen.VaultList.route, inclusive = false) },
+                onOpenEntry = { entry ->
+                    val fileId = entry.fileId.toHexString()
+                    val route = if (entry.format in VAULT_AUDIO_FORMAT_NAMES) {
+                        Screen.VaultPlay.createRoute(vaultId, fileId)
+                    } else {
+                        Screen.VaultRead.createRoute(vaultId, fileId)
+                    }
+                    navController.navigate(route)
+                },
             )
+        }
+
+        composable(
+            route     = Screen.VaultRead.route,
+            arguments = listOf(
+                navArgument("vaultId") { type = NavType.StringType },
+                navArgument("fileId") { type = NavType.StringType },
+            ),
+        ) {
+            VaultReaderScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(
+            route     = Screen.VaultPlay.route,
+            arguments = listOf(
+                navArgument("vaultId") { type = NavType.StringType },
+                navArgument("fileId") { type = NavType.StringType },
+            ),
+        ) {
+            VaultPlayerScreen(onBack = { navController.popBackStack() })
         }
 
         // ── Library-item routes (by Room ID) ──────────────────────────────
