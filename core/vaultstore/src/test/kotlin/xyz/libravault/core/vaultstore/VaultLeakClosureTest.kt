@@ -209,6 +209,112 @@ class VaultLeakClosureTest {
         assertNoSubarrayOnDisk(vaultDir, "Client_Divorce_Case".toByteArray(Charsets.UTF_8))
     }
 
+    // ── Bookmarks ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `a bookmark round-trips through the manifest`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+
+        val b = store.addBookmark(entry.fileId, "page:3", label = "Chapter 2", note = "my note")
+
+        val reloaded = store.listEntries().first { it.fileId.contentEquals(entry.fileId) }
+        assertEquals(1, reloaded.bookmarks.size)
+        assertEquals(b, reloaded.bookmarks[0])
+    }
+
+    @Test
+    fun `multiple bookmarks get distinct, increasing ids`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+
+        val b1 = store.addBookmark(entry.fileId, "page:1")
+        val b2 = store.addBookmark(entry.fileId, "page:2")
+
+        assertTrue(b2.id > b1.id)
+    }
+
+    @Test
+    fun `removeBookmark deletes exactly the targeted bookmark`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+        val b1 = store.addBookmark(entry.fileId, "page:1")
+        val b2 = store.addBookmark(entry.fileId, "page:2")
+
+        store.removeBookmark(entry.fileId, b1.id)
+
+        val remaining = store.listEntries().first().bookmarks
+        assertEquals(listOf(b2), remaining)
+    }
+
+    @Test
+    fun `removing a nonexistent bookmark id is a harmless no-op`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+        store.addBookmark(entry.fileId, "page:1")
+
+        store.removeBookmark(entry.fileId, 999L) // does not throw
+        assertEquals(1, store.listEntries().first().bookmarks.size)
+    }
+
+    @Test
+    fun `updateBookmarkNote replaces exactly the targeted bookmark's note`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+        val b1 = store.addBookmark(entry.fileId, "page:1", note = "old")
+        val b2 = store.addBookmark(entry.fileId, "page:2", note = "unrelated")
+
+        store.updateBookmarkNote(entry.fileId, b1.id, "new note")
+
+        val reloaded = store.listEntries().first().bookmarks
+        assertEquals("new note", reloaded.first { it.id == b1.id }.note)
+        assertEquals("unrelated", reloaded.first { it.id == b2.id }.note)
+    }
+
+    @Test
+    fun `bookmarks survive a lock-unlock cycle`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+        store.addBookmark(entry.fileId, "page:1", label = "a bookmark")
+
+        store.lock()
+        store.unlockWithPin("1234".toCharArray())
+
+        assertEquals(1, store.listEntries().first().bookmarks.size)
+    }
+
+    @Test
+    fun `addBookmark, removeBookmark and updateBookmarkNote on an unknown fileId throw, not silently no-op`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val bogusFileId = ByteArray(16)
+
+        assertThrows<VaultEntryNotFoundException> { store.addBookmark(bogusFileId, "ref") }
+        assertThrows<VaultEntryNotFoundException> { store.removeBookmark(bogusFileId, 1L) }
+        assertThrows<VaultEntryNotFoundException> { store.updateBookmarkNote(bogusFileId, 1L, "note") }
+    }
+
+    @Test
+    fun `bookmark label and note never appear in plaintext anywhere in the vault directory`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "Title", null, "pdf")
+
+        store.addBookmark(
+            entry.fileId, "page:1",
+            label = "Deposition exhibit A", note = "Client_Divorce_Case privileged note",
+        )
+
+        assertNoSubarrayOnDisk(vaultDir, "Deposition exhibit A".toByteArray(Charsets.UTF_8))
+        assertNoSubarrayOnDisk(vaultDir, "Client_Divorce_Case".toByteArray(Charsets.UTF_8))
+    }
+
     @Test
     fun `title and author never appear in plaintext anywhere in the vault directory`() = runTest {
         val store = newStore()

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -35,6 +37,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * screens' always-visible bar less, but preserves the immersive-reading
  * expectation `feature:reader`'s own EPUB screen sets — see
  * `VaultEpubReaderScreen`'s `onCentreTap`).
+ *
+ * Bookmarks work the same way on both formats: the add-bookmark action in
+ * the top bar bookmarks [VaultReaderViewModel.currentPositionRef] (the last
+ * position either renderer reported); tapping a bookmark in
+ * [VaultBookmarksSheet] requests navigation via
+ * [VaultReaderViewModel.navigateToBookmark], which this screen forwards to
+ * whichever renderer is active.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,7 +52,11 @@ fun VaultReaderScreen(
     viewModel: VaultReaderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val bookmarks by viewModel.bookmarks.collectAsState()
+    val highlights by viewModel.highlights.collectAsState()
+    val pendingNavigationRef by viewModel.pendingNavigationRef.collectAsState()
     var showToolbar by remember { mutableStateOf(true) }
+    var showBookmarksSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? FragmentActivity
     SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
@@ -51,6 +64,10 @@ fun VaultReaderScreen(
     LaunchedEffect(state) {
         if (state is VaultReaderState.WrongScreen) onBack()
     }
+
+    val pendingPdfPage = pendingNavigationRef?.takeIf { it.startsWith("page:") }
+        ?.removePrefix("page:")?.toIntOrNull()
+    val pendingEpubLocatorJson = pendingNavigationRef?.takeUnless { it.startsWith("page:") }
 
     Scaffold(
         topBar = {
@@ -60,6 +77,14 @@ fun VaultReaderScreen(
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { viewModel.addBookmark() }) {
+                            Icon(Icons.Default.BookmarkAdd, contentDescription = "Add bookmark")
+                        }
+                        IconButton(onClick = { showBookmarksSheet = true }) {
+                            Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
                         }
                     },
                 )
@@ -79,19 +104,40 @@ fun VaultReaderScreen(
                     val fragmentManager = activity?.supportFragmentManager
                     if (fragmentManager != null) {
                         VaultEpubReaderScreen(
-                            publication     = s.publication,
-                            fragmentManager = fragmentManager,
-                            onCentreTap     = { showToolbar = !showToolbar },
-                            modifier        = Modifier.fillMaxSize(),
+                            publication              = s.publication,
+                            fragmentManager           = fragmentManager,
+                            highlights                = highlights,
+                            pendingLocatorJson        = pendingEpubLocatorJson,
+                            onPendingLocatorConsumed  = viewModel::clearPendingNavigation,
+                            onPositionChanged         = viewModel::onEpubPositionChanged,
+                            onCentreTap               = { showToolbar = !showToolbar },
+                            onAddHighlight            = viewModel::addHighlight,
+                            modifier                  = Modifier.fillMaxSize(),
                         )
                     }
                 }
                 is VaultReaderState.PdfReady -> VaultPdfReaderScreen(
-                    reader   = viewModel.pdfReader(),
-                    modifier = Modifier.fillMaxSize(),
+                    reader           = viewModel.pdfReader(),
+                    modifier         = Modifier.fillMaxSize(),
+                    onPageChanged    = viewModel::onPdfPageChanged,
+                    scrollToPage     = pendingPdfPage,
+                    onScrollConsumed = viewModel::clearPendingNavigation,
                 )
             }
         }
+    }
+
+    if (showBookmarksSheet) {
+        VaultBookmarksSheet(
+            bookmarks       = bookmarks,
+            onBookmarkClick = { bookmark ->
+                viewModel.navigateToBookmark(bookmark.positionRef)
+                showBookmarksSheet = false
+            },
+            onBookmarkDelete = viewModel::removeBookmark,
+            onEditNote       = viewModel::updateBookmarkNote,
+            onDismiss        = { showBookmarksSheet = false },
+        )
     }
 }
 

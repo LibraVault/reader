@@ -400,6 +400,60 @@ class VaultStore(
         VaultManifest.write(vaultDir, vmkNow, updated)
     }
 
+    /** Appends a new bookmark to [fileId]'s manifest entry — same pattern as
+     * [addHighlight], see [VaultBookmark]'s doc for why this lives in the
+     * encrypted manifest rather than plaintext Room.
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
+    suspend fun addBookmark(
+        fileId: ByteArray,
+        positionRef: String,
+        label: String? = null,
+        note: String? = null,
+    ): VaultBookmark = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        val entries = VaultManifest.read(vaultDir, vmkNow)
+        val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
+
+        val nextId = (entry.bookmarks.maxOfOrNull { it.id } ?: 0L) + 1L
+        val bookmark = VaultBookmark(nextId, positionRef, label, note, nowEpochMillis())
+
+        val updated = entries.map {
+            if (it.fileId.contentEquals(fileId)) it.copy(bookmarks = it.bookmarks + bookmark) else it
+        }
+        VaultManifest.write(vaultDir, vmkNow, updated)
+        bookmark
+    }
+
+    /** Removes a bookmark by id. A no-op if [bookmarkId] doesn't exist.
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
+    suspend fun removeBookmark(fileId: ByteArray, bookmarkId: Long): Unit = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        val entries = VaultManifest.read(vaultDir, vmkNow)
+        if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
+
+        val updated = entries.map {
+            if (it.fileId.contentEquals(fileId)) it.copy(bookmarks = it.bookmarks.filterNot { b -> b.id == bookmarkId }) else it
+        }
+        VaultManifest.write(vaultDir, vmkNow, updated)
+    }
+
+    /** Replaces a bookmark's note (`null`/blank clears it). A no-op if
+     * [bookmarkId] doesn't exist.
+     * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
+    suspend fun updateBookmarkNote(fileId: ByteArray, bookmarkId: Long, note: String?): Unit = withContext(Dispatchers.IO) {
+        val vmkNow = requireUnlocked()
+        val entries = VaultManifest.read(vaultDir, vmkNow)
+        if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
+
+        val updated = entries.map { entry ->
+            if (!entry.fileId.contentEquals(fileId)) return@map entry
+            entry.copy(
+                bookmarks = entry.bookmarks.map { b -> if (b.id == bookmarkId) b.copy(note = note) else b },
+            )
+        }
+        VaultManifest.write(vaultDir, vmkNow, updated)
+    }
+
     /** Opens a seekable decrypting reader for [fileId] — the primitive Phase 3's
      * content-delivery adapters (PDF proxy fd, Media3 DataSource, etc.) wrap. */
     fun openReader(fileId: ByteArray): VaultFileReader = VaultFileReader(contentFile(fileId), requireUnlocked(), fileId)

@@ -12,17 +12,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -31,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -50,9 +54,21 @@ import xyz.libravault.core.vaultcrypto.VaultFileReader
  * `onCleared` as a backstop either way) owns that; [VaultFileReader.close]
  * is idempotent, so the backstop is harmless even when the proxy fd path
  * already closed it.
+ *
+ * [onPageChanged] reports the topmost visible page as the user scrolls — the
+ * position reference [VaultReaderViewModel.addBookmark] bookmarks against.
+ * [scrollToPage] drives bookmark-navigation: set it to animate to that page,
+ * then call [onScrollConsumed] once the scroll completes (mirrors
+ * `feature:reader`'s `PdfReaderScreen` continuous-scroll variant exactly).
  */
 @Composable
-fun VaultPdfReaderScreen(reader: VaultFileReader, modifier: Modifier = Modifier) {
+fun VaultPdfReaderScreen(
+    reader: VaultFileReader,
+    modifier: Modifier = Modifier,
+    onPageChanged: (Int) -> Unit = {},
+    scrollToPage: Int? = null,
+    onScrollConsumed: () -> Unit = {},
+) {
     val context = LocalContext.current
     var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
     var pageCount by remember { mutableIntStateOf(0) }
@@ -91,7 +107,25 @@ fun VaultPdfReaderScreen(reader: VaultFileReader, modifier: Modifier = Modifier)
         return
     }
 
-    LazyColumn(modifier = modifier.fillMaxSize()) {
+    val listState = rememberLazyListState()
+
+    // Bookmark navigation: animate to the requested page then clear the request.
+    LaunchedEffect(scrollToPage, pageCount) {
+        if (scrollToPage != null && pageCount > 0) {
+            listState.animateScrollToItem(scrollToPage.coerceIn(0, pageCount - 1))
+            onScrollConsumed()
+        }
+    }
+
+    // Report page changes as the user scrolls.
+    val currentPage by remember { derivedStateOf { listState.firstVisibleItemIndex } }
+    LaunchedEffect(listState) {
+        snapshotFlow { currentPage }
+            .distinctUntilChanged()
+            .collect { onPageChanged(it) }
+    }
+
+    LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
         items(pageCount) { pageIndex ->
             VaultPdfPageImage(
                 renderer      = r,
