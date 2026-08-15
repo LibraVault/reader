@@ -6,13 +6,22 @@ name: Principal Review Agent
 # the actual review logic; this workflow only wires triggers, guardrails,
 # and the auto-merge/human-merge split around it.
 #
-# Uses the pipeline App token too, but for a different reason than
-# dev-agent.yml/qa-agent.yml: neither outcome here needs to trigger a
-# further workflow run, but the review itself does need a non-author
-# identity. Every PR in this pipeline is opened/pushed by GITHUB_TOKEN
-# (github-actions[bot]), and GitHub refuses to let an actor approve or
-# request changes on its own PR — posting the review as GITHUB_TOKEN would
-# fail on every run. The App is a distinct identity, so it can review.
+# Plain GITHUB_TOKEN throughout, unlike dev-agent.yml/qa-agent.yml: neither
+# outcome here needs to trigger a further workflow run (auto-merge happens
+# inline in this same job; human-merge is terminal until a person acts).
+#
+# History worth recording: this briefly used the pipeline App token for
+# the review step instead, reasoning that GITHUB_TOKEN (github-actions[bot])
+# would collide with the PR's own author identity. That reasoning was
+# right at the time but became wrong once PR #184 changed *dev-agent.yml's*
+# PR-creation to also use the App token — PRs are now authored as the App,
+# so giving the App token to *this* review step made it collide with the
+# PR author instead (confirmed live: PR #187 — GitHub rejected
+# `gh pr review --approve` as self-approval, "viewerDidAuthor: true",
+# diagnosed correctly by a real principal-review run itself, which routed
+# to status:needs-human-merge rather than guess). GITHUB_TOKEN
+# (github-actions[bot]) is the one that's actually distinct from the PR
+# author now, so that's what this step uses.
 
 on:
   pull_request:
@@ -105,41 +114,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
 
-      - name: Mint pipeline App token
-        if: steps.guard.outputs.skip != 'true'
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.PIPELINE_APP_ID }}
-          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
-
       - name: Run principal review agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # claude-code-action refuses to run at all when triggered by a
           # non-human actor by default (its own anti-recursion guard) —
-          # confirmed live via qa-agent.yml hitting this exact error:
-          # "Workflow initiated by non-human actor: libravault-pipeline-bot
-          # (type: Bot)." The trigger here IS the pipeline App applying
-          # status:needs-review, so without this Phase 3 could never run.
-          # Scoped to our own bot by name, not '*'.
+          # confirmed live: "Workflow initiated by non-human actor:
+          # libravault-pipeline-bot (type: Bot)." The trigger here IS the
+          # pipeline App applying status:needs-review, so without this
+          # Phase 3 could never run. Scoped to our own bot by name, not '*'.
           allowed_bots: libravault-pipeline-bot
           # This — not the GH_TOKEN env var above — is what actually
           # controls the identity claude-code-action uses for git/gh
           # operations when claude_code_oauth_token is set: it defaults to
-          # Claude's own claude[bot] App regardless of GH_TOKEN, which is
-          # also the identity dev-agent.yml's PRs are authored under
-          # (confirmed empirically: PR #162 shows author app/claude despite
-          # that workflow explicitly setting GH_TOKEN to a different
-          # value). Without this override, "gh pr review --approve" here
-          # would be claude[bot] approving a PR claude[bot] itself opened —
-          # GitHub rejects that as self-approval on every run.
-          github_token: ${{ steps.app-token.outputs.token }}
+          # Claude's own claude[bot] App regardless of GH_TOKEN. Forced to
+          # GITHUB_TOKEN explicitly, matching dev-agent.yml/qa-agent.yml —
+          # see the file header comment for why GITHUB_TOKEN (not the App
+          # token) is what's actually distinct from the PR's author here.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Read .claude/agents/principal-review-agent.md in full — it is
             your complete operating persona for this run. Review PR
@@ -165,7 +162,7 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         id: verdict
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
@@ -194,7 +191,7 @@ jobs:
       - name: Auto-merge if approved
         if: steps.guard.outputs.skip != 'true' && steps.verdict.outputs.verdict == 'auto-merge'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
