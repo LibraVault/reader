@@ -1,9 +1,6 @@
 package xyz.libravault.feature.settings
 
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -481,19 +478,4 @@ private fun SwitchSetting(
 @Composable
 private fun Divider() {
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-}
-
-internal fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("crypto address", text)
-    // On Android 13+, the system shows a clipboard preview overlay that
-    // flashes the address on screen — for crypto addresses that's both
-    // an information leak (over-the-shoulder) and a UX papercut. The
-    // IS_SENSITIVE flag on ClipDescription (API 33+) suppresses the preview.
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        clip.description.extras = android.os.PersistableBundle().apply {
-            putBoolean("android.content.extra.IS_SENSITIVE", true)
-        }
-    }
-    clipboard.setPrimaryClip(clip)
 }

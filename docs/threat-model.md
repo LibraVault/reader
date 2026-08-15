@@ -6,7 +6,6 @@ the source of truth for:
 - What assets LibraVault protects (and what we explicitly don't).
 - Which threat actors we design against, and which are out of scope.
 - The mitigation that defends each asset, with a code reference.
-- The donation-flow sequence diagram (Play flavor only).
 
 Update this file whenever you add a new asset, a new outbound call,
 or a new parser surface. The "Test coverage" column links to the
@@ -18,9 +17,7 @@ test file that proves the mitigation is in place.
 |---|---|---|
 | User library files | SAF folders (never copied) | `core/storage/src/test/.../LibraryScannerImplTest.kt` |
 | Reading progress / bookmarks / highlights | Room `libravault.db` | `feature/reader/src/test/.../ReaderViewModelTest.kt` |
-| Pending BTCPay invoice IDs | `libravault_prefs.xml` | (no test — preference I/O) |
 | Cover art cache | App cache, SHA-256 keyed | `core/storage/src/test/.../CoverArtCacheTest.kt` |
-| Donation crypto addresses | `fdroid/.../FdroidStaticDonationAddresses.kt` only | (compile-time check that Play APK has no strings match) |
 | Encrypted Vault content (imported files) | App-private dir, chunked AES-256-GCM ciphertext, opaque hex filenames | `core/vaultcrypto/src/test/.../ChunkedVaultRoundTripTest.kt`, `.../TamperDetectionTest.kt` |
 | Encrypted Vault manifest (titles, authors, highlights, cover art) | Same dir as content, encrypted as one manifest file — never Room, never the plaintext cover-art cache | `core/vaultstore/src/test/.../VaultLeakClosureTest.kt`, `.../VaultStoreHasNoLeakSurfaceDependencyTest.kt` |
 | Vault Master Key (VMK) | In memory only while unlocked (never persisted in the clear); wrapped two independent ways at rest — see below | `core/vaultcrypto/src/test/.../VaultKeyManagerTest.kt` |
@@ -41,13 +38,8 @@ practice. Impact = what breaks if the mitigation fails.
 | Malicious EPUB OOM via XML expansion | OPF declares a billion-laughs DTD | 2 | 4 | `FEATURE_PROCESS_DOCDECL=false` on every XmlPullParser | `core/storage/.../MetadataExtractor.kt` |
 | Malicious EPUB XXE | OPF/container.xml declares external entity | 2 | 4 | Same — `FEATURE_PROCESS_DOCDECL=false` | same |
 | Malicious audio hangs IO thread | Corrupt MP3 frame makes MediaMetadataRetriever spin | 3 | 3 | `withTimeout(10_000)` wraps the entire extract (not just `setDataSource`) | `core/storage/.../MetadataExtractor.kt:extractAudio` |
-| Compromised BTCPay returns `javascript:` checkoutLink | MITM or BTCPay compromised | 1 | 4 | `safeCheckoutLink` validates scheme = `https` and host non-blank; UI shows host before launching | `feature/settings/.../DonateScreen.kt:safeCheckoutLink`, `feature/settings/src/test/.../SafeCheckoutLinkTest.kt` |
-| Donation button double-tap creates 2 invoices | User taps "Get Payment Address" rapidly | 4 | 2 | Button disabled while `DonationState.Creating` | `feature/settings/.../DonateScreen.kt` |
-| App leaks F-Droid BTC address into Play APK | String table contains both sourceSets' consts | 2 | 1 | `StaticDonationAddresses` interface; only `fdroid/.../FdroidStaticDonationAddresses.kt` ships the real strings | `feature/settings/src/fdroid/.../FdroidStaticDonationAddresses.kt` |
-| Crypto address leaked via clipboard preview | User copies address on Android 13+; system shows preview | 4 | 1 | `EXTRA_IS_SENSITIVE` set on ClipDescription | `feature/settings/.../SettingsScreen.kt:copyToClipboard` |
 | Cold-launch ACTION_VIEW intent dropped silently | `LaunchedEffect(nav)` races with `onNewIntent` when nav is null | 2 | 3 | `pendingIntent` as `mutableStateOf<Intent?>`; consumer keyed on (pendingIntent, nav) | `app/.../MainActivity.kt` |
 | Bookmark DB row with bad color hex wipes all highlights | User restores from backup with corrupt `colorHex` | 2 | 3 | Explicit try/catch + log for IllegalArgumentException / JSONException per highlight | `feature/reader/.../EpubReaderScreen.kt` |
-| BTCPay proxy flooded | Single IP sends 1000 r/s | 3 | 3 | `express-rate-limit` 60 r/min global, 10 r/min per endpoint; 4 KB body cap | `server/proxy.js` |
 | Enrichment scope never cancelled | `LibraryScannerImpl` runs forever on a 10 k-item library | 4 | 2 | `backgroundScope` is now lifecycle-bound (TODO WS3.8); cancellation hook on next scan via `enrichmentJob?.cancel()` | `core/storage/.../LibraryScannerImpl.kt` |
 | Device image copied (`/data` extracted, device off/locked) | Attacker with physical access images storage, no live device | 2 | 5 | VMK is never derivable from disk alone: the PIN-wrapped path requires the non-exportable Keystore key too (nothing to brute-force offline), and the recovery-key path requires a 256-bit key that was never persisted | `core/vaultcrypto/src/test/.../VaultKeyManagerTest.kt`, `core/vaultstore/src/test/.../VaultStoreTest.kt` |
 | Live device, repeated PIN guessing | Attacker holds an unlocked-screen device and tries PINs in the vault UI | 3 | 4 | Exponential backoff after 3 free attempts, capped at 5 min; deliberately no auto-wipe (an attacker could otherwise trigger destruction on purpose); counter survives process restart | `core/vaultstore/src/test/.../UnlockAttemptThrottleTest.kt` |
@@ -70,74 +62,18 @@ vault, and the reasoning for why we didn't try to hide them.
 | Approximate file count and size per vault | Each file is one opaque hex-named file on disk; size correlates with plaintext size plus fixed per-32 KiB-chunk AEAD tag overhead | Hiding this would mean padding every file to a fixed size, at a real storage-cost tradeoff not currently taken on. Matches the same accepted tradeoff the rest of the app already makes for file sizes/counts. |
 | That the app has Encrypted Vault functionality at all | Present in every install | Not a per-user secret — it's a documented feature. |
 
-## Donation flow (Play flavor)
+## Support / donations
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant DS as DonateScreen
-    participant SVM as SettingsViewModel
-    participant BPC as BtcPayClient (Play)
-    participant Proxy as donate-proxy
-    participant BTC as BTCPay Server
-
-    U->>DS: Tap "Donate"
-    DS->>SVM: createDonationInvoice(amount, coin)
-    SVM->>SVM: _donationState = Creating; button disabled
-    SVM->>BPC: createInvoice(amountUsd)
-    BPC->>Proxy: POST /donate/invoice (Bearer, 4 KB cap)
-    Proxy->>Proxy: validate Bearer (constant-time)
-    Proxy->>BTC: POST /api/v1/stores/{id}/invoices
-    BTC-->>Proxy: {id, checkoutLink}
-    Proxy-->>BPC: {id, checkoutLink}
-    BPC-->>SVM: NewInvoice(id, checkoutLink)
-    SVM->>BPC: getPaymentInfo(invoice.id, coin)
-    BPC->>Proxy: GET /donate/invoice/:id/payment/:coin
-    Proxy->>BTC: GET /api/v1/stores/{id}/invoices/:id/payment-methods
-    alt coin is BTC or XMR
-        BTC-->>Proxy: payment-methods[]
-        Proxy-->>BPC: {address, paymentLink, cryptoAmount}
-        BPC-->>SVM: InvoicePaymentInfo
-        SVM->>SVM: _donationState = Pending
-        Note over SVM: pollUntilPaid() loops every 15 s
-        SVM->>BPC: getInvoiceStatus(id) (loop)
-        BPC->>Proxy: GET /donate/invoice/:id
-        Proxy->>BTC: GET /api/v1/stores/{id}/invoices/:id
-        BTC-->>Proxy: {status}
-        alt status == Settled
-            Proxy-->>BPC: {status: "Settled"}
-            BPC-->>SVM: InvoiceStatus.Settled
-            SVM->>SVM: setSupporter(true); _donationState = Paid
-        else status == Expired/Invalid
-            Proxy-->>BPC: {status: ...}
-            BPC-->>SVM: InvoiceStatus.Expired
-            SVM->>SVM: _donationState = Idle
-        else status == New/Processing/Unknown
-            Proxy-->>BPC: {status: ...}
-            BPC-->>SVM: InvoiceStatus.New
-            Note over SVM: continue polling
-        end
-    else no method
-        BTC-->>Proxy: []
-        Proxy-->>BPC: null
-        BPC-->>SVM: null
-        alt Play flavor (no static fallback)
-            SVM->>SVM: _donationState = Error("BTCPay has no X method")
-        else F-Droid flavor (has static fallback)
-            SVM->>SVM: _donationState = NoMethod(staticAddress)
-        end
-    end
-
-    alt checkoutLink present
-        U->>DS: Tap "Open checkout"
-        DS->>DS: safeCheckoutLink(link) — scheme = https only
-        alt safe
-            DS->>U: Intent(ACTION_VIEW, Uri) opens browser
-        else unsafe
-            DS->>U: button hidden
-        end
-    end
-```
+Replaced entirely by an external link — no donation code, state machine, or
+network client exists in the app on any flavor or platform anymore. Tapping
+"Support the Project" in Settings opens `https://libravault.xyz/support.html`
+via `Intent.ACTION_VIEW` (Android, both flavors, `SUPPORT_URL` in
+`feature/settings/.../SupportLink.kt`) or `Link` (iOS,
+`SettingsView.supportURL`). The literal URL is pinned by a regression test on
+each platform (`SupportLinkTest.kt`, `SettingsSupportLinkTests.swift`) so it
+can't silently drift out of sync between the two. Nothing here to threat-model
+beyond "is the URL still the literal we intend" — there's no server response
+to validate, no invoice state, no credential.
 
 ## Out of scope (explicit)
 
@@ -157,7 +93,6 @@ sequenceDiagram
 - Adding a new outbound call → add a row to the threat matrix.
 - Adding a new parser surface → add a row referencing the fuzz harness.
 - Adding a new persistent asset → add a row to the asset inventory.
-- Changing the donation flow → update the Mermaid sequence diagram.
 - Adding a vault content-delivery adapter (EPUB/PDF/audio) → add a row to the threat matrix if it introduces a new parser/decode surface.
 
 ## References
@@ -191,10 +126,6 @@ sequenceDiagram
 - `feature/reader/src/test/.../EpubStripHtmlTest.kt` — 17 cases for
   the Jsoup HTML stripper including the 2 MB cap and CDATA / SVG /
   iframe / onload handling.
-- `feature/settings/src/test/.../SafeCheckoutLinkTest.kt` — 13 cases
-  for `safeCheckoutLink` (https-only, no `javascript:` / `intent:` /
-  `file:` / `content:`).
-- `feature/settings/src/test/.../StaticAddressesTest.kt` — covers the
-  per-flavor address fallback decision.
-- `server/test/proxy.test.js` — 10 cases for the Express proxy
-  (auth, body cap, rate limit, hex invoice IDs, coin validation).
+- `feature/settings/src/test/.../SupportLinkTest.kt`,
+  `LibraVaultTests/SettingsSupportLinkTests.swift` — pin the exact
+  external Support URL on each platform.
