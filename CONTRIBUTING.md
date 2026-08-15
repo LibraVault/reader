@@ -1,6 +1,6 @@
 # Contributing to Libravault
 
-Thank you for your interest in contributing. Libravault is GPL-3.0 licensed and welcomes contributions that align with its core principles.
+Thank you for your interest in contributing. Libravault is GPL-3.0 licensed and welcomes contributions that align with its core principles. Some filed issues are picked up by an automated dev/qa/principal-review agent pipeline before reaching a human — see [`docs/agent-team-pipeline.md`](docs/agent-team-pipeline.md) for how that works.
 
 ## Core principles
 
