@@ -152,21 +152,43 @@ jobs:
           gh pr checkout "${{ steps.guard.outputs.pr_number }}"
           rm -f dev-agent-pr-number.txt
 
+      - name: Mint pipeline App token
+        # Moved ahead of "Run dev agent" (rather than only after it, as
+        # qa-agent.yml/principal-review.yml do) — the agent itself needs
+        # this available as APP_GH_TOKEN. Discovered via a live run
+        # (issue #182): with only GITHUB_TOKEN available, `gh pr create`
+        # fails outright with "GitHub Actions is not permitted to create
+        # or approve pull requests" — a repo/org setting, a different
+        # limit than GITHUB_TOKEN's inability to trigger further workflow
+        # runs. Fixed by routing PR creation specifically through the App
+        # token rather than loosening that repo setting, consistent with
+        # this pipeline's least-privilege default elsewhere.
+        if: steps.guard.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
       - name: Run dev agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
         env:
-          # Deliberately the default GITHUB_TOKEN, not the pipeline App
-          # token — this step self-applies status:ready-for-dev /
-          # status:in-progress to the SAME issue this run is already
-          # processing. Using a token capable of triggering further runs
-          # here would fire a duplicate dev-agent.yml invocation for an
-          # issue already mid-run (the issues:labeled trigger matches
-          # status:ready-for-dev). status:needs-qa — the one label that
-          # legitimately needs to cross into Phase 2 — is applied by a
-          # separate step below, after this one finishes, specifically
-          # with the App token.
+          # Deliberately the default GITHUB_TOKEN as the primary $GH_TOKEN,
+          # not the pipeline App token — this step self-applies
+          # status:ready-for-dev/status:in-progress to the SAME issue this
+          # run is already processing. Using a token capable of triggering
+          # further runs for THOSE calls would fire a duplicate
+          # dev-agent.yml invocation for an issue already mid-run (the
+          # issues:labeled trigger matches status:ready-for-dev).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Separate var, used ONLY for `gh pr create` per the prompt
+          # below — GITHUB_TOKEN can't create PRs at all in this repo (see
+          # the App-token step's comment above), and PR creation itself
+          # doesn't trigger any workflow this pipeline cares about (ours
+          # all trigger on labeled, not opened), so there's no self-loop
+          # risk in using the elevated token for this one specific call.
+          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
         uses: anthropics/claude-code-action@v1
         with:
           # Uses the CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`,
@@ -202,13 +224,18 @@ jobs:
 
             Use `gh issue comment`, `gh issue edit --add-label` / `--remove-label`
             for issue interaction, `gh pr comment` for PR interaction, and
-            normal git + `gh pr create --base dev` for branching, committing,
-            and opening a *new* PR (only in triage mode — in revise mode,
-            push commits to the existing PR's branch instead of opening a
-            new one). You are running non-interactively in CI — there is no
-            human to ask a follow-up question. If the persona says to stop
-            and ask, do that by commenting and applying status:needs-info;
-            do not wait for a reply.
+            normal git for branching and committing. To open a *new* PR
+            (only in triage mode — in revise mode, push commits to the
+            existing PR's branch instead), the default token can't create
+            PRs at all in this repo, so run it as:
+            `GH_TOKEN="$APP_GH_TOKEN" gh pr create --base dev ...` — that
+            env var is already set for you. Everything else (comments,
+            labels, git push) uses the default token as normal; only the
+            `gh pr create` call itself needs the override. You are running
+            non-interactively in CI — there is no human to ask a follow-up
+            question. If the persona says to stop and ask, do that by
+            commenting and applying status:needs-info; do not wait for a
+            reply.
 
             As your very last action, write a single line to the file
             `dev-agent-pr-number.txt` in the repo root: the PR number (new
@@ -219,21 +246,16 @@ jobs:
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
             --max-turns 40
 
-      - name: Mint pipeline App token
+      - name: Force-classify risk and advance to QA
         # !cancelled() rather than the implicit success()-only default: if
         # "Run dev agent" fails/errors (max-turns exhausted, crash) rather
-        # than being cancelled, this and the next step must still run —
-        # otherwise a revise-mode failure leaves the PR stuck on
-        # status:in-progress forever with status:needs-qa never reapplied
-        # and no visible signal beyond a red X nobody's watching.
-        if: steps.guard.outputs.skip != 'true' && !cancelled()
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.PIPELINE_APP_ID }}
-          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
-
-      - name: Force-classify risk and advance to QA
+        # than being cancelled, this step must still run — otherwise a
+        # revise-mode failure leaves the PR stuck on status:in-progress
+        # forever with status:needs-qa never reapplied and no visible
+        # signal beyond a red X nobody's watching. (The App token itself
+        # is minted earlier now, before "Run dev agent" — see that step's
+        # comment — so steps.app-token.outputs.token is already available
+        # here regardless of how "Run dev agent" went.)
         if: steps.guard.outputs.skip != 'true' && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
