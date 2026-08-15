@@ -197,6 +197,16 @@ jobs:
           # up, at the cost of drawing on that subscription's own usage
           # limits. See docs/agent-team-pipeline.md.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # claude-code-action refuses to run at all when triggered by a
+          # non-human actor by default (its own anti-recursion guard) —
+          # confirmed live via qa-agent.yml hitting this exact error:
+          # "Workflow initiated by non-human actor: libravault-pipeline-bot
+          # (type: Bot)." The revise-mode pull_request:labeled trigger here
+          # IS the pipeline App applying status:in-progress, so without
+          # this the QA loop-back could never run. Harmless for the
+          # issues-triggered path (human actor there already passes).
+          # Scoped to our own bot by name, not '*'.
+          allowed_bots: libravault-pipeline-bot
           # This — not the GH_TOKEN env var above — is what actually
           # controls the identity claude-code-action uses for git/gh
           # operations: with claude_code_oauth_token set, it defaults to
