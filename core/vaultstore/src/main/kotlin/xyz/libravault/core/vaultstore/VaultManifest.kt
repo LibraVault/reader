@@ -29,6 +29,22 @@ data class VaultHighlight(
 )
 
 /**
+ * A saved reading position on a vault document (implementation plan §D.0's
+ * Phase 4 review: same "keep it out of plaintext Room" rationale as
+ * [VaultHighlight] — `BookmarkEntity.label`/`.note` would otherwise leak a
+ * user's own annotations for a file they deliberately encrypted). Field
+ * shapes mirror `core.database.entity.BookmarkEntity` deliberately, same as
+ * [VaultHighlight] does for `HighlightEntity`.
+ */
+data class VaultBookmark(
+    val id: Long,
+    val positionRef: String, // CFI/Locator JSON for EPUB, "page:N" for PDF — same convention as BookmarkEntity
+    val label: String? = null,
+    val note: String? = null,
+    val createdAtEpochMillis: Long,
+)
+
+/**
  * One imported document's metadata (PRD §8.2 point 6: title/author/format
  * live in the encrypted manifest, not in plaintext Room — see implementation
  * plan §A.6, the plaintext-metadata leak this whole module exists to close).
@@ -57,13 +73,14 @@ data class VaultManifestEntry(
     val addedAtEpochMillis: Long,
     val coverArtFileId: ByteArray? = null,
     val highlights: List<VaultHighlight> = emptyList(),
+    val bookmarks: List<VaultBookmark> = emptyList(),
 ) {
     override fun equals(other: Any?): Boolean =
         other is VaultManifestEntry &&
             fileId.contentEquals(other.fileId) && title == other.title && author == other.author &&
             format == other.format && sizeBytes == other.sizeBytes && addedAtEpochMillis == other.addedAtEpochMillis &&
             (coverArtFileId?.contentEquals(other.coverArtFileId) ?: (other.coverArtFileId == null)) &&
-            highlights == other.highlights
+            highlights == other.highlights && bookmarks == other.bookmarks
 
     override fun hashCode(): Int = fileId.contentHashCode()
 }
@@ -79,6 +96,15 @@ private data class VaultHighlightDto(
 )
 
 @Serializable
+private data class VaultBookmarkDto(
+    val id: Long,
+    val positionRef: String,
+    val label: String?,
+    val note: String?,
+    val createdAtEpochMillis: Long,
+)
+
+@Serializable
 private data class VaultManifestEntryDto(
     val fileIdHex: String,
     val title: String,
@@ -88,6 +114,10 @@ private data class VaultManifestEntryDto(
     val addedAtEpochMillis: Long,
     val coverArtFileIdHex: String? = null,
     val highlights: List<VaultHighlightDto> = emptyList(),
+    // Absent in manifests written before this field existed — kotlinx.serialization
+    // falls back to the default (emptyList()) for a missing JSON key, same as
+    // `highlights` already relies on for older vaults.
+    val bookmarks: List<VaultBookmarkDto> = emptyList(),
 )
 
 @Serializable
@@ -121,6 +151,9 @@ object VaultManifest {
                     coverArtFileIdHex = entry.coverArtFileId?.toHex(),
                     highlights = entry.highlights.map {
                         VaultHighlightDto(it.id, it.positionRef, it.highlightedText, it.colorHex, it.note, it.createdAtEpochMillis)
+                    },
+                    bookmarks = entry.bookmarks.map {
+                        VaultBookmarkDto(it.id, it.positionRef, it.label, it.note, it.createdAtEpochMillis)
                     },
                 )
             },
@@ -166,6 +199,9 @@ object VaultManifest {
                 coverArtFileId = e.coverArtFileIdHex?.fromHex(),
                 highlights = e.highlights.map {
                     VaultHighlight(it.id, it.positionRef, it.highlightedText, it.colorHex, it.note, it.createdAtEpochMillis)
+                },
+                bookmarks = e.bookmarks.map {
+                    VaultBookmark(it.id, it.positionRef, it.label, it.note, it.createdAtEpochMillis)
                 },
             )
         }
