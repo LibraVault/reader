@@ -1,10 +1,11 @@
 # Agent-team pipeline: issue → dev → qa → principal review → merge
 
-Status: **Phase 1 built** (`.github/workflows/dev-agent.yml`) but **not yet
-proven live** — it needs a `CLAUDE_CODE_OAUTH_TOKEN` repository secret before
-its first real run, and hasn't triaged a real issue yet. Phases 2-3 (QA,
+Status: **Phase 1 proven live** (`.github/workflows/dev-agent.yml`) — first
+real triage run
+([31832792052](https://github.com/LibraVault/reader/actions/runs/31832792052))
+triaged a disposable issue and opened PR #162, later merged. Phases 2-3 (QA,
 principal review workflows) don't exist yet; everything past `status:needs-qa`
-today needs a human.
+today still needs a human.
 
 **Auth: subscription OAuth token, not an API key.** The workflow runs on
 GitHub-hosted (ephemeral) runners and authenticates via
@@ -105,19 +106,43 @@ don't silently drift from what's expected of a human contributor:
   workflow-scoped default `GITHUB_TOKEN` (auto-rotated, permissions
   declared per-workflow, no new credential to store). Note this has a real
   limit: GitHub does not let actions taken with that token trigger further
-  workflow runs, so a label it applies won't itself fire Phase 2/3 — that
-  needs revisiting (likely a scoped bot PAT or GitHub App, deliberately
-  *not* reusing the interactive `libravault-xyz` session token, which is
-  broader than this needs) when those phases are actually wired up.
+  workflow runs, so a label it applies won't itself fire Phase 2/3 — see
+  "Cross-workflow triggering" below for how that's resolved when those
+  phases are wired up.
+
+## Cross-workflow triggering (GitHub App)
+
+Any Phase 2/3 step that needs to take an action capable of triggering
+another workflow run (e.g. applying a label that fires the next stage)
+must mint a token from the `libravault-pipeline-bot` GitHub App instead of
+using the default `GITHUB_TOKEN`, which can't do this:
+
+```yaml
+- uses: actions/create-github-app-token@v2
+  id: app-token
+  with:
+    app-id: ${{ vars.PIPELINE_APP_ID }}
+    private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+- run: gh pr edit "$PR" --add-label status:needs-qa
+  env:
+    GH_TOKEN: ${{ steps.app-token.outputs.token }}
+```
+
+Deliberately a dedicated org-owned App, not the interactive `libravault-xyz`
+session identity (broader than this needs) and not a personal-account PAT
+(tied to a human, no expiry-free rotation). Installed on `LibraVault`,
+scoped to the `reader` repository only, with read/write on code, issues,
+and pull requests. Credentials: `PIPELINE_APP_ID` (repo variable) and
+`PIPELINE_APP_PRIVATE_KEY` (repo secret).
 
 ## Rollout plan
 
 1. **Phase 0 (PR #146)** — issue templates, label taxonomy, agent-policy.yml,
    agent persona files, this doc. No live automation.
-2. **Phase 1 (built, unproven)** — `dev-agent.yml` workflow (triage + fix),
-   triggered on issue open / `status:ready-for-dev` label, or manually via
-   `workflow_dispatch` for testing against a specific issue number. Needs
-   a `CLAUDE_CODE_OAUTH_TOKEN` repo secret before it can run at all.
+2. **Phase 1 (built, proven live)** — `dev-agent.yml` workflow (triage +
+   fix), triggered on issue open / `status:ready-for-dev` label, or
+   manually via `workflow_dispatch` for testing against a specific issue
+   number. Needs a `CLAUDE_CODE_OAUTH_TOKEN` repo secret to run at all.
 3. **Phase 2** — `qa-agent.yml` workflow, triggered on `status:needs-qa`.
 4. **Phase 3** — `principal-review.yml` workflow, triggered on
    `status:needs-review`; implements the auto-merge/human-merge split.
