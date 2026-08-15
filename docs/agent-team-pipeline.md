@@ -1,11 +1,20 @@
 # Agent-team pipeline: issue → dev → qa → principal review → merge
 
-Status: **Phase 1 proven live** (`.github/workflows/dev-agent.yml`) — first
-real triage run
-([31832792052](https://github.com/LibraVault/reader/actions/runs/31832792052))
-triaged a disposable issue and opened PR #162, later merged. **Phases 2-3
-built, not yet proven live** (`.github/workflows/qa-agent.yml`,
-`.github/workflows/principal-review.yml`) — see the rollout plan below.
+Status: **Phases 1-3 proven live**, full issue → dev → qa → principal
+review → merge cycle. Disposable issue #182 went through triage,
+implementation (PR #187), QA verification, principal review, and merge —
+all three workflows firing automatically off label changes, no manual
+intervention beyond filing the issue and one final human-merge call (CI
+queue congestion from same-day repeated testing pushed a CI-wait past its
+20-minute budget; the pipeline correctly deferred to a human rather than
+guess). Five real bugs were found and fixed live in the process — see
+`.claude/agents/*.md` and the three workflow files' own comments for the
+specifics (PR creation needing the App token not GITHUB_TOKEN,
+claude-code-action's non-human-actor guard needing `allowed_bots`, an
+identity collision between PR-authoring and PR-reviewing once both used
+the App token, GITHUB_TOKEN being unable to *approve* PRs at all
+independent of identity, and a stale opposite-outcome label not being
+cleared on a second review round).
 
 **Auth: subscription OAuth token, not an API key.** The workflow runs on
 GitHub-hosted (ephemeral) runners and authenticates via
@@ -160,10 +169,10 @@ agent's own step always keeps the safe default token):
    fix), triggered on issue open / `status:ready-for-dev` label, or
    manually via `workflow_dispatch` for testing against a specific issue
    number. Needs a `CLAUDE_CODE_OAUTH_TOKEN` repo secret to run at all.
-3. **Phase 2 (built, unproven)** — `qa-agent.yml` workflow, triggered on
-   PRs labeled `status:needs-qa`, or manually via `workflow_dispatch` for
-   testing against a specific PR number.
-4. **Phase 3 (built, unproven)** — `principal-review.yml` workflow,
+3. **Phase 2 (built, proven live)** — `qa-agent.yml` workflow, triggered
+   on PRs labeled `status:needs-qa`, or manually via `workflow_dispatch`
+   for testing against a specific PR number.
+4. **Phase 3 (built, proven live)** — `principal-review.yml` workflow,
    triggered on PRs labeled `status:needs-review`; implements the
    auto-merge/human-merge split, including waiting for CI before merging.
 5. **Phase 4** — guardrails: concurrency cap, `AGENTS_PAUSED` kill switch,
