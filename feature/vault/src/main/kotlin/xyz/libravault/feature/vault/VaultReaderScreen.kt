@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,6 +45,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * [VaultBookmarksSheet] requests navigation via
  * [VaultReaderViewModel.navigateToBookmark], which this screen forwards to
  * whichever renderer is active.
+ *
+ * Reading settings ([VaultReaderSettingsSheet]) only actually change
+ * anything for EPUB — PDF pages here are pre-rendered bitmaps with no
+ * theme/font hook, matching `feature:reader`'s own `PdfReaderScreen`, which
+ * ignores everything but `scrollMode` (vault PDF has no second rendering
+ * mode to switch to, so that control is dropped entirely — see
+ * [VaultReaderSettings]'s doc). The settings icon still opens the sheet for
+ * PDF, same as the regular reader, rather than special-casing it away.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,11 +61,13 @@ fun VaultReaderScreen(
     viewModel: VaultReaderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val settings by viewModel.settings.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
     val pendingNavigationRef by viewModel.pendingNavigationRef.collectAsState()
     var showToolbar by remember { mutableStateOf(true) }
     var showBookmarksSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? FragmentActivity
     SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
@@ -86,6 +97,9 @@ fun VaultReaderScreen(
                         IconButton(onClick = { showBookmarksSheet = true }) {
                             Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
                         }
+                        IconButton(onClick = { showSettingsSheet = true }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Reader settings")
+                        }
                     },
                 )
             }
@@ -106,6 +120,7 @@ fun VaultReaderScreen(
                         VaultEpubReaderScreen(
                             publication              = s.publication,
                             fragmentManager           = fragmentManager,
+                            settings                  = settings,
                             highlights                = highlights,
                             pendingLocatorJson        = pendingEpubLocatorJson,
                             onPendingLocatorConsumed  = viewModel::clearPendingNavigation,
@@ -137,6 +152,18 @@ fun VaultReaderScreen(
             onBookmarkDelete = viewModel::removeBookmark,
             onEditNote       = viewModel::updateBookmarkNote,
             onDismiss        = { showBookmarksSheet = false },
+        )
+    }
+
+    if (showSettingsSheet) {
+        VaultReaderSettingsSheet(
+            settings             = settings,
+            showFontControls     = state !is VaultReaderState.PdfReady,
+            onThemeChanged       = viewModel::onThemeChanged,
+            onFontSizeChanged    = viewModel::onFontSizeChanged,
+            onFontFamilyChanged  = viewModel::onFontFamilyChanged,
+            onLineSpacingChanged = viewModel::onLineSpacingChanged,
+            onDismiss            = { showSettingsSheet = false },
         )
     }
 }

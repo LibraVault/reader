@@ -66,7 +66,7 @@ this table first — if your change adds a new asset, add a row.
 | Asset | Where it lives | Sensitivity |
 |---|---|---|
 | User's EPUB / PDF / audiobook files | SAF-granted folders; never copied into the app sandbox | High (user's library) |
-| Encrypted Vault content and manifest (files a user chose to encrypt) | App-private dir, chunked AES-256-GCM ciphertext; manifest (titles/authors/highlights/cover art) encrypted as one file | Highest — this is the one asset class the app makes an explicit confidentiality promise about |
+| Encrypted Vault content and manifest (files a user chose to encrypt) | App-private dir, chunked AES-256-GCM ciphertext; manifest (titles/authors/bookmarks/highlights/cover art) encrypted as one file | Highest — this is the one asset class the app makes an explicit confidentiality promise about |
 | Vault Master Key | In memory only while unlocked; wrapped by a hardware-backed (StrongBox/TEE) Android Keystore key (PIN path) and independently by a 256-bit recovery key shown once at creation | High |
 | Reading progress, bookmarks, highlights | Room `libravault.db` | Medium (no PII; user-identifying on restore) |
 | Cover art cache | App cache dir, keyed by SHA-256 of source path | Low (regeneratable) |

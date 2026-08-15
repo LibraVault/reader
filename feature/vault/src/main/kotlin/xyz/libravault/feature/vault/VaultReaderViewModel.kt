@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.readium.r2.shared.publication.Publication
+import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.core.vaultcrypto.VaultFileReader
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultHighlight
@@ -39,9 +40,13 @@ sealed class VaultReaderState {
  * adapters). Reading progress is still not persisted (no progress field on
  * [xyz.libravault.core.vaultstore.VaultManifestEntry] yet) but bookmarks and
  * (EPUB-only, matching `feature:reader`'s own PDF gap) highlights are —
- * issue-tracked as "bookmarks/highlights UI for vault content", stored via
- * [VaultStore.addBookmark]/[VaultStore.addHighlight] in the encrypted
- * manifest, same as the rest of a vault entry's metadata.
+ * stored via [VaultStore.addBookmark]/[VaultStore.addHighlight] in the
+ * encrypted manifest, same as the rest of a vault entry's metadata.
+ *
+ * [settings] ([VaultReaderSettings]) is per-user reading preferences —
+ * theme/font size/font family/line spacing — same session-only behavior as
+ * `feature:reader`'s `ReaderSettings`: nothing here is persisted, it resets
+ * to defaults every time the reader screen opens.
  */
 @HiltViewModel
 class VaultReaderViewModel @Inject constructor(
@@ -56,6 +61,9 @@ class VaultReaderViewModel @Inject constructor(
 
     private val _state = MutableStateFlow<VaultReaderState>(VaultReaderState.Loading)
     val state: StateFlow<VaultReaderState> = _state.asStateFlow()
+
+    private val _settings = MutableStateFlow(VaultReaderSettings())
+    val settings: StateFlow<VaultReaderSettings> = _settings.asStateFlow()
 
     private val _bookmarks = MutableStateFlow<List<VaultBookmark>>(emptyList())
     val bookmarks: StateFlow<List<VaultBookmark>> = _bookmarks.asStateFlow()
@@ -119,6 +127,24 @@ class VaultReaderViewModel @Inject constructor(
     override fun onCleared() {
         publication?.close()
         reader?.close()
+    }
+
+    // ── Reading settings ──────────────────────────────────────────────────────
+
+    fun onThemeChanged(theme: ReadingTheme) {
+        _settings.update { it.copy(theme = theme) }
+    }
+
+    fun onFontSizeChanged(size: Float) {
+        _settings.update { it.copy(fontSize = size.coerceIn(0.8f, 2.0f)) }
+    }
+
+    fun onFontFamilyChanged(family: VaultReaderFontFamily) {
+        _settings.update { it.copy(fontFamily = family) }
+    }
+
+    fun onLineSpacingChanged(spacing: Float) {
+        _settings.update { it.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f)) }
     }
 
     // ── Position tracking ────────────────────────────────────────────────────
