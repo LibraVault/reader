@@ -9,6 +9,12 @@
 > section), but this document otherwise still needs a full refresh against
 > the current module set. Not done here — out of scope for the change that
 > prompted this note.
+>
+> **2026-08-16 update:** the fabricated metrics table has now been deleted
+> (see "Test Metrics & Health" below) and the CI table corrected. The full
+> refresh of this document is tracked as Phase 6 of
+> [`docs/TEST_COVERAGE_PRD.md`](TEST_COVERAGE_PRD.md), which also inventories
+> the gaps this plan does not currently mention.
 
 ## Overview
 
@@ -202,19 +208,25 @@ gh workflow run android-tts-audio-test.yml
 
 ## Test Metrics & Health
 
-| Module | Files | Tests | Branches | Coverage Goal | Status |
-|--------|-------|-------|----------|---------------|--------|
-| core/domain | 3 | 20 | 100% | >90% | ✅ 95% |
-| core/logger | 1 | 6 | 100% | >90% | ✅ 95% |
-| core/database | 1 | 3 | 100% | 100% | ✅ 100% |
-| core/storage | 3 | 6 | 70% | >80% | 🟡 75% |
-| core/ui | - | 2 | 100% | N/A | ✅ |
-| core/tts | 10 | 88 + 9 on-device | Medium | >80% | 🟡 audio path now covered on arm64 only |
-| feature/player | 5 | 20 | 70% | >80% | 🟡 70% |
-| feature/reader | 2 | 5 | 60% | >80% | 🟡 60% |
-| feature/settings | 3 | 18 | 75% | >85% | 🟡 75% |
-
-**Overall (v0.3.0-alpha)**: ~77 unit tests across 10 modules; ~85% logical branch coverage on core pure-function code; feature ViewModel testing deferred due to DI complexity — focus is on core transformations, migrations, and critical bug fix (StaticAddressesTest rewrite). Remaining gaps are Android-framework-bound (Media3, TTS, SAF, Compose, Room, ViewModel DI) deferred to instrumented/manual testing and v0.4.0+.
+> **The table that used to live here has been deleted rather than updated.**
+>
+> It published per-module branch-coverage figures ("✅ 95%", "🟡 70%") and an
+> overall "~85% logical branch coverage" claim. This repo has never had
+> coverage instrumentation on either platform — no JaCoCo, no Kover, no
+> `-enableCodeCoverage` — so those numbers were estimated by hand and could
+> not be checked by anyone reading them. They were also stale: the table
+> covered 9 modules and "~77 unit tests" against an actual 16 modules and
+> **870** executed JVM tests as of `dev` @ `7f4712a` (2026-08-16).
+>
+> Unverifiable coverage numbers are worse than no numbers, because both humans
+> and the dev agent read this file as ground truth.
+>
+> Real per-module coverage lands in **Phase 1** of
+> [`docs/TEST_COVERAGE_PRD.md`](TEST_COVERAGE_PRD.md), which adds Kover
+> (Android) and `xccov` (iOS) and reports them in CI. This section will be
+> regenerated from that measured output — not re-estimated.
+>
+> For current measured counts in the meantime, see §1 of the PRD.
 
 ---
 
@@ -244,7 +256,7 @@ gh workflow run android-tts-audio-test.yml
 | Workflow | Trigger | What it runs |
 |----------|---------|--------------|
 | `jvm-tests.yml` | every push and PR | All JVM unit tests, plus `lint` |
-| `ui-tests.yml` | PRs targeting `main` | `connectedDebugAndroidTest` on an x86_64 API 34 emulator |
+| `ui-tests.yml` | nightly on `dev`; PRs to `main`; PRs to `dev` labelled `needs-emulator`; manual | `connectedDebugAndroidTest` on an x86_64 API 34 emulator |
 | `android-tts-audio-test.yml` | manual dispatch | `PocketTtsAudioOutputTest` on a Firebase Test Lab **physical arm64** device |
 
 The third exists because `ui-tests.yml`'s emulator is x86_64 and the
