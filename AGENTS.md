@@ -86,3 +86,10 @@ state machine, [`.github/agent-policy.yml`](.github/agent-policy.yml) for
 what always requires a human merge, and `.claude/agents/` for each role's
 persona. Every rule above in this file is binding on those agents too —
 they don't get a lighter bar than a human contributor.
+
+If you're adding or editing a `claude-code-action` workflow step anywhere
+in this repo, read the `github_token:` vs `GH_TOKEN` callout near the top
+of `docs/agent-team-pipeline.md` first — a `GH_TOKEN` env var alone does
+**not** control the agent's git/gh identity when `claude_code_oauth_token`
+is set; it silently defaults to `claude[bot]` unless `github_token:` is
+also passed explicitly.

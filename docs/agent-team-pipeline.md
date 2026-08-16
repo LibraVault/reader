@@ -28,6 +28,23 @@ poller there would give an agent, triggered by public-repo issue content,
 Bash access to that same machine; GitHub's ephemeral runners keep the
 blast radius of a bad or injected run contained to a throwaway VM).
 
+> [!IMPORTANT]
+> **`github_token:` vs `GH_TOKEN` — these are not the same knob.** Every
+> `claude-code-action@v1` step in this pipeline sets `claude_code_oauth_token`
+> (see above) *and* an explicit `github_token:` **input**. That input, not
+> a `GH_TOKEN` env var on the step, is what controls which identity performs
+> the agent's own git/gh operations (PR creation, comments, labels,
+> reviews). When `claude_code_oauth_token` is set and `github_token:` is
+> left unset, the action silently defaults to authenticating as Claude's
+> own `claude[bot]` App — regardless of any `GH_TOKEN` env var present in
+> the step's environment. This cost real debugging time across several PRs
+> (#184, #189, #191, #192) before landing on the fix: every
+> `claude-code-action` step here explicitly sets `github_token:` (see the
+> inline comment next to it in each workflow file for the specifics).
+> **If you add a fourth pipeline workflow (Phase 4/5) or any other
+> `claude-code-action`-based workflow to this repo, set `github_token:`
+> explicitly too — don't rely on a `GH_TOKEN` env var alone.**
+
 **Trust boundary**: `reader` is a public repo, so `dev-agent.yml`'s
 `issues: opened` trigger would otherwise let any anonymous GitHub user hand
 a prompt to an agent holding repo-write permissions and a Bash tool, just by
