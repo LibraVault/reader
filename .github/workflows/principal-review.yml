@@ -46,6 +46,10 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
+  # count_active_agent_runs.sh (Phase 4 concurrency cap) calls
+  # `gh run list`, which needs this — without it every trigger fails at
+  # the guard step with a 403, not just a soft cap miss.
+  actions: read
 
 concurrency:
   group: principal-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
@@ -114,6 +118,18 @@ jobs:
             # than silent.
             echo "Could not resolve the originating issue from PR #$PR_NUMBER's body — proceeding without the issue-level status:blocked check." >&2
           fi
+
+          # Global concurrency cap (Phase 4 guardrail) — see the matching
+          # comment in dev-agent.yml for why this is separate from the
+          # per-item concurrency group above.
+          read -r ACTIVE MAX <<< "$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}" "${{ vars.MAX_CONCURRENT_AGENT_RUNS }}")"
+          if [ "$ACTIVE" -ge "$MAX" ]; then
+            echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            gh pr comment "$PR_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this review run. Re-apply status:needs-review once activity settles, or re-trigger manually via workflow_dispatch."
+            exit 0
+          fi
+
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Check out PR branch
@@ -189,6 +205,17 @@ jobs:
             echo "Unrecognized verdict '$VERDICT' — treating as human-merge." >&2
             VERDICT="human-merge"
           fi
+
+          # Phase 5 dry-run switch: pilot the full pipeline (including this
+          # agent's real judgment) on real issues without ever letting
+          # anything actually auto-merge. See docs/agent-team-pipeline.md's
+          # rollout plan.
+          if [ "$VERDICT" = "auto-merge" ] && [ "${{ vars.AUTO_MERGE_DISABLED }}" = "true" ]; then
+            echo "AUTO_MERGE_DISABLED is set — would have auto-merged, routing to human-merge instead (dry run)." >&2
+            gh pr comment "$PR_NUMBER" --body "Auto-merge is disabled repo-wide (AUTO_MERGE_DISABLED, dry-run/pilot mode) — this PR's actual verdict was \`auto-merge\` (risk:low, no CONFIRMED findings), but routing to a human instead of merging, per the Phase 5 pilot plan."
+            VERDICT="human-merge"
+          fi
+
           echo "Principal review verdict for #$PR_NUMBER: $VERDICT"
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 
@@ -255,6 +282,12 @@ jobs:
             gh pr comment "$PR_NUMBER" --body "Pipeline was paused (AGENTS_PAUSED) after approval but before merge — routed to a human instead of auto-merging."
             exit 0
           fi
+          if [ "${{ vars.AUTO_MERGE_DISABLED }}" = "true" ]; then
+            echo "AUTO_MERGE_DISABLED became true during this run — stopping short of merge." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
+            gh pr comment "$PR_NUMBER" --body "Auto-merge was disabled (AUTO_MERGE_DISABLED) after approval but before merge — routed to a human instead of auto-merging."
+            exit 0
+          fi
           CURRENT_PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
           if echo ",$CURRENT_PR_LABELS," | grep -q ",status:blocked,"; then
             echo "status:blocked was added during this run — stopping short of merge." >&2
@@ -270,3 +303,32 @@ jobs:
             exit 0
           fi
           echo "Merged #$PR_NUMBER."
+
+          # Best-effort audit log (Phase 4 guardrail) — wrapped so a
+          # failure here doesn't fail the run: the merge itself already
+          # succeeded, which is what actually matters.
+          {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            PR_TITLE=$(gh pr view "$PR_NUMBER" --json title -q .title | sed 's/|/\\|/g')
+            ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER" 2>/dev/null || echo "")
+            # Read the merge commit GitHub actually recorded for THIS PR,
+            # not the current tip of dev after a fetch — another
+            # principal-review run for a different PR isn't serialized
+            # against this one (concurrency groups are per-PR) and could
+            # land its own merge on dev in between, which would make
+            # "tip of dev" record the wrong commit for this log entry.
+            MERGE_SHA=$(gh pr view "$PR_NUMBER" --json mergeCommit -q .mergeCommit.oid)
+            git fetch origin dev
+            git checkout -B dev origin/dev
+            printf '| %s | [#%s](%s/%s/pull/%s) | %s | %s | [%s](%s/%s/commit/%s) |\n' \
+              "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              "$PR_NUMBER" "${{ github.server_url }}" "${{ github.repository }}" "$PR_NUMBER" \
+              "$PR_TITLE" \
+              "${ISSUE_NUMBER:+#$ISSUE_NUMBER}" \
+              "${MERGE_SHA:0:7}" "${{ github.server_url }}" "${{ github.repository }}" "$MERGE_SHA" \
+              >> docs/auto-merge-log.md
+            git add docs/auto-merge-log.md
+            git commit -m "chore(auto-merge-log): record PR #$PR_NUMBER"
+            git push origin dev
+          } || echo "Auto-merge log update failed (non-fatal — the merge itself succeeded) — see the log above for details." >&2

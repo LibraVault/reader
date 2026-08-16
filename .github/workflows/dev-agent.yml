@@ -30,6 +30,10 @@ permissions:
   # agent" step fails after 3 retries with "Could not fetch an OIDC
   # token" — confirmed via a real failed run (issue #158).
   id-token: write
+  # count_active_agent_runs.sh (Phase 4 concurrency cap) calls
+  # `gh run list`, which needs this — without it every trigger fails at
+  # the guard step with a 403, not just a soft cap miss.
+  actions: read
 
 concurrency:
   # Known gap, accepted rather than engineered around: a triage run (keyed
@@ -91,9 +95,10 @@ jobs:
       - name: Resolve target, mode, and check for status:blocked
         id: guard
         env:
-          # Read-only lookups plus label reads — the safe default token is
-          # enough here. Nothing in this step needs to trigger a further
-          # workflow run.
+          # Mostly read-only lookups plus label reads, and a capacity-
+          # exceeded comment if the concurrency cap below is hit — the
+          # safe default token is enough for both. Nothing in this step
+          # needs to trigger a further workflow run.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
@@ -185,9 +190,28 @@ jobs:
           if [ -n "$EXISTING_PR" ]; then
             echo "Issue #$ISSUE_NUMBER already has an open PR (#$EXISTING_PR) referencing it — a dev-agent run already produced one, skipping re-triage." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Global concurrency cap (Phase 4 guardrail) — distinct from the
+          # per-item concurrency group above, which only stops two runs
+          # touching the SAME issue/PR at once. This bounds total pipeline
+          # activity across every issue/PR at once (Claude subscription
+          # usage burst, CI runner contention, concurrent PRs risking
+          # merge races). See docs/agent-team-pipeline.md's rollout plan.
+          read -r ACTIVE MAX <<< "$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}" "${{ vars.MAX_CONCURRENT_AGENT_RUNS }}")"
+          if [ "$ACTIVE" -ge "$MAX" ]; then
+            echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            if [ -n "${PR_NUMBER:-}" ]; then
+              gh pr comment "$PR_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this run. Re-apply the triggering label once activity settles, or re-trigger manually via workflow_dispatch."
+            else
+              gh issue comment "$ISSUE_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this run. Re-apply status:ready-for-dev once activity settles, or re-trigger manually via workflow_dispatch."
+            fi
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Check out PR branch (revise mode only)
         if: steps.guard.outputs.skip != 'true' && steps.guard.outputs.mode == 'revise'
