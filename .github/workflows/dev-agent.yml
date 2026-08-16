@@ -295,6 +295,15 @@ jobs:
           # protection, so force GITHUB_TOKEN explicitly here to keep the
           # self-retrigger-avoidance reasoning above actually true.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Defaults to false, which hides the agent's actual turn-by-turn
+          # transcript (tool calls, reasoning) from the workflow log —
+          # only the init/result summary lines are visible. Turned on
+          # permanently after two live runs (issues #4, #96) both
+          # completed with outcome=success, similar turn counts (11-13)
+          # and cost (~$0.44), but took no visible action at all — with
+          # show_full_output false there was no way to see what the agent
+          # actually did during those turns to diagnose why.
+          show_full_output: true
           prompt: |
             Read .claude/agents/dev-agent.md in full — it is your complete
             operating persona for this run, including what "triage" and
