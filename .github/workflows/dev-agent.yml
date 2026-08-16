@@ -322,15 +322,21 @@ jobs:
             and CI-passing (or you've explained why it isn't) before you
             finish.
 
-            Do not delegate any part of this task to a subagent (the Agent
-            tool, any "Explore"/"Task" subagent type, or anything that
-            reports back asynchronously) — there is no notification
-            mechanism in this CI run for a subagent's result to reach you.
-            If you do, your run will simply end while "waiting," the
-            subagent's work is discarded, and nothing you were asked to do
-            actually happens. Investigate and implement everything
-            yourself, directly, with your own Read/Grep/Glob/Bash/Edit/Write
-            calls in this same turn sequence.
+            Do not use anything that depends on a completion notification
+            arriving later — there is no such mechanism in this CI run, so
+            it never arrives and your work is simply abandoned:
+            - No subagent delegation (the Agent tool, any "Explore"/"Task"
+              subagent type).
+            - No backgrounded Bash commands (run_in_background) that you
+              then wait to be notified about — including long ones like
+              the test suite. Run every command in the foreground and wait
+              for its real output before continuing, even if it takes
+              several minutes; that's normal and expected here, not a
+              problem to work around.
+            Investigate and implement everything yourself, directly, with
+            your own Read/Grep/Glob/Bash/Edit/Write calls in this same
+            turn sequence, waiting synchronously for each one's actual
+            result before moving on.
 
             ${{ steps.guard.outputs.mode == 'revise' && format('You are being RE-INVOKED: QA sent PR #{0} back with status:in-progress against issue #{1}. Read the persona''s "When QA sends work back" section. The PR''s branch is already checked out in the working directory — read the QA agent''s latest PR comment for the specific gaps it found, and fix only those. Do not rescope the whole change and do not open a new PR; push commits to this same branch.', steps.guard.outputs.pr_number, steps.guard.outputs.issue_number) || format('Triage and, if scoped confidently, implement issue #{0} in this repository (use `gh issue view` to read it).', steps.guard.outputs.issue_number) }}
 

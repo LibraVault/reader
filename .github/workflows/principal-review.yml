@@ -185,14 +185,19 @@ jobs:
             yourself — the workflow applies whichever one matches your
             verdict, based on the verdict file you write below.
 
-            Do not delegate any part of this review to a subagent (the
-            Agent tool, any "Explore"/"Task" subagent type, or anything
-            that reports back asynchronously) — there is no notification
-            mechanism in this CI run for a subagent's result to reach you.
-            If you do, your run will simply end while "waiting," and no
-            verdict ever gets produced. Investigate everything yourself,
-            directly, with your own Read/Grep/Glob/Bash calls in this same
-            turn sequence.
+            Do not use anything that depends on a completion notification
+            arriving later — there is no such mechanism in this CI run, so
+            it never arrives and no verdict ever gets produced:
+            - No subagent delegation (the Agent tool, any "Explore"/"Task"
+              subagent type).
+            - No backgrounded Bash commands (run_in_background) that you
+              then wait to be notified about. Run every command in the
+              foreground and wait for its real output before continuing,
+              even if it takes several minutes; that's normal and expected
+              here, not a problem to work around.
+            Investigate everything yourself, directly, with your own
+            Read/Grep/Glob/Bash calls in this same turn sequence, waiting
+            synchronously for each one's actual result before moving on.
 
             As your very last action, write a single line to the file
             `principal-verdict.txt` in the repo root: exactly one of
