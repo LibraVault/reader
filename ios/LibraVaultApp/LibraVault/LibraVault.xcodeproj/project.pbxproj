@@ -53,6 +53,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				ThirdParty/Argon2/VENDORING.md,
+				ThirdParty/Argon2/LICENSE,
 			);
 			target = D44C12AA301355A900ADEF59 /* LibraVault */;
 		};
@@ -528,6 +530,10 @@
 				DEVELOPMENT_TEAM = H74LNL8UCG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/LibraVault/ThirdParty/Argon2/include",
+				);
 				INFOPLIST_FILE = LibraVault/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -567,6 +573,10 @@
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = H74LNL8UCG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/LibraVault/ThirdParty/Argon2/include",
+				);
 				INFOPLIST_FILE = LibraVault/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
