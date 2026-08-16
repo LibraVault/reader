@@ -86,3 +86,8 @@ state machine, [`.github/agent-policy.yml`](.github/agent-policy.yml) for
 what always requires a human merge, and `.claude/agents/` for each role's
 persona. Every rule above in this file is binding on those agents too —
 they don't get a lighter bar than a human contributor.
+
+Editing one of the pipeline's own workflow files? Read
+`docs/agent-team-pipeline.md`'s "`claude-code-action` gotchas" section
+first — a `GH_TOKEN` env var alone does not control that action's git/gh
+identity, and getting this wrong cost real debugging time.
