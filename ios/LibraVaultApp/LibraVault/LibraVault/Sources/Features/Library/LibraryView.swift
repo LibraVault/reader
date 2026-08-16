@@ -95,12 +95,20 @@ struct LibraryView: View {
             Image(systemName: "books.vertical")
                 .font(.system(size: 48))
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            Text("No Books Found")
+            Text(emptyLibraryHeadline(hasVaults: !appState.vaults.isEmpty))
                 .font(LibraVaultTypography.headlineSmall)
                 .foregroundStyle(LibraVaultColor.onBackground)
-            Text("Add books to your library to get started")
+            Text(emptyLibraryMessage(hasVaults: !appState.vaults.isEmpty))
                 .font(LibraVaultTypography.bodyMedium)
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, LibraVaultSpacing.xl)
+            if appState.vaults.isEmpty {
+                NavigationLink(destination: SettingsView()) {
+                    Text("Go to Settings")
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(LibraVaultColor.background)
@@ -174,6 +182,20 @@ struct LibraryView: View {
             .buttonStyle(.plain)
         }
     }
+}
+
+/// Split out from LibraryView.emptyState so the copy choice — whether the user has any
+/// vaults configured at all vs. their vaults are just empty/still scanning — is a plain
+/// testable function. A first-launch user with zero vaults has no other way to discover
+/// that folders live in Settings, so that case gets explicit guidance; see issue #75.
+func emptyLibraryHeadline(hasVaults: Bool) -> String {
+    hasVaults ? "No Books Found" : "Start Your Library"
+}
+
+func emptyLibraryMessage(hasVaults: Bool) -> String {
+    hasVaults
+        ? "Add books to your library to get started"
+        : "Tap Settings > Add Vault to choose a folder where your books and audiobooks are stored."
 }
 
 /// Deterministic per-book gradient — the fallback CoverArtView below renders when a
