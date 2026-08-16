@@ -161,6 +161,40 @@ agent's own step always keeps the safe default token):
 | `qa-agent.yml` | `status:needs-info`, comments | `status:needs-review` (→ principal-review.yml), `status:in-progress` on the PR (→ dev-agent.yml) |
 | `principal-review.yml` | everything — both outcomes are terminal (auto-merge happens inline in the same job; human-merge waits for a person) | *(none needed)* |
 
+## `claude-code-action` gotchas
+
+Read this before adding a fourth pipeline workflow, or any other workflow
+in this repo that uses `anthropics/claude-code-action`. Filed as
+[#195](https://github.com/LibraVault/reader/issues/195) after costing
+real debugging time across PRs #184/#189/#191/#192.
+
+**A `GH_TOKEN` env var on the step does NOT control the agent's own git/gh
+identity.** With `claude_code_oauth_token` set (this repo's auth method —
+see above), `claude-code-action` defaults to authenticating its own
+internal git/gh operations as Claude's own `claude[bot]` App, regardless
+of any `GH_TOKEN` env var present in the step's environment. Confirmed
+empirically: PR #162 (opened by `dev-agent.yml`, which already set
+`GH_TOKEN: secrets.GITHUB_TOKEN` at the time) shows author `app/claude`,
+not `github-actions[bot]`.
+
+**The actual control is the action's own `github_token:` input**, set
+alongside `claude_code_oauth_token:` in the step's `with:` block — not an
+`env:` entry. Every `claude-code-action` step in this pipeline sets it
+explicitly now; if you add a new one, do the same and pick the identity
+deliberately (see the token table above for which identity — GITHUB_TOKEN
+vs the pipeline App — is safe for what).
+
+**A related, separate restriction, not about identity**: this repo's
+"Allow GitHub Actions to create and approve pull requests" setting
+(Settings → Actions → General) is off, so `GITHUB_TOKEN` can neither open
+nor approve a PR, *regardless* of which identity it resolves to. That's
+why `dev-agent.yml`'s PR creation uses the App token (a real GitHub App
+token isn't subject to that GITHUB_TOKEN-specific restriction) while
+`principal-review.yml` posts findings via `gh pr comment` /
+`--request-changes` rather than `--approve` (there's no branch protection
+on `dev` requiring a formal approval, so a plain comment does the job
+without hitting the restriction at all).
+
 ## Rollout plan
 
 1. **Phase 0 (PR #146)** — issue templates, label taxonomy, agent-policy.yml,
