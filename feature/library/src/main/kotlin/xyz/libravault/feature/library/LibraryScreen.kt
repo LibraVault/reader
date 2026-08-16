@@ -76,11 +76,13 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,6 +90,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,6 +98,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
@@ -173,6 +178,17 @@ fun LibraryScreen(
                 }
             },
         )
+    }
+
+    // Re-scan whenever the screen becomes visible again, not just on cold start
+    // or vault addition — e.g. after the user drops new files into a vault
+    // folder from a file manager, then switches back to the app (see #96).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentViewModel = rememberUpdatedState(viewModel)
+    DisposableEffect(lifecycleOwner) {
+        val observer = libraryResumeObserver { currentViewModel.value.refresh() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Show stale file snackbar
@@ -584,6 +600,18 @@ fun LibraryScreen(
         )
     }
 }
+
+/**
+ * Builds the [LifecycleEventObserver] that drives the "re-scan on return to the
+ * screen" behaviour. Extracted as a plain function (rather than inlined into the
+ * `DisposableEffect` above) so the ON_RESUME-only filtering can be unit-tested
+ * without a Compose host — see [LibraryScreen]'s pull-to-refresh entry point for
+ * the manual-trigger counterpart.
+ */
+internal fun libraryResumeObserver(onResume: () -> Unit): LifecycleEventObserver =
+    LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_RESUME) onResume()
+    }
 
 // ── Vault management sheet ─────────────────────────────────────────────────────
 
