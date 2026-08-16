@@ -111,6 +111,7 @@ jobs:
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            MODE="revise"
             echo "mode=revise" >> "$GITHUB_OUTPUT"
             echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
@@ -122,6 +123,7 @@ jobs:
             fi
           else
             ISSUE_NUMBER="${{ github.event.issue.number || github.event.inputs.issue_number }}"
+            MODE="triage"
             echo "mode=triage" >> "$GITHUB_OUTPUT"
           fi
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
@@ -140,6 +142,76 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # Triage-only re-trigger guard. Found live: issue #195 got two
+          # independent triage runs (#196 and #197, two competing PRs for
+          # the same issue) — not because the concurrency group above
+          # failed (it correctly serialized them, one queued behind the
+          # other, never in parallel — confirmed from the run log), but
+          # because the dev agent's own status:ready-for-dev /
+          # status:in-progress self-labeling during the FIRST run
+          # re-matches this workflow's `labeled` trigger condition. Once
+          # unblocked, the second run had nothing telling it triage
+          # already happened, so it triaged the same issue again from
+          # scratch.
+          #
+          # Deliberately checks for an existing OPEN PR rather than a
+          # status:* label: a label-based check would permanently lock the
+          # issue out of re-triage once status:in-progress lands, with no
+          # automated way to clear it — nothing ever removes that label
+          # from the ISSUE (only from the PR), so if that PR is later
+          # closed without merging, a human re-applying status:ready-for-dev
+          # to restart the work would be silently skipped forever. An
+          # open-PR check is self-healing: once the PR is closed, this
+          # search naturally comes up empty and re-triage is allowed again
+          # — no manual cleanup step needed. Same search predicate as the
+          # "Force-classify risk" step's fallback further down, so both
+          # checks agree on what "has a PR" means.
+          #
+          # Safe against the concurrency group above hiding an in-flight
+          # (not-yet-created) PR from run 2: with cancel-in-progress:false
+          # and a shared group, run 2's guard step cannot start until run
+          # 1's entire job — including any PR it creates — has finished.
+          if [ "$MODE" = "triage" ]; then
+            if ! EXISTING_PR=$(.github/scripts/find_linked_pr.sh "$ISSUE_NUMBER"); then
+              # Fail closed, not open: a transient gh/API failure here
+              # must not be treated as "no PR exists yet" — that's exactly
+              # the assumption that would let this run redo triage and
+              # open a duplicate. Worst case of skipping is a delayed
+              # triage, recoverable by any later trigger; worst case of
+              # proceeding on a false negative is the bug this PR fixes.
+              echo "find_linked_pr.sh failed for issue #$ISSUE_NUMBER — can't confirm it's safe to triage, skipping rather than risking a duplicate PR." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            EXISTING_PR=""
+          fi
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Issue #$ISSUE_NUMBER already has an open PR (#$EXISTING_PR) referencing it — a dev-agent run already produced one, skipping re-triage." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Global concurrency cap (Phase 4 guardrail) — distinct from the
+          # per-item concurrency group above, which only stops two runs
+          # touching the SAME issue/PR at once. This bounds total pipeline
+          # activity across every issue/PR at once (Claude subscription
+          # usage burst, CI runner contention, concurrent PRs risking
+          # merge races). See docs/agent-team-pipeline.md's rollout plan.
+          read -r ACTIVE MAX <<< "$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}" "${{ vars.MAX_CONCURRENT_AGENT_RUNS }}")"
+          if [ "$ACTIVE" -ge "$MAX" ]; then
+            echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            if [ -n "${PR_NUMBER:-}" ]; then
+              gh pr comment "$PR_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this run. Re-apply the triggering label once activity settles, or re-trigger manually via workflow_dispatch."
+            else
+              gh issue comment "$ISSUE_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this run. Re-apply status:ready-for-dev once activity settles, or re-trigger manually via workflow_dispatch."
+            fi
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
           # Global concurrency cap (Phase 4 guardrail) — distinct from the
           # per-item concurrency group above, which only stops two runs
@@ -331,20 +403,20 @@ jobs:
           fi
 
           # Fallback if the agent didn't write the file for some reason:
-          # gh's search index can lag a just-created PR by a few seconds,
-          # so retry briefly rather than accepting a false "nothing to do".
-          # Broadened beyond a literal "Closes" match, matching
-          # resolve_linked_issue.sh's own recognized keyword set, so this
-          # fallback can't be narrower than the check that got this run
-          # started in the first place.
+          # find_linked_pr.sh already retries for gh's search-index lag and
+          # verifies each candidate with the same precise match
+          # resolve_linked_issue.sh uses, so this can't drift narrower (or
+          # looser) than the guard step's own use of it. Failure here
+          # degrades to "not found" rather than hard-failing the step —
+          # unlike the guard step's fail-closed stance, there's no
+          # duplicate-PR risk on this path, just a PR that misses its
+          # automatic risk-classification/needs-qa advance, which a human
+          # would still notice.
           if [ -z "$PR_NUMBER" ]; then
-            for _ in 1 2 3 4 5; do
-              PR_NUMBER=$(gh pr list --state open \
-                --search "(Closes #${ISSUE_NUMBER} OR Fixes #${ISSUE_NUMBER} OR Resolves #${ISSUE_NUMBER}) in:body" \
-                --json number -q '.[0].number // empty')
-              [ -n "$PR_NUMBER" ] && break
-              sleep 5
-            done
+            PR_NUMBER=$(.github/scripts/find_linked_pr.sh "$ISSUE_NUMBER") || {
+              echo "find_linked_pr.sh failed while looking up issue #$ISSUE_NUMBER's PR — treating as not found." >&2
+              PR_NUMBER=""
+            }
           fi
 
           if [ -z "$PR_NUMBER" ]; then

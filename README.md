@@ -2,7 +2,7 @@
 
 > Your library, under lock and key.
 
-A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listening to audiobooks — with zero broad file permissions, zero required accounts and zero ads.
+A modern, privacy-first Android app (iOS in TestFlight beta) for reading EPUBs, viewing PDFs, and listening to audiobooks — with optional client-side Encrypted Vaults, zero broad file permissions, zero required accounts and zero ads.
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Android](https://img.shields.io/badge/Android-12%2B-green.svg)](https://developer.android.com)
@@ -50,22 +50,27 @@ A modern, privacy-first Android app for reading EPUBs, viewing PDFs, and listeni
 - "Continue reading" and "Continue listening" cards
 - Stale file handling — silent removal on next scan
 
+### Encrypted Vaults
+- Create, unlock, and manage multiple client-side encrypted vaults, separate from your regular (unencrypted) library folders
+- Chunked AES-256-GCM ciphertext for both file content and the metadata manifest (titles, authors, bookmarks, highlights, cover art) — nothing about a vault's contents touches Room or the app's plaintext cover-art cache
+- Vault Master Key unlocked by a PIN wrapped with a hardware-backed (StrongBox/TEE) Android Keystore key, plus an independent 256-bit recovery key shown once at creation — either path works without the other
+- Exponential backoff on repeated PIN guesses; every unlocked vault re-locks the instant the app leaves the foreground
+- Import existing files into a vault, then read/play them natively — EPUB, PDF, and audio all render from encrypted storage, no temporary plaintext copy
+- Bookmarks, EPUB highlights, and per-user reading settings work the same inside a vault as outside one
+- Vault thumbnails carry a padlock badge so vault content is visually distinct from your regular library
+- "Screen Security" toggle (`FLAG_SECURE`) — on by default, unconditional during recovery-key display/entry
+- See [docs/threat-model.md](docs/threat-model.md) and [SECURITY.md](SECURITY.md) for the full asset/threat breakdown, including what's deliberately *not* hidden (vault existence, display names, approximate size)
+
 ### Privacy
 - No analytics, telemetry, or remote crash reporting — ever
 - No account required
 - Optional local-only logging — never transmitted
 - Scoped Storage — only folders you explicitly grant
+- Zero network calls on any flavor — `INTERNET` isn't requested at all (see [Permissions](#permissions))
 
 **Distribution flavors**
 
-LibraVault ships two product flavors that differ only in how donations are processed:
-
-| Flavor | `INTERNET` permission | Donations |
-|---|---|---|
-| `fdroid` | **Never requested** — manifest strips it | BTC/XMR addresses only |
-| `play` | Requested, used solely to poll BTCPay for invoice settlement | Google Play Billing + BTCPay + BTC/XMR |
-
-The F-Droid build therefore has zero outbound network calls. The Play build's network access is limited to BTCPay endpoints required to confirm a donation you initiated.
+LibraVault ships two product flavors, `fdroid` and `play`. As of the donation flow moving to an external browser link (no more in-app BTCPay/Play Billing code), the two are currently identical in behavior — the split is kept for a possible future Google Play listing, not because they differ today.
 
 ### Screenshots
 
@@ -129,12 +134,11 @@ libravault/
 | `FOREGROUND_SERVICE` | Background audio playback | both flavors |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Media playback foreground service type | both flavors |
 | `POST_NOTIFICATIONS` | Media playback controls (Android 13+) | both flavors |
-| `INTERNET` | BTCPay invoice polling for donations | **play only** |
-| `SAF URI access` | Read user-selected vault folders only | both flavors |
+| `SAF URI access` | Read user-selected vault/library folders only | both flavors |
 
-**Never requested in any flavor:** `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`, `CAMERA`, `CONTACTS`, `LOCATION`.
+**Never requested in any flavor:** `INTERNET`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`, `CAMERA`, `CONTACTS`, `LOCATION`.
 
-The F-Droid flavor's manifest strips `INTERNET` via `app/src/fdroid/AndroidManifest.xml`, so the F-Droid APK has no network capability at all.
+Neither flavor declares `INTERNET` — donations go through a single "Support the Project" button that opens `libravault.xyz/support` in the system browser, so there's no in-app networking code left to gate behind a flavor. `ManifestPermissionsTest.kt` asserts this in CI.
 
 ---
 
@@ -145,9 +149,9 @@ The F-Droid flavor's manifest strips `INTERNET` via `app/src/fdroid/AndroidManif
 git clone git@github.com:LibraVault/reader.git
 cd libravault
 
-# Debug build (fdroid flavor — no Play Billing, no BTCPay)
+# Debug build (fdroid flavor)
 ./gradlew assembleFdroidDebug
-# Debug build (play flavor — Play Billing + BTCPay)
+# Debug build (play flavor — currently identical to fdroid; kept for a future Play listing)
 ./gradlew assemblePlayDebug
 
 # Run JVM tests (fast — no emulator)
@@ -198,11 +202,12 @@ Five GitHub Actions workflows (all free for public repos):
 
 | Version | Focus |
 |---|---|
-| **0.2.0-alpha (current)** | Android app — EPUB, PDF, audio, privacy-first, donations |
-| v1.1 | Clip bookmarks, home screen widget |
-| v2 | DRM (Readium LCP), OPDS browsing, Comic/CBZ |
-| v3 | iOS (Compose Multiplatform) |
-| v4 | Desktop — Windows, macOS, Linux (KMP + SQLDelight) |
+| **0.4.6-alpha (current)** | Android app — EPUB, PDF, audio, Encrypted Vaults, privacy-first, donations |
+| — | iOS — TestFlight beta, hand-written Swift (no shared KMP code yet); see [reader-ios](https://github.com/LibraVault/reader-ios) and [docs/ios-android-feature-parity.md](docs/ios-android-feature-parity.md) for what's iOS vs. Android-only today (Encrypted Vaults and donations are Android-only so far) |
+| next | DRM (Readium LCP), OPDS browsing, Comic/CBZ, Encrypted Vaults on iOS |
+| later | Desktop — Windows, macOS, Linux (KMP + SQLDelight) |
+
+Past roadmap docs under `docs/` (`v1.1-roadmap.md`) are marked superseded where scope changed — check a doc's own status banner before trusting it over this table.
 
 ---
 
@@ -216,20 +221,24 @@ Five GitHub Actions workflows (all free for public repos):
 
 LibraVault is **free, open source, and has no ads, no tracking, no accounts** — it exists because the people building it believe in it. If it brings you value, consider supporting its development.
 
+In-app: Settings → "Support the Project" opens [libravault.xyz/support](https://libravault.xyz/support) in your browser (checkout, wallet-app deep links, and QR codes) — there's no donation code inside the app itself. Direct addresses, same ones shown on that page:
+
 | Currency | Address |
 |----------|---------|
 | **Bitcoin (BTC)** | `bc1q9y4q49lxnwrt9pnkgrxfpq92s9mvwv9espc5yg` |
 | **Monero (XMR)** | `42RowRVVQgXNxC1691mAVmesXg2JR8MUNaYbnpbG7HMJ8zqExXC2qo4cYdbF9MJpE6Z8jq7ytHWhdXrtxgrFySt349R8WmF` |
 
-More sponsoring and donation options are in the works.
-
 ## Distribution
 
+**Android**
 - **F-Droid** — free, full feature set, reproducible builds
 - **GitHub Releases** — signed APK on every version tag
 - **Firebase App Distribution** — beta builds for testers, triggered manually via GitHub Actions (see [docs/android-firebase-distribution-process.md](docs/android-firebase-distribution-process.md))
 - **Obtanium** — planned
 - **Google Play** — planned
+
+**iOS**
+- **TestFlight** — beta only, no App Store release yet (see [docs/iOS-TESTFLIGHT-RELEASE-PROCESS.md](docs/iOS-TESTFLIGHT-RELEASE-PROCESS.md)); source lives in [reader-ios](https://github.com/LibraVault/reader-ios)
 
 ---
 
