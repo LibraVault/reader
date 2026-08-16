@@ -53,6 +53,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				ThirdParty/Argon2/VENDORING.md,
+				ThirdParty/Argon2/LICENSE,
 			);
 			target = D44C12AA301355A900ADEF59 /* LibraVault */;
 		};

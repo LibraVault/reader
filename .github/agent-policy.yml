@@ -36,6 +36,8 @@ sensitive_paths:
   # Encrypted vaults / crypto
   - "core/vaultcrypto/**"
   - "core/vaultstore/**"
+  - "ios/LibraVaultApp/LibraVault/LibraVault/Sources/VaultCrypto/**"
+  - "ios/LibraVaultApp/LibraVault/LibraVault/ThirdParty/Argon2/**"
 
   # Billing / payments (no core/licensing module anymore — no Pro tier
   # for now, donation-only; these globs are for the still-live donation flow)
