@@ -296,13 +296,20 @@ jobs:
           # self-retrigger-avoidance reasoning above actually true.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Defaults to false, which hides the agent's actual turn-by-turn
-          # transcript (tool calls, reasoning) from the workflow log —
-          # only the init/result summary lines are visible. Turned on
-          # permanently after two live runs (issues #4, #96) both
-          # completed with outcome=success, similar turn counts (11-13)
-          # and cost (~$0.44), but took no visible action at all — with
-          # show_full_output false there was no way to see what the agent
-          # actually did during those turns to diagnose why.
+          # transcript from the workflow log. Turned on permanently after
+          # diagnosing a real live failure this way (issues #4, #96): the
+          # agent spawned an async Explore subagent via the Agent tool —
+          # NOT in --allowedTools below, but available anyway (a
+          # documented Claude Agent SDK gap: disallowedTools/allowedTools
+          # aren't enforced for Task-tool subagent spawning —
+          # anthropics/claude-agent-sdk-typescript#189) — then correctly
+          # said "I'll be notified when it completes" and stopped, exactly
+          # like normal interactive Claude Code usage. There is no such
+          # notification mechanism in a CI run: the job just ends, the
+          # subagent's work is orphaned, and nothing ever resumes. See the
+          # explicit prohibition in the prompt below, which is the actual
+          # fix — a tool-level restriction can't be relied on given the
+          # SDK gap above.
           show_full_output: true
           prompt: |
             Read .claude/agents/dev-agent.md in full — it is your complete
@@ -314,6 +321,16 @@ jobs:
             QA workflow (yours can't). Just make sure the PR is complete
             and CI-passing (or you've explained why it isn't) before you
             finish.
+
+            Do not delegate any part of this task to a subagent (the Agent
+            tool, any "Explore"/"Task" subagent type, or anything that
+            reports back asynchronously) — there is no notification
+            mechanism in this CI run for a subagent's result to reach you.
+            If you do, your run will simply end while "waiting," the
+            subagent's work is discarded, and nothing you were asked to do
+            actually happens. Investigate and implement everything
+            yourself, directly, with your own Read/Grep/Glob/Bash/Edit/Write
+            calls in this same turn sequence.
 
             ${{ steps.guard.outputs.mode == 'revise' && format('You are being RE-INVOKED: QA sent PR #{0} back with status:in-progress against issue #{1}. Read the persona''s "When QA sends work back" section. The PR''s branch is already checked out in the working directory — read the QA agent''s latest PR comment for the specific gaps it found, and fix only those. Do not rescope the whole change and do not open a new PR; push commits to this same branch.', steps.guard.outputs.pr_number, steps.guard.outputs.issue_number) || format('Triage and, if scoped confidently, implement issue #{0} in this repository (use `gh issue view` to read it).', steps.guard.outputs.issue_number) }}
 

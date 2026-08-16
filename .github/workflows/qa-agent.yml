@@ -156,7 +156,15 @@ jobs:
           # Claude's own claude[bot] App regardless of GH_TOKEN. Forced to
           # GITHUB_TOKEN explicitly for consistency with dev-agent.yml
           # (see that file's matching comment for why).
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Defaults to false, hiding the agent's turn-by-turn transcript.
+          # Turned on for consistency with dev-agent.yml, where it was
+          # used to diagnose a real live failure: an agent spawning an
+          # async Explore subagent via the Agent tool (not in
+          # --allowedTools, available anyway — a documented Claude Agent
+          # SDK gap, anthropics/claude-agent-sdk-typescript#189), then
+          # waiting for a notification that never comes in a CI run. See
+          # the explicit prohibition in the prompt below.
+          show_full_output: true
           prompt: |
             Read .claude/agents/qa-agent.md in full — it is your complete
             operating persona for this run. Verify PR #${{ steps.guard.outputs.pr_number }}
@@ -169,6 +177,15 @@ jobs:
             QA round this is — the workflow determines the retry count
             deterministically from label history and applies whichever
             label matches your verdict.
+
+            Do not delegate any part of this task to a subagent (the Agent
+            tool, any "Explore"/"Task" subagent type, or anything that
+            reports back asynchronously) — there is no notification
+            mechanism in this CI run for a subagent's result to reach you.
+            If you do, your run will simply end while "waiting," and no
+            verdict ever gets produced. Investigate everything yourself,
+            directly, with your own Read/Grep/Glob/Bash calls in this same
+            turn sequence.
 
             The persona's "Reporting is mandatory" section is not
             optional framing — read it first and budget your turns to it
