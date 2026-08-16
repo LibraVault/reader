@@ -400,8 +400,25 @@ jobs:
           fi
 
           if [ -z "$PR_NUMBER" ]; then
-            echo "No PR found referencing issue #$ISSUE_NUMBER — dev agent" \
-                 "likely stopped at triage. Nothing to classify."
+            # No PR is legitimate at triage — but only if the agent
+            # actually followed its persona's mandated fallback (apply
+            # status:ready-for-dev to proceed, or status:needs-info to
+            # stop and ask). Live-tested gap (issue #207, found during
+            # the Phase 5 pilot): a run can complete with outcome=success
+            # — no crash, nothing for steps.agent.outcome to catch — while
+            # silently taking no action at all: no PR, no label, no
+            # comment. That reports as a clean green run with the issue
+            # left completely untouched and no human-visible signal
+            # anything happened. Distinguish the two by checking for
+            # evidence of ANY expected outcome label.
+            CURRENT_ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+            if echo ",$CURRENT_ISSUE_LABELS," | grep -qE ",status:(ready-for-dev|in-progress|needs-info),"; then
+              echo "No PR found referencing issue #$ISSUE_NUMBER, but it carries an expected status label — dev agent legitimately stopped at triage. Nothing to classify."
+            else
+              echo "Dev agent run completed without error but took no visible action on issue #$ISSUE_NUMBER (no PR, no expected status label) — treating as a malfunction, not a legitimate triage stop." >&2
+              gh issue edit "$ISSUE_NUMBER" --add-label status:needs-info
+              gh issue comment "$ISSUE_NUMBER" --body "The dev agent's run completed without error, but took no visible action on this issue — no PR opened, no status label applied, no comment explaining why it stopped. Routed to status:needs-info for a human to look at directly; see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) (issue #207)."
+            fi
             exit 0
           fi
           echo "Classifying risk for PR #$PR_NUMBER"
