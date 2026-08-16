@@ -27,6 +27,10 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
+  # count_active_agent_runs.sh (Phase 4 concurrency cap) calls
+  # `gh run list`, which needs this — without it every trigger fails at
+  # the guard step with a 403, not just a soft cap miss.
+  actions: read
 
 concurrency:
   group: qa-agent-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
@@ -94,9 +98,7 @@ jobs:
           # Global concurrency cap (Phase 4 guardrail) — see the matching
           # comment in dev-agent.yml for why this is separate from the
           # per-item concurrency group above.
-          ACTIVE=$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}")
-          MAX="${{ vars.MAX_CONCURRENT_AGENT_RUNS }}"
-          : "${MAX:=3}"
+          read -r ACTIVE MAX <<< "$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}" "${{ vars.MAX_CONCURRENT_AGENT_RUNS }}")"
           if [ "$ACTIVE" -ge "$MAX" ]; then
             echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"

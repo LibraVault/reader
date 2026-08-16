@@ -46,6 +46,10 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
+  # count_active_agent_runs.sh (Phase 4 concurrency cap) calls
+  # `gh run list`, which needs this — without it every trigger fails at
+  # the guard step with a 403, not just a soft cap miss.
+  actions: read
 
 concurrency:
   group: principal-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
@@ -118,9 +122,7 @@ jobs:
           # Global concurrency cap (Phase 4 guardrail) — see the matching
           # comment in dev-agent.yml for why this is separate from the
           # per-item concurrency group above.
-          ACTIVE=$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}")
-          MAX="${{ vars.MAX_CONCURRENT_AGENT_RUNS }}"
-          : "${MAX:=3}"
+          read -r ACTIVE MAX <<< "$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}" "${{ vars.MAX_CONCURRENT_AGENT_RUNS }}")"
           if [ "$ACTIVE" -ge "$MAX" ]; then
             echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -308,11 +310,17 @@ jobs:
           {
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            PR_TITLE=$(gh pr view "$PR_NUMBER" --json title -q .title)
+            PR_TITLE=$(gh pr view "$PR_NUMBER" --json title -q .title | sed 's/|/\\|/g')
             ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER" 2>/dev/null || echo "")
+            # Read the merge commit GitHub actually recorded for THIS PR,
+            # not the current tip of dev after a fetch — another
+            # principal-review run for a different PR isn't serialized
+            # against this one (concurrency groups are per-PR) and could
+            # land its own merge on dev in between, which would make
+            # "tip of dev" record the wrong commit for this log entry.
+            MERGE_SHA=$(gh pr view "$PR_NUMBER" --json mergeCommit -q .mergeCommit.oid)
             git fetch origin dev
             git checkout -B dev origin/dev
-            MERGE_SHA=$(git rev-parse HEAD)
             printf '| %s | [#%s](%s/%s/pull/%s) | %s | %s | [%s](%s/%s/commit/%s) |\n' \
               "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               "$PR_NUMBER" "${{ github.server_url }}" "${{ github.repository }}" "$PR_NUMBER" \
