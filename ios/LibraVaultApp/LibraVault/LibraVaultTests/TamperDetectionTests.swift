@@ -39,6 +39,27 @@ final class TamperDetectionTests: XCTestCase {
         }
     }
 
+    /// Like `assertTruncated`, but also reads the whole declared plaintext length
+    /// through the reader before asserting - needed when the tampering is in a
+    /// chunk *after* chunk 0, since only chunk 0 is eagerly authenticated at
+    /// construction (see `VaultFileReader`'s doc comment); reaching a later
+    /// chunk's truncation requires an actual `readAt` past it. Mirrors Kotlin's
+    /// `VaultFileReader(file, vmk, fileId).use { it.readAt(0, plain.size) }`,
+    /// which wraps both construction and the read in one `assertThrows`.
+    private func assertTruncatedOnFullRead(_ url: URL, plainSize: Int) {
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertThrowsError(try {
+            let reader = try VaultFileReader(fileURL: url, vmk: vmk, expectedFileId: fileId)
+            defer { reader.close() }
+            _ = try reader.readAt(offset: 0, length: plainSize)
+        }()) { error in
+            guard case .truncated = error as? VaultCryptoError else {
+                XCTFail("expected .truncated, got \(error)")
+                return
+            }
+        }
+    }
+
     func testFlippingACiphertextByteInsideAChunkIsDetected() throws {
         let plain = VaultCryptoTestSupport.randomData(chunkSize * 2)
         let bytes = try encryptedBytes(plain)
@@ -103,7 +124,7 @@ final class TamperDetectionTests: XCTestCase {
         let truncated = bytes.prefix(bytes.count - 5) // chop off part of the last chunk's tag
         // Header still claims the original (larger) length, so the reader will
         // try to read a chunk that no longer has enough bytes on disk.
-        assertTruncated(VaultCryptoTestSupport.writeTempFile(Data(truncated)))
+        assertTruncatedOnFullRead(VaultCryptoTestSupport.writeTempFile(Data(truncated)), plainSize: plain.count)
     }
 
     func testTruncatingExactlyOnAChunkBoundaryIsStillDetected() throws {
@@ -113,7 +134,7 @@ final class TamperDetectionTests: XCTestCase {
         let bytes = try encryptedBytes(plain)
         let storedChunkLen = chunkSize + VaultFormat.tagSizeBytes
         let truncated = bytes.prefix(VaultFormat.headerSizeBytes + storedChunkLen * 2) // keep only 2 of 3 chunks
-        assertTruncated(VaultCryptoTestSupport.writeTempFile(Data(truncated)))
+        assertTruncatedOnFullRead(VaultCryptoTestSupport.writeTempFile(Data(truncated)), plainSize: plain.count)
     }
 
     func testAnEmptyFileStillGetsOneAuthenticatedChunkSoDeletingAllChunksIsStillDetected() throws {
