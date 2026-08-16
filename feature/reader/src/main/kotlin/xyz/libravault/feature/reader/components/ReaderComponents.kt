@@ -117,10 +117,10 @@ fun ReaderTopBar(
             IconButton(onClick = onAddBookmark, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Default.BookmarkAdd, contentDescription = "Add bookmark")
             }
-            IconButton(onClick = onShowBookmarks) {
+            IconButton(onClick = onShowBookmarks, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
             }
-            IconButton(onClick = onSettings) {
+            IconButton(onClick = onSettings, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Default.Settings, contentDescription = "Reader settings")
             }
         },
