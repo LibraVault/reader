@@ -426,12 +426,32 @@ jobs:
           fi
 
           if [ -z "$PR_NUMBER" ]; then
+            # Live-tested gap (issue #210, found re-running the Phase 5
+            # pilot after fixing #207): a triage-mode run can self-apply
+            # status:ready-for-dev/status:in-progress (real signs it
+            # started legitimate work), then crash mid-implementation
+            # before opening a PR. steps.agent.outcome == 'failure' below
+            # already catches this for REVISE mode; it wasn't checked here
+            # for triage mode, so the label-presence check right after
+            # this would have wrongly read those same in-progress labels
+            # as "legitimately stopped at triage" — same issue left stuck
+            # forever, just with a red X on the workflow run instead of a
+            # deceptively green one. Check the crash first, before
+            # thinking about what labels are present at all.
+            if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+              echo "Dev agent run failed for issue #$ISSUE_NUMBER — routing to status:needs-info." >&2
+              gh issue edit "$ISSUE_NUMBER" --remove-label status:in-progress || true
+              gh issue edit "$ISSUE_NUMBER" --add-label status:needs-info
+              gh issue comment "$ISSUE_NUMBER" --body "The dev agent's run failed (crashed or exhausted its turn budget) partway through triage/implementation, before opening a PR — routed to a human instead of silently leaving this on status:in-progress. See the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+              exit 0
+            fi
+
             # No PR is legitimate at triage — but only if the agent
             # actually followed its persona's mandated fallback (apply
             # status:ready-for-dev to proceed, or status:needs-info to
             # stop and ask). Live-tested gap (issue #207, found during
             # the Phase 5 pilot): a run can complete with outcome=success
-            # — no crash, nothing for steps.agent.outcome to catch — while
+            # — no crash, nothing for the check above to catch — while
             # silently taking no action at all: no PR, no label, no
             # comment. That reports as a clean green run with the issue
             # left completely untouched and no human-visible signal
