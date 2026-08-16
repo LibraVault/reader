@@ -272,12 +272,27 @@ jobs:
           # STALE, an empty check list, or anything GitHub adds later)
           # falls through to "pending" and eventually the 20-minute
           # timeout below, rather than being silently treated as success.
+          #
+          # The polled check list always includes this exact job's own
+          # check run ("review", on the "Principal Review Agent"
+          # workflow) — this step is running *inside* it. That check
+          # can't turn SUCCESS until the job finishes, and the job can't
+          # finish (successfully) until this step does, so requiring it
+          # to be green before proceeding is a structural deadlock: the
+          # loop would spin for the full 20 minutes on every run,
+          # regardless of how fast the real CI is (confirmed live on PR
+          # #213 and PR #216 — see issue #218). Filter it out by workflow
+          # name, not job id ("review"), so this keeps working even if
+          # the job is ever renamed. The other real checks (iOS build,
+          # JVM tests, QA/dev-agent skip states) are sufficient signal
+          # on their own.
           for _ in $(seq 1 40); do
-            STATE=$(gh pr checks "$PR_NUMBER" --json state -q '
-              if length == 0 then "pending"
-              elif any(.[]; .state == "PENDING" or .state == "IN_PROGRESS" or .state == "QUEUED" or .state == "REQUESTED" or .state == "WAITING") then "pending"
-              elif any(.[]; .state == "FAILURE" or .state == "ERROR") then "failed"
-              elif all(.[]; .state == "SUCCESS" or .state == "NEUTRAL" or .state == "SKIPPED") then "success"
+            STATE=$(gh pr checks "$PR_NUMBER" --json state,workflow -q '
+              [.[] | select(.workflow != "Principal Review Agent")] as $checks |
+              if ($checks | length) == 0 then "pending"
+              elif any($checks[]; .state == "PENDING" or .state == "IN_PROGRESS" or .state == "QUEUED" or .state == "REQUESTED" or .state == "WAITING") then "pending"
+              elif any($checks[]; .state == "FAILURE" or .state == "ERROR") then "failed"
+              elif all($checks[]; .state == "SUCCESS" or .state == "NEUTRAL" or .state == "SKIPPED") then "success"
               else "pending" end' 2>/dev/null || echo "pending")
             echo "CI state: $STATE"
             [ "$STATE" = "success" ] && break
