@@ -77,3 +77,16 @@ gh secret list --repo LibraVault/reader
 ## Post-upload: testers
 
 Firebase emails testers in the target group automatically once the upload completes — unlike TestFlight, there's no separate manual "invite testers" step required after each distribution, only the one-time group setup in the bootstrap section above.
+
+## Known issues: tablet install fails with "open on your mobile device"
+
+**Reported 2026-08-16** (tester M.): opening the invite link on an Android **tablet** can land on `appdistribution.firebase.google.com/mobilerequired` with the message "Open the invitation email on your mobile device to install test apps" — even though the tablet is a valid Android install target. See [#215](https://github.com/LibraVault/reader/issues/215).
+
+This is a Firebase-side limitation, not a LibraVault bug: the App Distribution web flow gates install eligibility on the browser's User-Agent string rather than the actual OS, and some Android tablets — especially in split-screen/desktop-site browser modes (e.g. Samsung DeX-style layouts) — send a User-Agent Firebase doesn't classify as "mobile." We don't control that detection logic.
+
+If a tester hits this, have them try (in order):
+
+1. In Chrome, menu (⋮) → uncheck **"Desktop site"**, then reopen the invite link.
+2. Open the invitation email directly in the **Gmail app** (not a browser) and tap the link from there.
+3. Install the **Firebase App Tester** app from Play Store — it handles invite links more reliably than the browser flow.
+4. As a last resort, open the invite link on a phone instead of a tablet.
