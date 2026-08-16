@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 // AAD context strings distinguish the two wrappings of the VMK so one can never
 // be substituted for the other even though both wrap the same key bytes.
@@ -47,19 +46,13 @@ struct NewVault {
 enum VaultKeyManager {
 
     static func create(pin: [UInt8], argon2Params: Argon2Params = .defaultParams) throws -> NewVault {
-        let vmk = try randomBytes(count: VaultFormat.vmkSizeBytes)
-        let recoveryKey = try randomBytes(count: VaultFormat.recoveryKeySizeBytes)
-        let salt = try randomBytes(count: VaultFormat.argon2SaltSizeBytes)
+        let vmk = try SecureRandom.bytes(count: VaultFormat.vmkSizeBytes)
+        let recoveryKey = try SecureRandom.bytes(count: VaultFormat.recoveryKeySizeBytes)
+        let salt = try SecureRandom.bytes(count: VaultFormat.argon2SaltSizeBytes)
 
         var kek = try Argon2idKdf.deriveKey(pin: pin, salt: salt, params: argon2Params)
-        let wrappedByKek: WrappedKey
-        do {
-            wrappedByKek = try KeyWrap.wrap(wrappingKey: kek, plaintextKey: vmk, aad: kekWrapAad)
-        } catch {
-            kek.secureZero()
-            throw error
-        }
-        kek.secureZero()
+        defer { kek.secureZero() }
+        let wrappedByKek = try KeyWrap.wrap(wrappingKey: kek, plaintextKey: vmk, aad: kekWrapAad)
 
         let wrappedByRecovery = try KeyWrap.wrap(wrappingKey: recoveryKey, plaintextKey: vmk, aad: recoveryWrapAad)
 
@@ -135,30 +128,15 @@ enum VaultKeyManager {
         var vmk = try unlockWithPin(pin: oldPin, material: material)
         defer { vmk.secureZero() }
 
-        let newSalt = try randomBytes(count: VaultFormat.argon2SaltSizeBytes)
+        let newSalt = try SecureRandom.bytes(count: VaultFormat.argon2SaltSizeBytes)
         var newKek = try Argon2idKdf.deriveKey(pin: newPin, salt: newSalt, params: params)
-        let newWrappedByKek: WrappedKey
-        do {
-            newWrappedByKek = try KeyWrap.wrap(wrappingKey: newKek, plaintextKey: vmk, aad: kekWrapAad)
-        } catch {
-            newKek.secureZero()
-            throw error
-        }
-        newKek.secureZero()
+        defer { newKek.secureZero() }
+        let newWrappedByKek = try KeyWrap.wrap(wrappingKey: newKek, plaintextKey: vmk, aad: kekWrapAad)
 
         var result = material
         result.argon2Salt = newSalt
         result.argon2Params = params
         result.wrappedVmkByKek = newWrappedByKek
         return result
-    }
-
-    private static func randomBytes(count: Int) throws -> Data {
-        var bytes = [UInt8](repeating: 0, count: count)
-        let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
-        guard status == errSecSuccess else {
-            throw VaultCryptoError.randomGenerationFailed(status: status)
-        }
-        return Data(bytes)
     }
 }

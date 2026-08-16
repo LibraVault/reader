@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 /// A key wrapped (encrypted) under another key: the nonce used plus the ciphertext+tag.
 struct WrappedKey: Equatable {
@@ -18,12 +17,7 @@ struct WrappedKey: Equatable {
 enum KeyWrap {
 
     static func wrap(wrappingKey: Data, plaintextKey: Data, aad: Data) throws -> WrappedKey {
-        var nonceBytes = [UInt8](repeating: 0, count: VaultFormat.nonceSizeBytes)
-        let status = SecRandomCopyBytes(kSecRandomDefault, nonceBytes.count, &nonceBytes)
-        guard status == errSecSuccess else {
-            throw VaultCryptoError.randomGenerationFailed(status: status)
-        }
-        let nonce = Data(nonceBytes)
+        let nonce = try SecureRandom.bytes(count: VaultFormat.nonceSizeBytes)
         let ciphertext = try AesGcmCipher.encrypt(key: wrappingKey, nonce: nonce, aad: aad, plaintext: plaintextKey)
         return WrappedKey(nonce: nonce, ciphertext: ciphertext)
     }

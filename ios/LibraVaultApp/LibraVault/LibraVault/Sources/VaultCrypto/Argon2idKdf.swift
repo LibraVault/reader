@@ -41,6 +41,11 @@ enum Argon2idKdf {
         precondition(salt.count == VaultFormat.argon2SaltSizeBytes, "salt must be \(VaultFormat.argon2SaltSizeBytes) bytes")
 
         var output = [UInt8](repeating: 0, count: outputLengthBytes)
+        // `Data(output)` below copies these bytes into a new heap buffer for the
+        // return value - that copy doesn't zero `output` itself, so without this
+        // defer the derived key would still exist unscrubbed in this array's
+        // storage even after a caller diligently zeroes the `Data` they got back.
+        defer { output.secureZero() }
         let saltBytes = [UInt8](salt)
 
         // argon2id_hash_raw internally always uses ARGON2_VERSION_NUMBER

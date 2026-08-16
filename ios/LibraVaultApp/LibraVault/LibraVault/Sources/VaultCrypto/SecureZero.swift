@@ -21,3 +21,17 @@ extension Data {
         }
     }
 }
+
+extension Array where Element == UInt8 {
+    /// Same as `Data.secureZero()`, for the `[UInt8]` buffers the Argon2 C API
+    /// writes into directly (`Argon2idKdf.deriveKey`'s `output`) - copying
+    /// that buffer into a `Data` to return does not by itself scrub the
+    /// original array, so callers that scrub only the returned `Data` leave a
+    /// second live copy of the derived key sitting in that array's storage.
+    mutating func secureZero() {
+        withUnsafeMutableBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            memset(base, 0, raw.count)
+        }
+    }
+}

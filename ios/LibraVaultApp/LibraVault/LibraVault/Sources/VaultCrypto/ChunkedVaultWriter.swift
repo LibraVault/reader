@@ -20,9 +20,15 @@ enum ChunkedVaultWriter {
     ///   - vmk: the Vault Master Key
     ///   - fileId: 16-byte unique id for this file within the vault
     ///   - totalPlaintextLength: exact byte count `input` will produce - validated at the end
-    /// - Precondition: traps if `input` produced a different number of bytes than declared, or if
-    ///   any argument is structurally invalid (fileId size, negative length, out-of-range chunkSize) -
-    ///   these are caller bugs, mirroring the Kotlin `require`/`check` calls they port.
+    /// - Precondition: traps if `fileId`/`totalPlaintextLength`/`chunkSize` is structurally invalid -
+    ///   these mirror Kotlin's `require()` calls, and are genuine caller-argument bugs.
+    /// - Throws: `VaultCryptoError.ioError` if `input` produces fewer bytes than `totalPlaintextLength`
+    ///   declared, or a genuine stream I/O error occurs. This is a *runtime* condition (the file backing
+    ///   `input` can legitimately change between the caller stat-ing it and this reading it - an iCloud
+    ///   placeholder still downloading, a removable volume unmounted mid-import), not a caller bug, so
+    ///   unlike the argument-validation preconditions above it must stay catchable - it mirrors Kotlin's
+    ///   `check()` calls, which throw a catchable `IllegalStateException`, not `precondition`'s
+    ///   unconditional (and, critically, un-catchable) process trap.
     static func encrypt(
         vmk: Data,
         fileId: Data,
@@ -69,11 +75,12 @@ enum ChunkedVaultWriter {
             chunkIndex += 1
         }
 
-        precondition(
-            written == totalPlaintextLength,
-            "Writer wrote \(written) bytes but declared totalPlaintextLength=\(totalPlaintextLength)"
-                + " - the input stream did not match its declared size"
-        )
+        guard written == totalPlaintextLength else {
+            throw VaultCryptoError.ioError(
+                "Writer wrote \(written) bytes but declared totalPlaintextLength=\(totalPlaintextLength)"
+                    + " - the input stream did not match its declared size"
+            )
+        }
     }
 
     /// Chunk count for a file, including the one empty final chunk written for a zero-length file
@@ -94,8 +101,10 @@ enum ChunkedVaultWriter {
     }
 
     /// `InputStream.read` may return fewer bytes than requested even without EOF - loop until
-    /// `length` bytes are read or the stream is genuinely exhausted (which is itself a caller
-    /// bug here, since the caller declared how many bytes to expect).
+    /// `length` bytes are read or the stream is genuinely exhausted. An early EOF here means the
+    /// stream produced fewer bytes than the caller's declared `totalPlaintextLength` promised - a
+    /// runtime I/O-consistency condition (see `encrypt`'s doc comment), not a caller-argument bug,
+    /// so it throws rather than trapping.
     ///
     /// Note Foundation's `InputStream.read` EOF signal (`0`) differs from `java.io.InputStream`'s
     /// (`-1`) - `0` means EOF here, a negative return means a genuine I/O error.
@@ -108,22 +117,28 @@ enum ChunkedVaultWriter {
             if n < 0 {
                 throw VaultCryptoError.ioError(input.streamError?.localizedDescription ?? "Input stream read error")
             }
-            precondition(n > 0, "Input stream ended early: expected \(length) bytes at this chunk, got \(offset)")
+            guard n > 0 else {
+                throw VaultCryptoError.ioError("Input stream ended early: expected \(length) bytes at this chunk, got \(offset)")
+            }
             offset += n
         }
     }
 
+    /// Writes `data` via `data.withUnsafeBytes` directly rather than copying it into a fresh
+    /// `[UInt8]` first - this runs once per ~32 KiB chunk on the streaming-encrypt hot path, so for
+    /// a multi-hundred-MB import that copy would otherwise repeat thousands of times for no benefit.
     private static func writeFully(_ output: OutputStream, data: Data) throws {
-        let bytes = [UInt8](data)
-        var offset = 0
-        while offset < bytes.count {
-            let n = bytes.withUnsafeBufferPointer { ptr -> Int in
-                output.write(ptr.baseAddress! + offset, maxLength: bytes.count - offset)
+        guard !data.isEmpty else { return }
+        try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            var offset = 0
+            while offset < data.count {
+                let n = output.write(base + offset, maxLength: data.count - offset)
+                guard n > 0 else {
+                    throw VaultCryptoError.ioError(output.streamError?.localizedDescription ?? "Output stream write error")
+                }
+                offset += n
             }
-            guard n > 0 else {
-                throw VaultCryptoError.ioError(output.streamError?.localizedDescription ?? "Output stream write error")
-            }
-            offset += n
         }
     }
 }

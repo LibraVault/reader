@@ -44,12 +44,14 @@ enum VaultCryptoError: Error, Equatable {
     /// mode to mirror here.
     case randomGenerationFailed(status: Int32)
 
-    /// An `InputStream`/`OutputStream` read or write failed for a reason other
-    /// than the stream simply running out of bytes (which is
-    /// `.truncated`/a precondition trap instead, matching Android's
-    /// `check`/`IOException` split). Has no direct Android equivalent - the
-    /// JVM's `IOException` propagates on its own there; Foundation's stream
-    /// APIs report failure via a return code instead, so this wraps that.
+    /// An `InputStream`/`OutputStream` read or write failed, or produced fewer
+    /// bytes than a caller-declared length promised (`ChunkedVaultWriter`'s
+    /// runtime I/O-consistency checks - see its doc comment). Has no single
+    /// direct Android equivalent: the JVM's `IOException` propagates on its
+    /// own there, and its `check()`-derived guards throw a catchable
+    /// `IllegalStateException`; Foundation's stream APIs report failure via a
+    /// return code instead, and Swift has no unchecked-but-catchable
+    /// exception type, so this case covers both.
     case ioError(String)
 }
 
