@@ -161,6 +161,15 @@ jobs:
           # see the file header comment for why GITHUB_TOKEN (not the App
           # token) is what's actually distinct from the PR's author here.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Defaults to false, hiding the agent's turn-by-turn transcript.
+          # Turned on for consistency with dev-agent.yml, where it was
+          # used to diagnose a real live failure: an agent spawning an
+          # async Explore subagent via the Agent tool (not in
+          # --allowedTools, available anyway — a documented Claude Agent
+          # SDK gap, anthropics/claude-agent-sdk-typescript#189), then
+          # waiting for a notification that never comes in a CI run. See
+          # the explicit prohibition in the prompt below.
+          show_full_output: true
           prompt: |
             Read .claude/agents/principal-review-agent.md in full — it is
             your complete operating persona for this run. Review PR
@@ -175,6 +184,15 @@ jobs:
             apply status:approved-auto-merge or status:needs-human-merge
             yourself — the workflow applies whichever one matches your
             verdict, based on the verdict file you write below.
+
+            Do not delegate any part of this review to a subagent (the
+            Agent tool, any "Explore"/"Task" subagent type, or anything
+            that reports back asynchronously) — there is no notification
+            mechanism in this CI run for a subagent's result to reach you.
+            If you do, your run will simply end while "waiting," and no
+            verdict ever gets produced. Investigate everything yourself,
+            directly, with your own Read/Grep/Glob/Bash calls in this same
+            turn sequence.
 
             As your very last action, write a single line to the file
             `principal-verdict.txt` in the repo root: exactly one of
