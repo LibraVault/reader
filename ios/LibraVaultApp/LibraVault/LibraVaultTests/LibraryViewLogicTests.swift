@@ -119,6 +119,19 @@ final class LibraryViewLogicTests: XCTestCase {
         )
     }
 
+    // MARK: - emptyLibraryHeadline / emptyLibraryMessage
+
+    func testEmptyLibraryGuidesToSettingsWhenNoVaultsConfigured() {
+        XCTAssertEqual(emptyLibraryHeadline(hasVaults: false), "Start Your Library")
+        XCTAssertTrue(emptyLibraryMessage(hasVaults: false).contains("Settings"))
+        XCTAssertTrue(emptyLibraryMessage(hasVaults: false).contains("Add Vault"))
+    }
+
+    func testEmptyLibraryMessageDoesNotMentionSettingsWhenVaultsExist() {
+        XCTAssertEqual(emptyLibraryHeadline(hasVaults: true), "No Books Found")
+        XCTAssertFalse(emptyLibraryMessage(hasVaults: true).contains("Settings"))
+    }
+
     func testCoverPaletteIndexDiffersForDifferentIds() {
         // Not a hard guarantee for arbitrary ids (a collision is possible), but a
         // handful of simple sequential ids should spread across more than one slot —
