@@ -133,9 +133,30 @@ jobs:
           if echo ",$LABELS," | grep -q ",status:blocked,"; then
             echo "status:blocked is set — a human parked this, skipping." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Global concurrency cap (Phase 4 guardrail) — distinct from the
+          # per-item concurrency group above, which only stops two runs
+          # touching the SAME issue/PR at once. This bounds total pipeline
+          # activity across every issue/PR at once (Claude subscription
+          # usage burst, CI runner contention, concurrent PRs risking
+          # merge races). See docs/agent-team-pipeline.md's rollout plan.
+          ACTIVE=$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}")
+          MAX="${{ vars.MAX_CONCURRENT_AGENT_RUNS }}"
+          : "${MAX:=3}"
+          if [ "$ACTIVE" -ge "$MAX" ]; then
+            echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            if [ -n "${PR_NUMBER:-}" ]; then
+              gh pr comment "$PR_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this run. Re-apply the triggering label once activity settles, or re-trigger manually via workflow_dispatch."
+            else
+              gh issue comment "$ISSUE_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this run. Re-apply status:ready-for-dev once activity settles, or re-trigger manually via workflow_dispatch."
+            fi
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Check out PR branch (revise mode only)
         if: steps.guard.outputs.skip != 'true' && steps.guard.outputs.mode == 'revise'

@@ -90,6 +90,20 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # Global concurrency cap (Phase 4 guardrail) — see the matching
+          # comment in dev-agent.yml for why this is separate from the
+          # per-item concurrency group above.
+          ACTIVE=$(.github/scripts/count_active_agent_runs.sh "${{ github.run_id }}")
+          MAX="${{ vars.MAX_CONCURRENT_AGENT_RUNS }}"
+          : "${MAX:=3}"
+          if [ "$ACTIVE" -ge "$MAX" ]; then
+            echo "At capacity ($ACTIVE/$MAX active pipeline runs) — skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            gh pr comment "$PR_NUMBER" --body "Pipeline is at capacity ($ACTIVE/$MAX active runs) — skipping this QA run. Re-apply status:needs-qa once activity settles, or re-trigger manually via workflow_dispatch."
+            exit 0
+          fi
+
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Check out PR branch

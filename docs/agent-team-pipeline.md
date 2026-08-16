@@ -84,6 +84,31 @@ picking up any new work without touching any labels. (A label can express
 "stop this item," not "stop everything," which is why the two mechanisms
 are deliberately different knobs.)
 
+Two more repository variables, added in Phase 4:
+
+- **`MAX_CONCURRENT_AGENT_RUNS`** (default `3` if unset) — a system-wide
+  cap on how many pipeline runs (across all three workflows, all
+  issues/PRs) can be active at once, checked in each workflow's guard
+  step via [`.github/scripts/count_active_agent_runs.sh`](../.github/scripts/count_active_agent_runs.sh).
+  Distinct from each workflow's own per-item `concurrency:` group, which
+  only stops two runs touching the *same* issue/PR — this bounds total
+  activity, guarding against a Claude-subscription usage burst, CI runner
+  contention, or several PRs racing each other into `dev` at once. Over
+  the cap, a run skips itself with a comment explaining how to retry
+  (re-apply the triggering label, or `workflow_dispatch` manually) —
+  there's no automatic requeue.
+- **`AUTO_MERGE_DISABLED`** — when `true`, `principal-review.yml` runs its
+  full judgment (including posting real findings) but never actually
+  merges: an `auto-merge` verdict is overridden to `human-merge` with a
+  comment noting what the real verdict was. This is the Phase 5 dry-run
+  switch — see the rollout plan below.
+
+Every `auto-merge` outcome that actually merges is appended to
+[`docs/auto-merge-log.md`](auto-merge-log.md) by `principal-review.yml`
+itself, right after the merge — a durable, human-readable audit trail of
+everything this pipeline has ever auto-merged without a human's direct
+sign-off.
+
 ## Risk classification
 
 Defined in [`.github/agent-policy.yml`](../.github/agent-policy.yml) and
@@ -209,8 +234,11 @@ without hitting the restriction at all).
 4. **Phase 3 (built, proven live)** — `principal-review.yml` workflow,
    triggered on PRs labeled `status:needs-review`; implements the
    auto-merge/human-merge split, including waiting for CI before merging.
-5. **Phase 4** — guardrails: concurrency cap, `AGENTS_PAUSED` kill switch,
-   auto-merge log.
-6. **Phase 5** — pilot on 2-3 low-risk open `reader` issues with auto-merge
-   forced off (dry run) before trusting it live. Only after that, consider
-   extending beyond `reader`.
+5. **Phase 4 (built)** — guardrails: `MAX_CONCURRENT_AGENT_RUNS`
+   system-wide concurrency cap, `AGENTS_PAUSED` kill switch (already built
+   in Phase 1-3), `AUTO_MERGE_DISABLED` dry-run switch, `docs/auto-merge-log.md`
+   audit trail. See the two-variable list above.
+6. **Phase 5 (dry-run pilot underway)** — pilot on 2-3 low-risk open
+   `reader` issues with `AUTO_MERGE_DISABLED=true` before trusting it
+   live. Only after that, consider extending beyond `reader`, or turning
+   `AUTO_MERGE_DISABLED` back off.
