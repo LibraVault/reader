@@ -118,6 +118,7 @@ jobs:
             PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
             if echo ",$PR_LABELS," | grep -q ",status:blocked,"; then
               echo "PR #$PR_NUMBER carries status:blocked — a human parked this, skipping." >&2
+              gh pr comment "$PR_NUMBER" --body "This PR carries \`status:blocked\` — a human parked this, skipping this dev-agent run. Remove the label to resume."
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -139,6 +140,15 @@ jobs:
           echo "Issue #$ISSUE_NUMBER labels: $LABELS"
           if echo ",$LABELS," | grep -q ",status:blocked,"; then
             echo "status:blocked is set — a human parked this, skipping." >&2
+            # In revise mode a PR already exists and is the only place a
+            # human reviewing this work would actually look; in triage
+            # mode there's no PR yet, so the issue itself (where the label
+            # was just read from) is the right place instead.
+            if [ "$MODE" = "revise" ]; then
+              gh pr comment "$PR_NUMBER" --body "The linked issue (#$ISSUE_NUMBER) carries \`status:blocked\` — a human parked this, skipping this dev-agent run. Remove the label from the issue to resume."
+            else
+              gh issue comment "$ISSUE_NUMBER" --body "This issue carries \`status:blocked\` — skipping this dev-agent triage run. Remove the label to resume."
+            fi
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
