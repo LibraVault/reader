@@ -29,7 +29,27 @@ internal object Hkdf {
         return mac.doFinal(data)
     }
 
-    fun extract(salt: ByteArray, ikm: ByteArray): ByteArray = hmac(salt, ikm)
+    /**
+     * HKDF-Extract (RFC 5869 §2.2).
+     *
+     * An empty [salt] is substituted with HashLen zero bytes, as the RFC
+     * requires ("if not provided, it is set to a string of HashLen zeros").
+     * Without this, [javax.crypto.spec.SecretKeySpec] rejects a zero-length key
+     * with `IllegalArgumentException: Empty key` and the call throws instead of
+     * deriving — which is what RFC 5869 test vector A.3 caught when
+     * [HkdfKnownAnswerTest] was added.
+     *
+     * This is a spec-conformance fix, not a behaviour change for this app: the
+     * only production caller ([deriveFileContentKey]) passes a fixed non-empty
+     * salt, and the empty-salt path previously threw rather than returning a
+     * value, so no stored key material can depend on the old behaviour. The
+     * golden vault fixture proves no existing derivation moved.
+     *
+     * (iOS never had this gap — it uses `CryptoKit.HKDF`, which implements the
+     * substitution itself.)
+     */
+    fun extract(salt: ByteArray, ikm: ByteArray): ByteArray =
+        hmac(if (salt.isEmpty()) ByteArray(HASH_LEN) else salt, ikm)
 
     fun expand(prk: ByteArray, info: ByteArray, length: Int): ByteArray {
         val output = ByteArray(length)
