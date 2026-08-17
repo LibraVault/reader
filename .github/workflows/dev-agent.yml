@@ -107,7 +107,7 @@ jobs:
             PR_NUMBER="${{ github.event.pull_request.number }}"
             ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
             if [ -z "$ISSUE_NUMBER" ]; then
-              echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N') — stopping." >&2
+              echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N' on its own line) — stopping." >&2
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
