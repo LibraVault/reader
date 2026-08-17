@@ -85,12 +85,18 @@ def line_counter(node: ET.Element) -> tuple[int, int]:
 
 
 def check_gates(rows: list[tuple[str, int, int, float]]) -> int:
-    """Fail if a gated module dropped more than TOLERANCE_PP below baseline."""
+    """Fail if a gated module dropped more than the tolerance below baseline."""
     if not os.path.exists(BASELINE_PATH):
         print(f"No baseline at {BASELINE_PATH} — run with --write-baseline first.",
               file=sys.stderr)
         return 1
-    baseline = json.load(open(BASELINE_PATH))["modules"]
+    data = json.load(open(BASELINE_PATH))
+    baseline = data["modules"]
+    # The file is the source of truth for tolerance, not the constant — the
+    # constant is only the value used when writing a fresh baseline. Reading it
+    # back matters: a `tolerance_pp` in the file that the gate ignored would be
+    # a knob that silently does nothing.
+    tolerance = float(data.get("tolerance_pp", TOLERANCE_PP))
 
     failures, checked = [], 0
     for label, _cov, _tot, pct in rows:
@@ -101,10 +107,10 @@ def check_gates(rows: list[tuple[str, int, int, float]]) -> int:
             failures.append(f"  {label}: gated but absent from the baseline file")
             continue
         was = baseline[label]
-        if pct < was - TOLERANCE_PP:
+        if pct < was - tolerance:
             failures.append(
                 f"  {label}: {pct:.1f}% is {was - pct:.1f}pp below the "
-                f"{was:.1f}% baseline (tolerance {TOLERANCE_PP}pp)"
+                f"{was:.1f}% baseline (tolerance {tolerance}pp)"
             )
 
     # A gated module vanishing from the report is a failure, not a pass — that
