@@ -1,0 +1,134 @@
+name: PR Intake
+
+# Deterministic backstop for PRs opened OUTSIDE the automated pipeline —
+# e.g. a human or a Claude Code session pushing a fix directly with a
+# personal PAT, rather than dev-agent.yml's own triage-and-implement job
+# opening it. That job's tail step (risk classification + applying
+# status:needs-qa via the pipeline App token, see docs/agent-team-pipeline.md's
+# "Cross-workflow triggering" section) only ever runs for PRs IT itself
+# opens, synchronously, in the same job run. A PR opened any other way
+# carries no risk:*/status:* label at all and nothing downstream ever
+# picks it up — confirmed live: issue #223's actual fix, PR #224, was
+# opened by a session outside the pipeline and sat unlabeled until a
+# human noticed and hand-applied the labels this workflow now applies
+# automatically.
+#
+# This workflow does NOT run an agent. It's the exact same deterministic
+# classify-and-label logic dev-agent.yml's tail already runs for its own
+# PRs, applied here for PRs it didn't open — see that workflow's last
+# step for the twin of the step below.
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: pr-intake-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    # Same public-repo trust boundary as dev-agent.yml's own pull_request
+    # trigger: `pull_request: opened` fires for fork PRs from anyone with
+    # zero permission required, so this requires same-repo.
+    #
+    # Excludes PRs the pipeline app itself opened (login confirmed live
+    # via the API: PR #221's author.login is
+    # "libravault-pipeline-bot[bot]") — those are already labeled by
+    # dev-agent.yml's own tail before this event's job would even start;
+    # re-running here would be redundant at best, and a real race at
+    # worst (this job doesn't wait for that job to finish).
+    if: >-
+      vars.AGENTS_PAUSED != 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'libravault-pipeline-bot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether this PR needs intake
+        id: guard
+        env:
+          # Read-only lookups only — nothing here needs to trigger a
+          # further workflow run.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "PR #$PR_NUMBER doesn't link an issue (no 'Closes #N' etc in its body) — not a pipeline PR, nothing to do." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Idempotency / re-entry guard: `reopened` can fire on a PR this
+          # workflow (or a human) already labeled once. Any existing
+          # pipeline status label means intake already happened (or a
+          # human/qa/review round has since moved it on) — don't relabel
+          # over that state.
+          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+          if echo ",$PR_LABELS," | grep -qE ",status:(needs-qa|needs-review|needs-info|needs-human-merge|blocked|in-progress),"; then
+            echo "PR #$PR_NUMBER already carries a pipeline status label ($PR_LABELS) — already picked up, nothing to do." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Guarded rather than left to fail under set -e, same rationale
+          # as dev-agent.yml's own guard: a deleted/transferred issue
+          # shouldn't hard-crash this step, just proceed as unblocked.
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+            echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+            ISSUE_LABELS=""
+          }
+          if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+            echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Mint pipeline App token
+        if: steps.guard.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - name: Classify risk and hand off to qa-agent
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          # risk:* labels stay on GITHUB_TOKEN — nothing in this pipeline
+          # triggers on a risk:* label event, so there's no cross-workflow
+          # need here (mirrors dev-agent.yml's own risk-classification
+          # step). Only status:needs-qa, further down, needs the App
+          # token — see docs/agent-team-pipeline.md's "Cross-workflow
+          # triggering" section for why.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
+
+          git fetch origin "$BASE_REF" "$HEAD_REF"
+
+          pip install --quiet pyyaml
+          python3 .github/scripts/classify_pr_risk.py \
+            "origin/$BASE_REF" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"
+
+          GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
+          echo "Applied status:needs-qa to #$PR_NUMBER."
+
+          gh pr comment "$PR_NUMBER" --body "This PR was opened outside the automated pipeline (author isn't \`libravault-pipeline-bot[bot]\`), so \`dev-agent.yml\`'s own end-of-run classification step never ran for it — it would otherwise have sat with no risk/status label and nothing downstream would pick it up (see issue #223's actual history). This deterministic backstop (\`pr-intake.yml\`) classified its risk and applied \`status:needs-qa\` to route it into the normal pipeline from here."

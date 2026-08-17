@@ -186,6 +186,31 @@ agent's own step always keeps the safe default token):
 | `qa-agent.yml` | `status:needs-info`, comments | `status:needs-review` (→ principal-review.yml), `status:in-progress` on the PR (→ dev-agent.yml) |
 | `principal-review.yml` | everything — both outcomes are terminal (auto-merge happens inline in the same job; human-merge waits for a person) | *(none needed)* |
 
+## PR intake backstop (manually-opened PRs)
+
+`dev-agent.yml`'s risk-classification + `status:needs-qa` handoff (above)
+only runs as the last step of its own triage-and-implement job — i.e. only
+for PRs it opens itself, via the pipeline App token, in that same job run.
+A PR opened any other way (a human, or a Claude Code session working an
+issue directly with a personal PAT rather than going through
+`status:ready-for-dev`) never enters that job at all, so it carries no
+`risk:*`/`status:*` label and nothing downstream ever picks it up — the
+dev-agent.yml comment on this explicitly says "PR creation itself doesn't
+trigger any workflow this pipeline cares about (ours all trigger on
+`labeled`, not `opened`)", which was true for pipeline-opened PRs but left
+this gap for everything else. Confirmed live: issue #223's actual fix, PR
+#224, was opened this way and sat with no pipeline label until a human
+noticed and hand-applied `risk:low`/`status:needs-qa`.
+
+[`pr-intake.yml`](../.github/workflows/pr-intake.yml) closes this gap: it
+triggers on `pull_request: opened`/`reopened`, skips PRs authored by
+`libravault-pipeline-bot[bot]` (those are already handled synchronously by
+`dev-agent.yml` itself) and PRs already carrying a pipeline status label
+(idempotent against `reopened` re-firing), then runs the exact same
+deterministic classify-and-label step `dev-agent.yml`'s tail runs for its
+own PRs. It runs no agent — this is a pure backstop, not a fourth triage
+path.
+
 ## `claude-code-action` gotchas
 
 Read this before adding a fourth pipeline workflow, or any other workflow
