@@ -116,6 +116,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
 
+      - name: Check for workflow-file drift (GitHub OIDC self-check)
+        # GitHub refuses to mint the OIDC token claude-code-action needs
+        # (this job requests id-token: write) when a pull_request-triggered
+        # workflow's own file on the PR branch doesn't byte-match the copy
+        # on the base branch — its own anti-tampering check, to stop a PR
+        # from modifying the very workflow that's about to run with that
+        # trust. "Run QA agent" below still reports success when this
+        # happens (the token exchange fails inside the action, not the
+        # step), so without this check the run silently does nothing and
+        # falls through to the generic "produced neither a verdict file nor
+        # a verdict comment line" message below — misleading, since QA
+        # never actually ran. See issue #254 for the full diagnosis (a live
+        # hit on PR #234, 14 commits behind dev, this exact file among the
+        # 7 that had diverged).
+        id: workflow-drift
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          git fetch origin dev
+          if ! git diff --quiet origin/dev -- .github/workflows/qa-agent.yml; then
+            echo "This workflow's own file (.github/workflows/qa-agent.yml) differs between this PR branch and dev — the OIDC token exchange below would be refused. Skipping the agent step." >&2
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Record run start time
         # Timestamp boundary for the comment-verdict fallback below — lets
         # "Advance PR" tell this run's own PR comment apart from a stale one
@@ -125,7 +151,7 @@ jobs:
         run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Run QA agent
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && steps.workflow-drift.outputs.drift != 'true'
         id: agent
         # Without this, a hard crash (max-turns exhausted, tool error) skips
         # every step below by GitHub Actions' default job-status semantics —
@@ -232,6 +258,20 @@ jobs:
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Workflow-file drift (see the "Check for workflow-file drift"
+          # step above) — the agent step was skipped outright, so there's
+          # no verdict of any kind to look for. Same reasoning as the crash
+          # branch below: this is a pipeline/tooling failure, not a QA
+          # finding, so route to a human without burning dev-agent's
+          # automated retry budget.
+          if [ "${{ steps.workflow-drift.outputs.drift }}" = "true" ]; then
+            echo "PR #$PR_NUMBER's branch has workflow-file drift from dev — GitHub's OIDC anti-tampering check would have silently no-opped the QA agent step, so it was skipped instead. Routing to a human." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
+            gh pr comment "$PR_NUMBER" --body "This PR's branch is stale relative to \`dev\` — specifically, \`.github/workflows/qa-agent.yml\` differs between this branch and \`dev\`. GitHub Actions refuses to mint the OIDC token \`claude-code-action\` needs when a \`pull_request\`-triggered, \`id-token: write\` workflow's own file doesn't byte-match the base branch (its own anti-tampering check), so the QA agent step was skipped rather than silently no-opping (see issue #254 for the full diagnosis). Rebase/merge \`dev\` into this branch and re-add \`status:needs-qa\` to retry."
+            exit 0
+          fi
 
           # A genuine crash (max-turns exhausted, tool error) is a pipeline
           # failure, not a QA finding — there's nothing for dev-agent's
