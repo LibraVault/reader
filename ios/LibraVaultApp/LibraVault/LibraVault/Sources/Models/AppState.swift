@@ -305,7 +305,7 @@ final class AppState: ObservableObject {
             // its books' bookmarks/highlights/progress live on forever with no owner.
             try await bridge.removeVault(bookIds: orphanedBookIds)
         } catch {
-            bridge.logError("Couldn't remove vault \"\(vault.name)\"", tag: "Vault", error: error)
+            bridge.logError("Couldn't remove vault \"\(vault.displayName)\"", tag: "Vault", error: error)
             self.error = AppError.vaultRemovalFailed
             return
         }
