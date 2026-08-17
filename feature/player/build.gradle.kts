@@ -53,6 +53,13 @@ dependencies {
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
+
+    // Hilt test infrastructure — the repo had none, which is why PlaybackService
+    // (an @AndroidEntryPoint MediaSessionService) had 0% coverage: without a
+    // HiltTestApplication the generated Hilt_PlaybackService cannot inject and the
+    // service cannot be constructed at all under Robolectric.
+    testImplementation(libs.hilt.android.testing)
+    kspTest(libs.hilt.compiler)
     // Debug-only manifest declaring the ComponentActivity that Compose's
     // createComposeRule() launches to host test content — picked up by unit
     // tests too via testOptions.unitTests.isIncludeAndroidResources above.
