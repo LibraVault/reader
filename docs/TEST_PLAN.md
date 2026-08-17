@@ -220,13 +220,38 @@ gh workflow run android-tts-audio-test.yml
 >
 > Unverifiable coverage numbers are worse than no numbers, because both humans
 > and the dev agent read this file as ground truth.
->
-> Real per-module coverage lands in **Phase 1** of
-> [`docs/TEST_COVERAGE_PRD.md`](TEST_COVERAGE_PRD.md), which adds Kover
-> (Android) and `xccov` (iOS) and reports them in CI. This section will be
-> regenerated from that measured output — not re-estimated.
->
-> For current measured counts in the meantime, see §1 of the PRD.
+
+**Measured coverage** (Kover, line coverage, debug variant) — regenerate with:
+
+```bash
+./gradlew koverXmlReportDebug \
+          :app:koverXmlReportFdroidDebug \
+          :feature:settings:koverXmlReportFdroidDebug
+python3 scripts/coverage-summary.py
+```
+
+As of 2026-08-17 — **overall 40.1%** (3,565 / 8,892 lines):
+
+| Module | Coverage | | Module | Coverage |
+|---|---:|---|---|---:|
+| `core:logger` | 97.4% | | `feature:settings` | 47.2% |
+| `core:vaultcrypto` 🔒 | 90.3% | | `feature:player` | 39.2% |
+| `core:vaultstore` 🔒 | 83.4% | | `feature:vault` | 36.6% |
+| `core:ui` | 77.8% | | `feature:reader` | 26.5% |
+| `core:vaultcontent` 🔒 | 70.2% | | `core:tts` | 24.9% |
+| `core:database` | 63.3% | | `feature:library` | 23.5% |
+| `core:storage` | 50.1% | | `core:domain` | 17.2% |
+| | | | `feature:onboarding` | 15.9% |
+| | | | `app` | 8.9% |
+
+🔒 = gated. A drop of more than 1pp below `scripts/coverage-baseline.json`
+fails CI. The other modules are report-only: a repo-wide ratchet mostly
+produces tests written to move a number rather than to catch a bug.
+
+Note that `core:domain` measures 17.2% where the deleted table claimed 95%.
+That module's four tested use cases are each at 100%; what the number exposes
+is a long tail of one-line delegating use cases and data-class boilerplate at
+0%. Treat low numbers here as targeting information, not as alarm.
 
 ---
 

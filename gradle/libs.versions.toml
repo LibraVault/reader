@@ -28,6 +28,7 @@ mockk               = "1.13.11"
 turbine             = "1.1.0"
 compose-test        = "1.6.7"
 bouncycastle        = "1.84"
+kover               = "0.9.1"      # JVM/Android line coverage — docs/TEST_COVERAGE_PRD.md Phase 1
 kxml2               = "2.3.0"
 webkit              = "1.17.0"
 zxing               = "3.5.3"
@@ -140,6 +141,7 @@ compose-compiler                = { id = "org.jetbrains.kotlin.plugin.compose", 
 ksp                             = { id = "com.google.devtools.ksp",       version.ref = "ksp" }
 hilt                            = { id = "com.google.dagger.hilt.android",version.ref = "hilt" }
 android-junit5                  = { id = "de.mannodermaus.android-junit5", version.ref = "junit5-android" }
+kover                           = { id = "org.jetbrains.kotlinx.kover",   version.ref = "kover" }
 
 [bundles]
 compose                         = ["compose-ui", "compose-ui-graphics", "compose-ui-tooling-preview", "compose-material3", "compose-icons-extended"]

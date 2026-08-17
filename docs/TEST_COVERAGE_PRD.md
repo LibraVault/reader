@@ -17,7 +17,36 @@ Everything below was measured against `dev` @ `7f4712a`, not taken from existing
 | iOS UI tests | **19** test funcs / 413 LOC |
 | Android main / test LOC | 21,327 / 12,236 |
 | iOS source / test LOC | 9,718 / 5,105 |
-| Coverage instrumentation | **none on either platform** |
+| Coverage instrumentation | none at baseline; **added in Phase 1** (Kover + xccov) |
+
+### Measured coverage (Phase 1 result, 2026-08-17)
+
+First real coverage numbers this repo has ever had. Line coverage, debug variant,
+via `./gradlew koverXmlReportDebug` + `scripts/coverage-summary.py`.
+
+**Overall: 40.1%** (3,565 / 8,892 lines)
+
+| Module | Coverage | | Module | Coverage |
+|---|---:|---|---|---:|
+| `core:logger` | 97.4% | | `feature:settings` | 47.2% |
+| `core:vaultcrypto` 🔒 | 90.3% | | `feature:player` | 39.2% |
+| `core:vaultstore` 🔒 | 83.4% | | `feature:vault` | 36.6% |
+| `core:ui` | 77.8% | | `feature:reader` | 26.5% |
+| `core:vaultcontent` 🔒 | 70.2% | | `core:tts` | 24.9% |
+| `core:database` | 63.3% | | `feature:library` | 23.5% |
+| `core:storage` | 50.1% | | `core:domain` | 17.2% |
+| | | | `feature:onboarding` | 15.9% |
+| | | | `app` | 8.9% |
+
+This confirms the shape the gap inventory predicted, and contradicts the deleted
+metrics table point for point. The crypto core really is well covered
+(`core:vaultcrypto` 90.3%); the UI and feature layer is thin. `core:domain` — which
+`TEST_PLAN.md` published as "✅ 95%" — measures **17.2%**: the four use cases with
+dedicated tests are at 100%, and roughly twenty one-line delegating use cases plus
+the data-class layer are at 0%.
+
+Read the low numbers as targeting information, not alarm. `app` at 8.9% is mostly
+`LibravaultNavHost` and `MainActivity`, which Phase 4 addresses directly.
 
 Per-module Android test counts (executed, incl. both flavors where applicable):
 
@@ -147,7 +176,7 @@ Self-declares stale in its own header. Predates `core:vaultcrypto`, `core:vaults
 
 Six phases. Phases 1–2 are prerequisites for honest reporting and should land first. Phases can otherwise proceed in parallel; each is a separate issue and PR on a `test/*` or `fix/*` branch per the repo's branching rule.
 
-### Phase 0 — Stop the bleeding (½ day, 1 PR)
+### Phase 0 — Stop the bleeding ✅ DONE (PR #222, 2026-08-16)
 *Highest value per hour in this entire document. All configuration, no test authoring.*
 
 | Task | File |
@@ -159,7 +188,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 
 **Exit:** every configured gate has fired at least once and is visible on the `dev` branch page.
 
-### Phase 1 — Coverage instrumentation (1–2 days, 2 PRs)
+### Phase 1 — Coverage instrumentation ✅ DONE (2026-08-17)
 | Task | Detail |
 |---|---|
 | Add Kover to the convention plugin | `libravault.android.library` / `.application`; version via `libs.versions.toml` — never inline |
@@ -239,13 +268,13 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 
 | Metric | Baseline (2026-08-16) | Target |
 |---|---|---|
-| Modules with measured coverage | 0 / 16 | 16 / 16 |
-| Gates that have fired in the last 30 days | 2 of 4 | 4 of 4 |
+| Modules with measured coverage | 0 / 16 | **16 / 16 ✅** |
+| Gates that have fired in the last 30 days | 2 of 4 | **4 of 4 ✅** |
 | Cross-platform vault interop tests | 0 | 2 (bidirectional) |
 | Room migrations with real-SQLite execution | 1 of 6 | 6 of 6 |
-| S1 gaps open | 5 | 0 |
+| S1 gaps open | 5 | **2** (cross-platform interop, HKDF KAT — Phase 2/3) |
 | Untested files >150 LOC (Android, non-Compose) | 8 | ≤2, each with a documented reason |
-| `dev` requires green CI | no | yes |
+| `dev` requires green CI | no | **yes ✅** |
 
 ---
 
@@ -265,8 +294,8 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 
 | Phase | Effort | Severity addressed |
 |---|---|---|
-| 0 — Stop the bleeding | ½ day | S1 ×3 |
-| 1 — Coverage instrumentation | 1–2 days | S3 (unblocks all measurement) |
+| 0 — Stop the bleeding ✅ | ½ day | S1 ×3 |
+| 1 — Coverage instrumentation ✅ | 1–2 days | S3 (unblocks all measurement) |
 | 2 — Cross-platform vault interop | 2–3 days | S1 |
 | 3 — Crypto & migration correctness | 2–3 days | S1, S2 |
 | 4 — Untested behaviour surfaces | 3–5 days | S2 |
