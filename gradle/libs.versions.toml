@@ -59,6 +59,7 @@ navigation-compose              = { group = "androidx.navigation",       name = 
 # Hilt
 hilt-android                    = { group = "com.google.dagger",         name = "hilt-android",                version.ref = "hilt" }
 hilt-compiler                   = { group = "com.google.dagger",         name = "hilt-android-compiler",       version.ref = "hilt" }
+hilt-android-testing            = { group = "com.google.dagger",         name = "hilt-android-testing",        version.ref = "hilt" }
 hilt-navigation-compose         = { group = "androidx.hilt",             name = "hilt-navigation-compose",     version = "1.2.0" }
 
 # Room
