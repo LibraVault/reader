@@ -45,6 +45,9 @@ jobs:
     timeout-minutes: 30
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # In-project results bucket — see the --results-bucket note below for why
+      # gcloud's default bucket cannot work here.
+      RESULTS_BUCKET: libravault-test-lab-results
 
     steps:
       - name: Checkout
@@ -94,6 +97,15 @@ jobs:
       # --app and --test are both required by gcloud, and for a self-
       # instrumenting library test APK they are the same file. Test Lab
       # installs it once and instruments it in place.
+      #
+      # --results-bucket is not optional here, despite gcloud defaulting it.
+      # The default is a Google-managed bucket outside this project
+      # (test-lab-<hash>), which libravault-xyz has no storage.objects.create
+      # on — and cannot be granted, because even a project Owner gets
+      # storage.buckets.getIamPolicy denied on it. The first real run of this
+      # workflow (2026-08-16) died exactly there. gs://libravault-test-lab-results
+      # is ours, in-project, with roles/storage.objectAdmin granted to the CI
+      # service account above.
       - name: Run on Firebase Test Lab
         run: |
           gcloud firebase test android run \
@@ -104,6 +116,7 @@ jobs:
             --device "model=${{ inputs.device_model }},version=${{ inputs.device_version }},locale=en,orientation=portrait" \
             --test-targets "class xyz.libravault.core.tts.pocket.PocketTtsAudioOutputTest" \
             --timeout 15m \
+            --results-bucket "$RESULTS_BUCKET" \
             --results-dir "tts-audio-${{ github.run_id }}" \
             --format json
 
