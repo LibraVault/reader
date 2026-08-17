@@ -296,9 +296,21 @@ final class AppState: ObservableObject {
     /// racing a detached `Task`.
     func removeVault(_ vault: Vault) async {
         let orphanedBookIds = books.filter { $0.vaultId == vault.id }.map(\.id)
+        do {
+            // Cascade-clean bookmarks/highlights/progress FIRST, matching Android's
+            // RemoveVaultFolderUseCase (deleteByVault before removeVault). If this
+            // throws, the vault stays in persistence and its books' data survives —
+            // orphaned-but-recoverable is the safe failure mode. Doing this after
+            // dropping the vault would risk the opposite: a vault silently gone while
+            // its books' bookmarks/highlights/progress live on forever with no owner.
+            try await bridge.removeVault(bookIds: orphanedBookIds)
+        } catch {
+            bridge.logError("Couldn't remove vault \"\(vault.name)\"", tag: "Vault", error: error)
+            self.error = AppError.vaultRemovalFailed
+            return
+        }
         vaults.removeAll { $0.id == vault.id }
         vaultPersistence.save(vaults)
-        try? await bridge.removeVault(bookIds: orphanedBookIds)
         await loadLibrary()
     }
 
@@ -674,6 +686,7 @@ enum AppError: LocalizedError {
     case unsupportedFileType
     case fileImportFailed
     case invalidVaultSelection
+    case vaultRemovalFailed
 
     var errorDescription: String? {
         switch self {
@@ -689,6 +702,8 @@ enum AppError: LocalizedError {
             return "Please select a folder, not a file — pick the folder that contains your books."
         case .fileImportFailed:
             return "Couldn't import that file"
+        case .vaultRemovalFailed:
+            return "Couldn't remove that vault. Please try again."
         }
     }
 }
