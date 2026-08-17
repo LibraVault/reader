@@ -28,7 +28,18 @@ on:
       device_model:
         description: "Test Lab physical device model id (must be arm64, API >= 31)"
         required: false
-        default: "OP535DL1"   # OnePlus Nord CE 2 Lite 5G — arm64-v8a, API 34
+        # Pixel 8a — arm64-v8a, API 34, and critically DEVICE_CAPACITY=High.
+        #
+        # This used to default to OP535DL1 (OnePlus Nord CE 2 Lite 5G). That
+        # model still exists and is still valid, but its capacity is *Low*: the
+        # first successful dispatch of this workflow (2026-08-17) uploaded
+        # fine, created the matrix, then sat in "Test is Pending" for 29
+        # minutes and died on the job timeout without ever executing. Capacity,
+        # not validity, is what to check when a run pends:
+        #   gcloud firebase test android list-device-capacities
+        # Prefer a High-capacity model; Low ones can queue indefinitely on the
+        # free tier.
+        default: "akita"
       device_version:
         description: "Android API level for that device"
         required: false
@@ -42,7 +53,10 @@ jobs:
   audio-test:
     name: Pocket TTS audio output (arm64 device)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45 not 30: the APK build is ~3 min and the Test Lab run itself is ~10,
+    # but free-tier physical-device queueing is unbounded and is charged to
+    # this wall clock. 30 was not enough to survive even one queue wait.
+    timeout-minutes: 45
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # In-project results bucket — see the --results-bucket note below for why

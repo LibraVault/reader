@@ -69,6 +69,44 @@ jobs:
           path: "**/build/reports/tests/"
           retention-days: 7
 
+      # Coverage — docs/TEST_COVERAGE_PRD.md Phase 1. Before this the repo had
+      # no coverage instrumentation at all, which let TEST_PLAN.md publish
+      # per-module percentages nobody could verify (core:domain was listed at
+      # "95%"; it measures 17.2%).
+      #
+      # Cheap to add here: the Kover agent is already attached to the test tasks
+      # that just ran, so these tasks are report generation over existing
+      # execution data rather than a second test run.
+      #
+      # Debug variant only — Kover's cross-variant total drags in release unit
+      # tests, which cannot pass in this repo (ui-test-manifest is
+      # debugImplementation, so createComposeRule() has no Activity). And the
+      # flavored modules are named explicitly for exactly the reason spelled out
+      # above for testDebugUnitTest: `koverXmlReportDebug` does not exist in
+      # :app or :feature:settings and would skip them without a word.
+      - name: Generate coverage reports
+        run: |
+          ./gradlew koverXmlReportDebug koverHtmlReportDebug \
+            :app:koverXmlReportFdroidDebug :app:koverHtmlReportFdroidDebug \
+            :feature:settings:koverXmlReportFdroidDebug \
+            :feature:settings:koverHtmlReportFdroidDebug
+
+      # Prints the per-module table to the run summary, then enforces the gate.
+      # Only the core:vault* modules are gated; everything else is report-only,
+      # because a repo-wide ratchet mostly produces tests written to move a
+      # number. `--gate` also fails if a gated module produces no report at all.
+      - name: Coverage summary and gate
+        run: python3 scripts/coverage-summary.py --gate
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: "**/build/reports/kover/html*/"
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Run Lint
         run: ./gradlew lint
 

@@ -1,0 +1,9 @@
+{
+  "_comment": "Line-coverage baseline for gated modules (docs/TEST_COVERAGE_PRD.md R3). Regenerate deliberately with: python3 scripts/coverage-summary.py --write-baseline. Raising these numbers is good; lowering one should be an explicit, reviewed decision.",
+  "tolerance_pp": 1.0,
+  "modules": {
+    "core:vaultcontent": 70.2,
+    "core:vaultcrypto": 90.3,
+    "core:vaultstore": 83.4
+  }
+}

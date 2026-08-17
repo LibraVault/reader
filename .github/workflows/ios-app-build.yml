@@ -88,8 +88,63 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
             -only-testing:LibraVaultTests \
             -parallel-testing-enabled NO \
+            -enableCodeCoverage YES \
             -resultBundlePath "$RUNNER_TEMP/unit-tests.xcresult" \
             CODE_SIGNING_ALLOWED=NO
+
+      # iOS had no coverage measurement at all before this (docs/TEST_COVERAGE_PRD.md
+      # Phase 1). Reporting only — nothing here fails the job, because the first
+      # honest numbers need to be seen before anyone can argue about a threshold.
+      #
+      # Vendored code is excluded. SherpaOnnx.swift alone is 2,283 LOC of
+      # generated bridge with no tests and no intention of any, and the
+      # ThirdParty/Argon2 C sources add another ~1,360 executable lines that
+      # our test suite is not responsible for — they are upstream's, vendored
+      # verbatim (see ThirdParty/Argon2/VENDORING.md). Leaving either in
+      # measures how much of somebody else's code we happen to execute, which
+      # is not a number anyone should act on.
+      - name: Coverage summary
+        if: always()
+        run: |
+          set -o pipefail
+          BUNDLE="$RUNNER_TEMP/unit-tests.xcresult"
+          if [ ! -d "$BUNDLE" ]; then
+            echo "No xcresult bundle — tests did not produce one." >&2
+            exit 0
+          fi
+          xcrun xccov view --report --json "$BUNDLE" > "$RUNNER_TEMP/coverage.json"
+          python3 - "$RUNNER_TEMP/coverage.json" <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          # Vendored/generated, plus the ThirdParty/Argon2 C sources (*.c/*.h).
+          EXCLUDE = ("SherpaOnnx.swift", "UITestFixtures.swift", ".c", ".h")
+          report = json.load(open(sys.argv[1]))
+          files = [f for t in report.get("targets", [])
+                     for f in t.get("files", [])
+                     if not f["name"].endswith(EXCLUDE)]
+          cov = sum(f["coveredLines"] for f in files)
+          tot = sum(f["executableLines"] for f in files)
+          pct = 100.0 * cov / tot if tot else 0.0
+          print("## iOS line coverage\n")
+          print(f"**Overall: {pct:.1f}%** ({cov:,} / {tot:,} executable lines, "
+                f"{len(files)} files)")
+          print("\n_Excludes vendored and generated sources: SherpaOnnx.swift, "
+                "UITestFixtures.swift, and the ThirdParty/Argon2 C sources._\n")
+          print("| File | Covered | Total | Coverage |")
+          print("|---|---:|---:|---:|")
+          for f in sorted(files, key=lambda f: f["lineCoverage"]):
+              if f["executableLines"]:
+                  print(f"| `{f['name']}` | {f['coveredLines']:,} | "
+                        f"{f['executableLines']:,} | {100*f['lineCoverage']:.1f}% |")
+          PY
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-coverage-report
+          path: ${{ runner.temp }}/coverage.json
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload Test Results
         if: always()
