@@ -446,9 +446,21 @@ jobs:
             # thinking about what labels are present at all.
             if [ "${{ steps.agent.outcome }}" = "failure" ]; then
               echo "Dev agent run failed for issue #$ISSUE_NUMBER — routing to status:needs-info." >&2
+              # Clear BOTH labels a legitimately-started triage run could
+              # have self-applied before crashing (see step 5 of the
+              # persona's Triage section) — not just status:in-progress.
+              # A crash between self-applying status:ready-for-dev and
+              # ever reaching status:in-progress (e.g. a mid-triage tool
+              # error, before implementation starts) previously left
+              # status:ready-for-dev in place alongside the new
+              # status:needs-info, so re-triggering the pipeline just by
+              # removing status:needs-info (its usual "human resolved
+              # this" signal) would silently re-fire triage on an issue a
+              # human hasn't actually looked at yet (issue #236).
               gh issue edit "$ISSUE_NUMBER" --remove-label status:in-progress || true
+              gh issue edit "$ISSUE_NUMBER" --remove-label status:ready-for-dev || true
               gh issue edit "$ISSUE_NUMBER" --add-label status:needs-info
-              gh issue comment "$ISSUE_NUMBER" --body "The dev agent's run failed (crashed or exhausted its turn budget) partway through triage/implementation, before opening a PR — routed to a human instead of silently leaving this on status:in-progress. See the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+              gh issue comment "$ISSUE_NUMBER" --body "The dev agent's run failed (crashed or exhausted its turn budget) partway through triage/implementation, before opening a PR — routed to a human instead of silently leaving this on status:in-progress or status:ready-for-dev. See the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
               exit 0
             fi
 
