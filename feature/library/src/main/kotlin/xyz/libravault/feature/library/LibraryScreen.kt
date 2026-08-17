@@ -121,6 +121,12 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+
+    // What the grid shows is decided in one place, in pure code, so it can be
+    // tested — see LibraryScreenLogic.kt. This body previously carried the same
+    // decision as a chain of interlocking `if`s spread over ~150 lines.
+    val layout = remember(state) { libraryLayoutFor(state) }
+
     val nowPlaying by viewModel.nowPlaying.collectAsState()
     val allBookmarks by viewModel.allBookmarks.collectAsState()
     val isSupporter by viewModel.isSupporter.collectAsState()
@@ -140,11 +146,7 @@ fun LibraryScreen(
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val uri: Uri = result.data?.data ?: return@rememberLauncherForActivityResult
-            val displayName = uri.lastPathSegment
-                ?.substringAfterLast(':')
-                ?.substringAfterLast('/')
-                ?: "My Vault"
-            viewModel.onVaultPicked(uri, displayName)
+            viewModel.onVaultPicked(uri, vaultDisplayNameFrom(uri.lastPathSegment))
             showAddVaultSheet = false  // Close sheet after adding
         }
     }
@@ -320,7 +322,7 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            if (state.allItems.isEmpty() && !state.isScanning) {
+            if (layout.content == LibraryContent.EmptyLibrary) {
                 EmptyLibrary(
                     hasVaults = state.vaults.isNotEmpty(),
                     onAddVault = { showAddVaultSheet = true },
@@ -347,7 +349,7 @@ fun LibraryScreen(
 
                     // ── Continue cards — horizontally scrollable row of fixed-width covers ──────
                     val continueItems = state.continueItems
-                    if (continueItems.isNotEmpty()) {
+                    if (layout.showContinue) {
                         item(span = fullSpan) {
                             Column {
                                 Text(
@@ -376,7 +378,7 @@ fun LibraryScreen(
                     }
 
                     // ── Vault filter chips (only when not already filtered) ────
-                    if (state.vaults.size > 1 && state.selectedVault == null && state.searchResults == null) {
+                    if (layout.showVaultChips) {
                         item(span = fullSpan) {
                             VaultFilterChips(
                                 vaults = state.vaults,
@@ -388,7 +390,7 @@ fun LibraryScreen(
                     }
 
                     // ── Format filter chips (always visible outside search) ────
-                    if (state.searchResults == null) {
+                    if (layout.showFormatChips) {
                         item(span = fullSpan) {
                             Column {
                                 FormatFilterRow(
@@ -402,7 +404,7 @@ fun LibraryScreen(
                     }
 
                     // ── Library content ──────────────────────────────────────────
-                    if (state.searchResults != null) {
+                    if (layout.content == LibraryContent.SearchResults) {
                         // Search results view — same adaptive grid as the rest of the library
                         val items = state.searchResults!!
                         item(span = fullSpan) {
@@ -417,7 +419,7 @@ fun LibraryScreen(
                                 },
                             )
                         }
-                    } else if (state.selectedVault != null) {
+                    } else if (layout.content == LibraryContent.SingleVault) {
                         // Single vault view — vaultGroupedItems is already format-filtered by ViewModel
                         val selected = state.selectedVault ?: return@LazyVerticalGrid
                         val vaultItems = viewModel.vaultFilteredItems(
@@ -434,10 +436,9 @@ fun LibraryScreen(
                                 },
                             )
                         }
-                    } else if (state.formatFilter == null) {
+                    } else if (layout.content == LibraryContent.AllGrouped) {
                         // All formats: separate Books and Audio sections so neither is hidden
-                        val allBooks = state.allItems.filter { !it.format.isAudio() }
-                        val allAudio = state.allItems.filter { it.format.isAudio() }
+                        val (allBooks, allAudio) = partitionByMedium(state.allItems)
                         if (allBooks.isNotEmpty()) {
                             item(key = "section_books_header", span = fullSpan) {
                                 LibrarySectionHeader(
@@ -476,7 +477,7 @@ fun LibraryScreen(
                             }
                             item(key = "section_audio_spacer", span = fullSpan) { Spacer(Modifier.height(Dimens.spaceSm)) }
                         }
-                    } else if (state.vaultGroupedItems.values.all { it.isEmpty() }) {
+                    } else if (layout.content == LibraryContent.FilteredEmpty) {
                         // Format filter active, but nothing matches it — most commonly hit by
                         // MD, since most vaults have no Markdown files at all (see #119). The
                         // chips above stay visible and tappable, so this isn't a dead end; it
