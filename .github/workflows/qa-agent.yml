@@ -74,7 +74,7 @@ jobs:
           ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           if [ -z "$ISSUE_NUMBER" ]; then
-            echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N') — stopping, same as dev-agent.yml does for this condition." >&2
+            echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N' on its own line) — stopping, same as dev-agent.yml does for this condition." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
