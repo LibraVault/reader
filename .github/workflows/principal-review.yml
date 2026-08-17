@@ -141,6 +141,15 @@ jobs:
       - name: Run principal review agent
         if: steps.guard.outputs.skip != 'true'
         id: agent
+        # Without this, a crash here (e.g. exhausting --max-turns) fails
+        # the whole job and skips every step after it, including "Advance
+        # PR based on review verdict" — the PR is then left stuck on
+        # status:needs-review with no comment, no label change, and no
+        # visible signal anything went wrong (found live on PR #224,
+        # issue #227). Mirrors qa-agent.yml's identical step, whose
+        # "Advance PR" step routes a crash to status:needs-info instead of
+        # silently doing nothing.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: anthropics/claude-code-action@v1
@@ -209,13 +218,29 @@ jobs:
             --max-turns 40
 
       - name: Advance PR based on review verdict
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
         id: verdict
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # A genuine crash (max-turns exhausted, tool error) is a pipeline
+          # failure, not a review verdict — there's no principal-verdict.txt
+          # to trust either way, so route straight to a human instead of
+          # silently leaving this stuck on status:needs-review. Mirrors
+          # dev-agent.yml/qa-agent.yml's identical steps.agent.outcome
+          # check for the same reason (issue #227, found live on PR #224).
+          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+            echo "Principal review run crashed for PR #$PR_NUMBER — routing to status:needs-info instead of a verdict." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
+            gh pr edit "$PR_NUMBER" --add-label status:needs-info
+            gh pr comment "$PR_NUMBER" --body "principal-review's run crashed or exhausted its turn budget (see the [workflow run]($RUN_URL)) before reaching a verdict — routed to a human instead of silently leaving this on status:needs-review. Needs a human to either re-run review (re-add \`status:needs-review\`) or review this PR directly."
+            echo "verdict=crashed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           VERDICT="human-merge"
           if [ -f principal-verdict.txt ]; then
