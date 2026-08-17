@@ -495,6 +495,24 @@ jobs:
             fi
             exit 0
           fi
+
+          # A PR is known (opened by this run, or found via the fallback
+          # lookup) — but that alone doesn't mean the run actually
+          # finished. Live-tested gap (run 31998889829, issue #233): a
+          # triage-mode run can open a PR and then fail/exhaust its turn
+          # budget before confirming the work is complete. The revise-mode
+          # check above catches this when PR_NUMBER was already known
+          # going in; this catches the equivalent case for triage mode,
+          # where PR_NUMBER is only discovered here. Without it, an
+          # unconfirmed PR was silently risk-classified and advanced to
+          # status:needs-qa as if the run had succeeded cleanly.
+          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+            echo "Dev agent run failed for issue #$ISSUE_NUMBER after opening/finding PR #$PR_NUMBER — routing to status:needs-info instead of advancing to QA." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+            gh pr edit "$PR_NUMBER" --add-label status:needs-info
+            gh pr comment "$PR_NUMBER" --body "The dev agent's run failed (crashed or exhausted its turn budget) while producing this PR — routed to a human instead of silently advancing an unconfirmed fix to QA. See the workflow run log for what happened."
+            exit 0
+          fi
           echo "Classifying risk for PR #$PR_NUMBER"
 
           HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
