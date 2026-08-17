@@ -208,7 +208,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 
 **Exit:** a real, per-module coverage number exists for the first time. Re-baseline §1 of this document against it.
 
-### Phase 2 — Cross-platform vault interop (2–3 days, 1 PR, **S1**)
+### Phase 2 — Cross-platform vault interop ✅ DONE (2026-08-17)
 1. Add a `docs/vault-format/` golden fixture directory containing a small vault produced by the Android writer at format version 1, with a fixed passphrase, fixed salt, and fixed nonces (deterministic writer path already exists — `VaultStoreTest` uses `deterministicRandom`).
 2. Android test: open the fixture, assert plaintext bytes.
 3. iOS test: open the **same** fixture file, assert identical plaintext.
@@ -277,9 +277,9 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 |---|---|---|
 | Modules with measured coverage | 0 / 16 | **16 / 16 ✅** |
 | Gates that have fired in the last 30 days | 2 of 4 | **4 of 4 ✅** |
-| Cross-platform vault interop tests | 0 | 2 (bidirectional) |
+| Cross-platform vault interop tests | 0 | **8 ✅** (4 Kotlin + 4 Swift, one frozen fixture) |
 | Room migrations with real-SQLite execution | 1 of 6 | 6 of 6 |
-| S1 gaps open | 5 | **2** (cross-platform interop, HKDF KAT — Phase 2/3) |
+| S1 gaps open | 5 | **1** (HKDF standalone KAT — Phase 3; the golden fixture now pins HKDF transitively) |
 | Untested files >150 LOC (Android, non-Compose) | 8 | ≤2, each with a documented reason |
 | `dev` requires green CI | no | **yes ✅** |
 
@@ -303,7 +303,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 |---|---|---|
 | 0 — Stop the bleeding ✅ | ½ day | S1 ×3 |
 | 1 — Coverage instrumentation ✅ | 1–2 days | S3 (unblocks all measurement) |
-| 2 — Cross-platform vault interop | 2–3 days | S1 |
+| 2 — Cross-platform vault interop ✅ | 2–3 days | S1 |
 | 3 — Crypto & migration correctness | 2–3 days | S1, S2 |
 | 4 — Untested behaviour surfaces | 3–5 days | S2 |
 | 5 — Accessibility & visual baselines | 3–4 days | S3 |

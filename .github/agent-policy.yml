@@ -39,6 +39,14 @@ sensitive_paths:
   - "ios/LibraVaultApp/LibraVault/LibraVault/Sources/VaultCrypto/**"
   - "ios/LibraVaultApp/LibraVault/LibraVault/ThirdParty/Argon2/**"
 
+  # Frozen on-disk vault-format fixtures. These are the only thing proving
+  # Android and iOS still agree on the wire format, and the failure mode is
+  # silent: regenerating a fixture makes a failing interop test pass while
+  # actually recording the break. A changed byte here means either a
+  # deliberate format version bump or every existing vault just became
+  # unreadable — never something to auto-merge. See testdata/vault-format/README.md.
+  - "testdata/vault-format/**"
+
   # Billing / payments (no core/licensing module anymore — no Pro tier
   # for now, donation-only; these globs are for the still-live donation flow)
   - "**/BtcPayClient*"
