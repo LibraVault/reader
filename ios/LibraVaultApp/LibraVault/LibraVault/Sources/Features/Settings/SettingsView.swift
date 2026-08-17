@@ -5,6 +5,10 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var isPickingVaultFolder = false
     @State private var loggingEnabled: Bool
+    /// Drives the remove-vault confirmation alert below — set by the per-row trash
+    /// button, matching Android's `vaultToRemove` (SettingsScreen.kt) rather than
+    /// deleting on tap/swipe with no confirmation.
+    @State private var vaultPendingRemoval: Vault?
     private let logStore = LibraVaultLogStore()
 
     private let skipDurationPresets: [Double] = [10, 15, 30, 45, 60]
@@ -41,11 +45,18 @@ struct SettingsView: View {
                     Text(vault.displayName)
                         .foregroundStyle(LibraVaultColor.onSurface)
                     Spacer()
-                }
-            }
-            .onDelete { offsets in
-                for index in offsets {
-                    appState.removeVault(appState.vaults[index])
+                    // Trash icon + confirm alert (below), not swipe/long-press —
+                    // matches Android's VaultRow (SettingsScreen.kt) for parity and
+                    // discoverability. Deliberately not `.onDelete`: a bare swipe
+                    // would delete the vault with no confirmation at all.
+                    Button {
+                        vaultPendingRemoval = vault
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove vault")
                 }
             }
 
@@ -60,6 +71,26 @@ struct SettingsView: View {
             if case .success(let pickedURL) = result {
                 appState.addVault(pickedURL: pickedURL)
             }
+        }
+        // Copy mirrors Android's remove-vault AlertDialog (SettingsScreen.kt) word
+        // for word, down to the quoted display name.
+        .alert(
+            "Remove vault?",
+            isPresented: Binding(
+                get: { vaultPendingRemoval != nil },
+                set: { isPresented in if !isPresented { vaultPendingRemoval = nil } }
+            ),
+            presenting: vaultPendingRemoval
+        ) { vault in
+            Button("Remove", role: .destructive) {
+                vaultPendingRemoval = nil
+                Task { await appState.removeVault(vault) }
+            }
+            Button("Cancel", role: .cancel) {
+                vaultPendingRemoval = nil
+            }
+        } message: { vault in
+            Text("This will remove \"\(vault.displayName)\" and all its items from the library.")
         }
     }
 

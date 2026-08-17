@@ -276,10 +276,42 @@ final class AppState: ObservableObject {
         Task { await loadLibrary() }
     }
 
-    func removeVault(_ vault: Vault) {
+    /// Mirrors Android's `RemoveVaultFolderUseCase` (core:domain UseCases.kt): that
+    /// use case's two steps are `libraryRepository.deleteByVault(vaultId)` — which,
+    /// via Room's `ON DELETE CASCADE` foreign keys, also drops any highlights/
+    /// bookmarks/progress rows tied to that vault's library items — then
+    /// `vaultRepository.removeVault(vaultId)`. iOS has no on-device database with FK
+    /// cascades to lean on (see DomainBridge.swift's header comment — no KMP
+    /// framework is actually linked in), so the same two steps are done explicitly
+    /// here instead: `bridge.removeVault(bookIds:)` is the Swift-native counterpart
+    /// to the cascading delete (without it, a removed vault's bookmarks/highlights/
+    /// reading progress would silently linger forever in UserDefaults, keyed by book
+    /// ids that no longer resolve to anything), then the vault entry itself is
+    /// dropped from `vaultPersistence`, same as before.
+    ///
+    /// `async`, unlike `addVault` (which fires its rescan off as an internal,
+    /// un-awaited `Task`) — the bridge cleanup here has no other synchronization
+    /// point a caller (or a test) can hook into to know it's finished, so callers
+    /// await this directly (see `SettingsView`'s confirm-alert action) instead of
+    /// racing a detached `Task`.
+    func removeVault(_ vault: Vault) async {
+        let orphanedBookIds = books.filter { $0.vaultId == vault.id }.map(\.id)
+        do {
+            // Cascade-clean bookmarks/highlights/progress FIRST, matching Android's
+            // RemoveVaultFolderUseCase (deleteByVault before removeVault). If this
+            // throws, the vault stays in persistence and its books' data survives —
+            // orphaned-but-recoverable is the safe failure mode. Doing this after
+            // dropping the vault would risk the opposite: a vault silently gone while
+            // its books' bookmarks/highlights/progress live on forever with no owner.
+            try await bridge.removeVault(bookIds: orphanedBookIds)
+        } catch {
+            bridge.logError("Couldn't remove vault \"\(vault.displayName)\"", tag: "Vault", error: error)
+            self.error = AppError.vaultRemovalFailed
+            return
+        }
         vaults.removeAll { $0.id == vault.id }
         vaultPersistence.save(vaults)
-        Task { await loadLibrary() }
+        await loadLibrary()
     }
 
     /// Entry point for a file the OS hands LibraVault via "Open In"/"Copy to
@@ -654,6 +686,7 @@ enum AppError: LocalizedError {
     case unsupportedFileType
     case fileImportFailed
     case invalidVaultSelection
+    case vaultRemovalFailed
 
     var errorDescription: String? {
         switch self {
@@ -669,6 +702,8 @@ enum AppError: LocalizedError {
             return "Please select a folder, not a file — pick the folder that contains your books."
         case .fileImportFailed:
             return "Couldn't import that file"
+        case .vaultRemovalFailed:
+            return "Couldn't remove that vault. Please try again."
         }
     }
 }

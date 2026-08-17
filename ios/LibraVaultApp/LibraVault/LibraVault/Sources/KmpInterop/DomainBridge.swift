@@ -162,6 +162,38 @@ class LibravaultDomainBridge: ObservableObject {
         logger?.d(tag: "Bookmarks", message: "Deleted bookmark \(bookmarkId)")
     }
 
+    // MARK: - Vault Operations
+
+    /// Swift-native counterpart to core:domain's `RemoveVaultFolderUseCase`
+    /// (`libraryRepository.deleteByVault(vaultId)` half only — the second half,
+    /// `vaultRepository.removeVault(vaultId)`, is `VaultPersistence`'s job on iOS,
+    /// same as `addVault`'s counterpart `AddVaultFolderUseCase` already is). Called
+    /// by `AppState.removeVault(_:)` with the ids of every book that belonged to the
+    /// vault being removed, resolved *before* the vault entry itself is dropped.
+    ///
+    /// No KMP framework is actually linked into this app (see this file's header
+    /// comment) — Android's use case relies on Room's `ON DELETE CASCADE` foreign
+    /// keys to drop a deleted library item's highlights/bookmarks/progress rows for
+    /// free; there's no on-device database here to do that automatically, so this
+    /// walks the three dictionaries explicitly instead. Without it, a removed
+    /// vault's reading data would silently linger forever in UserDefaults, keyed by
+    /// book ids nothing can ever resolve back to a real book again.
+    func removeVault(bookIds: [String]) async throws {
+        guard isInitialized else { throw DomainError.notInitialized }
+        guard !bookIds.isEmpty else { return }
+
+        for bookId in bookIds {
+            bookmarks.removeValue(forKey: bookId)
+            highlights.removeValue(forKey: bookId)
+            progress.removeValue(forKey: bookId)
+        }
+        persistence.save(bookmarks: bookmarks)
+        persistence.save(highlights: highlights)
+        persistence.save(progress: progress)
+
+        logger?.d(tag: "Vaults", message: "Removed reading data for \(bookIds.count) book(s) from a deleted vault")
+    }
+
     // MARK: - Logger Integration
     func log(_ message: String, tag: String = "LibraVault") {
         logger?.d(tag: tag, message: message)

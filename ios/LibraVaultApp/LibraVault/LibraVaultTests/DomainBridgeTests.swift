@@ -84,6 +84,65 @@ final class DomainBridgeTests: XCTestCase {
         try await bridge.updateProgress(bookId: "3", progress: 0.75)
         XCTAssertEqual(bridge.progress["3"], 0.75)
     }
+
+    // MARK: - removeVault
+
+    /// Swift-native counterpart to core:domain's `RemoveVaultFolderUseCase` — see the
+    /// method's own doc comment. This is the "delete library items for this vault"
+    /// half; a removed book's bookmarks, highlights, and reading progress must all go.
+    func testRemoveVaultClearsBookmarksHighlightsAndProgressForGivenBookIds() async throws {
+        try await bridge.addBookmark(bookId: "removed-1", position: "chapter-1")
+        try await bridge.addHighlight(bookId: "removed-1", position: "para-1", text: "quote")
+        try await bridge.updateProgress(bookId: "removed-1", progress: 0.5)
+
+        try await bridge.removeVault(bookIds: ["removed-1"])
+
+        XCTAssertNil(bridge.bookmarks["removed-1"])
+        XCTAssertNil(bridge.highlights["removed-1"])
+        XCTAssertNil(bridge.progress["removed-1"])
+    }
+
+    /// Regression guard: only the books that actually belonged to the removed vault
+    /// should be affected — a naive "clear everything" implementation would silently
+    /// wipe an unrelated, still-present book's reading data too. Asserts a delta
+    /// (like the `addBookmark`/`deleteBookmark` tests above), not an absolute count —
+    /// `bridge` is the shared singleton, so an earlier test in the same run may have
+    /// already left bookmarks behind under the same id.
+    func testRemoveVaultLeavesOtherBooksReadingDataUntouched() async throws {
+        let before = bridge.bookmarks["kept-untouched"]?.count ?? 0
+        try await bridge.addBookmark(bookId: "kept-untouched", position: "chapter-2")
+        try await bridge.updateProgress(bookId: "kept-untouched", progress: 0.3)
+        try await bridge.addBookmark(bookId: "removed-1", position: "chapter-1")
+
+        try await bridge.removeVault(bookIds: ["removed-1"])
+
+        XCTAssertEqual(bridge.bookmarks["kept-untouched"]?.count, before + 1)
+        XCTAssertEqual(bridge.progress["kept-untouched"], 0.3)
+    }
+
+    func testRemoveVaultWithNoBookIdsIsANoOp() async throws {
+        let before = bridge.bookmarks["kept-noop"]?.count ?? 0
+        try await bridge.addBookmark(bookId: "kept-noop", position: "chapter-2")
+
+        try await bridge.removeVault(bookIds: [])
+
+        XCTAssertEqual(bridge.bookmarks["kept-noop"]?.count, before + 1)
+    }
+
+    func testRemoveVaultThrowsWhenBridgeNotInitialized() async {
+        let uninitialized = LibravaultDomainBridge(
+            persistence: ReadingDataPersistence(defaults: UserDefaults(suiteName: "DomainBridgeTests.\(UUID().uuidString)")!)
+        )
+
+        do {
+            try await uninitialized.removeVault(bookIds: ["1"])
+            XCTFail("Expected DomainError.notInitialized to be thrown")
+        } catch DomainError.notInitialized {
+            // expected
+        } catch {
+            XCTFail("Expected DomainError.notInitialized, got \(error)")
+        }
+    }
 }
 
 /// Regression coverage for the actual bug being fixed: bookmarks/highlights/progress
@@ -133,5 +192,23 @@ final class DomainBridgePersistenceTests: XCTestCase {
         try await reloaded.initialize()
 
         XCTAssertEqual(reloaded.progress["3"], 0.75)
+    }
+
+    /// Regression guard: `removeVault`'s cleanup must actually persist, not just
+    /// mutate the in-memory dictionaries — a relaunch (a fresh bridge instance
+    /// reading the same UserDefaults) must not see the removed book's data reappear.
+    func testRemoveVaultCleanupPersistsAcrossBridgeInstances() async throws {
+        let persistence = makeIsolatedPersistence()
+        let first = LibravaultDomainBridge(persistence: persistence)
+        try await first.initialize()
+        try await first.addBookmark(bookId: "removed-1", position: "chapter-1")
+        try await first.updateProgress(bookId: "removed-1", progress: 0.5)
+
+        try await first.removeVault(bookIds: ["removed-1"])
+
+        let reloaded = LibravaultDomainBridge(persistence: persistence)
+        try await reloaded.initialize()
+        XCTAssertNil(reloaded.bookmarks["removed-1"])
+        XCTAssertNil(reloaded.progress["removed-1"])
     }
 }
