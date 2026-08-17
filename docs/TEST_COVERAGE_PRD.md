@@ -48,6 +48,13 @@ the data-class layer are at 0%.
 Read the low numbers as targeting information, not alarm. `app` at 8.9% is mostly
 `LibravaultNavHost` and `MainActivity`, which Phase 4 addresses directly.
 
+**iOS: 54.7%** (7,046 / 12,881 executable lines across 91 files), excluding
+vendored sources (`SherpaOnnx.swift` and the ThirdParty/Argon2 C files).
+Largest zero-coverage surfaces are `MarkdownReaderContent.swift` (612 lines),
+`BookmarksSheet.swift` (226), `MermaidDiagramView.swift` (195),
+`PocketTTSEngine.swift` (144) — all SwiftUI views and the TTS engine boundary,
+matching the Android picture.
+
 Per-module Android test counts (executed, incl. both flavors where applicable):
 
 | Module | Tests | | Module | Tests |
