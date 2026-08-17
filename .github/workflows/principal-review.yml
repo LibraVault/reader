@@ -390,7 +390,15 @@ jobs:
             # through to the real gh pr merge call below and reports its
             # own actual error instead of spinning forever in here.
             for _ in $(seq 1 12); do
-              MERGE_STATE=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus)
+              # Guarded against transient `gh pr view` failures (API
+              # error/timeout/rate-limit) — under `set -euo pipefail`, an
+              # unguarded command substitution here would kill the whole
+              # step before ever reaching the DIRTY/needs-human-merge
+              # fallback below, leaving the PR silently stuck on
+              # status:approved-auto-merge with no comment. Falling into
+              # UNKNOWN routes it through the existing bounded
+              # wait-and-recheck branch instead of crashing.
+              MERGE_STATE=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || echo "UNKNOWN")
               case "$MERGE_STATE" in
                 BEHIND)
                   echo "Branch is behind dev (attempt $attempt/$MAX_MERGE_ATTEMPTS) — requesting GitHub's server-side update-branch." >&2
