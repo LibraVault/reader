@@ -370,10 +370,62 @@ jobs:
             exit 0
           fi
 
-          if ! gh pr merge "$PR_NUMBER" --squash --delete-branch=false; then
-            echo "gh pr merge failed (conflict, branch protection, or stale approval) — see the log above for the exact error." >&2
+          # Merge, self-healing against a live pipeline: `dev` can advance
+          # between "approved" and "merge" — other PRs from this same
+          # pipeline landing concurrently. That's not a real failure, just
+          # a lost race, but `gh pr merge` fails on it exactly like it
+          # would on a genuine conflict ("head branch is not up to date
+          # with base branch"). Live-hit manually on PR #239 (issue #246):
+          # the branch went BEHIND twice within ~15 minutes from ordinary
+          # pipeline throughput, requiring a manual re-sync each time —
+          # this loop does that same re-sync automatically via GitHub's
+          # own server-side "Update branch" endpoint instead of falling
+          # straight through to status:needs-human-merge.
+          MAX_MERGE_ATTEMPTS=5
+          MERGED=false
+          for attempt in $(seq 1 $MAX_MERGE_ATTEMPTS); do
+            # Resolve BEHIND/UNKNOWN before even trying to merge — bounded
+            # wait (up to 2 minutes), not indefinite, so a mergeability
+            # check that's stuck for some other reason still falls
+            # through to the real gh pr merge call below and reports its
+            # own actual error instead of spinning forever in here.
+            for _ in $(seq 1 12); do
+              MERGE_STATE=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus)
+              case "$MERGE_STATE" in
+                BEHIND)
+                  echo "Branch is behind dev (attempt $attempt/$MAX_MERGE_ATTEMPTS) — requesting GitHub's server-side update-branch." >&2
+                  gh api -X PUT "repos/${{ github.repository }}/pulls/$PR_NUMBER/update-branch" >/dev/null 2>&1 || true
+                  sleep 10
+                  ;;
+                UNKNOWN)
+                  # GitHub hasn't finished computing mergeability yet
+                  # (common right after a push) — not a failure, just not
+                  # ready.
+                  sleep 5
+                  ;;
+                *)
+                  break
+                  ;;
+              esac
+            done
+            echo "Merge attempt $attempt/$MAX_MERGE_ATTEMPTS — mergeStateStatus=$MERGE_STATE"
+
+            if [ "$MERGE_STATE" = "DIRTY" ]; then
+              echo "Real merge conflict (mergeStateStatus=DIRTY) — not retryable, routing to a human." >&2
+              break
+            fi
+
+            if gh pr merge "$PR_NUMBER" --squash --delete-branch=false; then
+              MERGED=true
+              break
+            fi
+            echo "gh pr merge failed on attempt $attempt/$MAX_MERGE_ATTEMPTS (mergeStateStatus was $MERGE_STATE) — see the log above for the exact error; will retry if attempts remain." >&2
+          done
+
+          if [ "$MERGED" != "true" ]; then
+            echo "Giving up after $MAX_MERGE_ATTEMPTS merge attempts (last mergeStateStatus=$MERGE_STATE)." >&2
             gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge --add-label status:needs-human-merge
-            gh pr comment "$PR_NUMBER" --body "Auto-merge failed (see the workflow run log for the exact error) — routed to a human instead of leaving this stuck on status:approved-auto-merge."
+            gh pr comment "$PR_NUMBER" --body "Auto-merge failed after $MAX_MERGE_ATTEMPTS attempts (including self-healing retries for a stale branch via GitHub's update-branch API — see the workflow run log for the exact error) — routed to a human instead of leaving this stuck on status:approved-auto-merge."
             exit 0
           fi
           echo "Merged #$PR_NUMBER."
