@@ -16,6 +16,17 @@ subprojects {
         setForkEvery(100)
         maxHeapSize = "1g"
     }
+
+    // Release-variant unit tests are broken by construction: every module
+    // declares `compose.ui.test.manifest` (needed by createComposeRule()) as
+    // debugImplementation only, so Robolectric Compose tests can never pass
+    // under a release variant (e.g. testReleaseUnitTest, testPlayReleaseUnitTest).
+    // CI only ever runs the debug variant, so this brings `./gradlew test` in
+    // line with what's actually gated instead of leaving a trap for anyone
+    // following TEST_PLAN.md. See issue #233.
+    tasks.matching { it.name.matches(Regex("^test\\w*ReleaseUnitTest$")) }.configureEach {
+        enabled = false
+    }
 }
 
 // ── Coverage (docs/TEST_COVERAGE_PRD.md Phase 1) ──────────────────────────────
