@@ -83,8 +83,8 @@ struct SettingsView: View {
             presenting: vaultPendingRemoval
         ) { vault in
             Button("Remove", role: .destructive) {
-                appState.removeVault(vault)
                 vaultPendingRemoval = nil
+                Task { await appState.removeVault(vault) }
             }
             Button("Cancel", role: .cancel) {
                 vaultPendingRemoval = nil

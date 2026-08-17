@@ -288,14 +288,18 @@ final class AppState: ObservableObject {
     /// reading progress would silently linger forever in UserDefaults, keyed by book
     /// ids that no longer resolve to anything), then the vault entry itself is
     /// dropped from `vaultPersistence`, same as before.
-    func removeVault(_ vault: Vault) {
+    ///
+    /// `async`, unlike `addVault` (which fires its rescan off as an internal,
+    /// un-awaited `Task`) — the bridge cleanup here has no other synchronization
+    /// point a caller (or a test) can hook into to know it's finished, so callers
+    /// await this directly (see `SettingsView`'s confirm-alert action) instead of
+    /// racing a detached `Task`.
+    func removeVault(_ vault: Vault) async {
         let orphanedBookIds = books.filter { $0.vaultId == vault.id }.map(\.id)
         vaults.removeAll { $0.id == vault.id }
         vaultPersistence.save(vaults)
-        Task {
-            try? await bridge.removeVault(bookIds: orphanedBookIds)
-            await loadLibrary()
-        }
+        try? await bridge.removeVault(bookIds: orphanedBookIds)
+        await loadLibrary()
     }
 
     /// Entry point for a file the OS hands LibraVault via "Open In"/"Copy to

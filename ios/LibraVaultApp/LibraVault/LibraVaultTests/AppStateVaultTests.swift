@@ -68,14 +68,14 @@ final class AppStateVaultTests: XCTestCase {
         XCTAssertEqual(state.error?.errorDescription, AppError.invalidVaultSelection.errorDescription)
     }
 
-    func testRemoveVaultRemovesItFromTheList() throws {
+    func testRemoveVaultRemovesItFromTheList() async throws {
         let state = AppState(vaultPersistence: makeIsolatedPersistence())
         let folder = try makeTempVaultFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         state.addVault(pickedURL: folder)
         let vault = try XCTUnwrap(state.vaults.first)
 
-        state.removeVault(vault)
+        await state.removeVault(vault)
 
         XCTAssertTrue(state.vaults.isEmpty)
     }
@@ -165,8 +165,7 @@ final class AppStateVaultTests: XCTestCase {
         await state.loadLibrary()
         let vault = try XCTUnwrap(state.vaults.first)
 
-        state.removeVault(vault)
-        await state.loadLibrary()
+        await state.removeVault(vault)
 
         XCTAssertFalse(state.books.contains { $0.title == "MyAudiobook" })
     }
@@ -192,12 +191,7 @@ final class AppStateVaultTests: XCTestCase {
         let book = try XCTUnwrap(state.books.first { $0.vaultId == vault.id })
         try await LibravaultDomainBridge.shared.addBookmark(bookId: book.id, position: "0:00")
 
-        state.removeVault(vault)
-        // removeVault kicks off its bridge cleanup + rescan in an internal
-        // fire-and-forget Task; awaiting another call on the same MainActor
-        // afterwards (same idiom as testRemovingAVaultDropsItsBooksFromTheLibrary
-        // above) lets that already-scheduled Task run to completion first.
-        await state.loadLibrary()
+        await state.removeVault(vault)
 
         XCTAssertNil(LibravaultDomainBridge.shared.bookmarks[book.id])
     }

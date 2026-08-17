@@ -104,24 +104,29 @@ final class DomainBridgeTests: XCTestCase {
 
     /// Regression guard: only the books that actually belonged to the removed vault
     /// should be affected — a naive "clear everything" implementation would silently
-    /// wipe an unrelated, still-present book's reading data too.
+    /// wipe an unrelated, still-present book's reading data too. Asserts a delta
+    /// (like the `addBookmark`/`deleteBookmark` tests above), not an absolute count —
+    /// `bridge` is the shared singleton, so an earlier test in the same run may have
+    /// already left bookmarks behind under the same id.
     func testRemoveVaultLeavesOtherBooksReadingDataUntouched() async throws {
-        try await bridge.addBookmark(bookId: "kept-1", position: "chapter-2")
-        try await bridge.updateProgress(bookId: "kept-1", progress: 0.3)
+        let before = bridge.bookmarks["kept-untouched"]?.count ?? 0
+        try await bridge.addBookmark(bookId: "kept-untouched", position: "chapter-2")
+        try await bridge.updateProgress(bookId: "kept-untouched", progress: 0.3)
         try await bridge.addBookmark(bookId: "removed-1", position: "chapter-1")
 
         try await bridge.removeVault(bookIds: ["removed-1"])
 
-        XCTAssertEqual(bridge.bookmarks["kept-1"]?.count, 1)
-        XCTAssertEqual(bridge.progress["kept-1"], 0.3)
+        XCTAssertEqual(bridge.bookmarks["kept-untouched"]?.count, before + 1)
+        XCTAssertEqual(bridge.progress["kept-untouched"], 0.3)
     }
 
     func testRemoveVaultWithNoBookIdsIsANoOp() async throws {
-        try await bridge.addBookmark(bookId: "kept-1", position: "chapter-2")
+        let before = bridge.bookmarks["kept-noop"]?.count ?? 0
+        try await bridge.addBookmark(bookId: "kept-noop", position: "chapter-2")
 
         try await bridge.removeVault(bookIds: [])
 
-        XCTAssertEqual(bridge.bookmarks["kept-1"]?.count, 1)
+        XCTAssertEqual(bridge.bookmarks["kept-noop"]?.count, before + 1)
     }
 
     func testRemoveVaultThrowsWhenBridgeNotInitialized() async {
