@@ -3,7 +3,7 @@
   "tolerance_pp": 1.0,
   "modules": {
     "core:vaultcontent": 70.2,
-    "core:vaultcrypto": 91.0,
+    "core:vaultcrypto": 91.3,
     "core:vaultstore": 83.4
   }
 }
