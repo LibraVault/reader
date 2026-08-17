@@ -9,6 +9,25 @@ android {
     namespace = "xyz.libravault.core.database"
 }
 
+// LibravaultDatabase declares `exportSchema = true`, but without this argument
+// Room has nowhere to write the schema and silently exports nothing — which is
+// why `core/database/schemas/` did not exist despite the annotation claiming it
+// should (docs/TEST_COVERAGE_PRD.md, S2).
+//
+// Two things become possible once these JSONs are committed:
+//  - Room validates that a migration's end state matches its codegen, at build
+//    time rather than on a user's device during an upgrade.
+//  - `MigrationTestHelper` can construct a database at any *exported* version,
+//    so migrations added from v7 onward get real coverage cheaply.
+//
+// It cannot retroactively help with v1..v6: those schemas were never exported,
+// and reconstructing them would mean checking out historical revisions. Those
+// migrations are covered instead by MigrationChainTest, which runs the whole
+// v1 -> v7 chain against real SQLite.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(project(":core:domain"))
     implementation(libs.bundles.room)
