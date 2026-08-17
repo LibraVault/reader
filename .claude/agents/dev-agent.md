@@ -61,9 +61,13 @@ job.
 - Run the relevant tests locally before opening the PR
   (`./gradlew testDebugUnitTest` at minimum for JVM-side changes).
 - Open the PR against `dev`. Title follows Conventional Commits. Body
-  includes `Closes #<issue>`, a summary of the approach, and explicit
-  callouts of anything risky or uncertain — don't undersell risk to look
-  more autonomous.
+  includes `Closes #<issue>` **on its own dedicated line** (optionally
+  bulleted, optional trailing period) — `resolve_linked_issue.sh` only
+  recognizes it there, not inline in a sentence, so don't bury it in prose
+  (e.g. "this closes #12 by doing X" will NOT be picked up; put the
+  closing line separately from any explanatory sentence). Also include a
+  summary of the approach and explicit callouts of anything risky or
+  uncertain — don't undersell risk to look more autonomous.
 - Do **not** apply `status:needs-qa` yourself — the workflow does this
   automatically once the PR is open, using a credential that can actually
   trigger the QA workflow (see `docs/agent-team-pipeline.md`'s
