@@ -276,10 +276,26 @@ final class AppState: ObservableObject {
         Task { await loadLibrary() }
     }
 
+    /// Mirrors Android's `RemoveVaultFolderUseCase` (core:domain UseCases.kt): that
+    /// use case's two steps are `libraryRepository.deleteByVault(vaultId)` — which,
+    /// via Room's `ON DELETE CASCADE` foreign keys, also drops any highlights/
+    /// bookmarks/progress rows tied to that vault's library items — then
+    /// `vaultRepository.removeVault(vaultId)`. iOS has no on-device database with FK
+    /// cascades to lean on (see DomainBridge.swift's header comment — no KMP
+    /// framework is actually linked in), so the same two steps are done explicitly
+    /// here instead: `bridge.removeVault(bookIds:)` is the Swift-native counterpart
+    /// to the cascading delete (without it, a removed vault's bookmarks/highlights/
+    /// reading progress would silently linger forever in UserDefaults, keyed by book
+    /// ids that no longer resolve to anything), then the vault entry itself is
+    /// dropped from `vaultPersistence`, same as before.
     func removeVault(_ vault: Vault) {
+        let orphanedBookIds = books.filter { $0.vaultId == vault.id }.map(\.id)
         vaults.removeAll { $0.id == vault.id }
         vaultPersistence.save(vaults)
-        Task { await loadLibrary() }
+        Task {
+            try? await bridge.removeVault(bookIds: orphanedBookIds)
+            await loadLibrary()
+        }
     }
 
     /// Entry point for a file the OS hands LibraVault via "Open In"/"Copy to

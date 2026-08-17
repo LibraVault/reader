@@ -170,4 +170,35 @@ final class AppStateVaultTests: XCTestCase {
 
         XCTAssertFalse(state.books.contains { $0.title == "MyAudiobook" })
     }
+
+    /// Regression guard for issue #223: removing a vault must also drop the
+    /// bookmarks/highlights/progress recorded against its books — mirrors Android's
+    /// `RemoveVaultFolderUseCase`, whose `libraryRepository.deleteByVault(vaultId)`
+    /// cascades to those rows via Room foreign keys. iOS has no such cascade to lean
+    /// on, so `AppState.removeVault` must explicitly route through
+    /// `DomainBridge.removeVault(bookIds:)` for this to actually happen — see that
+    /// method's own tests in DomainBridgeTests for the cleanup logic itself.
+    func testRemovingAVaultClearsBookmarksForItsBooks() async throws {
+        try await LibravaultDomainBridge.shared.initialize()
+        let persistence = makeIsolatedPersistence()
+        let folder = try makeTempVaultFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("MyAudiobook.mp3"))
+
+        let state = AppState(vaultPersistence: persistence)
+        state.addVault(pickedURL: folder)
+        await state.loadLibrary()
+        let vault = try XCTUnwrap(state.vaults.first)
+        let book = try XCTUnwrap(state.books.first { $0.vaultId == vault.id })
+        try await LibravaultDomainBridge.shared.addBookmark(bookId: book.id, position: "0:00")
+
+        state.removeVault(vault)
+        // removeVault kicks off its bridge cleanup + rescan in an internal
+        // fire-and-forget Task; awaiting another call on the same MainActor
+        // afterwards (same idiom as testRemovingAVaultDropsItsBooksFromTheLibrary
+        // above) lets that already-scheduled Task run to completion first.
+        await state.loadLibrary()
+
+        XCTAssertNil(LibravaultDomainBridge.shared.bookmarks[book.id])
+    }
 }
