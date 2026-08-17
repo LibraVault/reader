@@ -75,6 +75,23 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # What this actually exercises today is thin, and worth stating plainly
+      # rather than letting "the emulator gate is back" imply more than it is:
+      # the repo has exactly two androidTest sources — feature:reader's
+      # ReadiumIntegrationTest, and core:tts's PocketTtsAudioOutputTest, which
+      # self-skips here because the sherpa-onnx AAR is arm64-only (that one
+      # needs android-tts-audio-test.yml on a Test Lab physical device). So a
+      # nightly run is currently one real test. Closing that gap is Phase 4 of
+      # docs/TEST_COVERAGE_PRD.md; restoring the trigger first means the tests
+      # written there have somewhere to run.
+      #
+      # `connectedDebugAndroidTest` is a task NAME, not a path, and carries the
+      # same silent-skip trap that jvm-tests.yml documents at length for
+      # `testDebugUnitTest`: modules with flavorDimensions (:app,
+      # :feature:settings) have only connected{Fdroid,Play}DebugAndroidTest and
+      # are skipped here with no error and no log line. Latent rather than
+      # active — neither flavored module ships androidTest sources today — but
+      # if one ever does, add its flavor-specific task here explicitly.
       - name: Run Compose UI tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
