@@ -217,7 +217,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 
 **Why a checked-in artifact rather than a shared vector list:** a vector list still lets both sides drift together if the list is regenerated from one implementation. A frozen binary artifact is the only thing that catches "we both changed the format identically."
 
-### Phase 3 — Crypto & migration correctness (2–3 days, 2 PRs, **S1/S2**)
+### Phase 3 — Crypto & migration correctness ✅ DONE (2026-08-17)
 | Task | Where |
 |---|---|
 | HKDF RFC 5869 KAT (test vectors 1–3) | `core:vaultcrypto`, `LibraVaultTests` |
@@ -278,8 +278,8 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 | Modules with measured coverage | 0 / 16 | **16 / 16 ✅** |
 | Gates that have fired in the last 30 days | 2 of 4 | **4 of 4 ✅** |
 | Cross-platform vault interop tests | 0 | **8 ✅** (4 Kotlin + 4 Swift, one frozen fixture) |
-| Room migrations with real-SQLite execution | 1 of 6 | 6 of 6 |
-| S1 gaps open | 5 | **1** (HKDF standalone KAT — Phase 3; the golden fixture now pins HKDF transitively) |
+| Room migrations with real-SQLite execution | 1 of 6 | **6 of 6 ✅** (full v1→v7 chain) |
+| S1 gaps open | 5 | **0 ✅** |
 | Untested files >150 LOC (Android, non-Compose) | 8 | ≤2, each with a documented reason |
 | `dev` requires green CI | no | **yes ✅** |
 
@@ -304,7 +304,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 | 0 — Stop the bleeding ✅ | ½ day | S1 ×3 |
 | 1 — Coverage instrumentation ✅ | 1–2 days | S3 (unblocks all measurement) |
 | 2 — Cross-platform vault interop ✅ | 2–3 days | S1 |
-| 3 — Crypto & migration correctness | 2–3 days | S1, S2 |
+| 3 — Crypto & migration correctness ✅ | 2–3 days | S1, S2 |
 | 4 — Untested behaviour surfaces | 3–5 days | S2 |
 | 5 — Accessibility & visual baselines | 3–4 days | S3 |
 | 6 — Documentation & guardrails | 1 day | S3 |
