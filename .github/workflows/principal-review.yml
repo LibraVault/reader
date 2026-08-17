@@ -249,13 +249,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # steps.guard.outputs.* are only trustworthy if the guard step
+          # actually completed. If it crashed instead (e.g. a transient
+          # `gh` API error hitting set -e before writing any output), this
+          # step's own `if` above (`skip != 'true'`) can't tell that apart
+          # from a real skip=false — steps.guard.outputs.pr_number/skip
+          # just read as empty either way. Handle the crash first, using
+          # raw event context rather than guard's own (possibly-unwritten)
+          # outputs. See issue #231.
+          if [ "${{ steps.guard.outcome }}" = "failure" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+            echo "Guard step crashed while resolving PR #$PR_NUMBER — routing to status:needs-info instead of silently falling through to the human-merge default." >&2
+            gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
+            gh pr edit "$PR_NUMBER" --add-label status:needs-info
+            gh pr comment "$PR_NUMBER" --body "The guard step (checking status:blocked) crashed before it could finish — see the [workflow run]($RUN_URL). Routed to a human instead of silently advancing this PR or falling through to a default verdict."
+            echo "verdict=guard-crashed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
 
           # Workflow-file drift (see the "Check for workflow-file drift"
           # step above) — the agent step was skipped outright, so there's
           # no principal-verdict.txt to look for. Same reasoning as the
-          # crash branch below: this is a pipeline/tooling failure, not a
+          # crash branch above: this is a pipeline/tooling failure, not a
           # review verdict, so route to a human directly.
           if [ "${{ steps.workflow-drift.outputs.drift }}" = "true" ]; then
             echo "PR #$PR_NUMBER's branch has workflow-file drift from dev — GitHub's OIDC anti-tampering check would have silently no-opped the principal review agent step, so it was skipped instead. Routing to a human." >&2

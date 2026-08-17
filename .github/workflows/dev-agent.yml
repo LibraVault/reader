@@ -439,6 +439,32 @@ jobs:
           APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
+
+          # steps.guard.outputs.* are only trustworthy if the guard step
+          # actually completed. If it crashed instead (e.g. a transient
+          # `gh` API error hitting set -e before writing any output), this
+          # step's own `if` above (`skip != 'true'`) can't tell that apart
+          # from a real skip=false — steps.guard.outputs.skip just reads as
+          # empty either way. Handle the crash first, using only raw event
+          # context (never guard's own outputs, which may not have been
+          # written at all), so this doesn't depend on how far guard got
+          # before failing. See issue #231.
+          if [ "${{ steps.guard.outcome }}" = "failure" ]; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              PR_NUMBER="${{ github.event.pull_request.number }}"
+              echo "Guard step crashed while resolving PR #$PR_NUMBER — routing to status:needs-info instead of silently falling through to the no-PR default." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "The guard step (resolving target/mode, checking status:blocked) crashed before it could finish — see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). Routed to a human instead of silently advancing this PR or falling through to a default."
+            else
+              ISSUE_NUMBER="${{ github.event.issue.number || github.event.inputs.issue_number }}"
+              echo "Guard step crashed while resolving issue #$ISSUE_NUMBER — routing to status:needs-info instead of silently falling through to the no-PR default." >&2
+              gh issue edit "$ISSUE_NUMBER" --add-label status:needs-info
+              gh issue comment "$ISSUE_NUMBER" --body "The guard step (resolving target/mode, checking status:blocked) crashed before it could finish — see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). Routed to a human instead of silently advancing or falling through to a default."
+            fi
+            exit 0
+          fi
+
           ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
 
           PR_NUMBER=""
