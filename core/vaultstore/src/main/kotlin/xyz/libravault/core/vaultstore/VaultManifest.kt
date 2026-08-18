@@ -8,6 +8,7 @@ import xyz.libravault.core.vaultcrypto.VaultFormat
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.SecureRandom
 
 /**
  * A user highlight/annotation on a vault document (implementation plan §A.6,
@@ -124,17 +125,54 @@ private data class VaultManifestEntryDto(
 private data class VaultManifestDto(val entries: List<VaultManifestEntryDto> = emptyList())
 
 /**
- * The manifest is stored as just another file in the vault, under a reserved
- * all-zero [MANIFEST_FILE_ID] — reusing [ChunkedVaultWriter]/[VaultFileReader]
+ * The manifest is stored as just another file in the vault, at the fixed path
+ * [MANIFEST_FILE_NAME] — reusing [ChunkedVaultWriter]/[VaultFileReader]
  * directly rather than exposing new internal API from core:vaultcrypto for a
- * second encryption path. [VaultStore] must never hand out the all-zero id to
- * a real imported file or cover (see [VaultStore.newFileId]).
+ * second encryption path.
+ *
+ * **Security-critical — read before touching [write].** [write] runs on
+ * every content mutation (add book, add/remove highlight, add/remove
+ * bookmark — see [VaultStore]), so unlike a real imported file (encrypted
+ * exactly once, under its own fresh fileId, for life), the manifest is
+ * re-encrypted many times over a vault's life while its own key (derived
+ * from the fileId it's encrypted under) and the vault's VMK (which never
+ * rotates) would otherwise stay fixed. `AesGcmCipher.deriveNonce` is
+ * deliberately deterministic in exactly those two things — safe ONLY under
+ * the assumption that a given fileId is written exactly once. Reusing one
+ * fixed fileId across many manifest rewrites breaks that assumption: it
+ * would derive the identical (key, nonce) sequence for every single write
+ * while encrypting DIFFERENT plaintext each time — catastrophic AES-GCM
+ * nonce reuse, on the single most sensitive asset in the app (see
+ * SECURITY.md's asset table). A previous version of this file did exactly
+ * that, under the fixed [MANIFEST_FILE_ID].
+ *
+ * [write] now draws a **fresh random fileId on every call** instead — the
+ * same one-fresh-id-per-encryption the rest of the vault already relies on
+ * for real content (see [VaultStore.newFileId]). The fresh id is never
+ * stored separately: [ChunkedVaultWriter] already embeds it unencrypted
+ * (but AEAD-authenticated — see [VaultFormat.chunkAad]) in the blob's own
+ * header, which is exactly what lets [read] open it back up with no
+ * external bookkeeping, via [VaultFileReader]'s `expectedFileId = null`
+ * mode. That also makes the fix self-migrating: a vault created before this
+ * fix still has its manifest encrypted under the legacy all-zero id and
+ * reads back unchanged; the very next [write] silently rotates it onto a
+ * fresh one.
+ *
+ * [MANIFEST_FILE_ID] is kept only as a reserved sentinel so
+ * [VaultStore.newFileId] keeps excluding it from real content/cover
+ * fileIds — still necessary as long as a not-yet-migrated vault's manifest
+ * might still be encrypted under it.
  */
 object VaultManifest {
 
+    /** Legacy sentinel: the single fixed fileId every manifest used to be
+     * encrypted under, before nonce-reuse-across-writes was fixed (see the
+     * class doc). [write] no longer encrypts under this — kept only so
+     * [VaultStore.newFileId] continues to exclude it. */
     val MANIFEST_FILE_ID: ByteArray = ByteArray(VaultFormat.FILE_ID_SIZE_BYTES)
     private const val MANIFEST_FILE_NAME = "manifest.enc"
     private val json = Json { ignoreUnknownKeys = true }
+    private val random = SecureRandom()
 
     fun manifestPath(vaultDir: File): File = File(vaultDir, MANIFEST_FILE_NAME)
 
@@ -160,12 +198,21 @@ object VaultManifest {
         )
         val plainBytes = json.encodeToString(VaultManifestDto.serializer(), dto).toByteArray(Charsets.UTF_8)
 
+        // A fresh fileId every write — see the class doc: this is what stops the
+        // manifest's many rewrites from reusing an AES-GCM nonce. Excludes the
+        // legacy all-zero sentinel for the same cheap-insurance reason
+        // VaultStore.newFileId() does.
+        val fileId = ByteArray(VaultFormat.FILE_ID_SIZE_BYTES)
+        do {
+            random.nextBytes(fileId)
+        } while (fileId.contentEquals(MANIFEST_FILE_ID))
+
         // Encrypt to a temp file, then atomically replace — a crash mid-write
         // must never leave a half-written (and therefore unreadable, per the
         // truncation defense in core:vaultcrypto) manifest behind.
         val tmp = File(vaultDir, "$MANIFEST_FILE_NAME.tmp")
         ChunkedVaultWriter.encrypt(
-            vmk, MANIFEST_FILE_ID, plainBytes.size.toLong(),
+            vmk, fileId, plainBytes.size.toLong(),
             ByteArrayInputStream(plainBytes), tmp.outputStream(),
         )
         check(tmp.renameTo(manifestPath(vaultDir))) { "Failed to atomically replace manifest" }
@@ -176,7 +223,11 @@ object VaultManifest {
         val file = manifestPath(vaultDir)
         if (!file.exists()) return emptyList()
 
-        val plainBytes = VaultFileReader(file, vmk, MANIFEST_FILE_ID).use { reader ->
+        // expectedFileId = null: the manifest's fileId now varies per write (see the class
+        // doc), so there's nothing external to cross-check against — trust whichever id is
+        // embedded in this blob's own AEAD-authenticated header. Transparently handles both
+        // a freshly-written manifest AND a legacy one still under the all-zero sentinel.
+        val plainBytes = VaultFileReader(file, vmk, expectedFileId = null).use { reader ->
             val out = ByteArrayOutputStream()
             var offset = 0L
             while (offset < reader.plainSize) {
