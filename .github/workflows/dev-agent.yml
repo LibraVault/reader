@@ -238,6 +238,33 @@ jobs:
           gh pr checkout "${{ steps.guard.outputs.pr_number }}"
           rm -f dev-agent-pr-number.txt
 
+      - name: Check for workflow-file drift (GitHub OIDC self-check, revise mode only)
+        # GitHub refuses to mint the OIDC token claude-code-action needs
+        # (this job requests id-token: write) when a pull_request-triggered
+        # workflow's own file on the PR branch doesn't byte-match the copy
+        # on the base branch — its own anti-tampering check, to stop a PR
+        # from modifying the very workflow that's about to run with that
+        # trust. "Run dev agent" below still reports success when this
+        # happens (the token exchange fails inside the action, not the
+        # step), so without this check a revise-mode run silently does
+        # nothing and the PR is left stuck on status:in-progress with no
+        # actionable signal. Triage mode doesn't need this: it checks out
+        # the default branch itself (no PR branch yet), so its own copy of
+        # this file is always dev's own. See issue #254 for the full
+        # diagnosis (a live hit on PR #234, 14 commits behind dev, with
+        # this exact file among the 7 that had diverged).
+        id: workflow-drift
+        if: steps.guard.outputs.skip != 'true' && steps.guard.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+          git fetch origin dev
+          if ! git diff --quiet origin/dev -- .github/workflows/dev-agent.yml; then
+            echo "This workflow's own file (.github/workflows/dev-agent.yml) differs between this PR branch and dev — the OIDC token exchange below would be refused. Skipping the agent step." >&2
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Mint pipeline App token
         # Moved ahead of "Run dev agent" (rather than only after it, as
         # qa-agent.yml/principal-review.yml do) — the agent itself needs
@@ -257,7 +284,7 @@ jobs:
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
 
       - name: Run dev agent
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && steps.workflow-drift.outputs.drift != 'true'
         id: agent
         env:
           # Deliberately the default GITHUB_TOKEN as the primary $GH_TOKEN,
@@ -422,6 +449,19 @@ jobs:
             # exist only for triage mode (no PR is known yet there until
             # the agent creates one).
             PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+
+            # Workflow-file drift (see the "Check for workflow-file drift"
+            # step above) — the agent step was skipped outright, so there's
+            # nothing to trust either way. Same reasoning as the crash
+            # check right below: route to a human instead of leaving this
+            # stuck on status:in-progress forever with no actionable signal.
+            if [ "${{ steps.workflow-drift.outputs.drift }}" = "true" ]; then
+              echo "PR #$PR_NUMBER's branch has workflow-file drift from dev — GitHub's OIDC anti-tampering check would have silently no-opped the dev agent step, so it was skipped instead. Routing to a human." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "This PR's branch is stale relative to \`dev\` — specifically, \`.github/workflows/dev-agent.yml\` differs between this branch and \`dev\`. GitHub Actions refuses to mint the OIDC token \`claude-code-action\` needs when a \`pull_request\`-triggered, \`id-token: write\` workflow's own file doesn't byte-match the base branch (its own anti-tampering check), so the dev agent step was skipped rather than silently no-opping (see issue #254 for the full diagnosis). Rebase/merge \`dev\` into this branch and re-add \`status:in-progress\` to retry."
+              exit 0
+            fi
 
             # The agent step itself failed/crashed (max-turns exhausted,
             # error) — don't advance a PR we can't trust is actually fixed
