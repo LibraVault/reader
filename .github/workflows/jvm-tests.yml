@@ -1,9 +1,13 @@
 name: JVM Tests
 
-# Runs on every push and every PR — fast, no emulator needed (~2-3 min)
+# Runs on every PR (any branch) plus every push to dev/main — fast, no
+# emulator needed (~2-3 min). Deliberately NOT push: branches: ["**"] —
+# that duplicated this same check on every PR's push event too (the
+# slowest required check running twice per PR for no extra signal), see
+# issue #244. Mirrors ios-app-build.yml's push trigger.
 on:
   push:
-    branches: [ "**" ]
+    branches: [ dev, main ]
   pull_request:
     branches: [ "**" ]
 

@@ -280,7 +280,7 @@ is a long tail of one-line delegating use cases and data-class boilerplate at
 
 | Workflow | Trigger | What it runs |
 |----------|---------|--------------|
-| `jvm-tests.yml` | every push and PR | All JVM unit tests, plus `lint` |
+| `jvm-tests.yml` | every PR, plus every push to `dev`/`main` | All JVM unit tests, plus `lint` |
 | `ui-tests.yml` | nightly on `dev`; PRs to `main`; PRs to `dev` labelled `needs-emulator`; manual | `connectedDebugAndroidTest` on an x86_64 API 34 emulator |
 | `android-tts-audio-test.yml` | manual dispatch | `PocketTtsAudioOutputTest` on a Firebase Test Lab **physical arm64** device |
 
