@@ -31,6 +31,7 @@ class VaultReaderSettingsSheetUiTest {
                     onFontSizeChanged = {},
                     onFontFamilyChanged = {},
                     onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
                     onDismiss = {},
                 )
             }
@@ -51,6 +52,7 @@ class VaultReaderSettingsSheetUiTest {
                     onFontSizeChanged = {},
                     onFontFamilyChanged = {},
                     onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
                     onDismiss = {},
                 )
             }
@@ -73,11 +75,34 @@ class VaultReaderSettingsSheetUiTest {
                     onFontSizeChanged = {},
                     onFontFamilyChanged = {},
                     onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
                     onDismiss = {},
                 )
             }
         }
 
         composeTestRule.onNodeWithText("Sepia").assertIsSelected()
+    }
+
+    @Test
+    fun `scroll mode row is shown even when font controls are hidden`() {
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultReaderSettingsSheet(
+                    settings = VaultReaderSettings(scrollMode = VaultScrollMode.SCROLLING),
+                    showFontControls = false,
+                    onThemeChanged = {},
+                    onFontSizeChanged = {},
+                    onFontFamilyChanged = {},
+                    onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Mode").assertExists()
+        composeTestRule.onNodeWithText("Scrolling").assertIsSelected()
+        composeTestRule.onNodeWithText("Paginated").assertExists()
     }
 }
