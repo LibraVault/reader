@@ -161,9 +161,11 @@ fun ReaderSettingsSheet(
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (ScrollMode) -> Unit,
     onDismiss: () -> Unit,
-    // Read Aloud (#137) — gated to EPUB for now (extended to Markdown in #276), the
-    // same way iOS's ReaderSettingsSheet.showReadAloud gates per-format. Null hides
-    // the row entirely rather than showing a disabled control for an unsupported format.
+    // Read Aloud — EPUB (#137) and Markdown (#276), gated by the caller via
+    // ReaderScreen's readAloudSupported(), the same way iOS's
+    // ReaderSettingsSheet.showReadAloud gates per-format. False hides the row
+    // entirely rather than showing a disabled control for an unsupported format
+    // (e.g. PDF).
     showReadAloud: Boolean = false,
     readAloudActive: Boolean = false,
     onReadAloudClick: () -> Unit = {},

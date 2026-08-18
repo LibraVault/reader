@@ -41,6 +41,13 @@ class MarkdownReaderViewModel @Inject constructor(
     private val _state = MutableStateFlow<MarkdownPublicationState>(MarkdownPublicationState.Idle)
     val state: StateFlow<MarkdownPublicationState> = _state.asStateFlow()
 
+    // Read Aloud (#276) chapter walk — same shape as EpubReaderViewModel's
+    // ttsSpineIndex: the chapter list is (re)built from the current document each time
+    // a session starts, and the index advances as ReaderViewModel's completion-event
+    // handler calls getNextChapterText().
+    private var ttsChapters: List<MarkdownTtsChapter> = emptyList()
+    private var ttsChapterIndex: Int = 0
+
     /**
      * Reads the Markdown file at [uri]. Idempotent — if the same URI is already
      * loaded (or loading), does nothing. [vaultTreeUri] is the item's vault folder
@@ -72,6 +79,34 @@ class MarkdownReaderViewModel @Inject constructor(
                 MarkdownPublicationState.Error("Couldn't read this file.")
             }
         }
+    }
+
+    /**
+     * Builds the Read Aloud chapter walk from the currently-loaded document and
+     * returns the text of the chapter nearest [initialScrollFraction] — mirrors
+     * [xyz.libravault.feature.reader.epub.EpubReaderViewModel.getChapterTextFromProgression]:
+     * anchors the TTS cursor to wherever the reader currently is rather than always
+     * restarting from the top. Returns null if no document is loaded (Idle/Loading/Error)
+     * or the document has no narratable chapters (e.g. empty file).
+     */
+    suspend fun getChapterTextFromProgression(initialScrollFraction: Double?): String? {
+        val ready = _state.value as? MarkdownPublicationState.Ready ?: return null
+        ttsChapters = MarkdownTtsTextExtractor.chaptersForNarration(ready.text)
+        if (ttsChapters.isEmpty()) return null
+        ttsChapterIndex = sectionIndexForFraction(initialScrollFraction, ttsChapters.size) ?: 0
+        return ttsChapters[ttsChapterIndex].text
+    }
+
+    /**
+     * Advances the TTS cursor to the next chapter and returns its text. Returns null
+     * at the end of the document, so the caller knows to stop — same contract as
+     * [xyz.libravault.feature.reader.epub.EpubReaderViewModel.getNextChapterText].
+     */
+    suspend fun getNextChapterText(): String? {
+        val nextIndex = ttsChapterIndex + 1
+        val chapter = ttsChapters.getOrNull(nextIndex) ?: return null
+        ttsChapterIndex = nextIndex
+        return chapter.text
     }
 
     private fun readText(uri: Uri): String? = runCatching {

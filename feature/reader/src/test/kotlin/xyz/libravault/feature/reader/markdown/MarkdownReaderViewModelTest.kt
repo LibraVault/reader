@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -138,5 +139,74 @@ class MarkdownReaderViewModelTest {
         assertTrue(state is MarkdownPublicationState.Ready)
         assertEquals(null, (state as MarkdownPublicationState.Ready).assetParentDirectory)
         verify(exactly = 0) { assetResolver.findParentDirectory(any(), any()) }
+    }
+
+    // ── Read Aloud (#276) chapter walk ─────────────────────────────────────────
+
+    private val threeChapterMarkdown = """
+        # Chapter One
+        First chapter text.
+
+        # Chapter Two
+        Second chapter text.
+
+        # Chapter Three
+        Third chapter text.
+    """.trimIndent()
+
+    @Test
+    fun `getChapterTextFromProgression returns null when no document is loaded`() = runTest {
+        val vm = viewModel()
+
+        assertNull(vm.getChapterTextFromProgression(null))
+    }
+
+    @Test
+    fun `getChapterTextFromProgression with null fraction starts at the first chapter`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+
+        val text = vm.getChapterTextFromProgression(null)
+
+        assertTrue(text!!.contains("First chapter text"), "expected chapter one text, got: $text")
+    }
+
+    @Test
+    fun `getChapterTextFromProgression anchors to the chapter nearest the given fraction`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+
+        // 3 chapters; sectionIndexForFraction(0.7, 3) rounds to index 2 (the third).
+        val text = vm.getChapterTextFromProgression(0.7)
+
+        assertTrue(text!!.contains("Third chapter text"), "expected chapter three text, got: $text")
+    }
+
+    @Test
+    fun `getNextChapterText walks forward from the chapter getChapterTextFromProgression anchored`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+        vm.getChapterTextFromProgression(null) // anchors at chapter 0 (Chapter One)
+
+        val next = vm.getNextChapterText()
+
+        assertTrue(next!!.contains("Second chapter text"), "expected chapter two text, got: $next")
+    }
+
+    @Test
+    fun `getNextChapterText returns null at the end of the document`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+        vm.getChapterTextFromProgression(0.99) // anchors at the last chapter (Chapter Three)
+
+        assertNull(vm.getNextChapterText())
     }
 }

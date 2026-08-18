@@ -64,6 +64,7 @@ import xyz.libravault.feature.reader.components.ReaderTopBar
 import xyz.libravault.feature.reader.epub.EpubReaderScreen
 import xyz.libravault.feature.reader.epub.EpubReaderViewModel
 import xyz.libravault.feature.reader.markdown.MarkdownReaderScreen
+import xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
 
@@ -91,6 +92,14 @@ fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): R
         showMiniPlayer   -> ReaderBottomBar.AUDIOBOOK
         else             -> ReaderBottomBar.NONE
     }
+
+/**
+ * Which formats expose the "Read Aloud" entry point in the settings sheet — EPUB
+ * (#137) and Markdown (#276). Matches iOS's `ReaderSettingsSheet.showReadAloud`,
+ * which already gates both formats. PDF Read Aloud is out of scope for both issues.
+ */
+fun readAloudSupported(format: MediaFormat): Boolean =
+    format == MediaFormat.EPUB || format == MediaFormat.MARKDOWN
 
 /**
  * Entry point for the reader feature.
@@ -153,6 +162,12 @@ fun ReaderScreen(
 
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
                 val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
+                // Sibling hiltViewModel(), same pattern as epubViewModel above — the
+                // instance is shared with the one MarkdownReaderScreen would otherwise
+                // create for itself (same ViewModelStoreOwner), so Read Aloud (#276) can
+                // drive its chapter walk from here regardless of which composable first
+                // triggered the ViewModel's creation.
+                val markdownViewModel: MarkdownReaderViewModel = hiltViewModel()
 
                 val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -298,6 +313,7 @@ fun ReaderScreen(
                                         scrollToSectionIndex   = pendingMarkdownSectionIndex.value,
                                         onSectionScrollConsumed = { pendingMarkdownSectionIndex.value = null },
                                         vaultTreeUri     = state.vaultTreeUri,
+                                        viewModel        = markdownViewModel,
                                     )
                                 }
 
@@ -332,17 +348,28 @@ fun ReaderScreen(
                         onLineSpacingChanged = viewModel::onLineSpacingChanged,
                         onScrollModeChanged  = viewModel::onScrollModeChanged,
                         onDismiss            = viewModel::hideSettings,
-                        // Read Aloud (#137) — EPUB only for now; Markdown follows in #276.
-                        showReadAloud    = item.format == MediaFormat.EPUB,
+                        // Read Aloud — EPUB (#137) and Markdown (#276).
+                        showReadAloud    = readAloudSupported(item.format),
                         readAloudActive  = showReadAloudBar,
                         onReadAloudClick = {
                             if (showReadAloudBar) {
                                 viewModel.stopReadAloud()
                             } else {
-                                viewModel.startReadAloud(
-                                    getInitialText = epubViewModel::getChapterTextFromProgression,
-                                    getNextText    = epubViewModel::getNextChapterText,
-                                )
+                                when (item.format) {
+                                    MediaFormat.EPUB -> viewModel.startReadAloud(
+                                        getInitialText = epubViewModel::getChapterTextFromProgression,
+                                        getNextText    = epubViewModel::getNextChapterText,
+                                    )
+                                    MediaFormat.MARKDOWN -> viewModel.startReadAloud(
+                                        getInitialText = {
+                                            markdownViewModel.getChapterTextFromProgression(
+                                                state.progress?.markdownScrollFraction
+                                            )
+                                        },
+                                        getNextText = markdownViewModel::getNextChapterText,
+                                    )
+                                    else -> {}
+                                }
                             }
                             viewModel.hideSettings()
                         },
