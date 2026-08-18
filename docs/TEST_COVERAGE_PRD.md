@@ -234,7 +234,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 | Task | Approach |
 |---|---|
 | `FLAG_SECURE` assertions across all 5 vault screens | Robolectric, assert `WindowManager.LayoutParams.FLAG_SECURE` |
-| `AndroidKeystoreHardwareKeyWrap` | instrumented test (`androidTest`) — Keystore is not Robolectric-faithful |
+| `AndroidKeystoreHardwareKeyWrap` ✅ DONE (issue #253, PR #279) | instrumented test (`androidTest`) — Keystore is not Robolectric-faithful. `ui-tests.yml`'s `google_apis` x86_64 API 34 emulator reports `SECURITY_LEVEL_SOFTWARE`, so `create()`'s hardware-backed happy path (case 9) and same-alias key replacement (case 10) are untestable there; both need a real device (Firebase Test Lab, `android-tts-audio-test.yml`'s `akita`/Pixel 8a pipe) and are tracked as a follow-up. Cases 1–8 (round-trip, nonce non-reuse, tamper detection, missing-alias recovery, cross-vault isolation, key persistence, and the software-backed rejection path) run in the emulator job today. |
 | `LibravaultNavHost` route/argument tests | Robolectric `TestNavHostController` |
 | `PlaybackService` lifecycle + notification | Robolectric `ServiceController` |
 | Extract testable logic from `LibraryScreen.kt` (1,344 LOC) | refactor pure state derivation into `internal` functions per `AGENTS.md`, then unit test |
