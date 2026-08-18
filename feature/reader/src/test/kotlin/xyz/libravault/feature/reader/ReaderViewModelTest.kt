@@ -12,6 +12,8 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -42,6 +44,10 @@ import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.domain.usecase.UpdateBookmarkNoteUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.tts.TtsEngine
+import xyz.libravault.core.tts.TtsEngineProvider
+import xyz.libravault.core.tts.TtsState
+import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import java.time.Instant
 
@@ -93,6 +99,15 @@ class ReaderViewModelTest {
     // instruments no methods — no SharedPreferences call is ever made.
     private val appContext: Context = mockk<Context>(relaxed = false)
 
+    // #137 — Read Aloud. A relaxed fake TtsEngine (real state/completionEvent flows
+    // so tests can drive and observe them) behind a mocked TtsEngineProvider, matching
+    // the pattern already used in feature:settings' SettingsViewModelTest.
+    private val fakeTtsEngine        = mockk<TtsEngine>(relaxed = true)
+    private val ttsEngineStateFlow   = MutableStateFlow(TtsState())
+    private val ttsCompletionEvent   = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val ttsEngineFlow        = MutableStateFlow(fakeTtsEngine)
+    private val ttsEngineProvider    = mockk<TtsEngineProvider>()
+
     // Dispatchers.Unconfined is used as the Main dispatcher so that viewModelScope.launch
     // from inside a runTest block does not trigger the TestMainDispatcher re-entrancy guard
     // (which would infinite-loop on launches that suspend). Unconfined runs launches
@@ -112,6 +127,10 @@ class ReaderViewModelTest {
         // can resolve controllerFuture.get() without blocking.
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
+
+        every { ttsEngineProvider.engine }  returns ttsEngineFlow
+        every { fakeTtsEngine.state }           returns ttsEngineStateFlow
+        every { fakeTtsEngine.completionEvent } returns ttsCompletionEvent
     }
 
     @AfterEach
@@ -142,6 +161,7 @@ class ReaderViewModelTest {
             logger              = logger,
             playbackStateHolder = playbackStateHolder,
             controllerFuture    = controllerFuture,
+            ttsEngineProvider   = ttsEngineProvider,
             appContext          = appContext,
         )
     }
@@ -185,6 +205,7 @@ class ReaderViewModelTest {
             logger              = logger,
             playbackStateHolder = playbackStateHolder,
             controllerFuture    = controllerFuture,
+            ttsEngineProvider   = ttsEngineProvider,
             appContext          = appContext,
         )
 
@@ -400,6 +421,113 @@ class ReaderViewModelTest {
         vm.playPauseAudiobook()
         io.mockk.verify { mockController.play() }
         assertTrue(playbackStateHolder.state.value.isPlaying)
+    }
+
+    // ── Read Aloud (#137) ────────────────────────────────────────────────────
+
+    @Test
+    fun `startReadAloud speaks the initial chapter text`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { null })
+        io.mockk.coVerify { fakeTtsEngine.speak("Chapter one.") }
+    }
+
+    @Test
+    fun `startReadAloud stops instead of speaking when there is no text`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { null }, getNextText = { null })
+        io.mockk.verify { fakeTtsEngine.stop() }
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak(any()) }
+    }
+
+    @Test
+    fun `startReadAloud pauses an already-playing audiobook`() = runTest {
+        playbackStateHolder.update(
+            itemId = 7L, vaultFolderId = 1L, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = null, isPlaying = true,
+        )
+        every { mockController.isPlaying } returns true
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { null })
+        io.mockk.verify { mockController.pause() }
+        assertFalse(playbackStateHolder.state.value.isPlaying)
+    }
+
+    @Test
+    fun `completion event advances to the next chapter`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { "Chapter two." })
+        ttsCompletionEvent.emit(Unit)
+        io.mockk.coVerify { fakeTtsEngine.speak("Chapter two.") }
+    }
+
+    @Test
+    fun `completion event stops at the end of the book`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Last chapter." }, getNextText = { null })
+        ttsCompletionEvent.emit(Unit)
+        io.mockk.verify { fakeTtsEngine.stop() }
+    }
+
+    @Test
+    fun `completion event is a no-op when no Read Aloud session is active`() = runTest {
+        viewModel()
+        // No startReadAloud call — an unrelated completion (e.g. a voice preview
+        // elsewhere sharing the singleton TtsEngineProvider) must not be misread
+        // as "advance the book".
+        ttsCompletionEvent.emit(Unit)
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak(any()) }
+    }
+
+    @Test
+    fun `pauseReadAloud and resumeReadAloud delegate to the engine`() = runTest {
+        val vm = viewModel()
+        vm.pauseReadAloud()
+        io.mockk.verify { fakeTtsEngine.pause() }
+        vm.resumeReadAloud()
+        io.mockk.verify { fakeTtsEngine.resume() }
+    }
+
+    @Test
+    fun `toggleReadAloudPlayPause pauses while playing and resumes while paused`() = runTest {
+        val vm = viewModel()
+
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.PLAYING)
+        vm.toggleReadAloudPlayPause()
+        io.mockk.verify { fakeTtsEngine.pause() }
+
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.PAUSED)
+        vm.toggleReadAloudPlayPause()
+        io.mockk.verify { fakeTtsEngine.resume() }
+    }
+
+    @Test
+    fun `stopReadAloud stops the engine and clears the next-chapter provider`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { "Chapter two." })
+        vm.stopReadAloud()
+        io.mockk.verify { fakeTtsEngine.stop() }
+
+        // With the provider cleared, a completion event that fires after stop() must
+        // not resurrect the session by speaking the next chapter.
+        ttsCompletionEvent.emit(Unit)
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak("Chapter two.") }
+    }
+
+    @Test
+    fun `playPauseAudiobook stops an active Read Aloud session before playing`() = runTest {
+        playbackStateHolder.update(
+            itemId = 7L, vaultFolderId = 1L, filePath = "content://vault/book.mp3",
+            title = "T", author = "A", coverArtPath = null, isPlaying = false,
+        )
+        every { mockController.isPlaying } returns false
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { null })
+
+        vm.playPauseAudiobook()
+
+        io.mockk.verify { fakeTtsEngine.stop() }
+        io.mockk.verify { mockController.play() }
     }
 
     // ── Highlights ────────────────────────────────────────────────────────────

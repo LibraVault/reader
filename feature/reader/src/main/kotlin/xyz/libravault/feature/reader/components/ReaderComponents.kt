@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -158,6 +161,12 @@ fun ReaderSettingsSheet(
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (ScrollMode) -> Unit,
     onDismiss: () -> Unit,
+    // Read Aloud (#137) — gated to EPUB for now (extended to Markdown in #276), the
+    // same way iOS's ReaderSettingsSheet.showReadAloud gates per-format. Null hides
+    // the row entirely rather than showing a disabled control for an unsupported format.
+    showReadAloud: Boolean = false,
+    readAloudActive: Boolean = false,
+    onReadAloudClick: () -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -250,6 +259,31 @@ fun ReaderSettingsSheet(
                         label    = {
                             Text(mode.name.lowercase().replaceFirstChar { it.uppercase() })
                         },
+                    )
+                }
+            }
+
+            if (showReadAloud) {
+                HorizontalDivider()
+
+                // ── Read Aloud ─────────────────────────────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onReadAloudClick)
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = if (readAloudActive) Icons.Default.Stop else Icons.Default.Headphones,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (readAloudActive) "Stop Read Aloud" else "Read Aloud",
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
             }

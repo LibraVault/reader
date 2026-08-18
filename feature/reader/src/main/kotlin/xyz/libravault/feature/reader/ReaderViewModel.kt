@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.Bookmark
@@ -32,6 +33,9 @@ import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.tts.TtsEngineProvider
+import xyz.libravault.core.tts.TtsState
+import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
@@ -74,6 +78,7 @@ class ReaderViewModel @Inject constructor(
     private val logger: LibravaultLogger,
     private val playbackStateHolder: PlaybackStateHolder,
     private val controllerFuture: ListenableFuture<MediaController>,
+    private val ttsEngineProvider: TtsEngineProvider,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -85,6 +90,24 @@ class ReaderViewModel @Inject constructor(
     /** Audiobook playback state — drives the mini-player overlay in the reader. */
     val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
+
+    /**
+     * Read Aloud (TTS) state — drives the reader's own mini-bar (EPUB only, see #137).
+     * `Eagerly` rather than `WhileSubscribed`, unlike this ViewModel's other exposed
+     * flows: [toggleReadAloudPlayPause] reads `.value` synchronously off the UI thread,
+     * and `WhileSubscribed` would leave that read stuck at the seed [TtsState] default
+     * whenever nothing currently collects this flow (e.g. between the mini-bar
+     * appearing and Compose's `collectAsState` establishing its subscription).
+     */
+    val readAloudState: StateFlow<TtsState> = ttsEngineProvider.engine
+        .flatMapLatest { it.state }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TtsState())
+
+    // Supplies the next chapter's text when the current utterance finishes naturally.
+    // Non-null only while a Read Aloud session set up by startReadAloud is active; null
+    // makes advanceOnCompletion() a no-op so unrelated completion events (e.g. voice
+    // previews elsewhere) don't get misread as "advance the book".
+    private var readAloudNextChapterProvider: (suspend () -> String?)? = null
 
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -100,6 +123,16 @@ class ReaderViewModel @Inject constructor(
             { runCatching { controller = controllerFuture.get() } },
             MoreExecutors.directExecutor(),
         )
+        // Lives for the ViewModel's lifetime rather than being started/stopped per
+        // Read Aloud session — flatMapLatest re-subscribes automatically if the user
+        // switches TTS engine (Settings) mid-session. advanceOnCompletion() no-ops
+        // when readAloudNextChapterProvider is null, so this is harmless outside of
+        // an active Read Aloud session.
+        viewModelScope.launch {
+            ttsEngineProvider.engine.flatMapLatest { it.completionEvent }.collect {
+                advanceOnCompletion()
+            }
+        }
         viewModelScope.launch {
             if (itemId != null) {
                 // Normal library flow — load by Room ID
@@ -308,6 +341,11 @@ class ReaderViewModel @Inject constructor(
     fun playPauseAudiobook() {
         val ctrl = controller ?: return
         val wasPlaying = ctrl.isPlaying
+        // Mutual exclusion (#137): resuming the audiobook is the moment audio would
+        // otherwise overlap with an active Read Aloud session — stop TTS first. The
+        // reverse direction (Read Aloud pausing an already-playing audiobook) is
+        // handled in startReadAloud() via pauseAudiobook().
+        if (!wasPlaying) stopReadAloud()
         if (wasPlaying) ctrl.pause() else ctrl.play()
         val current = playbackStateHolder.state.value
         if (current.itemId != null) {
@@ -338,5 +376,69 @@ class ReaderViewModel @Inject constructor(
     private fun seekByAudiobook(deltaMs: Long) {
         val ctrl = controller ?: return
         ctrl.seekTo(SeekClamp.clamp(ctrl.currentPosition, deltaMs, ctrl.duration))
+    }
+
+    // ── Read Aloud (EPUB TTS mini-bar, #137) ────────────────────────────────────
+
+    /**
+     * Starts (or restarts) a Read Aloud session. [getInitialText] and [getNextText]
+     * are supplied by the caller rather than looked up here — [EpubReaderViewModel]
+     * owns the chapter-walking text pipeline (`getChapterTextFromProgression()` /
+     * `getNextChapterText()`), and it is a sibling `hiltViewModel()` scoped to
+     * [ReaderScreen], not something this ViewModel can inject. Markdown (#276)
+     * reuses this same entry point with its own text supplier.
+     */
+    fun startReadAloud(
+        getInitialText: suspend () -> String?,
+        getNextText: suspend () -> String?,
+    ) {
+        // Mutual exclusion (#137): only one thing produces audio at a time.
+        pauseAudiobook()
+        readAloudNextChapterProvider = getNextText
+        viewModelScope.launch {
+            val text = getInitialText()
+            if (text != null) {
+                ttsEngineProvider.engine.value.speak(text)
+            } else {
+                stopReadAloud()
+            }
+        }
+    }
+
+    fun pauseReadAloud()  { ttsEngineProvider.engine.value.pause() }
+    fun resumeReadAloud() { ttsEngineProvider.engine.value.resume() }
+
+    fun toggleReadAloudPlayPause() {
+        when (readAloudState.value.status) {
+            TtsStatus.PLAYING -> pauseReadAloud()
+            TtsStatus.PAUSED  -> resumeReadAloud()
+            else -> {}
+        }
+    }
+
+    fun stopReadAloud() {
+        readAloudNextChapterProvider = null
+        ttsEngineProvider.engine.value.stop()
+    }
+
+    /** Auto-advance on natural utterance completion — see [readAloudNextChapterProvider]. */
+    private fun advanceOnCompletion() {
+        val getNext = readAloudNextChapterProvider ?: return
+        viewModelScope.launch {
+            val next = getNext()
+            if (next != null) {
+                ttsEngineProvider.engine.value.speak(next)
+            } else {
+                stopReadAloud()
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Leaving the reader closes the EPUB publication (see EpubReaderViewModel's
+        // onCleared) that readAloudNextChapterProvider depends on to fetch further
+        // chapters — stop rather than let Read Aloud speak into a torn-down session.
+        stopReadAloud()
     }
 }
