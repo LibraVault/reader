@@ -37,20 +37,6 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # Cheap and first: pure Python, no Gradle, so a stale test plan is
-      # reported in seconds rather than after the ~11-minute test run.
-      #
-      # This gates COMPLETENESS, not accuracy — every module in
-      # settings.gradle.kts must be named in docs/TEST_PLAN.md, and the plan
-      # must not name modules that no longer exist. Deliberately weak: gating a
-      # doc on being *true* would mean regenerating it on every PR, which just
-      # trains people to bypass the check. The failure it actually prevents is a
-      # new module arriving with no tests and no mention, leaving the plan
-      # reading as though it still covers the repo. See docs/TEST_COVERAGE_PRD.md
-      # Phase 6.
-      - name: Check test plan covers every module
-        run: python3 scripts/check-test-plan-modules.py
-
       # Run all JVM-based tests across all modules:
       #   - Domain use case tests (JUnit 5 + MockK + Turbine)
       #   - Repository tests (JUnit 5 + Robolectric)
@@ -111,6 +97,26 @@ jobs:
       # number. `--gate` also fails if a gated module produces no report at all.
       - name: Coverage summary and gate
         run: python3 scripts/coverage-summary.py --gate
+
+      # Gates COMPLETENESS of docs/TEST_PLAN.md, not accuracy — every module in
+      # settings.gradle.kts must be named there, and the plan must not name
+      # modules that no longer exist. Deliberately weak: gating a doc on being
+      # *true* would mean regenerating it on every PR, which just trains people
+      # to bypass the check. What it prevents is a new module arriving with no
+      # tests and no mention, leaving the plan reading as though it still covers
+      # the repo. See docs/TEST_COVERAGE_PRD.md Phase 6.
+      #
+      # Placed LAST, with `if: always()`, on purpose. It is pure Python and
+      # finishes in under a second, so running it first would give faster
+      # feedback — but a failing step ends the job, and a stale doc would then
+      # hide every test and coverage result behind it. Someone who adds a module
+      # and forgets the table would see a red X and learn nothing about whether
+      # their tests pass, which is precisely how a check teaches people to route
+      # around it. Running last means both signals always arrive; `always()`
+      # means the doc is still checked when the tests themselves fail.
+      - name: Check test plan covers every module
+        if: always()
+        run: python3 scripts/check-test-plan-modules.py
 
       - name: Upload coverage report
         if: always()
