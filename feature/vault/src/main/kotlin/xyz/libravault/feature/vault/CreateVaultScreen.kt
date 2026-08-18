@@ -237,37 +237,6 @@ private fun RecoveryKeyStep(
     }
 }
 
-@Composable
-private fun PinField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    visible: Boolean,
-    onVisibleChange: (Boolean) -> Unit,
-    isError: Boolean,
-    supportingText: String?,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text("PIN or passphrase") },
-        singleLine = true,
-        isError = isError,
-        supportingText = supportingText?.let { { Text(it) } },
-        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        // Password (not NumberPassword): a 4-digit PIN is the suggested
-        // default, but a longer alphanumeric passphrase must remain typeable.
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon = {
-            IconButton(onClick = { onVisibleChange(!visible) }) {
-                Icon(
-                    if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = if (visible) "Hide" else "Show",
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
 
 @Composable
 private fun RecoveryKeyQr(content: String) {
