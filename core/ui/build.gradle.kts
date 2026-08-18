@@ -28,7 +28,7 @@ dependencies {
     // runs alongside the module's JUnit5 tests via the vintage engine.
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.2")
+    testRuntimeOnly(libs.junit5.vintage.engine)
     // ComponentActivity, for createAndroidComposeRule<ComponentActivity>() in
     // LibravaultThemeTest — needs a real hosting Activity to assert against its Window.
     testImplementation(libs.androidx.activity.compose)
