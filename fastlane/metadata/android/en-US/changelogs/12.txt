@@ -1,0 +1,1 @@
+Security fix: creating an Encrypted Vault or setting a vault PIN could fail on some devices due to an Android Keystore compatibility bug introduced in 0.4.6-alpha. No vault data was ever at risk — the bug caused vault creation to fail outright rather than weakening any encryption — but if you hit a crash creating a vault on the 0.4.6-alpha beta, update to this build.
