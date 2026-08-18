@@ -53,6 +53,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,14 +96,29 @@ fun ReaderTopBar(
         },
         actions = {
             if (showFontControls) {
-                IconButton(onClick = onFontDecrease, modifier = Modifier.size(38.dp)) {
+                // "A-"/"A+" is a good visual affordance and a poor spoken one:
+                // Compose merges that Text into the button's semantics, so
+                // TalkBack announced "A minus, button". An explicit
+                // contentDescription takes priority on the merged node, so the
+                // glyph stays on screen and the announcement says what it does.
+                IconButton(
+                    onClick = onFontDecrease,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .semantics { contentDescription = "Decrease font size" },
+                ) {
                     Text(
                         text = "A-",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                IconButton(onClick = onFontIncrease, modifier = Modifier.size(38.dp)) {
+                IconButton(
+                    onClick = onFontIncrease,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .semantics { contentDescription = "Increase font size" },
+                ) {
                     Text(
                         text = "A+",
                         style = MaterialTheme.typography.labelLarge,
