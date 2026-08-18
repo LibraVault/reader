@@ -31,6 +31,16 @@ import java.nio.ByteBuffer
  * on its own dedicated thread — see implementation plan §D.0.RESULTS); do not
  * share one instance across simultaneously-active callbacks.
  *
+ * @param expectedFileId the caller's already-known identity for this blob (e.g. from a
+ * manifest entry) — cross-checked against the id embedded in the file's own header, so a
+ * caller that opens the wrong blob by mistake gets a fast, clear error instead of an opaque
+ * authentication failure three steps later. Pass `null` when the caller has no independent
+ * way to know the identity ahead of time (currently only core:vaultstore's manifest, which
+ * lives at a single fixed path with nothing else to cross-check against) — the id embedded
+ * in the header is then trusted directly to derive the key. This weakens nothing: every header
+ * field, fileId included, is bound into every chunk's AEAD tag ([VaultFormat.chunkAad]), so
+ * a tampered fileId already fails to decrypt (wrong derived key) with or without this
+ * pre-check; the check is purely a nicer failure mode, never the actual security boundary.
  * @throws VaultAuthenticationException wrong VMK, or the file was tampered with
  * @throws VaultTruncatedException the file is shorter than the header requires
  * @throws UnsupportedVaultFormatException the header's format version isn't one this build understands
@@ -40,7 +50,7 @@ import java.nio.ByteBuffer
 class VaultFileReader(
     file: java.io.File,
     private val vmk: ByteArray,
-    expectedFileId: ByteArray,
+    expectedFileId: ByteArray?,
 ) : Closeable {
 
     private val raf = RandomAccessFile(file, "r")
@@ -84,10 +94,14 @@ class VaultFileReader(
             raf.close()
             throw UnsupportedCipherException(cipherId)
         }
-        require(expectedFileId.size == VaultFormat.FILE_ID_SIZE_BYTES) {
+        require(expectedFileId == null || expectedFileId.size == VaultFormat.FILE_ID_SIZE_BYTES) {
             "expectedFileId must be ${VaultFormat.FILE_ID_SIZE_BYTES} bytes"
         }
-        if (!expectedFileId.contentEquals(parsedFileId)) {
+        // null means the caller has no independent way to know the identity ahead of time —
+        // trust whatever the header says (see the class doc's @param expectedFileId). Every
+        // header field, including fileId, is still bound into every chunk's AEAD tag, so a
+        // tampered fileId fails to decrypt regardless of this check ever running.
+        if (expectedFileId != null && !expectedFileId.contentEquals(parsedFileId)) {
             raf.close()
             // Not itself an AEAD failure — a fast, clear error for "this is the wrong
             // file's blob" rather than letting the caller discover it as an opaque
