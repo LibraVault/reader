@@ -5,7 +5,6 @@ import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import xyz.libravault.core.vaultcrypto.VaultAuthenticationException
 import java.security.KeyStore
-import java.security.SecureRandom
 import javax.crypto.AEADBadTagException
 import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
@@ -17,7 +16,6 @@ import javax.crypto.spec.GCMParameterSpec
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val TRANSFORMATION = "AES/GCM/NoPadding"
 private const val GCM_TAG_BITS = 128
-private const val GCM_NONCE_BYTES = 12
 
 /**
  * Real [HardwareKeyWrap] backed by a non-exportable Android Keystore AES key,
@@ -48,10 +46,14 @@ class AndroidKeystoreHardwareKeyWrap private constructor(
         KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }.getKey(keyAlias, null)
 
     override fun wrap(plaintext: ByteArray): WrappedBlob {
-        val nonce = ByteArray(GCM_NONCE_BYTES).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, loadKey(), GCMParameterSpec(GCM_TAG_BITS, nonce))
-        return WrappedBlob(nonce, cipher.doFinal(plaintext))
+        // No GCMParameterSpec here: this key's KeyGenParameterSpec leaves
+        // setRandomizedEncryptionRequired at its default (true), so the
+        // Keystore rejects a caller-supplied IV on ENCRYPT_MODE init
+        // ("Caller-provided IV not permitted") — it generates its own to
+        // rule out nonce-reuse bugs like this one at the platform level.
+        cipher.init(Cipher.ENCRYPT_MODE, loadKey())
+        return WrappedBlob(cipher.iv, cipher.doFinal(plaintext))
     }
 
     override fun unwrap(wrapped: WrappedBlob): ByteArray {
@@ -79,7 +81,12 @@ class AndroidKeystoreHardwareKeyWrap private constructor(
          *   instead, or refuse to create the vault.
          */
         fun create(keyAlias: String): AndroidKeystoreHardwareKeyWrap {
-            val strongBoxResult = runCatching { generateKey(keyAlias, strongBox = true) }
+            // generateKey() already returns a Result (its body is a runCatching), so
+            // this must NOT be wrapped in another runCatching — that would catch
+            // nothing (generateKey never throws) and always report success here,
+            // even when the StrongBox attempt actually failed, silently skipping the
+            // non-StrongBox fallback below and leaving no key under keyAlias at all.
+            val strongBoxResult = generateKey(keyAlias, strongBox = true)
             val usedStrongBox = strongBoxResult.isSuccess
             if (!usedStrongBox) {
                 generateKey(keyAlias, strongBox = false).getOrElse {
