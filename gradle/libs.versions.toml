@@ -29,6 +29,7 @@ turbine             = "1.1.0"
 compose-test        = "1.6.7"
 bouncycastle        = "1.84"
 kover               = "0.9.1"      # JVM/Android line coverage — docs/TEST_COVERAGE_PRD.md Phase 1
+roborazzi           = "1.43.1"     # JVM screenshot baselines — docs/TEST_COVERAGE_PRD.md Phase 5
 kxml2               = "2.3.0"
 webkit              = "1.17.0"
 zxing               = "3.5.3"
@@ -133,6 +134,15 @@ androidx-test-ext-junit         = { group = "androidx.test.ext",         name = 
 compose-ui-test-junit4          = { group = "androidx.compose.ui",       name = "ui-test-junit4",              version.ref = "compose-test" }
 compose-ui-test-manifest        = { group = "androidx.compose.ui",       name = "ui-test-manifest",            version.ref = "compose-test" }
 
+# Testing — screenshot baselines. JVM/Robolectric, no emulator, so these run in
+# the same jvm-tests.yml gate as everything else. Baselines live in
+# <module>/src/test/screenshots/ and are covered by agent-policy.yml
+# sensitive_paths: re-recording one makes a failing test pass while recording
+# the break, the same silent failure mode as testdata/vault-format.
+roborazzi                       = { group = "io.github.takahirom.roborazzi", name = "roborazzi",                version.ref = "roborazzi" }
+roborazzi-compose               = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose",        version.ref = "roborazzi" }
+roborazzi-junit-rule            = { group = "io.github.takahirom.roborazzi", name = "roborazzi-junit-rule",     version.ref = "roborazzi" }
+
 [plugins]
 android-application             = { id = "com.android.application",      version.ref = "agp" }
 android-library                 = { id = "com.android.library",          version.ref = "agp" }
@@ -143,6 +153,7 @@ ksp                             = { id = "com.google.devtools.ksp",       versio
 hilt                            = { id = "com.google.dagger.hilt.android",version.ref = "hilt" }
 android-junit5                  = { id = "de.mannodermaus.android-junit5", version.ref = "junit5-android" }
 kover                           = { id = "org.jetbrains.kotlinx.kover",   version.ref = "kover" }
+roborazzi                       = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
 
 [bundles]
 compose                         = ["compose-ui", "compose-ui-graphics", "compose-ui-tooling-preview", "compose-material3", "compose-icons-extended"]

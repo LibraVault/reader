@@ -47,6 +47,15 @@ sensitive_paths:
   # unreadable — never something to auto-merge. See testdata/vault-format/README.md.
   - "testdata/vault-format/**"
 
+  # Screenshot baselines (docs/TEST_COVERAGE_PRD.md Phase 5). Exactly the same
+  # failure mode as the vault fixtures above, which is why they are gated the
+  # same way: re-recording a baseline makes a failing test pass WHILE RECORDING
+  # THE BREAK. The fix for a red screenshot test is almost always the UI, not
+  # the baseline, but `recordRoborazziDebug` is the easier keystroke — so an
+  # agent that hits a diff must never be able to bless it unattended. A human
+  # looks at the diff image under build/outputs/roborazzi first.
+  - "**/src/test/screenshots/**"
+
   # Billing / payments (no core/licensing module anymore — no Pro tier
   # for now, donation-only; these globs are for the still-live donation flow)
   - "**/BtcPayClient*"
