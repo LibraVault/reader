@@ -68,7 +68,9 @@ internal val SepiaColorScheme = lightColorScheme(
     surface             = SepiaBackground,
     onSurface           = SepiaText,
     surfaceVariant      = Color(0xFFE3D5B6),
-    onSurfaceVariant    = SepiaText.copy(alpha = 0.7f),
+    // Was SepiaText.copy(alpha = 0.7f), which rendered at 4.18:1 on
+    // surfaceVariant — below WCAG AA. See SepiaTextMuted.
+    onSurfaceVariant    = SepiaTextMuted,
     outline             = SepiaOutline,
 )
 

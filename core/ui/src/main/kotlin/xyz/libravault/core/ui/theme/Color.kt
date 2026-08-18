@@ -28,6 +28,14 @@ val SepiaBackground   = Color(0xFFF5EDD6)
 val SepiaText         = Color(0xFF3B2F1E)
 val SepiaOutline      = Color(0xFF7A5C3E)   // 5.2:1 on SepiaBackground
 
+// Muted secondary text for sepia (onSurfaceVariant). Deliberately a SOLID
+// colour rather than SepiaText.copy(alpha = …): an alpha'd colour's contrast
+// depends on whatever happens to be behind it, so the same token passed WCAG
+// AA on `surface` while failing on the slightly darker `surfaceVariant` — and
+// nothing caught it, because the contrast test ignored alpha. See
+// ColorSchemeContrastTest. 5.1:1 on surfaceVariant, 6.4:1 on surface.
+val SepiaTextMuted    = Color(0xFF60543F)
+
 // ── Surface ramp (dark mode) — 3-step leather hierarchy ──────────────────────
 val DarkSurface0      = Color(0xFF1A1410)   // background — deepest leather
 val DarkSurface1      = Color(0xFF241B14)   // surface — cover brown

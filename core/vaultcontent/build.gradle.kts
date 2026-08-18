@@ -25,5 +25,5 @@ dependencies {
     // core:ui's LibravaultThemeTest.
     testImplementation(libs.robolectric)
     testImplementation(libs.junit)
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.2")
+    testRuntimeOnly(libs.junit5.vintage.engine)
 }
