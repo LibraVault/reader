@@ -5,8 +5,9 @@ import xyz.libravault.feature.reader.markdown.toc.MarkdownTocExtractor
 
 /**
  * One narratable chapter — same shape purpose as iOS's `BookChapter`
- * (BookContentProvider.swift), though nothing currently constructs playback state
- * from this on Android; see this file's own doc comment for why.
+ * (BookContentProvider.swift). Walked by [xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel]'s
+ * Read Aloud chapter cursor (#276), the same way [xyz.libravault.feature.reader.epub.EpubReaderViewModel]
+ * walks its own reading-order spine.
  */
 data class MarkdownTtsChapter(val title: String, val text: String)
 
@@ -16,21 +17,11 @@ data class MarkdownTtsChapter(val title: String, val text: String)
  * heading-delimited granularity iOS's `chaptersForNarration` uses, and the same one
  * MarkdownReaderScreen's own TOC/scroll-restore logic already splits the document by).
  *
- * **This is deliberately text-extraction only — not wired into a working "Read Aloud"
- * playback path on Android, unlike iOS's equivalent in the same #124 change.** While
- * researching where to add a Markdown entry point, grepping this entire repository for
- * every caller of EPUB's own equivalent methods
- * (`EpubReaderViewModel.getChapterText`/`getChapterTextFromProgression`/`getNextChapterText`)
- * turned up zero results outside the file that defines them — `core:tts` itself is only
- * ever consumed by `:feature:settings` (the engine/voice picker), never by
- * `:feature:reader` or `:feature:player`. Android's EPUB "Read Aloud" text pipeline
- * exists but is not connected to any real playback path; there is no working EPUB TTS
- * to give Markdown parity with, and building a Markdown-only entry point on top of
- * nothing would mean inventing a new, differently-shaped gap (Markdown works, EPUB
- * still doesn't) rather than closing the one #124 was filed against. Wiring a *real*,
- * working Read Aloud pipeline for EPUB is the actual prerequisite, tracked separately —
- * this class exists so that work has a tested Markdown text source ready to plug in
- * once it lands, rather than starting from nothing.
+ * Originally landed text-extraction only (#124/#136) — the Android EPUB Read Aloud
+ * playback path this was written to give parity with didn't exist yet at the time. It
+ * was wired into the reader's mini-bar in #276, once #137 built that playback path for
+ * EPUB and gave this something real to plug into
+ * ([xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel.getChapterTextFromProgression]).
  *
  * Deliberately reuses [EpubTextPreprocessor] for the final prose-naturalization pass
  * (footnote markers, decorative separators, page numbers, abbreviation expansion) —

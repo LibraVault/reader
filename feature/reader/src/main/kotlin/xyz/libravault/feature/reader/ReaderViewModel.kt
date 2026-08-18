@@ -92,7 +92,7 @@ class ReaderViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
 
     /**
-     * Read Aloud (TTS) state — drives the reader's own mini-bar (EPUB only, see #137).
+     * Read Aloud (TTS) state — drives the reader's own mini-bar (EPUB #137, Markdown #276).
      * `Eagerly` rather than `WhileSubscribed`, unlike this ViewModel's other exposed
      * flows: [toggleReadAloudPlayPause] reads `.value` synchronously off the UI thread,
      * and `WhileSubscribed` would leave that read stuck at the seed [TtsState] default
