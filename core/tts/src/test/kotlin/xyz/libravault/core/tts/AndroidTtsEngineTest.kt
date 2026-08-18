@@ -6,6 +6,10 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -60,6 +64,23 @@ class AndroidTtsEngineTest {
         engine.stop()
 
         verify { audioFocusManager.abandonFocus() }
+    }
+
+    @Test
+    fun `stop emits stopEvent`() = kotlinx.coroutines.test.runTest {
+        val audioFocusManager = mockk<TtsAudioFocusManager>(relaxed = true)
+        val engine = AndroidTtsEngine(mockk(relaxed = true), audioFocusManager)
+
+        // CoroutineStart.UNDISPATCHED runs this coroutine inline up to its first
+        // suspension point (registering the collection on stopEvent) before this
+        // line returns, so stop()'s tryEmit below is guaranteed to have a live
+        // subscriber - a SharedFlow with no replay drops emissions nobody is
+        // collecting for yet.
+        val stopEventDeferred = async(start = CoroutineStart.UNDISPATCHED) { engine.stopEvent.first() }
+
+        engine.stop()
+
+        withTimeout(1_000) { stopEventDeferred.await() }
     }
 
     @Test

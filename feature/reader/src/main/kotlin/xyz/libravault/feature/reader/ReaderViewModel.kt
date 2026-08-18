@@ -137,17 +137,17 @@ class ReaderViewModel @Inject constructor(
         // audiobook resumed from the lockscreen while Read Aloud is speaking),
         // bypassing stopReadAloud() entirely. Without this, readAloudNextChapterProvider
         // would stay set after such an external stop, ready to misread some later,
-        // unrelated completion event as "advance the book". Edge-triggered on
-        // PLAYING/PAUSED -> IDLE (not "status is IDLE") so this doesn't race the
-        // provider assignment in startReadAloud against the engine's own resting
-        // IDLE state before speak() has run.
+        // unrelated completion event as "advance the book". Keyed off stopEvent
+        // rather than diffing `state` for a PLAYING/PAUSED -> IDLE edge: natural
+        // completion (advanceOnCompletion) *also* transitions through IDLE on every
+        // chapter, and that transition races the completionEvent collector below on
+        // the same underlying flows — a prior version of this fix nulled the
+        // provider before advanceOnCompletion() got to read it, breaking normal
+        // chapter-to-chapter advancing. stop() is never called by the natural
+        // completion path in either engine, so stopEvent can't collide with it.
         viewModelScope.launch {
-            var previousStatus = readAloudState.value.status
-            readAloudState.collect { state ->
-                if (state.status == TtsStatus.IDLE && previousStatus != TtsStatus.IDLE) {
-                    readAloudNextChapterProvider = null
-                }
-                previousStatus = state.status
+            ttsEngineProvider.engine.flatMapLatest { it.stopEvent }.collect {
+                readAloudNextChapterProvider = null
             }
         }
         viewModelScope.launch {
