@@ -13,10 +13,12 @@ A `workflow_dispatch`-only GitHub Actions pipeline (`.github/workflows/android-f
 ```bash
 gh workflow run android-firebase-distribution.yml --repo LibraVault/reader --ref <branch> \
   -f release_notes="What changed in this build" \
-  -f groups="testers"
+  -f groups="libravault-alphabeta"
 ```
 
-or via GitHub's UI: Actions → "Android Firebase Distribution" → Run workflow. Both inputs are optional (defaults: generic release notes, `groups=testers`).
+or via GitHub's UI: Actions → "Android Firebase Distribution" → Run workflow. Both inputs are optional (defaults: generic release notes, `groups=libravault-alphabeta` — the workflow's own default is correct; **only pass `-f groups=...` explicitly if you actually need a different group**, and if you do, use the group's *alias* shown next to its display name in Testers and Groups, e.g. `libravault-alphabeta`, not the display name `LibraVault Alpha/Beta`).
+
+A group called `testers` has never existed on this project — a stale reference to one caused a real failed distribution on 2026-08-18 (`Requested entity was not found`) when it was passed explicitly, overriding the workflow's correct default. If you see that error, you've done the same thing; drop the `-f groups=...` override or fix it to the real alias.
 
 ## Required GitHub secrets
 
@@ -49,7 +51,9 @@ gh secret list --repo LibraVault/reader
      --iam-account=firebase-app-distro-ci@PROJECT_ID.iam.gserviceaccount.com
    ```
 3. `base64 -w0 firebase-key.json` and paste the result into the `FIREBASE_SERVICE_ACCOUNT_JSON` GitHub secret, then delete the local `firebase-key.json`.
-4. In Firebase Console → App Distribution → Testers and Groups, create (or confirm) a group named `testers` and add testers to it. Pass a different `groups` value at dispatch time to target a different group.
+4. In Firebase Console → App Distribution → Testers and Groups, **on the `libravault-xyz` project** (not `libravault-testing` — see the warning below), create (or confirm) the tester group and note its *alias* (shown next to the display name, e.g. `libravault-alphabeta`) — that alias, not the display name, is what `-f groups=...` takes. Pass a different `groups` value at dispatch time to target a different group.
+
+**`libravault-testing` vs `libravault-xyz` — check the project switcher every time.** Two Firebase projects exist for this app: the old `libravault-testing` (wrong package, `libravault.xyz` — a typo of the real `xyz.libravault.app`) and the current `libravault-xyz` (correct package, what `FIREBASE_APP_ID` and this whole pipeline point at). The Firebase Console defaults to whichever project you last viewed, which is easy to mis-click past — confirmed 2026-08-18: a tester group named identically (`LibraVault Alpha/Beta` / `libravault-alphabeta`) exists in *both* projects, so a wrong-project glance looks completely plausible and won't obviously read as wrong. As of 2026-08-18, **`libravault-xyz` has never had an invite link created** (Invite Links tab: "No invite links created yet") — any tester who joined via a link is either on an invite created directly per-release, or (confirmed at least once) signed up through a stale link still pointing at `libravault-testing`, meaning they're not actually receiving real distributions at all. If you need to hand out a fresh invite link, create it from `libravault-xyz` specifically and retire whatever old link is still circulating.
 
 ## How the pipeline works (`android-firebase-distribution.yml`)
 
