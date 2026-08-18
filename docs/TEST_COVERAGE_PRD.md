@@ -254,6 +254,96 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 - Update `AGENTS.md` with the coverage-delta expectation so the dev-agent inherits it.
 - Add a CI check that flags `TEST_PLAN.md` when the module list changes.
 
+### Phase 7 — Make screens renderable, then render them (~5–8 days, 6 PRs, **S3**)
+
+Scoped 2026-08-18, after Phases 0–6 landed and coverage settled at **41.6%**.
+
+#### Why this is the next phase
+
+Measured breakdown of every uncovered line in the repo:
+
+| Category | Covered | Missed | Coverage | Share of all missed |
+|---|---:|---:|---:|---:|
+| **Compose UI** | 1,005 | **6,321** | **13.7%** | **63.3%** |
+| Other | 3,020 | 1,410 | 68.2% | 14.1% |
+| Logic/data | 1,623 | 1,353 | 54.5% | 13.6% |
+| ViewModels | 1,515 | 895 | 62.9% | 9.0% |
+
+Nearly two-thirds of the deficit is Compose screen bodies. Everything else is
+55–68%, which is healthy. "Coverage is 41.6%" therefore means "the app is mostly
+UI code and the UI is barely tested", not "the logic is untested".
+
+#### The correction that defines this phase
+
+The original plan was "point Roborazzi at the real screens" — cheap, since a
+screenshot test executes the whole composable, so its lines count *and* it
+catches visual regressions.
+
+**That is not possible as the screens are written today.** Every screen except
+`PlayerScreen` takes `viewModel: XViewModel = hiltViewModel()` and passes the
+**ViewModel itself** down into its private sub-composables
+(`NameStep(state, viewModel)`, `PinStep(state, viewModel)`, …). They cannot be
+rendered in a test without a real ViewModel and a Hilt graph.
+
+`PlayerScreen` is the exception — it was split into a thin Hilt wrapper plus
+pure `PortraitPlayerContent(item, state, actions)` / `LandscapePlayerContent(…)`.
+It is also, at **44.3%**, the best-covered feature module. That is not a
+coincidence, and it is the template.
+
+So "screenshot the screens" and "extract testable logic" are not two competing
+levers — they are one program. The extraction is the prerequisite, and it
+unlocks both kinds of test at once:
+
+- pure unit tests over what the screen **decides** (the `LibraryScreenLogic`
+  pattern: 100% covered, moved `feature:library` 23.5 → 26.4)
+- screenshot baselines over what it **renders** (Roborazzi, landed in Phase 5)
+
+#### Per-screen recipe
+
+1. Split `XScreen(viewModel)` into a thin wrapper plus `XContent(state, actions)`
+   — behaviour-preserving, no rendering restructured.
+2. Evidence of preservation: the module's **existing tests pass unchanged**
+   (the standard used in PR #252).
+3. Screenshot `XContent` in Dark / Light / Sepia, inspecting every baseline
+   before committing.
+4. Unit-test any decision logic the split exposes.
+
+#### Targets, by uncovered lines
+
+| Screen | Missed | Now | Notes |
+|---|---:|---:|---|
+| `SettingsScreenKt` | 261 | 0% | Largest 0% screen; `TtsSettingsSectionTest` proves the pattern works in this module |
+| `ReaderScreenKt` | 246 | 0% | |
+| `CreateVaultScreenKt` | 167 | 0% | Security-adjacent — do after the pattern is settled |
+| `EpubReaderScreenKt` | 149 | 0% | Heaviest state machine; may warrant logic extraction first |
+| `PdfReaderScreenKt` | 146 | 0% | |
+| `LibraryScreenKt` | 615 | 8.8% | **Sequence after PR #265**, which is splitting this file per-composable and is awaiting a human merge |
+
+#### Honest projection
+
+Getting these six to ~50% is roughly **+3–4pp overall**. Reaching ~60% repo-wide
+would require Compose UI broadly at ~60% — a longer program than this phase.
+
+**Do not treat the percentage as the goal.** Line coverage counts executed
+lines, not asserted behaviour: this cycle produced five tests that executed code
+and asserted nothing (a Hilt field overwritten before assertion; a crash
+signature that never occurs; a touch-target check that could not fail; a probe
+logging to a stream nobody reads; a screenshot gate comparing nothing). Coverage
+would have scored every one of them as success. The four real bugs found —
+HKDF's empty-salt RFC violation, `FLAG_SECURE` cleared mid-navigation, sepia
+contrast below AA, and unusable TalkBack labels — came from asking what could be
+silently wrong, not from chasing a number.
+
+#### Risks
+
+- **Baseline churn.** Every intentional UI change rewrites screenshots. Keep the
+  set per screen small, and remember `src/test/screenshots` is in
+  `agent-policy.yml` `sensitive_paths` — an agent must never bless a diff.
+- **These are production UI refactors.** Each PR needs the existing-tests-pass
+  evidence, and each is a candidate for a real behaviour change slipping in
+  unnoticed.
+- **`feature:library` collides with PR #265.** Do not start it until that lands.
+
 ---
 
 ## 7. Open questions
