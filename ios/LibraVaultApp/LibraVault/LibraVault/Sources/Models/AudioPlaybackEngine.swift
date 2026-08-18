@@ -11,6 +11,9 @@ protocol AudioPlaybackEngineProtocol: AnyObject {
     var isPlaying: Bool { get }
     var duration: Double { get }
     var elapsed: Double { get set }
+    /// 0...1. Used to fade audio out on sleep-timer expiry without pausing outright
+    /// mid-fade — see AppState.handleSleepTimerExpired.
+    var volume: Float { get set }
 
     func load(fileURL: URL, rate: Float) throws
     func play(fileURL: URL, rate: Float) throws
@@ -46,6 +49,11 @@ final class AudioPlaybackEngine: NSObject, AudioPlaybackEngineProtocol {
     var elapsed: Double {
         get { player?.currentTime ?? 0 }
         set { player?.currentTime = max(0, min(newValue, duration)) }
+    }
+
+    var volume: Float {
+        get { player?.volume ?? 1.0 }
+        set { player?.volume = newValue }
     }
 
     /// Loads a file and readies it for playback (via `prepareToPlay`) without
