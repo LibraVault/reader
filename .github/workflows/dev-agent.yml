@@ -393,7 +393,7 @@ jobs:
             next, so always write it, even if something went wrong earlier.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
-            --max-turns 40
+            --max-turns 70
 
       - name: Force-classify risk and advance to QA
         # !cancelled() rather than the implicit success()-only default: if
