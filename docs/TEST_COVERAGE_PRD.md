@@ -238,7 +238,7 @@ Six phases. Phases 1–2 are prerequisites for honest reporting and should land 
 | `LibravaultNavHost` route/argument tests | Robolectric `TestNavHostController` |
 | `PlaybackService` lifecycle + notification | Robolectric `ServiceController` |
 | Extract testable logic from `LibraryScreen.kt` (1,344 LOC) | refactor pure state derivation into `internal` functions per `AGENTS.md`, then unit test |
-| iOS `PocketTTSEngine` boundary | fake the `SherpaOnnx` seam; guard real audio calls behind an XCTest check (known CI hang) |
+| iOS `PocketTTSEngine` boundary | fake the `SherpaOnnx` seam; guard real audio calls behind an XCTest check (known CI hang) — ✅ done (#256): pure logic (`pcmBuffer`, model-path constants, `modelNotBundled`) extracted from behind the guard and unit tested; real audio output and the sherpa-onnx callback's retain/release lifecycle against a live `AVAudioPlayerNode` remain manual/TestFlight-only, same as Android's Firebase Test Lab gap this mirrors |
 
 ### Phase 5 — Accessibility & visual baselines (3–4 days, 2 PRs, **S3**)
 | Task | Approach |
