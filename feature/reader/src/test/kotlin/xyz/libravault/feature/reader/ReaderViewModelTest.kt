@@ -515,6 +515,25 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `external stop via audio focus loss clears the next-chapter provider`() = runTest {
+        // Regression coverage for #280: TtsAudioFocusManager calls engine.stop()
+        // directly on focus loss (e.g. an audiobook resumed from the lockscreen),
+        // bypassing stopReadAloud() entirely. Simulate that by driving the engine's
+        // state flow straight to IDLE instead of calling vm.stopReadAloud().
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { "Chapter two." })
+
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.PLAYING)
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.IDLE)
+
+        // A stale provider would misread this later, unrelated completion event
+        // (e.g. from a voice preview sharing the same singleton engine) as
+        // "advance the book".
+        ttsCompletionEvent.emit(Unit)
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak("Chapter two.") }
+    }
+
+    @Test
     fun `playPauseAudiobook stops an active Read Aloud session before playing`() = runTest {
         playbackStateHolder.update(
             itemId = 7L, vaultFolderId = 1L, filePath = "content://vault/book.mp3",
