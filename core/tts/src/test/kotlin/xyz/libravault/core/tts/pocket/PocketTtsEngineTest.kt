@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import xyz.libravault.core.tts.TtsAudioFocusManager
 import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.tts.TtsVoiceInfo
 
@@ -36,8 +37,10 @@ import xyz.libravault.core.tts.TtsVoiceInfo
  */
 class PocketTtsEngineTest {
 
+    private val audioFocusManager = mockk<TtsAudioFocusManager>(relaxed = true)
+
     private fun CoroutineScope.engine(modelManager: PocketModelManager) =
-        PocketTtsEngine(modelManager, this)
+        PocketTtsEngine(modelManager, this, audioFocusManager)
 
     @Test
     fun `PocketTtsEngine implements TtsEngine interface`() = runTest(UnconfinedTestDispatcher()) {
@@ -166,6 +169,57 @@ class PocketTtsEngineTest {
         engine.pause()
         engine.stop()
         assertEquals(TtsStatus.IDLE, engine.state.value.status)
+    }
+
+    // ── Audio focus (#137 mutual exclusion via lockscreen/notification) ────
+
+    @Test
+    fun `pause abandons audio focus`() = runTest(UnconfinedTestDispatcher()) {
+        val engine = engine(mockk(relaxed = true))
+        engine.pause()
+        verify { audioFocusManager.abandonFocus() }
+    }
+
+    @Test
+    fun `resume after pause requests audio focus`() = runTest(UnconfinedTestDispatcher()) {
+        val engine = engine(mockk(relaxed = true))
+        engine.pause()
+        engine.resume()
+        verify { audioFocusManager.requestFocus(any()) }
+    }
+
+    @Test
+    fun `resume while not paused does not request audio focus`() = runTest(UnconfinedTestDispatcher()) {
+        val engine = engine(mockk(relaxed = true))
+        engine.resume()
+        verify(exactly = 0) { audioFocusManager.requestFocus(any()) }
+    }
+
+    @Test
+    fun `stop abandons audio focus`() = runTest(UnconfinedTestDispatcher()) {
+        val engine = engine(mockk(relaxed = true))
+        engine.stop()
+        verify { audioFocusManager.abandonFocus() }
+    }
+
+    @Test
+    fun `losing audio focus while resumed stops the engine`() = runTest(UnconfinedTestDispatcher()) {
+        val onFocusLostSlot = io.mockk.slot<() -> Unit>()
+        every { audioFocusManager.requestFocus(capture(onFocusLostSlot)) } returns Unit
+        val engine = engine(mockk(relaxed = true))
+        engine.pause()
+        engine.resume()
+
+        onFocusLostSlot.captured.invoke()
+
+        assertEquals(TtsStatus.IDLE, engine.state.value.status)
+    }
+
+    @Test
+    fun `shutdown abandons audio focus`() = runTest(UnconfinedTestDispatcher()) {
+        val engine = engine(mockk(relaxed = true))
+        engine.shutdown()
+        verify { audioFocusManager.abandonFocus() }
     }
 
     @Test

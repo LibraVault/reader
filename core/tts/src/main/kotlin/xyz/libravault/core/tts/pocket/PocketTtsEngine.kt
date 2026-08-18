@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import xyz.libravault.core.tts.TtsAudioFocusManager
 import xyz.libravault.core.tts.TtsEngine
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
@@ -28,6 +29,7 @@ private const val TAG = "PocketTtsEngine"
 class PocketTtsEngine @Inject constructor(
     private val modelManager: PocketModelManager,
     private val scope: CoroutineScope,
+    private val audioFocusManager: TtsAudioFocusManager,
 ) : TtsEngine {
     private val _state = MutableStateFlow(TtsState())
     override val state: StateFlow<TtsState> = _state.asStateFlow()
@@ -97,6 +99,7 @@ class PocketTtsEngine @Inject constructor(
             return
         }
 
+        audioFocusManager.requestFocus { stop() }
         _state.value = _state.value.copy(status = TtsStatus.PLAYING, error = null)
 
         scope.launch {
@@ -153,17 +156,20 @@ class PocketTtsEngine @Inject constructor(
 
     override fun pause() {
         playback.pause()
+        audioFocusManager.abandonFocus()
         _state.value = _state.value.copy(status = TtsStatus.PAUSED)
     }
 
     override fun resume() {
         if (_state.value.status != TtsStatus.PAUSED) return
+        audioFocusManager.requestFocus { stop() }
         playback.resume()
         _state.value = _state.value.copy(status = TtsStatus.PLAYING)
     }
 
     override fun stop() {
         playback.stop()
+        audioFocusManager.abandonFocus()
         _state.value = _state.value.copy(status = TtsStatus.IDLE)
     }
 
@@ -183,6 +189,7 @@ class PocketTtsEngine @Inject constructor(
 
     override fun shutdown() {
         playback.stop()
+        audioFocusManager.abandonFocus()
         tts?.release()
         tts = null
         _state.value = TtsState()

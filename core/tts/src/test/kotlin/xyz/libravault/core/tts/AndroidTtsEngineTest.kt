@@ -1,13 +1,76 @@
 package xyz.libravault.core.tts
 
+import android.os.Looper
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 class AndroidTtsEngineTest {
 
     private fun split(text: String) = AndroidTtsEngine.splitIntoUtterances(text)
+
+    // ── Audio focus (#137 mutual exclusion via lockscreen/notification) ────
+    //
+    // pause()/stop()/shutdown() are the only lifecycle methods reachable without a
+    // live android.speech.tts.TextToSpeech instance - speak()/resume() both bail out
+    // via `tts ?: return` before doing anything, and constructing a real TextToSpeech
+    // needs a real Android device/emulator (core:tts does not set
+    // testOptions.unitTests.isReturnDefaultValues, unlike feature:player). See
+    // PocketTtsEngineTest for the full request/abandon cycle, which doesn't have this
+    // native-construction boundary.
+    //
+    // AndroidTtsEngine's own init{} eagerly builds `Handler(Looper.getMainLooper())`,
+    // so even reaching pause()/stop()/shutdown() needs Looper.getMainLooper() mocked -
+    // it's real Android framework code, unmocked by default on the JVM.
+
+    @BeforeEach
+    fun mockMainLooper() {
+        mockkStatic(Looper::class)
+        every { Looper.getMainLooper() } returns mockk(relaxed = true)
+    }
+
+    @AfterEach
+    fun unmockMainLooper() {
+        unmockkStatic(Looper::class)
+    }
+
+    @Test
+    fun `pause abandons audio focus`() {
+        val audioFocusManager = mockk<TtsAudioFocusManager>(relaxed = true)
+        val engine = AndroidTtsEngine(mockk(relaxed = true), audioFocusManager)
+
+        engine.pause()
+
+        verify { audioFocusManager.abandonFocus() }
+    }
+
+    @Test
+    fun `stop abandons audio focus`() {
+        val audioFocusManager = mockk<TtsAudioFocusManager>(relaxed = true)
+        val engine = AndroidTtsEngine(mockk(relaxed = true), audioFocusManager)
+
+        engine.stop()
+
+        verify { audioFocusManager.abandonFocus() }
+    }
+
+    @Test
+    fun `shutdown abandons audio focus`() {
+        val audioFocusManager = mockk<TtsAudioFocusManager>(relaxed = true)
+        val engine = AndroidTtsEngine(mockk(relaxed = true), audioFocusManager)
+
+        engine.shutdown()
+
+        verify { audioFocusManager.abandonFocus() }
+    }
 
     // ── Short text ─────────────────────────────────────────────────────────────
 

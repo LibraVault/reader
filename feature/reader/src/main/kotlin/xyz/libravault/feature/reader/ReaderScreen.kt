@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.MediaFormat
+import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
@@ -70,6 +72,26 @@ import xyz.libravault.feature.reader.pdf.PdfReaderScreen
 // native EPUB WebView / PDF renderer never occupies that region.
 private val BOTTOM_BAR_HEIGHT = 64.dp
 
+/** Which mini-bar (if any) [ReaderScreen]'s `bottomBar` should render. */
+enum class ReaderBottomBar { NONE, AUDIOBOOK, READ_ALOUD }
+
+/**
+ * Picks which mini-bar wins when both an audiobook and a Read Aloud session look
+ * "loaded" at the same time. [PlaybackStateHolder.State.itemId] is never cleared
+ * once an audiobook has been loaded ([PlaybackStateHolder.clear] exists but is never
+ * called in production), so `showMiniPlayer` alone stays true forever after the first
+ * audiobook play — including while the audiobook is merely paused/backgrounded and a
+ * Read Aloud session is the thing actually producing audio. Read Aloud must win
+ * whenever it's active, or its mini-bar becomes unreachable and the stale audiobook
+ * bar's controls end up silently stopping it instead.
+ */
+fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): ReaderBottomBar =
+    when {
+        showReadAloudBar -> ReaderBottomBar.READ_ALOUD
+        showMiniPlayer   -> ReaderBottomBar.AUDIOBOOK
+        else             -> ReaderBottomBar.NONE
+    }
+
 /**
  * Entry point for the reader feature.
  * Routes to [EpubReaderScreen] or [PdfReaderScreen] based on the item's format,
@@ -87,10 +109,11 @@ fun ReaderScreen(
     onNowPlayingClick: ((Long) -> Unit)? = null,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
-    val state      by viewModel.uiState.collectAsState()
-    val bookmarks  by viewModel.bookmarks.collectAsState()
-    val highlights by viewModel.highlights.collectAsState()
-    val nowPlaying by viewModel.nowPlaying.collectAsState()
+    val state       by viewModel.uiState.collectAsState()
+    val bookmarks   by viewModel.bookmarks.collectAsState()
+    val highlights  by viewModel.highlights.collectAsState()
+    val nowPlaying  by viewModel.nowPlaying.collectAsState()
+    val readAloud   by viewModel.readAloudState.collectAsState()
 
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     val pendingPdfPage = androidx.compose.runtime.remember {
@@ -113,6 +136,11 @@ fun ReaderScreen(
     // Independent of toolbar visibility — stays pinned at the bottom even when the
     // toolbar hides on centre-tap (same behaviour as the Library screen mini-player).
     val showMiniPlayer = nowPlaying.itemId != null
+
+    // Read Aloud mini-bar (#137). This and showMiniPlayer are NOT mutually exclusive —
+    // see selectReaderBottomBar's doc for why an audiobook can look "loaded" long after
+    // it's actually relevant. selectReaderBottomBar() below resolves the precedence.
+    val showReadAloudBar = readAloud.status == TtsStatus.PLAYING || readAloud.status == TtsStatus.PAUSED
 
     // Wrap in the reading theme chosen by the user
     LibravaultTheme(readingTheme = state.settings.theme) {
@@ -169,8 +197,8 @@ fun ReaderScreen(
                         }
                     },
                     bottomBar = {
-                        if (showMiniPlayer) {
-                            ReaderMiniPlayerBar(
+                        when (selectReaderBottomBar(showMiniPlayer, showReadAloudBar)) {
+                            ReaderBottomBar.AUDIOBOOK -> ReaderMiniPlayerBar(
                                 nowPlaying       = nowPlaying,
                                 onNowPlayingClick = {
                                     nowPlaying.itemId?.let { id ->
@@ -183,6 +211,12 @@ fun ReaderScreen(
                                 onSeekForward = viewModel::seekForwardAudiobook,
                                 onNext        = viewModel::skipNextAudiobook,
                             )
+                            ReaderBottomBar.READ_ALOUD -> ReaderReadAloudMiniBar(
+                                isPlaying   = readAloud.status == TtsStatus.PLAYING,
+                                onPlayPause = viewModel::toggleReadAloudPlayPause,
+                                onStop      = viewModel::stopReadAloud,
+                            )
+                            ReaderBottomBar.NONE -> {}
                         }
                     }
                 ) { innerPadding ->
@@ -298,6 +332,20 @@ fun ReaderScreen(
                         onLineSpacingChanged = viewModel::onLineSpacingChanged,
                         onScrollModeChanged  = viewModel::onScrollModeChanged,
                         onDismiss            = viewModel::hideSettings,
+                        // Read Aloud (#137) — EPUB only for now; Markdown follows in #276.
+                        showReadAloud    = item.format == MediaFormat.EPUB,
+                        readAloudActive  = showReadAloudBar,
+                        onReadAloudClick = {
+                            if (showReadAloudBar) {
+                                viewModel.stopReadAloud()
+                            } else {
+                                viewModel.startReadAloud(
+                                    getInitialText = epubViewModel::getChapterTextFromProgression,
+                                    getNextText    = epubViewModel::getNextChapterText,
+                                )
+                            }
+                            viewModel.hideSettings()
+                        },
                     )
                 }
 
@@ -435,6 +483,80 @@ private fun ReaderMiniPlayerBar(
             IconButton(onClick = onNext, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Default.SkipNext, contentDescription = "Next",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+// ── Read Aloud mini bar (#137) ────────────────────────────────────────────────
+
+/**
+ * Mini-bar for an active EPUB Read Aloud (TTS) session — visually and
+ * interactionally consistent with [ReaderMiniPlayerBar]: same surface, elevation,
+ * shape, icon sizing and position. No scrubber/speed control/tap-to-expand (see
+ * #138 for full Player-screen parity); just play/pause and stop, matching the v1
+ * scope in issue #137.
+ */
+@Composable
+private fun ReaderReadAloudMiniBar(
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = 8.dp,
+        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Headphones,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            Text(
+                text = "Reading aloud",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+
+            IconButton(onClick = onPlayPause, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause reading" else "Resume reading",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            IconButton(onClick = onStop, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Default.Stop,
+                    contentDescription = "Stop reading aloud",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

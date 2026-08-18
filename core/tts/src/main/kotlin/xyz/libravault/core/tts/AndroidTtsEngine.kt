@@ -25,6 +25,7 @@ private const val MAX_UTTERANCE_CHARS = 3900
 @Singleton
 class AndroidTtsEngine @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val audioFocusManager: TtsAudioFocusManager,
 ) : TtsEngine {
 
     private var tts: TextToSpeech? = null
@@ -89,6 +90,7 @@ class AndroidTtsEngine @Inject constructor(
             return
         }
 
+        audioFocusManager.requestFocus { stop() }
         utteranceGeneration++
         engine.stop()
         utterances = splitIntoUtterances(text)
@@ -100,12 +102,14 @@ class AndroidTtsEngine @Inject constructor(
     override fun pause() {
         utteranceGeneration++
         tts?.stop()
+        audioFocusManager.abandonFocus()
         _state.value = _state.value.copy(status = TtsStatus.PAUSED)
     }
 
     override fun resume() {
         val engine = tts ?: return
         if (_state.value.status != TtsStatus.PAUSED) return
+        audioFocusManager.requestFocus { stop() }
         _state.value = _state.value.copy(status = TtsStatus.PLAYING)
         speakNext(engine)
     }
@@ -113,6 +117,7 @@ class AndroidTtsEngine @Inject constructor(
     override fun stop() {
         utteranceGeneration++
         tts?.stop()
+        audioFocusManager.abandonFocus()
         utterances = emptyList()
         currentUtteranceIndex = 0
         _state.value = _state.value.copy(status = TtsStatus.IDLE)
@@ -141,6 +146,7 @@ class AndroidTtsEngine @Inject constructor(
     override fun shutdown() {
         tts?.shutdown()
         tts = null
+        audioFocusManager.abandonFocus()
         _state.value = TtsState()
     }
 
