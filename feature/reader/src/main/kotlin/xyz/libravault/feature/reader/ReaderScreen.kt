@@ -72,6 +72,26 @@ import xyz.libravault.feature.reader.pdf.PdfReaderScreen
 // native EPUB WebView / PDF renderer never occupies that region.
 private val BOTTOM_BAR_HEIGHT = 64.dp
 
+/** Which mini-bar (if any) [ReaderScreen]'s `bottomBar` should render. */
+enum class ReaderBottomBar { NONE, AUDIOBOOK, READ_ALOUD }
+
+/**
+ * Picks which mini-bar wins when both an audiobook and a Read Aloud session look
+ * "loaded" at the same time. [PlaybackStateHolder.State.itemId] is never cleared
+ * once an audiobook has been loaded ([PlaybackStateHolder.clear] exists but is never
+ * called in production), so `showMiniPlayer` alone stays true forever after the first
+ * audiobook play — including while the audiobook is merely paused/backgrounded and a
+ * Read Aloud session is the thing actually producing audio. Read Aloud must win
+ * whenever it's active, or its mini-bar becomes unreachable and the stale audiobook
+ * bar's controls end up silently stopping it instead.
+ */
+fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): ReaderBottomBar =
+    when {
+        showReadAloudBar -> ReaderBottomBar.READ_ALOUD
+        showMiniPlayer   -> ReaderBottomBar.AUDIOBOOK
+        else             -> ReaderBottomBar.NONE
+    }
+
 /**
  * Entry point for the reader feature.
  * Routes to [EpubReaderScreen] or [PdfReaderScreen] based on the item's format,
@@ -117,10 +137,9 @@ fun ReaderScreen(
     // toolbar hides on centre-tap (same behaviour as the Library screen mini-player).
     val showMiniPlayer = nowPlaying.itemId != null
 
-    // Read Aloud mini-bar (#137) — mutually exclusive with the audiobook mini-player
-    // (ReaderViewModel enforces only one audio source is ever active at a time), so
-    // showMiniPlayer and showReadAloudBar are never both true in practice; the `else`
-    // below still makes that ordering explicit rather than relying on it silently.
+    // Read Aloud mini-bar (#137). This and showMiniPlayer are NOT mutually exclusive —
+    // see selectReaderBottomBar's doc for why an audiobook can look "loaded" long after
+    // it's actually relevant. selectReaderBottomBar() below resolves the precedence.
     val showReadAloudBar = readAloud.status == TtsStatus.PLAYING || readAloud.status == TtsStatus.PAUSED
 
     // Wrap in the reading theme chosen by the user
@@ -178,8 +197,8 @@ fun ReaderScreen(
                         }
                     },
                     bottomBar = {
-                        if (showMiniPlayer) {
-                            ReaderMiniPlayerBar(
+                        when (selectReaderBottomBar(showMiniPlayer, showReadAloudBar)) {
+                            ReaderBottomBar.AUDIOBOOK -> ReaderMiniPlayerBar(
                                 nowPlaying       = nowPlaying,
                                 onNowPlayingClick = {
                                     nowPlaying.itemId?.let { id ->
@@ -192,12 +211,12 @@ fun ReaderScreen(
                                 onSeekForward = viewModel::seekForwardAudiobook,
                                 onNext        = viewModel::skipNextAudiobook,
                             )
-                        } else if (showReadAloudBar) {
-                            ReaderReadAloudMiniBar(
+                            ReaderBottomBar.READ_ALOUD -> ReaderReadAloudMiniBar(
                                 isPlaying   = readAloud.status == TtsStatus.PLAYING,
                                 onPlayPause = viewModel::toggleReadAloudPlayPause,
                                 onStop      = viewModel::stopReadAloud,
                             )
+                            ReaderBottomBar.NONE -> {}
                         }
                     }
                 ) { innerPadding ->
