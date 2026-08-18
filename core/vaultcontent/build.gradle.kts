@@ -5,6 +5,15 @@ plugins {
 
 android {
     namespace = "xyz.libravault.core.vaultcontent"
+
+    // readium-shared requires core library desugaring — AGP's
+    // checkDebugAndroidTestAarMetadata enforces this on the androidTest
+    // variant too (issue #253: connectedDebugAndroidTest failed here the
+    // first time ui-tests.yml actually ran to completion on a `dev` PR,
+    // unrelated to this module having any androidTest sources of its own).
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
 }
 
 dependencies {
@@ -15,6 +24,8 @@ dependencies {
     implementation(libs.readium.shared)
     implementation(libs.media3.datasource)
     implementation(libs.coroutines.core)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     testImplementation(libs.bundles.testing.jvm)
     testImplementation(libs.junit5.engine)

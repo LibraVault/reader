@@ -12,6 +12,15 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    // readium-shared/-streamer/-navigator require core library desugaring —
+    // AGP's checkDebugAndroidTestAarMetadata enforces this on the androidTest
+    // variant too (issue #253: connectedDebugAndroidTest failed here the
+    // first time ui-tests.yml actually ran to completion on a `dev` PR,
+    // unrelated to this module having any androidTest sources of its own).
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
 }
 
 dependencies {
@@ -65,4 +74,6 @@ dependencies {
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
