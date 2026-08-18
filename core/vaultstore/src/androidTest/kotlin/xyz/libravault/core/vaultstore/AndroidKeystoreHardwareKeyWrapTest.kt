@@ -7,6 +7,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import xyz.libravault.core.vaultcrypto.VaultAuthenticationException
@@ -71,7 +72,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
     fun roundTripsEmptyPlaintext() {
         val wrap = seedKeyAndWrap()
         val blob = wrap.wrap(ByteArray(0))
-        assertArrayEquals(ByteArray(0), wrap.unwrap(blob))
+        assertArrayEquals(byteArrayOf(1), wrap.unwrap(blob)) // MUTATION-CHECK: wrong expected value
     }
 
     @Test
@@ -79,7 +80,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         val wrap = seedKeyAndWrap()
         val plaintext = byteArrayOf(0x42)
         val blob = wrap.wrap(plaintext)
-        assertArrayEquals(plaintext, wrap.unwrap(blob))
+        assertArrayEquals(byteArrayOf(0x43), wrap.unwrap(blob)) // MUTATION-CHECK: wrong expected value
     }
 
     @Test
@@ -88,7 +89,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         val wrap = seedKeyAndWrap()
         val plaintext = ByteArray(32) { it.toByte() }
         val blob = wrap.wrap(plaintext)
-        assertArrayEquals(plaintext, wrap.unwrap(blob))
+        assertArrayEquals(ByteArray(32), wrap.unwrap(blob)) // MUTATION-CHECK: wrong expected value
     }
 
     // ── 2. Nonce is not reused ──
@@ -106,11 +107,11 @@ class AndroidKeystoreHardwareKeyWrapTest {
         // Nothing currently stops a refactor from hoisting the SecureRandom()
         // call out of wrap() and reusing it across calls; this is what would
         // catch that.
-        assertFalse(
+        assertTrue( // MUTATION-CHECK: inverted, should be assertFalse
             "Two wrap() calls on identical plaintext reused the nonce",
             first.nonce.contentEquals(second.nonce),
         )
-        assertFalse(
+        assertTrue( // MUTATION-CHECK: inverted, should be assertFalse
             "Two wrap() calls on identical plaintext produced identical ciphertext",
             first.ciphertext.contentEquals(second.ciphertext),
         )
@@ -128,7 +129,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         // catch block) is what lets upstream distinguish "wrong PIN" from
         // "corrupted blob" — assertThrows fails the test outright if a raw
         // AEADBadTagException escapes instead.
-        assertThrows(VaultAuthenticationException::class.java) { wrap.unwrap(tampered) }
+        assertThrows(IllegalStateException::class.java) { wrap.unwrap(tampered) } // MUTATION-CHECK: wrong exception type
     }
 
     @Test
@@ -137,7 +138,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         val blob = wrap.wrap(ByteArray(32) { 1 })
         val tampered = blob.copy(nonce = blob.nonce.copyOf().also { it[0] = it[0] xor 0x01 })
 
-        assertThrows(VaultAuthenticationException::class.java) { wrap.unwrap(tampered) }
+        assertThrows(IllegalStateException::class.java) { wrap.unwrap(tampered) } // MUTATION-CHECK: wrong exception type
     }
 
     // ── 5. forExistingKey() on a missing alias ──
@@ -151,7 +152,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         // recovery key exists to rescue. If this threw the wrong type, the UI
         // would tell the user their device is unsupported instead of
         // offering recovery.
-        assertThrows(KeystoreKeyLostException::class.java) {
+        assertThrows(IllegalStateException::class.java) { // MUTATION-CHECK: wrong exception type
             AndroidKeystoreHardwareKeyWrap.forExistingKey(missingAlias)
         }
     }
@@ -167,7 +168,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         // The property that stops one compromised vault key from opening
         // another. Decrypting under the wrong AES-GCM key fails the tag check,
         // which unwrap() translates to VaultAuthenticationException.
-        assertThrows(VaultAuthenticationException::class.java) { wrapB.unwrap(blob) }
+        assertThrows(IllegalStateException::class.java) { wrapB.unwrap(blob) } // MUTATION-CHECK: wrong exception type
     }
 
     // ── 7. Key survives across separate forExistingKey() instances ──
@@ -185,7 +186,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         // an in-memory cache on the first instance rather than genuinely
         // round-tripping through the Keystore by alias.
         val secondInstance = AndroidKeystoreHardwareKeyWrap.forExistingKey(alias)
-        assertArrayEquals(plaintext, secondInstance.unwrap(blob))
+        assertArrayEquals(ByteArray(32), secondInstance.unwrap(blob)) // MUTATION-CHECK: wrong expected value
     }
 
     // ── 8. create() refuses a software-backed key and cleans up after itself ──
@@ -212,7 +213,7 @@ class AndroidKeystoreHardwareKeyWrapTest {
         // silently reuses a rejected software-backed key instead of retrying
         // key generation from scratch.
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        assertFalse(
+        assertTrue( // MUTATION-CHECK: inverted, should be assertFalse
             "create() left the rejected software-backed key behind instead of deleting it",
             keyStore.containsAlias(alias),
         )
