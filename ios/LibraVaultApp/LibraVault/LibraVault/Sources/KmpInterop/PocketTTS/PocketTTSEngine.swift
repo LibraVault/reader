@@ -151,8 +151,11 @@ final class PocketTTSEngine: TTSEngineProtocol {
     /// `@convention(c)` function (no captures), so per-call context (which
     /// AVAudioPlayerNode/format to feed) is threaded through via the
     /// `arg` pointer - same pattern sherpa-onnx's own tts-vits.swift example
-    /// uses.
-    private static let ttsCallback: TtsProgressCallbackWithArg = { samples, n, _, rawArg in
+    /// uses. Internal (not private), per AGENTS.md's "pure helpers should be
+    /// internal" convention, so PocketTTSEngineTests can call this directly
+    /// with a synthetic `arg` instead of only through a real `speak()` ->
+    /// `generateWithConfig()` synthesis round trip.
+    static let ttsCallback: TtsProgressCallbackWithArg = { samples, n, _, rawArg in
         guard let samples, n > 0, let rawArg else { return 1 }
         let context = Unmanaged<PlaybackContext>.fromOpaque(rawArg).takeUnretainedValue()
         let floatSamples = [Float](UnsafeBufferPointer(start: samples, count: Int(n)))
@@ -180,8 +183,9 @@ final class PocketTTSEngine: TTSEngineProtocol {
 
 /// Per-`speak()`-call context passed across the C callback boundary (see
 /// `ttsCallback` above) - retained for the duration of one generate call,
-/// then released once it returns.
-private final class PlaybackContext {
+/// then released once it returns. Internal (not private) so
+/// PocketTTSEngineTests can construct one directly to drive `ttsCallback`.
+final class PlaybackContext {
     let node: AVAudioPlayerNode
     let format: AVAudioFormat
 

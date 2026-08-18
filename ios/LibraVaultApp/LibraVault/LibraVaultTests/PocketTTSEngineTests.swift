@@ -12,13 +12,23 @@ import AVFoundation
 /// the guard), and the sample -> PCM buffer transform used on every
 /// generated audio chunk.
 ///
+/// Also covers `ttsCallback`'s retain/release contract (see the "ttsCallback"
+/// section below) against a real, attached-but-not-started `AVAudioPlayerNode`
+/// - attach/connect are pure graph-configuration calls that touch no audio
+/// hardware or session, unlike `AVAudioEngine.start()`/
+/// `AVAudioSession.setActive(true)`, which are what actually hung CI before
+/// (see the class's own doc comment and `DomainBridge.swift`'s identical
+/// story - both name session activation specifically, never node
+/// attach/connect). Apple's own AVAudioEngine pattern schedules buffers on an
+/// attached-but-unstarted node before ever calling `engine.start()`, so this
+/// mirrors supported API usage, not a guess.
+///
 /// Deliberately NOT covered here: real audio output (`speak` actually
-/// producing sound) and the sherpa-onnx C callback's retain/release
-/// lifecycle when wired to a live `AVAudioPlayerNode`. Both stay behind the
-/// XCTest guard / require real synthesis, and the callback boundary in
-/// particular sits right next to the exact AVFoundation activation path that
-/// hung CI before - manual/TestFlight verification only, tracked as a known
-/// gap rather than guessed at here.
+/// producing sound through a *running* engine/session) and a full
+/// `generateWithConfig` synthesis round trip. Both require the exact
+/// AVAudioSession/AVAudioEngine activation path that hung CI before -
+/// manual/TestFlight verification only, tracked as a known gap rather than
+/// guessed at here.
 final class PocketTTSEngineTests: XCTestCase {
 
     private var tempDirectory: URL!
@@ -123,5 +133,108 @@ final class PocketTTSEngineTests: XCTestCase {
         // zero-frame request is an AVFoundation implementation detail; what
         // this guards is that no chunk ever gets scheduled for playback.
         XCTAssertEqual(buffer?.frameLength ?? 0, 0)
+    }
+
+    // MARK: - ttsCallback retain/release contract
+
+    /// Engine kept alive for the duration of a single test - AVAudioEngine
+    /// tears down its graph if deallocated, and `PlaybackContext.node` holds
+    /// its `AVAudioPlayerNode` only weakly-in-spirit (the engine, not the
+    /// context, owns the attach relationship).
+    private var playbackEngine: AVAudioEngine!
+
+    /// Attaches and connects a real `AVAudioPlayerNode`, matching exactly
+    /// what `initialize()` does before `audioEngine.start()` - but never
+    /// starts the engine or touches `AVAudioSession`, which is the
+    /// documented hang boundary. `scheduleBuffer` is explicitly supported by
+    /// Apple on an attached-but-unstarted node (that's the standard
+    /// prepare-then-start sequence), so this exercises `ttsCallback`'s real
+    /// `context.node.scheduleBuffer(...)` call without approaching the
+    /// hardware/session activation that caused the CI timeouts.
+    private func makeAttachedPlayerNode(format: AVAudioFormat) -> AVAudioPlayerNode {
+        let engine = AVAudioEngine()
+        let node = AVAudioPlayerNode()
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: format)
+        playbackEngine = engine
+        return node
+    }
+
+    func testTtsCallbackSchedulesBufferAndReturnsContinueForValidSamples() {
+        let format = makeFormat()
+        let node = makeAttachedPlayerNode(format: format)
+        let context = PlaybackContext(node: node, format: format)
+        let unmanaged = Unmanaged.passRetained(context)
+        defer { unmanaged.release() }
+
+        let samples: [Float] = [0.1, -0.2, 0.3]
+        let result = samples.withUnsafeBufferPointer { ptr in
+            PocketTTSEngine.ttsCallback(ptr.baseAddress, Int32(samples.count), 0, unmanaged.toOpaque())
+        }
+
+        // 1 == "continue generating", the only value sherpa-onnx accepts to
+        // keep synthesizing further chunks of the same utterance.
+        XCTAssertEqual(result, 1)
+    }
+
+    /// Simulates the real usage shape in `speak()`: one `passRetained()` up
+    /// front, the callback invoked repeatedly (once per generated chunk,
+    /// using `takeUnretainedValue()` - no retain of its own), then exactly
+    /// one `release()` after generation finishes. An unbalanced retain here
+    /// would leak `PlaybackContext` every utterance; an extra release would
+    /// crash. Running several simulated chunks through one retain/release
+    /// pair without crashing is the regression check for that contract.
+    func testTtsCallbackAcrossMultipleChunksBalancesAgainstASingleRetainAndRelease() {
+        let format = makeFormat()
+        let node = makeAttachedPlayerNode(format: format)
+        let context = PlaybackContext(node: node, format: format)
+        let unmanaged = Unmanaged.passRetained(context)
+        let arg = unmanaged.toOpaque()
+
+        for chunkIndex in 0..<5 {
+            let samples: [Float] = [Float(chunkIndex) * 0.1, Float(chunkIndex) * -0.1]
+            let result = samples.withUnsafeBufferPointer { ptr in
+                PocketTTSEngine.ttsCallback(ptr.baseAddress, Int32(samples.count), 0, arg)
+            }
+            XCTAssertEqual(result, 1)
+        }
+
+        unmanaged.release()
+    }
+
+    func testTtsCallbackWithNilSamplesReturnsContinueWithoutDereferencing() {
+        let format = makeFormat()
+        let node = makeAttachedPlayerNode(format: format)
+        let context = PlaybackContext(node: node, format: format)
+        let unmanaged = Unmanaged.passRetained(context)
+        defer { unmanaged.release() }
+
+        let result = PocketTTSEngine.ttsCallback(nil, 4, 0, unmanaged.toOpaque())
+
+        XCTAssertEqual(result, 1)
+    }
+
+    func testTtsCallbackWithZeroSampleCountReturnsContinueWithoutDereferencing() {
+        let format = makeFormat()
+        let node = makeAttachedPlayerNode(format: format)
+        let context = PlaybackContext(node: node, format: format)
+        let unmanaged = Unmanaged.passRetained(context)
+        defer { unmanaged.release() }
+
+        let samples: [Float] = [0.1, -0.2, 0.3]
+        let result = samples.withUnsafeBufferPointer { ptr in
+            PocketTTSEngine.ttsCallback(ptr.baseAddress, 0, 0, unmanaged.toOpaque())
+        }
+
+        XCTAssertEqual(result, 1)
+    }
+
+    func testTtsCallbackWithNilArgReturnsContinueWithoutDereferencing() {
+        let samples: [Float] = [0.1, -0.2, 0.3]
+        let result = samples.withUnsafeBufferPointer { ptr in
+            PocketTTSEngine.ttsCallback(ptr.baseAddress, Int32(samples.count), 0, nil)
+        }
+
+        XCTAssertEqual(result, 1)
     }
 }
