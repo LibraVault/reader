@@ -22,6 +22,71 @@ version-only edits) are exempt. Everything else needs tests, including:
   is unchanged.
 - New ViewModels, use cases, repositories, DAOs — full happy-path coverage.
 
+### Choosing a test type
+
+Pick the cheapest level that can actually observe the thing you are asserting.
+Going lower is not thrift if the level cannot see the failure — that produces a
+test which passes forever, which is worse than no test because it retires the
+gap from the inventory.
+
+| Level | Where | Use it for | Cost |
+|---|---|---|---|
+| Pure JVM (JUnit 5) | `src/test/` | Logic with no Android types: state derivation, parsing, crypto, mappers, validators | ~instant |
+| Robolectric | `src/test/` | Android framework classes and Compose **semantics** — accessible names, roles, click actions, real `Window` flags | seconds |
+| Roborazzi screenshot | `src/test/` + `src/test/screenshots/` | **Pixels**: clipping, overlap, theme application, anything you can only see | seconds |
+| Instrumented (`androidTest`) | emulator, `ui-tests.yml` | Behaviour Robolectric only *pretends* to have. Keystore is the canonical case — its Robolectric shim has no `securityLevel`, no StrongBox | ~20 min, CI only |
+| Firebase Test Lab | physical device | Real hardware: arm64 native libs, a real TEE, actual audio output | slow, quota'd |
+
+Two traps that have each cost real time here:
+
+- **A level that cannot observe the property.** A "touch target >= 48dp" test was
+  written against Compose semantics and deleted: `touchBoundsInRoot` is already
+  clamped to the minimum, so it could not fail. That property is a screenshot
+  question, not a semantics one.
+- **A label that exists but is useless.** A generic "every clickable has an
+  accessible name" sweep passes on `"A-"`, `"A+"`, `"Show"`, `"Hide"`. Sweeps are
+  a floor; pin the actual wording for controls where the name carries meaning.
+
+### Prove a new test can fail
+
+Before committing a test, make it fail on purpose — break the assertion, or
+revert the fix it guards — and confirm you see red. Then restore.
+
+This is not ceremony. Tests that passed while asserting nothing have been found
+repeatedly in this repo, including: a Hilt-injected field overwritten before the
+assertion ever read it; an assertion on a crash signature that never occurs;
+a screenshot gate that compared nothing because verification was off by default.
+Every one looked correct in review.
+
+The rule matters most where you cannot casually re-run — instrumented tests, iOS
+— because there a green run is the *only* signal you get, and a green run is not
+evidence that a test observed anything.
+
+### Coverage expectations
+
+Coverage is measured (Kover, line coverage, debug variant) and reported per
+module in every CI run's summary. Regenerate locally with:
+
+```bash
+./gradlew koverXmlReportDebug \
+          :app:koverXmlReportFdroidDebug \
+          :feature:settings:koverXmlReportFdroidDebug
+python3 scripts/coverage-summary.py
+```
+
+- `core:vaultcrypto`, `core:vaultstore` and `core:vaultcontent` are **gated**:
+  dropping more than 1pp below `scripts/coverage-baseline.json` fails the build.
+  Raise the baseline in the same PR that raises coverage.
+- Everything else is report-only **by design**. A repo-wide ratchet produces
+  tests written to move a number rather than to catch a defect.
+- A PR that adds behaviour should not *reduce* its module's coverage. If it
+  does, say why in the PR description.
+
+Do not chase the overall percentage. 58% of all uncovered lines are Compose UI;
+the way that number moves is by testing what the screens decide (extract to
+`internal` functions) and what they render (screenshots), not by rendering
+screens and asserting nothing.
+
 ### Test conventions in this repo
 
 - Framework: **JUnit 5** (`org.junit.jupiter:junit-jupiter-api:5.10.2`)

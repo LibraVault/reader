@@ -64,59 +64,40 @@ gh workflow run android-tts-audio-test.yml
 
 ## Coverage Map by Module
 
-### 🟢 WELL-COVERED (Unit tests exist, critical paths tested)
+> **This section used to be a hand-written per-module narrative with "✅ 80%
+> COMPLETE" style verdicts. It has been replaced by measured data, because
+> several of those verdicts were provably wrong by the time anyone read them:**
+>
+> - `core/database` was marked **"✅ 100% COMPLETE (logic-bearing migrations)"**.
+>   In fact four of six migrations had no test at all, and the one that did
+>   (`MIGRATION_4_5`) asserted SQL substrings against a mock rather than running
+>   anything. Fixed in Phase 3 — `MigrationChainTest` now runs the full v1->v7
+>   chain against real SQLite.
+> - `feature/library` was marked **"🔴 DEFERRED — requires extensive DI/context
+>   setup"**. Its display logic was in fact extractable to pure functions with no
+>   DI at all, and now has 23 unit tests.
+> - Percentages were estimates. The repo had no coverage instrumentation until
+>   Phase 1, so none of them could be checked by a reader.
+>
+> Per-module numbers now come from Kover and are printed in every CI run's
+> summary. See **Test Metrics & Health** below for the current table and the
+> command to regenerate it. Prose here would go stale again within a week.
 
-#### core/domain
-- **UserPreferencesTest** ✅: `snapPlaybackSpeed()` (quarter-step quantization, boundary clamps), `formatPlaybackSpeed()` (integer vs fractional rendering, locale-independent dot separator)
-- **MediaFormatTest** ✅: parametrized `isAudio()` across all enum values
-- **AddVaultFolderUseCaseTest** ✅: existing-URI deduplication, new-URI insertion
-- **ScanVaultUseCaseTest** (pre-existing): Observable scan flow with error handling
-- **Status**: All pure functions testable without Android framework. ✅ COMPLETE.
+### What each module's coverage means
 
-#### core/storage
-- **CoverArtCacheTest** (pre-existing): `calculateSampleSize()` logic (power-of-two invariant, 16x cap, 0/negative inputs)
-- **MediaFormatTest**: Format-string parsing round-trips
-- **LibraryScannerImplTest** (pre-existing): Scanner state machine and progress tracking
-- **MetadataExtractorOpfTest** ✅: EPUB OPF parsing (title/author extraction, calibre series metadata, cover resolution by manifest `id`→`href` lookup, fallbacks to "Unknown"), **XXE prevention via DOCTYPE disabling** (validates hardening from commit 90680a1)
-- **Status**: OPF parsing and XXE hardening now tested; audio/PDF extraction, `CoverArtCache` save/evict methods remain untested (require Robolectric for BitmapFactory). ✅ 80% COMPLETE.
+Line coverage is a floor, not a grade. Reading the table:
 
-#### feature/player
-- **PlayerViewModelTest** (pre-existing): Item loading, error state, sheet visibility, chapter navigation bounds, sleep timer, retry logic
-- **SleepTimerTest** (pre-existing): Timer state transitions
-- **SeekClampTest** (pre-existing): Boundary clamping (near 0/duration, C.TIME_UNSET)
-- **SkipDurationPreferenceTest** (pre-existing): Duration extraction from prefs
-- **LibravaultMediaCallbackStripTest** (pre-existing): Static Media3 CommandButton building helpers
-- **Status**: ViewModel core logic covered; playback transport (`play()`, `togglePlayPause()`, `seekTo()`, `setSpeed()`), bookmark CRUD, and retry backoff remain untested. ✅ 70% COMPLETE (intentional: remaining requires Media3 stubs).
-
-#### feature/reader
-- **ReaderViewModelTest** (pre-existing): Item loading, toolbar toggle, font/theme clamping, bookmarks
-- **EpubStripHtmlTest** (pre-existing): Static `stripHtml()` Jsoup sanitization with 17 cases (script/style/iframe/SVG/comment/CDATA removal, 2MB cap)
-- **Status**: Basic ViewModel and HTML sanitization covered; external-intent init, `EpubReaderViewModel` state machine (`openPublication`, `onLocatorChanged`, chapter retrieval), audiobook seek/skip remain untested. ✅ 60% COMPLETE.
-
-#### feature/settings
-- **SettingsViewModelTest** (pre-existing): Prefs emit, theme/speed/skip-duration clamps, logging toggle, vault observe/add/remove, scan progress
-- **SafeCheckoutLinkTest** (pre-existing): URL validation (scheme allowlist, case-insensitivity, missing host)
-- **StaticAddressesTest** ✅ **REWRITTEN**: Now uses Turbine assertions on `donationState` to verify `DonationState.NoMethod` (with fallback address) vs `DonationState.Error` state transitions. **Previously a false-confidence test** with `assertTrue(true)` and mock self-assertions — now provides real regression protection.
-- **Status**: Donation state machine (`createDonationInvoice`, `pollUntilPaid`, `cancelDonation`), invoice polling transitions, and `hasAnySettledInvoice()` startup logic remain untested. ✅ 75% COMPLETE.
-
-### 🔴 DEFERRED (Architectural dependencies complicate testing)
-
-#### feature/library, feature/onboarding
-- **Status**: ViewModel testing requires extensive DI/context setup. These have many dependencies (`MediaController`, `@ApplicationContext`, multiple use-cases) that complicate unit test mocking. Recommend:
-  - Defer feature-level ViewModel tests to instrumented tests or integration-level testing
-  - Alternatively, refactor ViewModels to extract pure logic functions (state machines, filtering, etc.) into testable core layers
-  - Current feature-level testing in `PlayerViewModelTest`, `ReaderViewModelTest`, `SettingsViewModelTest` (pre-existing) demonstrate the pattern but require significant setup
-- **Decision**: v0.3.0-alpha focuses on core unit tests (pure functions, data transformations, migrations) which provide immediate ROI. Feature ViewModel testing deferred to v0.4.0+ with dedicated refactoring budget.
-
-#### core/logger
-- **LibravaultLoggerTest** ✅ NEW: 6 tests for SharedPreferences `isEnabled` get/set, log file writing (when enabled/disabled), file rotation at 512KB threshold (archival to `.bak`), `readLogs()` and `clearLogs()`
-- **Status**: Core logging logic complete; Logcat calls stubbed via static mock to avoid "not mocked" errors on JVM. ✅ 95% COMPLETE.
-
-#### core/database
-- **MigrationsTest** ✅ NEW: 3 tests for `MIGRATION_4_5` idempotent column-add via PRAGMA check (prevents "duplicate column" SQLiteException crash if fallbackToDestructiveMigration deployed updated schema before formal migration)
-- **Status**: Migration idempotency now protected; other migrations (1→2, 2→3, 3→4) are schema-only with no conditional logic (no test value). ✅ 100% COMPLETE (logic-bearing migrations).
-
----
+- **`core:*` modules are high and should stay high.** They are mostly pure logic
+  with no Android dependencies, so anything uncovered there is uncovered by
+  choice. The three vault modules are gated in CI.
+- **`feature:*` modules are low largely because of Compose.** 58% of all
+  uncovered lines in the repo are Compose UI (`*ScreenKt`, `*ComponentsKt`,
+  `*SheetKt`), which sits at ~13% covered; non-UI logic is ~57% and ViewModels
+  ~67%. A feature module at 26% is not 26% tested — its logic is far better
+  covered than that, and its rendering is barely covered at all.
+- **`app` is low and that is expected.** It is navigation wiring and
+  `MainActivity`; the routing logic that carries risk is tested
+  (`ScreenRouteTest`), the rest is glue.
 
 ## 🔴 INTENTIONAL GAPS (Deferred to instrumented or manual testing)
 
@@ -174,37 +155,62 @@ gh workflow run android-tts-audio-test.yml
 
 ## Future Testing Priorities
 
-### High Value (Next Sprint Recommended)
+Ordered by risk, not by how easy the tests are to write. Re-derive this from
+the coverage table rather than trusting it — the previous version of this
+section recommended writing tests for a **donation state machine that had
+already been deleted** (`pollUntilPaid`, `createDonationInvoice`,
+`hasAnySettledInvoice` all removed in PRs #163/#172, when the donation flow
+became an external link). A stale priority list quietly sends people to work
+that cannot be done.
 
-1. **feature/player**: `play()`, `togglePlayPause()`, `seekTo()`, `setSpeed()`, bookmark CRUD, retry backoff
-   - Estimated effort: 6–8 test methods, 2–3 hours
-   - Payoff: Protects critical playback code path
+### Tracked as issues
 
-2. **feature/reader**: External-intent init, `EpubReaderViewModel` (`openPublication`, `onLocatorChanged`, chapter retrieval), audiobook seek/skip
-   - Estimated effort: 8–10 test methods, 3–4 hours
-   - Payoff: EPUB state machine is complex and prone to race conditions (navigation + progress)
+These have full plans attached and are the highest-value remaining work:
 
-3. **feature/settings**: Donation state machine (`pollUntilPaid` with Processing/Settled/Expired branches), resume-on-startup, `hasAnySettledInvoice()` exception swallowing
-   - Estimated effort: 5–6 test methods, 2 hours
-   - Payoff: Prevents silent donation-polling failures
+- **#253 — `AndroidKeystoreHardwareKeyWrap` has no coverage at any level.**
+  Only the fake is exercised; the real Keystore path protects a vault against
+  an offline attack on a 4-digit PIN. Needs an instrumented test — Robolectric's
+  `AndroidKeyStore` is a shim. Note the CI emulator is software-backed, so
+  `create()`'s happy path needs a physical device while everything else can run
+  on the emulator via `forExistingKey()`.
+- **#256 — iOS `PocketTTSEngine` is structurally untestable.** Every entry
+  point returns early under XCTest, so any test that instantiates it exercises
+  the guard and nothing else. Needs the seam extracted before it can be tested
+  at all.
+- **#273 — iOS snapshot baselines.** Deferred from Phase 5: without local macOS
+  a baseline can be recorded but not visually approved, and an un-inspected
+  baseline locks in whatever was wrong when it was recorded.
 
-4. **core/storage** (Optional): `MetadataExtractor.extract()` for PDF (page count, thumbnail rendering) and audio (duration, cover extraction)
-   - Estimated effort: 4–6 test methods, but requires mocking BitmapFactory; consider Robolectric
-   - Payoff: Protects cover-art and duration extraction (user-visible)
+### Untracked, in rough priority order
 
-### Medium Value (Future Maintenance)
+1. **`feature:reader` (26.8%)** — `EpubReaderViewModel`'s state machine
+   (`openPublication`, `onLocatorChanged`, chapter retrieval) and external-intent
+   init. The largest feature module by line count and the most stateful; EPUB
+   navigation plus progress persistence is exactly where races hide.
+2. **`core:tts` (24.9%)** — the engine boundary. Android's Pocket TTS shipped
+   producing no audio at all through v0.4.5-alpha (issue #107, fixed in #129)
+   precisely because nothing tested this layer.
+3. **`core:domain` (17.2%)** — a long tail of one-line delegating use cases at
+   0%. Low risk individually, cheap to cover, and it is the module whose
+   coverage claim was most wrong before measurement (the deleted table said 95%).
+4. **`core:storage` (50.1%)** — `MetadataExtractor.extract()` for PDF and audio
+   (page count, duration, cover extraction). Needs Robolectric for
+   `BitmapFactory`; user-visible when it breaks.
+5. **`feature:onboarding` (15.9%)** — small, and the first thing a new user
+   touches.
 
-- **feature/reader highlight logic extraction**: Extract `highlights.mapNotNull { ... }` from `EpubReaderScreen`'s `LaunchedEffect` into standalone `buildHighlightDecorations(highlights: List<HighlightEntity>): List<Decoration>` for pure JVM unit testing (see plan item #5)
-- **core/tts**: Mock or stub TextToSpeech for basic utterance-splitting and generation-tracking tests (requires workaround for engine callbacks)
-- **core/storage SAF wrappers**: Integration-level tests with mock ContentProvider; not unit-testable in isolation
+### Deliberately not planned
 
-### Low Value / Doc Debt
-
-- Compose screens (LibraryScreen, PlayerScreen, ReaderScreen, SettingsScreen, OnboardingScreen): Defer to screenshot/instrumented tests and manual QA
-- Room migrations 1→4: Schema-only (no conditional logic); validated by Room's own schema verification
-- Hilt `@Module` classes: Pure DI configuration; validated by annotation processor and integration tests
-
----
+- **Compose screen bodies.** ~58% of all uncovered lines in the repo are Compose
+  UI. The way to cover these is to extract what a screen *decides* into
+  `internal` functions (see `LibraryScreenLogic.kt`) and to screenshot what it
+  *renders* — not to render screens and assert nothing. Rendering a screen to
+  move a coverage number produces a test that cannot fail.
+- **Hilt `@Module` classes.** Pure DI configuration, validated by the annotation
+  processor at compile time.
+- **Touch-target size assertions.** Compose expands `touchBoundsInRoot` to the
+  minimum, so such a test cannot fail. Overlap and visual size are screenshot
+  concerns. See `PlayerAccessibilityTest`'s KDoc.
 
 ## Test Metrics & Health
 
@@ -230,19 +236,25 @@ gh workflow run android-tts-audio-test.yml
 python3 scripts/coverage-summary.py
 ```
 
-As of 2026-08-17 — **overall 40.1%** (3,565 / 8,892 lines):
+As of 2026-08-18 (`dev` @ `efb1b89`) — **overall 41.6%** (3,723 / 8,943 lines):
 
 | Module | Coverage | | Module | Coverage |
 |---|---:|---|---|---:|
 | `core:logger` | 97.4% | | `feature:settings` | 47.2% |
-| `core:vaultcrypto` 🔒 | 90.3% | | `feature:player` | 39.2% |
-| `core:vaultstore` 🔒 | 83.4% | | `feature:vault` | 36.6% |
-| `core:ui` | 77.8% | | `feature:reader` | 26.5% |
-| `core:vaultcontent` 🔒 | 70.2% | | `core:tts` | 24.9% |
-| `core:database` | 63.3% | | `feature:library` | 23.5% |
+| `core:vaultcrypto` 🔒 | 91.3% | | `feature:player` | 44.3% |
+| `core:vaultstore` 🔒 | 83.4% | | `feature:vault` | 37.6% |
+| `core:ui` | 77.9% | | `feature:reader` | 26.8% |
+| `core:vaultcontent` 🔒 | 70.2% | | `feature:library` | 26.4% |
+| `core:database` | 67.4% | | `core:tts` | 24.9% |
 | `core:storage` | 50.1% | | `core:domain` | 17.2% |
 | | | | `feature:onboarding` | 15.9% |
-| | | | `app` | 8.9% |
+| | | | `app` | 15.4% |
+
+Movement since the first measurement (2026-08-17, 40.1%) came from Phases 3–5:
+`core:database` 63.3 -> 67.4 (full v1->v7 migration chain), `feature:player`
+39.2 -> 44.3 (`PlaybackService`), `app` 8.9 -> 15.4 (nav routes + `FLAG_SECURE`),
+`feature:library` 23.5 -> 26.4 (extracted display logic), `core:vaultcrypto`
+90.3 -> 91.3 (HKDF known-answer vectors).
 
 🔒 = gated. A drop of more than 1pp below `scripts/coverage-baseline.json`
 fails CI. The other modules are report-only: a repo-wide ratchet mostly
