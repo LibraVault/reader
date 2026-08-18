@@ -12,6 +12,30 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    // readium-shared/-streamer/-navigator require core library desugaring —
+    // AGP's checkDebugAndroidTestAarMetadata enforces this on the androidTest
+    // variant too (issue #253: connectedDebugAndroidTest failed here the
+    // first time ui-tests.yml actually ran to completion on a `dev` PR,
+    // unrelated to this module having any androidTest sources of its own).
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    // Same BouncyCastle/jspecify META-INF collision core:vaultstore's and
+    // core:vaultcontent's androidTest packaging hit (issue #253) — this
+    // module pulls BouncyCastle in transitively via core:vaultstore, and
+    // jspecify via Readium/media3, so its own androidTest APK collides on
+    // the same path once it actually gets far enough to package (past the
+    // desugaring fix above).
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/INDEX.LIST",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -65,4 +89,6 @@ dependencies {
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }

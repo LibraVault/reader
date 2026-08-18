@@ -8,10 +8,27 @@ plugins {
 android {
     namespace = "xyz.libravault.core.vaultstore"
 
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
     // Robolectric-hosted tests (VaultSessionManagerTest touches ProcessLifecycleOwner,
     // a real Android framework class) — same setup as core:vaultcontent's Phase 3 tests.
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+
+    // First androidTest APK this module has ever packaged — needed to resolve a
+    // META-INF collision between BouncyCastle and jspecify that only surfaces when
+    // the androidTest variant is actually built (issue #253). :app already excludes
+    // this exact path for its own APK, but library modules inherit nothing from it.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/INDEX.LIST",
+            )
+        }
     }
 }
 
@@ -32,4 +49,10 @@ dependencies {
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
+
+    // ── Instrumentation tests ──
+    // AndroidKeystoreHardwareKeyWrapTest — the real AndroidKeyStore path (issue
+    // #253). Robolectric's Keystore shim has no securityLevel/StrongBox/
+    // KeyInfo modelling, so this can only be verified on a real device/emulator.
+    androidTestImplementation(libs.bundles.testing.instrumentation)
 }
