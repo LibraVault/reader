@@ -2,6 +2,7 @@ plugins {
     id("libravault.android.library")
     id("libravault.android.compose")
     id("de.mannodermaus.android-junit5")
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -32,6 +33,12 @@ dependencies {
     // ComponentActivity, for createAndroidComposeRule<ComponentActivity>() in
     // LibravaultThemeTest — needs a real hosting Activity to assert against its Window.
     testImplementation(libs.androidx.activity.compose)
+    // Screenshot baselines (docs/TEST_COVERAGE_PRD.md Phase 5). Attaches to the
+    // Robolectric Compose tests this module already runs — no emulator, no new
+    // test infrastructure, just captureRoboImage() on an existing tree.
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
     // Debug-only manifest declaring the ComponentActivity that Compose's
     // createComposeRule() launches to host test content - picked up by unit
     // tests too via testOptions.unitTests.isIncludeAndroidResources above.
