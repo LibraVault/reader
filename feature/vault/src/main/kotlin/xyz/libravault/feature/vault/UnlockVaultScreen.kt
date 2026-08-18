@@ -93,24 +93,16 @@ private fun PinUnlockBody(state: UnlockVaultUiState, viewModel: UnlockVaultViewM
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text("Enter your PIN", style = MaterialTheme.typography.titleMedium)
         Spacer24()
-        OutlinedTextField(
+        // Was a byte-for-byte copy of CreateVaultScreen's field. Shared now, so
+        // the two entry points into an encrypted vault cannot drift — see
+        // PinField.
+        PinField(
             value = state.pin,
             onValueChange = viewModel::onPinChanged,
-            label = { Text("PIN or passphrase") },
-            singleLine = true,
+            visible = pinVisible,
+            onVisibleChange = { pinVisible = it },
             isError = state.errorMessage != null,
-            supportingText = state.errorMessage?.let { { Text(it) } },
-            visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            trailingIcon = {
-                IconButton(onClick = { pinVisible = !pinVisible }) {
-                    Icon(
-                        if (pinVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (pinVisible) "Hide" else "Show",
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
+            supportingText = state.errorMessage,
         )
         Spacer24()
         if (state.isUnlocking) {
