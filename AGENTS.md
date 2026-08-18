@@ -46,6 +46,40 @@ version-only edits) are exempt. Everything else needs tests, including:
   @Test fun `EPUB stub with null cover and Unknown author is enriched`() = …
   ```
 
+### Instrumented tests (`src/androidTest/`) — report via assertions, never logs
+
+Instrumented tests run on an emulator, and **there is no local emulator on
+the dev box**, so CI is the only feedback loop. That makes one detail
+load-bearing:
+
+- `connectedAndroidTest` does **not** carry instrumentation stdout into the
+  Gradle log, and AGP's HTML report does not capture it either. `Log.i` and
+  `println` from an instrumented test are **write-only** — the value goes
+  nowhere you can read.
+- Anything a test needs to communicate must travel in an **assertion
+  message**, because that is what lands in the report `ui-tests.yml` uploads
+  as an artifact. Retrieve it with:
+  ```
+  gh run download <run-id> --repo LibraVault/reader -n ui-test-results
+  ```
+- Corollary, and the reason this is in a doc rather than a comment: **a green
+  instrumented run is not evidence that a test observed anything.** With no
+  local loop you cannot casually check, so deliberately break each new
+  assertion once and confirm CI turns red before trusting it. (A test that
+  logged its result instead of asserting it did exactly this — passed,
+  reported nothing, and cost a full CI round trip to notice.)
+
+A module gaining its **first** `androidTest` source set also needs build
+wiring the convention plugins do not supply — see `feature/reader` and
+`core/tts` for working examples:
+
+- `defaultConfig.testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"`
+- `androidTestImplementation(libs.bundles.testing.instrumentation)`
+- a `packaging.resources.excludes` entry if dependencies collide on
+  `META-INF` paths. `:app` already excludes several, but **library modules
+  inherit nothing from it**, and the collision only appears once the module
+  packages its own test APK.
+
 ### CI test commands
 
 The CI workflow at `.github/workflows/jvm-tests.yml` runs:
@@ -57,6 +91,13 @@ The CI workflow at `.github/workflows/jvm-tests.yml` runs:
 This will exercise every module's `testDebugUnitTest` task in order. A
 locally green run is the bar for "ready to merge" — don't push code that
 fails this locally without an explanation.
+
+Instrumented tests are **not** part of that gate. `.github/workflows/ui-tests.yml`
+runs `connectedDebugAndroidTest` on an emulator, and on PRs to `dev` it runs
+**only when the PR carries the `needs-emulator` label** (it always runs
+nightly, and on PRs to `main`). A PR adding or changing anything under
+`src/androidTest/` should be labelled, or it gets no signal at all until the
+next nightly run.
 
 ## Commit hygiene
 
