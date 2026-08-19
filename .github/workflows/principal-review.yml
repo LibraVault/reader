@@ -240,7 +240,7 @@ jobs:
             you're not fully confident.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash"
-            --max-turns 40
+            --max-turns 70
 
       - name: Advance PR based on review verdict
         if: steps.guard.outputs.skip != 'true' && !cancelled()
@@ -287,30 +287,44 @@ jobs:
             exit 0
           fi
 
-          # A genuine crash (max-turns exhausted, tool error) is a pipeline
-          # failure, not a review verdict — there's no principal-verdict.txt
-          # to trust either way, so route straight to a human instead of
-          # silently leaving this stuck on status:needs-review. Mirrors
-          # dev-agent.yml/qa-agent.yml's identical steps.agent.outcome
-          # check for the same reason (issue #227, found live on PR #224).
+          # A genuine crash (max-turns exhausted, tool error) is usually a
+          # pipeline failure, not a review verdict — but the agent's very
+          # last action before ending a normal run is writing
+          # principal-verdict.txt, so hitting the crash (e.g. max-turns) one
+          # action *after* that write is common, not rare (issue #297: PRs
+          # #257/#264/#281 all had a valid verdict on disk when the run
+          # crashed). Check the file even on a crash and trust it if it
+          # holds a valid verdict; only route to a human when there's truly
+          # nothing usable. Mirrors dev-agent.yml/qa-agent.yml's identical
+          # steps.agent.outcome check for the no-verdict case (issue #227,
+          # found live on PR #224).
+          CRASHED_WITH_VERDICT=false
           if [ "${{ steps.agent.outcome }}" = "failure" ]; then
-            echo "Principal review run crashed for PR #$PR_NUMBER — routing to status:needs-info instead of a verdict." >&2
-            gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
-            # Also clear a stale outcome label left by an EARLIER review
-            # round on this same PR (e.g. re-review after an
-            # update-from-base) — mirrors the cleanup the verdict path
-            # below already does, but that path is skipped entirely on a
-            # crash. Without this, a PR that was status:needs-human-merge
-            # (or status:approved-auto-merge) from a prior round keeps
-            # that label alongside the new status:needs-info, so it can
-            # read as already reviewed/mergeable even though this round
-            # never reached a verdict (issue #236).
-            gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge || true
-            gh pr edit "$PR_NUMBER" --remove-label status:needs-human-merge || true
-            gh pr edit "$PR_NUMBER" --add-label status:needs-info
-            gh pr comment "$PR_NUMBER" --body "principal-review's run crashed or exhausted its turn budget (see the [workflow run]($RUN_URL)) before reaching a verdict — routed to a human instead of silently leaving this on status:needs-review. Needs a human to either re-run review (re-add \`status:needs-review\`) or review this PR directly."
-            echo "verdict=crashed" >> "$GITHUB_OUTPUT"
-            exit 0
+            CRASH_VERDICT=""
+            if [ -f principal-verdict.txt ]; then
+              CRASH_VERDICT=$(tr -d '[:space:]' < principal-verdict.txt | tr '[:upper:]' '[:lower:]')
+            fi
+            if [ "$CRASH_VERDICT" != "auto-merge" ] && [ "$CRASH_VERDICT" != "human-merge" ]; then
+              echo "Principal review run crashed for PR #$PR_NUMBER — routing to status:needs-info instead of a verdict." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
+              # Also clear a stale outcome label left by an EARLIER review
+              # round on this same PR (e.g. re-review after an
+              # update-from-base) — mirrors the cleanup the verdict path
+              # below already does, but that path is skipped entirely on a
+              # crash. Without this, a PR that was status:needs-human-merge
+              # (or status:approved-auto-merge) from a prior round keeps
+              # that label alongside the new status:needs-info, so it can
+              # read as already reviewed/mergeable even though this round
+              # never reached a verdict (issue #236).
+              gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge || true
+              gh pr edit "$PR_NUMBER" --remove-label status:needs-human-merge || true
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "principal-review's run crashed or exhausted its turn budget (see the [workflow run]($RUN_URL)) before reaching a verdict — routed to a human instead of silently leaving this on status:needs-review. Needs a human to either re-run review (re-add \`status:needs-review\`) or review this PR directly."
+              echo "verdict=crashed" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Principal review run crashed for PR #$PR_NUMBER, but a valid verdict ($CRASH_VERDICT) was already written to principal-verdict.txt before the crash — using it instead of discarding (issue #297)." >&2
+            CRASHED_WITH_VERDICT=true
           fi
 
           VERDICT="human-merge"
@@ -337,6 +351,10 @@ jobs:
 
           echo "Principal review verdict for #$PR_NUMBER: $VERDICT"
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+
+          if [ "$CRASHED_WITH_VERDICT" = "true" ]; then
+            gh pr comment "$PR_NUMBER" --body "principal-review's agent step crashed or exhausted its turn budget after writing its verdict (\`$VERDICT\`) to \`principal-verdict.txt\` (see the [workflow run]($RUN_URL)) — using that verdict instead of discarding it and bouncing to a human."
+          fi
 
           gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
           # Also clear whichever outcome label a PREVIOUS review round on
