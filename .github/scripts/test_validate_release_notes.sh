@@ -46,6 +46,20 @@ check "bare version without a v prefix still blocks" 0 \
 check "single-segment number with no dots passes" 1 \
   "Fixed 12 crashes reported by testers."
 
+# Deliberate over-blocking (flagged in PR #291 principal review, kept by
+# design -- see the header comment in validate_release_notes.sh): we can't
+# verify Firebase's exact linkify heuristic, so unrelated dot-separated
+# numbers get caught too. A CI failure here just costs a re-run with
+# reworded notes; a false negative ships another dead link to testers.
+check "unrelated OS-version mention blocks (intentional over-block)" 0 \
+  "Now requires Android 8.0 or higher."
+
+check "unrelated percentage mention blocks (intentional over-block)" 0 \
+  "Improved battery usage by 12.5 percent."
+
+check "unrelated IP address mention blocks (intentional over-block)" 0 \
+  "Fixed connection issue with 192.168.1.1 proxy."
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "All checks passed."

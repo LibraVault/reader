@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
-# Detects a bare, dotted version-like string (e.g. v0.4.6.1-alpha) in
+# Detects a dot-separated, domain-shaped numeric token (e.g. v0.4.6.1-alpha,
+# but also plain decimals like "8.0" or an IP like "192.168.1.1") in
 # Firebase App Distribution release notes text. Firebase's tester invite
-# page auto-linkifies any dot-separated, domain-shaped token in the
-# release notes -- without validating a real TLD or requiring a scheme --
-# so a mention like "v0.4.6.1-alpha" renders as a dead link to
-# http://0.4.6.1-alpha (see issue #290). Firebase's own page heading
-# already shows the version + build number, so restating it in the notes
-# body is both redundant and broken.
+# page auto-linkifies tokens shaped like this -- without validating a real
+# TLD or requiring a scheme -- so a mention like "v0.4.6.1-alpha" renders as
+# a dead link to http://0.4.6.1-alpha (see issue #290).
+#
+# We can't inspect Firebase's actual linkify implementation, so this
+# deliberately errs broad: it also blocks ordinary numbers that happen to
+# look version-shaped (an OS version, a percentage, an IP) even though
+# those may not actually get linkified. A false-positive CI failure on a
+# manual workflow_dispatch run just means editing the notes and re-running
+# -- no data loss, no broken build -- versus a false negative shipping
+# another dead link to testers. See principal review on PR #291 for the
+# discussion; narrowing this to be more precise is a legitimate future
+# improvement but requires knowing Firebase's real heuristic to do safely.
 #
 # Usage as a library: source this file and pipe text into
 # release_notes_contains_bare_version to test it in isolation (exit 0 =
@@ -27,10 +35,14 @@ release_notes_contains_bare_version() {
 # release_notes_contains_bare_version() in isolation.
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   if echo "$RELEASE_NOTES" | release_notes_contains_bare_version; then
-    echo "::error::release_notes contains a bare version string (e.g. v0.4.6.1-alpha)." \
-      "Firebase's tester invite page auto-linkifies this into a dead link (issue #290)." \
-      "Reference the build without restating the version -- Firebase's own page heading" \
-      "already shows it -- and re-run."
+    echo "::error::release_notes contains a dot-separated, version-looking token" \
+      "(e.g. v0.4.6.1-alpha -- but this also catches plain numbers like an OS version," \
+      "a percentage, or an IP address). Firebase's tester invite page may auto-linkify" \
+      "it into a dead link (issue #290), and we can't verify its exact heuristic, so this" \
+      "errs on the side of blocking. If it's a version/build mention: remove it, Firebase's" \
+      "own page heading already shows the version + build number. If it's an unrelated" \
+      "number caught by mistake: rephrase to avoid a bare dotted token (e.g. spell it out)" \
+      "and re-run."
     exit 1
   fi
   exit 0
