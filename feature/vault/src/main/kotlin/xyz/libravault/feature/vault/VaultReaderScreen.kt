@@ -46,13 +46,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * [VaultReaderViewModel.navigateToBookmark], which this screen forwards to
  * whichever renderer is active.
  *
- * Reading settings ([VaultReaderSettingsSheet]) only actually change
- * anything for EPUB — PDF pages here are pre-rendered bitmaps with no
- * theme/font hook, matching `feature:reader`'s own `PdfReaderScreen`, which
- * ignores everything but `scrollMode` (vault PDF has no second rendering
- * mode to switch to, so that control is dropped entirely — see
- * [VaultReaderSettings]'s doc). The settings icon still opens the sheet for
- * PDF, same as the regular reader, rather than special-casing it away.
+ * Reading settings ([VaultReaderSettingsSheet]) mostly only change anything
+ * for EPUB — PDF pages here are pre-rendered bitmaps with no theme/font
+ * hook — except `scrollMode`, which now switches [VaultPdfReaderScreen]
+ * between continuous-scroll and paginated rendering, matching
+ * `feature:reader`'s own `PdfReaderScreen`. The settings icon opens the same
+ * sheet for both formats rather than special-casing PDF away.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,6 +132,7 @@ fun VaultReaderScreen(
                 }
                 is VaultReaderState.PdfReady -> VaultPdfReaderScreen(
                     reader           = viewModel.pdfReader(),
+                    settings         = settings,
                     modifier         = Modifier.fillMaxSize(),
                     onPageChanged    = viewModel::onPdfPageChanged,
                     scrollToPage     = pendingPdfPage,
@@ -163,6 +163,7 @@ fun VaultReaderScreen(
             onFontSizeChanged    = viewModel::onFontSizeChanged,
             onFontFamilyChanged  = viewModel::onFontFamilyChanged,
             onLineSpacingChanged = viewModel::onLineSpacingChanged,
+            onScrollModeChanged  = viewModel::onScrollModeChanged,
             onDismiss            = { showSettingsSheet = false },
         )
     }
