@@ -22,9 +22,12 @@ final class PocketTTSEngine: TTSEngineProtocol {
     /// Filenames within PocketModelManager's bundled model directory - must
     /// match what third-party/sherpa-onnx/setup-ios.sh extracts, and the
     /// filenames baked into Android's PocketVoiceCatalog for the same voice.
-    private static let modelFileName = "en_US-ljspeech-medium.onnx"
-    private static let tokensFileName = "tokens.txt"
-    private static let dataDirName = "espeak-ng-data"
+    /// Internal (not private), per AGENTS.md's "pure helpers should be
+    /// internal" convention, so PocketTTSEngineTests can pin these against
+    /// setup-ios.sh/PocketVoiceCatalog drifting apart.
+    static let modelFileName = "en_US-ljspeech-medium.onnx"
+    static let tokensFileName = "tokens.txt"
+    static let dataDirName = "espeak-ng-data"
 
     /// `xcodebuild test`'s CI Simulator has no real audio hardware and hangs
     /// on AVAudioSession/AVFoundation activation - see TTSEngineBridge's
@@ -48,11 +51,16 @@ final class PocketTTSEngine: TTSEngineProtocol {
     }
 
     func initialize() async throws {
-        guard !Self.isRunningUnderXCTest else { return }
-
+        // Model-path resolution runs before the XCTest guard deliberately -
+        // it touches no audio hardware, so it's safe under test, and it's the
+        // entire user-facing story for a broken build (setup-ios.sh not run).
+        // Real usage is unaffected: modelDirectoryPath resolves either way,
+        // so this ordering only changes what a *test* observes.
         guard let modelPath = modelManager.modelDirectoryPath else {
             throw EngineError.modelNotBundled
         }
+
+        guard !Self.isRunningUnderXCTest else { return }
 
         let model = "\(modelPath)/\(Self.modelFileName)"
         let tokens = "\(modelPath)/\(Self.tokensFileName)"
@@ -143,8 +151,11 @@ final class PocketTTSEngine: TTSEngineProtocol {
     /// `@convention(c)` function (no captures), so per-call context (which
     /// AVAudioPlayerNode/format to feed) is threaded through via the
     /// `arg` pointer - same pattern sherpa-onnx's own tts-vits.swift example
-    /// uses.
-    private static let ttsCallback: TtsProgressCallbackWithArg = { samples, n, _, rawArg in
+    /// uses. Internal (not private), per AGENTS.md's "pure helpers should be
+    /// internal" convention, so PocketTTSEngineTests can call this directly
+    /// with a synthetic `arg` instead of only through a real `speak()` ->
+    /// `generateWithConfig()` synthesis round trip.
+    static let ttsCallback: TtsProgressCallbackWithArg = { samples, n, _, rawArg in
         guard let samples, n > 0, let rawArg else { return 1 }
         let context = Unmanaged<PlaybackContext>.fromOpaque(rawArg).takeUnretainedValue()
         let floatSamples = [Float](UnsafeBufferPointer(start: samples, count: Int(n)))
@@ -154,7 +165,10 @@ final class PocketTTSEngine: TTSEngineProtocol {
         return 1 // continue generating
     }
 
-    private static func pcmBuffer(from samples: [Float], format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    /// Internal (not private) so PocketTTSEngineTests can exercise this pure
+    /// transform directly, per AGENTS.md's "pure helpers should be internal"
+    /// convention.
+    static func pcmBuffer(from samples: [Float], format: AVAudioFormat) -> AVAudioPCMBuffer? {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
               let channelData = buffer.floatChannelData
         else { return nil }
@@ -169,8 +183,9 @@ final class PocketTTSEngine: TTSEngineProtocol {
 
 /// Per-`speak()`-call context passed across the C callback boundary (see
 /// `ttsCallback` above) - retained for the duration of one generate call,
-/// then released once it returns.
-private final class PlaybackContext {
+/// then released once it returns. Internal (not private) so
+/// PocketTTSEngineTests can construct one directly to drive `ttsCallback`.
+final class PlaybackContext {
     let node: AVAudioPlayerNode
     let format: AVAudioFormat
 
