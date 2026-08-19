@@ -39,14 +39,21 @@ final class TextPaginatorTests: XCTestCase {
         XCTAssertEqual(reassembled, text)
     }
 
-    // A pageSize far smaller than a single glyph at this font size cannot fit any
-    // content — TextPaginator must fall back to one page holding everything left
-    // rather than looping forever adding zero-length containers.
-    func testTinyPageSizeFallsBackToOnePageInsteadOfLooping() {
+    // A one-point-square page can't fit a real line of text, but TextKit still places
+    // at least one glyph per container rather than reporting a zero-glyph container
+    // here (that only happens for a genuinely degenerate container) — so this mostly
+    // exercises the ordinary loop, just with a page per glyph or two. What actually
+    // matters, and what the zero-glyph guard in `paginate` exists to guarantee even in
+    // the case this doesn't reach: the loop terminates and no text is lost or
+    // duplicated, however small the page.
+    func testTinyPageSizeTerminatesAndCoversTheWholeText() {
         let text = "Some text that cannot fit inside a one-point-square page container."
         let pages = TextPaginator.paginate(text: text, font: font, lineSpacing: 4, pageSize: CGSize(width: 1, height: 1))
-        XCTAssertEqual(pages.count, 1)
-        XCTAssertEqual(pages.first, text.startIndex..<text.endIndex)
+        XCTAssertFalse(pages.isEmpty)
+        XCTAssertEqual(pages.first?.lowerBound, text.startIndex)
+        XCTAssertEqual(pages.last?.upperBound, text.endIndex)
+        let reassembled = pages.map { String(text[$0]) }.joined()
+        XCTAssertEqual(reassembled, text)
     }
 
     // MARK: - startOffset / pageIndex(containingOffset:) round trip
