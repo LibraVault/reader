@@ -149,6 +149,34 @@ struct MarkdownReaderContent: View {
     }
 }
 
+/// Font-size scale for Markdown headings (H1 largest through H6 smallest).
+///
+/// Growth is geometric (a constant ratio per level) rather than linear (a fixed
+/// pt step per level). A fixed pt step is a shrinking *relative* jump the larger
+/// the base size gets, so the headings that most need to stand out — H1 vs H2 —
+/// end up looking almost the same size. A constant ratio keeps every level's
+/// step proportionally the same. `internal` (not `private`) and free of any
+/// SwiftUI/View dependency so it's unit-testable directly — see
+/// `AGENTS.md`'s "Pure helpers ... internal rather than private" convention.
+enum MarkdownHeadingStyle {
+    /// H6's size at fontSize == 1.0, before the per-level multiplier is applied.
+    static let baseSize = 15.0
+    /// Per-level growth factor going from H6 up to H1.
+    static let scaleRatio = 1.2
+
+    static func headingSize(for level: Int, fontSize: Double) -> Double {
+        let clampedLevel = min(max(level, 1), 6)
+        let stepsFromSmallest = 6 - clampedLevel
+        // Avoids depending on Foundation's `pow` — plain multiplication is enough
+        // for a small, fixed number of integer steps (at most 5, H6 up to H1).
+        var multiplier = 1.0
+        for _ in 0..<stepsFromSmallest {
+            multiplier *= scaleRatio
+        }
+        return baseSize * multiplier * fontSize
+    }
+}
+
 private struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let images: [String: Data]
@@ -161,7 +189,7 @@ private struct MarkdownBlockView: View {
     var body: some View {
         switch block {
         case let .heading(level, text):
-            runsText(text, baseSize: headingSize(for: level))
+            runsText(text, baseSize: MarkdownHeadingStyle.headingSize(for: level, fontSize: fontSize))
                 .fontWeight(.bold)
                 .lineSpacing(8 * lineSpacing)
                 .foregroundStyle(colors.onBackground)
@@ -295,12 +323,6 @@ private struct MarkdownBlockView: View {
                 }
             }
         }
-    }
-
-    private func headingSize(for level: Int) -> Double {
-        // H1 largest, clamped floor at H6 so deeply nested headings stay legible.
-        let scale = max(6 - level, 1)
-        return (16 + Double(scale) * 3) * fontSize
     }
 
     private func runsText(_ runs: [MarkdownInlineRun], baseSize: Double) -> Text {
