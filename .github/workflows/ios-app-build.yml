@@ -301,3 +301,16 @@ jobs:
 
               [View run details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`
             })
+
+      # The comment step above can post "iOS Build Status: FAILED" while
+      # this job itself still exits 0 (github-script doesn't fail the job
+      # on its own) — this job was `if: always()`, no step here ever
+      # exited non-zero, so a real build failure never blocked a PR that
+      # required this check. Fail explicitly instead of relying on the
+      # comment being read. See issue #245.
+      - name: Fail if either build failed
+        if: needs.build-ios-simulator.result != 'success' || needs.build-android-app.result != 'success'
+        run: |
+          echo "build-ios-simulator: ${{ needs.build-ios-simulator.result }}" >&2
+          echo "build-android-app: ${{ needs.build-android-app.result }}" >&2
+          exit 1
