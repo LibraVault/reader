@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -19,7 +21,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -34,6 +38,11 @@ import xyz.libravault.feature.player.components.PlayerSeekBar
  * [PlayerSeekBar]/[PlaybackControls] (pure state+callback composables,
  * already the pattern `feature:reader`/`feature:library` depend on
  * `feature:player` for) rather than rebuilding seek/transport UI.
+ *
+ * Bookmarks work the same way as [VaultReaderScreen]'s: the add-bookmark
+ * action in the top bar bookmarks the current playback position; tapping a
+ * bookmark in [VaultBookmarksSheet] seeks the player to it via
+ * [VaultPlayerViewModel.seekToBookmark].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +51,8 @@ fun VaultPlayerScreen(
     viewModel: VaultPlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val bookmarks by viewModel.bookmarks.collectAsState()
+    var showBookmarksSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
 
@@ -52,6 +63,14 @@ fun VaultPlayerScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.addBookmark() }) {
+                        Icon(Icons.Default.BookmarkAdd, contentDescription = "Add bookmark")
+                    }
+                    IconButton(onClick = { showBookmarksSheet = true }) {
+                        Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
                     }
                 },
             )
@@ -90,5 +109,18 @@ fun VaultPlayerScreen(
                 }
             }
         }
+    }
+
+    if (showBookmarksSheet) {
+        VaultBookmarksSheet(
+            bookmarks       = bookmarks,
+            onBookmarkClick = { bookmark ->
+                viewModel.seekToBookmark(bookmark)
+                showBookmarksSheet = false
+            },
+            onBookmarkDelete = viewModel::removeBookmark,
+            onEditNote       = viewModel::updateBookmarkNote,
+            onDismiss        = { showBookmarksSheet = false },
+        )
     }
 }

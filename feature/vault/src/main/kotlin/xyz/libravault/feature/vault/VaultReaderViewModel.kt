@@ -147,6 +147,10 @@ class VaultReaderViewModel @Inject constructor(
         _settings.update { it.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f)) }
     }
 
+    fun onScrollModeChanged(mode: VaultScrollMode) {
+        _settings.update { it.copy(scrollMode = mode) }
+    }
+
     // ── Position tracking ────────────────────────────────────────────────────
 
     fun onEpubPositionChanged(locatorJson: String) {

@@ -378,4 +378,21 @@ class VaultReaderViewModelTest {
         assertEquals(VaultReaderFontFamily.SERIF, vm.settings.value.fontFamily)
         assertEquals(1.4f, vm.settings.value.lineSpacing)
     }
+
+    @Test
+    fun `onScrollModeChanged updates only the scroll mode field`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(VaultScrollMode.PAGINATED, vm.settings.value.scrollMode)
+
+        vm.onScrollModeChanged(VaultScrollMode.SCROLLING)
+
+        assertEquals(VaultScrollMode.SCROLLING, vm.settings.value.scrollMode)
+        assertEquals(1.4f, vm.settings.value.lineSpacing)
+    }
 }

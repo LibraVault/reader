@@ -4,9 +4,13 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -47,6 +51,7 @@ class PocketTtsEngineTest {
         val engine = engine(mockk(relaxed = true))
         assertNotNull(engine.state)
         assertNotNull(engine.completionEvent)
+        assertNotNull(engine.stopEvent)
     }
 
     @Test
@@ -171,6 +176,22 @@ class PocketTtsEngineTest {
         assertEquals(TtsStatus.IDLE, engine.state.value.status)
     }
 
+    @Test
+    fun `stop emits stopEvent`() = runTest(UnconfinedTestDispatcher()) {
+        val engine = engine(mockk(relaxed = true))
+
+        // CoroutineStart.UNDISPATCHED runs this coroutine inline up to its first
+        // suspension point (registering the collection on stopEvent) before this
+        // line returns, so stop()'s tryEmit below is guaranteed to have a live
+        // subscriber - a SharedFlow with no replay drops emissions nobody is
+        // collecting for yet.
+        val stopEventDeferred = async(start = CoroutineStart.UNDISPATCHED) { engine.stopEvent.first() }
+
+        engine.stop()
+
+        withTimeout(1_000) { stopEventDeferred.await() }
+    }
+
     // ── Audio focus (#137 mutual exclusion via lockscreen/notification) ────
 
     @Test
@@ -213,6 +234,24 @@ class PocketTtsEngineTest {
         onFocusLostSlot.captured.invoke()
 
         assertEquals(TtsStatus.IDLE, engine.state.value.status)
+    }
+
+    @Test
+    fun `losing audio focus while resumed emits stopEvent`() = runTest(UnconfinedTestDispatcher()) {
+        // #280/#281 - this is the exact path TtsAudioFocusManager uses to stop TTS
+        // out from under an active Read Aloud session without going through the
+        // ViewModel's stopReadAloud(). stopEvent is what lets a caller detect that.
+        val onFocusLostSlot = io.mockk.slot<() -> Unit>()
+        every { audioFocusManager.requestFocus(capture(onFocusLostSlot)) } returns Unit
+        val engine = engine(mockk(relaxed = true))
+        engine.pause()
+        engine.resume()
+        // See the CoroutineStart.UNDISPATCHED comment on `stop emits stopEvent` above.
+        val stopEventDeferred = async(start = CoroutineStart.UNDISPATCHED) { engine.stopEvent.first() }
+
+        onFocusLostSlot.captured.invoke()
+
+        withTimeout(1_000) { stopEventDeferred.await() }
     }
 
     @Test

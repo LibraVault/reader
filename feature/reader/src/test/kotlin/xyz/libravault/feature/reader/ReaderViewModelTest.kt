@@ -105,6 +105,7 @@ class ReaderViewModelTest {
     private val fakeTtsEngine        = mockk<TtsEngine>(relaxed = true)
     private val ttsEngineStateFlow   = MutableStateFlow(TtsState())
     private val ttsCompletionEvent   = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val ttsStopEvent         = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val ttsEngineFlow        = MutableStateFlow(fakeTtsEngine)
     private val ttsEngineProvider    = mockk<TtsEngineProvider>()
 
@@ -131,6 +132,7 @@ class ReaderViewModelTest {
         every { ttsEngineProvider.engine }  returns ttsEngineFlow
         every { fakeTtsEngine.state }           returns ttsEngineStateFlow
         every { fakeTtsEngine.completionEvent } returns ttsCompletionEvent
+        every { fakeTtsEngine.stopEvent }       returns ttsStopEvent
     }
 
     @AfterEach
@@ -512,6 +514,47 @@ class ReaderViewModelTest {
         // not resurrect the session by speaking the next chapter.
         ttsCompletionEvent.emit(Unit)
         io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak("Chapter two.") }
+    }
+
+    @Test
+    fun `external stop via audio focus loss clears the next-chapter provider`() = runTest {
+        // Regression coverage for #280: TtsAudioFocusManager calls engine.stop()
+        // directly on focus loss (e.g. an audiobook resumed from the lockscreen),
+        // bypassing stopReadAloud() entirely. Simulate that the way the real engines'
+        // stop() actually behaves (AndroidTtsEngine.stop() / PocketTtsEngine.stop()):
+        // state flips to IDLE *and* stopEvent fires - not via vm.stopReadAloud().
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { "Chapter two." })
+
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.PLAYING)
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.IDLE)
+        ttsStopEvent.emit(Unit)
+
+        // A stale provider would misread this later, unrelated completion event
+        // (e.g. from a voice preview sharing the same singleton engine) as
+        // "advance the book".
+        ttsCompletionEvent.emit(Unit)
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak("Chapter two.") }
+    }
+
+    @Test
+    fun `natural completion driven the way production engines actually sequence it still advances`() = runTest {
+        // QA regression for #281: both AndroidTtsEngine.speakNext() and
+        // PocketTtsEngine.speak()'s completion callback set `state` to IDLE
+        // *before* emitting completionEvent from the very same call - i.e. every
+        // natural chapter-to-chapter advance also produces a PLAYING -> IDLE edge
+        // on `state`, not just an external stop. A fix that clears
+        // readAloudNextChapterProvider off that edge (instead of stopEvent, which
+        // natural completion never fires) breaks Read Aloud after the first
+        // chapter. Drive state and the completion event in that same order here.
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { "Chapter two." })
+
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.PLAYING)
+        ttsEngineStateFlow.value = TtsState(status = TtsStatus.IDLE)
+        ttsCompletionEvent.emit(Unit)
+
+        io.mockk.coVerify { fakeTtsEngine.speak("Chapter two.") }
     }
 
     @Test

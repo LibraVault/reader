@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.LibraryItem
+import xyz.libravault.core.ui.components.CoverFormatBadge
 import xyz.libravault.core.ui.components.GeneratedCover
 import xyz.libravault.core.ui.theme.Dimens
 
@@ -64,6 +65,7 @@ internal fun ContinueCard(
                     GeneratedCover(
                         title = item.title,
                         modifier = Modifier.fillMaxSize(),
+                        format = CoverFormatBadge.fromFormatName(item.format.name),
                     )
                 }
 

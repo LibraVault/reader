@@ -208,13 +208,25 @@ struct SettingsView: View {
 
     // MARK: - About
 
+    /// The app's real version, read from the bundle's `CFBundleShortVersionString`
+    /// (Xcode's `MARKETING_VERSION`) rather than hardcoded — this used to say a
+    /// stale "3.0.0-alpha" that never matched what TestFlight/App Store Connect
+    /// actually shipped, unlike Android's SettingsViewModel which already reads
+    /// `versionName` from PackageManager at runtime. Falls back to "unknown" if
+    /// the bundle info is somehow missing, which should never happen in practice.
+    /// `static` (matching `supportURL` below) so it's directly testable without
+    /// standing up the view — see SettingsAppVersionTests.
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+    }
+
     private var aboutSection: some View {
         Section {
             HStack {
                 Text("Version")
                     .foregroundStyle(LibraVaultColor.onSurface)
                 Spacer()
-                Text("3.0.0-alpha")
+                Text(Self.appVersion)
                     .foregroundStyle(LibraVaultColor.onSurfaceVariant)
             }
 

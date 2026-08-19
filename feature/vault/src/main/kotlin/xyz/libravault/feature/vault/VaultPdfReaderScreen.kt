@@ -4,6 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.TransformableState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +25,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,7 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -43,11 +51,14 @@ import xyz.libravault.core.vaultcontent.VaultProxyFdHost
 import xyz.libravault.core.vaultcrypto.VaultFileReader
 
 /**
- * Minimal vault-native PDF reader: continuous scroll, one bitmap per page,
- * no zoom/pan, no page-jump. Proxy fd first (validated on real hardware in
- * the Phase 0 spike — implementation plan §D.0.RESULTS), falling back to
- * `memfd` if the proxy fd fails on this device — the same primary/fallback
- * shape `core:vaultcontent`'s `VaultPdfFileDescriptor.kt` was built for.
+ * Vault-native PDF reader: continuous-scroll or paginated (page-by-page,
+ * swipe/tap navigation), switched via [settings]' `scrollMode` — the same
+ * two modes `feature:reader`'s `PdfReaderScreen` offers, ported here rather
+ * than shared (see [VaultReaderSettings]'s doc). One bitmap per page either
+ * way; proxy fd first (validated on real hardware in the Phase 0 spike —
+ * implementation plan §D.0.RESULTS), falling back to `memfd` if the proxy fd
+ * fails on this device — the same primary/fallback shape
+ * `core:vaultcontent`'s `VaultPdfFileDescriptor.kt` was built for.
  *
  * [reader] is not closed here — [VaultProxyFdCallback.onRelease] (proxy fd
  * path) or the caller's own cleanup (memfd path, and [VaultReaderViewModel]'s
@@ -55,15 +66,17 @@ import xyz.libravault.core.vaultcrypto.VaultFileReader
  * is idempotent, so the backstop is harmless even when the proxy fd path
  * already closed it.
  *
- * [onPageChanged] reports the topmost visible page as the user scrolls — the
- * position reference [VaultReaderViewModel.addBookmark] bookmarks against.
- * [scrollToPage] drives bookmark-navigation: set it to animate to that page,
- * then call [onScrollConsumed] once the scroll completes (mirrors
- * `feature:reader`'s `PdfReaderScreen` continuous-scroll variant exactly).
+ * [onPageChanged] reports the current page (topmost visible in scrolling
+ * mode, the displayed page in paginated mode) — the position reference
+ * [VaultReaderViewModel.addBookmark] bookmarks against. [scrollToPage]
+ * drives bookmark-navigation: set it to animate/jump to that page, then call
+ * [onScrollConsumed] once consumed (mirrors `feature:reader`'s
+ * `PdfReaderScreen` exactly).
  */
 @Composable
 fun VaultPdfReaderScreen(
     reader: VaultFileReader,
+    settings: VaultReaderSettings,
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
     scrollToPage: Int? = null,
@@ -107,6 +120,54 @@ fun VaultPdfReaderScreen(
         return
     }
 
+    // ── Zoom state (paginated mode only) ────────────────────────────────────
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val zoomState = rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 4f)
+        offset = if (scale == 1f) Offset.Zero else offset + panChange
+    }
+
+    when (settings.scrollMode) {
+        VaultScrollMode.SCROLLING -> VaultPdfScrollingView(
+            renderer         = r,
+            renderMutex      = renderMutex,
+            pageCount        = pageCount,
+            screenWidthPx    = screenWidthPx,
+            scrollToPage     = scrollToPage,
+            onScrollConsumed = onScrollConsumed,
+            onPageChanged    = onPageChanged,
+            modifier         = modifier,
+        )
+        VaultScrollMode.PAGINATED -> VaultPdfPaginatedView(
+            renderer         = r,
+            renderMutex      = renderMutex,
+            pageCount        = pageCount,
+            screenWidthPx    = screenWidthPx,
+            scrollToPage     = scrollToPage,
+            onScrollConsumed = onScrollConsumed,
+            scale            = scale,
+            offset           = offset,
+            zoomState        = zoomState,
+            onPageChanged    = onPageChanged,
+            modifier         = modifier,
+        )
+    }
+}
+
+// ── Scrolling mode ──────────────────────────────────────────────────────────
+
+@Composable
+private fun VaultPdfScrollingView(
+    renderer: PdfRenderer,
+    renderMutex: Mutex,
+    pageCount: Int,
+    screenWidthPx: Int,
+    scrollToPage: Int?,
+    onScrollConsumed: () -> Unit,
+    onPageChanged: (Int) -> Unit,
+    modifier: Modifier,
+) {
     val listState = rememberLazyListState()
 
     // Bookmark navigation: animate to the requested page then clear the request.
@@ -128,11 +189,90 @@ fun VaultPdfReaderScreen(
     LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
         items(pageCount) { pageIndex ->
             VaultPdfPageImage(
-                renderer      = r,
+                renderer      = renderer,
                 renderMutex   = renderMutex,
                 pageIndex     = pageIndex,
                 screenWidthPx = screenWidthPx,
                 modifier      = Modifier.fillMaxWidth().wrapContentHeight(),
+            )
+        }
+    }
+}
+
+// ── Paginated mode ──────────────────────────────────────────────────────────
+
+@Composable
+private fun VaultPdfPaginatedView(
+    renderer: PdfRenderer,
+    renderMutex: Mutex,
+    pageCount: Int,
+    screenWidthPx: Int,
+    scrollToPage: Int?,
+    onScrollConsumed: () -> Unit,
+    scale: Float,
+    offset: Offset,
+    zoomState: TransformableState,
+    onPageChanged: (Int) -> Unit,
+    modifier: Modifier,
+) {
+    var currentPage by remember { mutableIntStateOf(0) }
+
+    // Clamp once the page count is known (0 while the renderer is still opening).
+    LaunchedEffect(pageCount) {
+        if (pageCount > 0) currentPage = currentPage.coerceIn(0, pageCount - 1)
+    }
+
+    // Bookmark navigation: jump directly to the requested page.
+    LaunchedEffect(scrollToPage, pageCount) {
+        if (scrollToPage != null && pageCount > 0) {
+            currentPage = scrollToPage.coerceIn(0, pageCount - 1)
+            onScrollConsumed()
+        }
+    }
+
+    LaunchedEffect(currentPage) { onPageChanged(currentPage) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .transformable(zoomState)
+            .pointerInput(Unit) {
+                detectTapGestures { tapOffset ->
+                    val xDp   = tapOffset.x / density
+                    val width = size.width / density
+                    when {
+                        xDp < width * 0.33f -> if (currentPage > 0) currentPage--
+                        xDp > width * 0.67f -> if (currentPage < pageCount - 1) currentPage++
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (pageCount > 0) {
+            VaultPdfPageImage(
+                renderer      = renderer,
+                renderMutex   = renderMutex,
+                pageIndex     = currentPage,
+                screenWidthPx = screenWidthPx,
+                modifier      = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .graphicsLayer(
+                        scaleX       = scale,
+                        scaleY       = scale,
+                        translationX = offset.x,
+                        translationY = offset.y,
+                    ),
+            )
+
+            // Page indicator
+            Text(
+                text  = "${currentPage + 1} / $pageCount",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp),
             )
         }
     }

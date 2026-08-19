@@ -29,11 +29,12 @@ import xyz.libravault.core.ui.theme.ReadingTheme
 
 /**
  * Reading settings sheet for the vault-native reader — same shape as
- * `feature:reader`'s `ReaderSettingsSheet`, over [VaultReaderSettings]. No
- * scroll-mode row (see [VaultReaderSettings]'s doc for why) and, like the
- * original, [showFontControls] hides font-size/line-spacing/font-family for
- * PDF — those are HTML/CSS-driven and PDF pages here are pre-rendered
- * bitmaps.
+ * `feature:reader`'s `ReaderSettingsSheet`, over [VaultReaderSettings]. Like
+ * the original, [showFontControls] hides font-size/line-spacing/font-family
+ * for PDF — those are HTML/CSS-driven and PDF pages here are pre-rendered
+ * bitmaps — but the scroll-mode row is shown regardless, same as the
+ * original: it applies to PDF too now that [VaultPdfReaderScreen] has a
+ * paginated mode.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +45,7 @@ fun VaultReaderSettingsSheet(
     onFontSizeChanged: (Float) -> Unit,
     onFontFamilyChanged: (VaultReaderFontFamily) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
+    onScrollModeChanged: (VaultScrollMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -131,6 +133,23 @@ fun VaultReaderSettingsSheet(
                             label    = { Text(family.displayName) },
                         )
                     }
+                }
+            }
+
+            HorizontalDivider()
+
+            // ── Scroll mode ────────────────────────────────────────────────
+            Text(
+                "Mode", style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VaultScrollMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = settings.scrollMode == mode,
+                        onClick  = { onScrollModeChanged(mode) },
+                        label    = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
                 }
             }
 
