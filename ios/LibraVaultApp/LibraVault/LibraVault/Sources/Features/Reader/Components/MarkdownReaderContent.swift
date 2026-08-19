@@ -104,7 +104,16 @@ struct MarkdownReaderContent: View {
             )
             // Center-third only, matching ReaderTapZone's boundaries — see onCenterTap's
             // doc comment above for why left/right are deliberately inert here.
-            .simultaneousGesture(
+            //
+            // `.highPriorityGesture`, not `.simultaneousGesture` (#293): this content's
+            // `.textSelection(.enabled)` above installs its own UIKit-bridged tap
+            // interaction (tap-to-place-cursor) over the same area. A merely-simultaneous
+            // SwiftUI gesture doesn't reliably win against that when both recognize the
+            // same touch, so center-taps could get swallowed by text selection instead of
+            // reaching onCenterTap — the toolbar (and with it, the only way back to the
+            // Library once hidden) then never comes back. highPriorityGesture forces this
+            // one to resolve first.
+            .highPriorityGesture(
                 SpatialTapGesture(coordinateSpace: .local).onEnded { value in
                     if ReaderTapZone.classify(x: value.location.x, width: viewportWidth) == .center {
                         onCenterTap()

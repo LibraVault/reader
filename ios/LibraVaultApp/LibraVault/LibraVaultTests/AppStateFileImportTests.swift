@@ -100,6 +100,57 @@ final class AppStateFileImportTests: XCTestCase {
         XCTAssertEqual(state.books.filter { $0.title.hasPrefix("Book") }.count, 2)
     }
 
+    /// (#294) Field feedback on build 35 (Dutch): "de redirect is er nu.. maar die
+    /// open libra.. niet de md zelf" — the OS handoff launched LibraVault but left the
+    /// user on the Library screen instead of the shared document itself. RootView
+    /// pushes ReaderView off `pendingImportedBook` (see LibraVaultApp.swift's
+    /// `.navigationDestination(item:)`); this covers the AppState half of that: the
+    /// property must actually point at the book that was just imported.
+    func testImportSharedFileSetsPendingImportedBookToTheNewBook() async throws {
+        let persistence = try makeIsolatedPersistence()
+        let sourceFolder = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: sourceFolder) }
+        let fileURL = try makeFixtureFile(named: "Notes.md", in: sourceFolder)
+
+        let state = AppState(vaultPersistence: persistence)
+        await state.importSharedFile(url: fileURL)
+
+        XCTAssertEqual(state.pendingImportedBook?.title, "Notes")
+        XCTAssertEqual(state.pendingImportedBook?.format, .markdown)
+    }
+
+    /// Mirrors testImportingAFileWithADuplicateNameDoesNotOverwriteTheEarlierOne:
+    /// uniqueDestinationURL renames the second import on disk ("Book 2.epub"), so
+    /// pendingImportedBook must follow the same renamed file, not the original name.
+    func testImportSharedFileFollowsTheRenamedFileWhenNameCollides() async throws {
+        let persistence = try makeIsolatedPersistence()
+        let firstSourceFolder = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: firstSourceFolder) }
+        let secondSourceFolder = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: secondSourceFolder) }
+        let first = try makeFixtureFile(named: "Book.epub", in: firstSourceFolder, contents: Data("first".utf8))
+        let second = try makeFixtureFile(named: "Book.epub", in: secondSourceFolder, contents: Data("second".utf8))
+
+        let state = AppState(vaultPersistence: persistence)
+        await state.importSharedFile(url: first)
+        await state.importSharedFile(url: second)
+
+        XCTAssertEqual(state.pendingImportedBook?.title, "Book 2")
+    }
+
+    /// A failed copy must not leave a stale pendingImportedBook pointing at a book
+    /// from an earlier, successful import — RootView would push the wrong Reader.
+    func testImportSharedFileDoesNotSetPendingImportedBookOnFailure() async throws {
+        let persistence = try makeIsolatedPersistence()
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppStateFileImportTests-missing-\(UUID().uuidString).epub")
+
+        let state = AppState(vaultPersistence: persistence)
+        await state.importSharedFile(url: missingURL)
+
+        XCTAssertNil(state.pendingImportedBook)
+    }
+
     func testImportingAnUnsupportedFileTypeSetsAnErrorAndAddsNothing() async throws {
         let persistence = try makeIsolatedPersistence()
         let sourceFolder = try makeTempFolder()

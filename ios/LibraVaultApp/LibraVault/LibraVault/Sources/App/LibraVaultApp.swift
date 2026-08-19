@@ -35,6 +35,14 @@ struct RootView: View {
                     .navigationDestination(isPresented: navigateToPlayerBinding) {
                         PlayerView()
                     }
+                    // (#294) Pushes the Reader for a file shared in from another app
+                    // once importSharedFile finishes — see AppState.pendingImportedBook's
+                    // doc comment. `item:` clears the binding to nil (and so this
+                    // destination) automatically when the pushed ReaderView is popped,
+                    // same as tapping a book normally.
+                    .navigationDestination(item: pendingImportedBookBinding) { book in
+                        ReaderView(book: book)
+                    }
             }
             MiniPlayerBar(onTap: { appState.shouldNavigateToPlayer = true })
         }
@@ -55,6 +63,10 @@ struct RootView: View {
 
     private var navigateToPlayerBinding: Binding<Bool> {
         Binding(get: { appState.shouldNavigateToPlayer }, set: { appState.shouldNavigateToPlayer = $0 })
+    }
+
+    private var pendingImportedBookBinding: Binding<BookItem?> {
+        Binding(get: { appState.pendingImportedBook }, set: { appState.pendingImportedBook = $0 })
     }
 
     private var errorAlertBinding: Binding<Bool> {
