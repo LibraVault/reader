@@ -37,6 +37,9 @@ class PocketTtsEngine @Inject constructor(
     private val _completionEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     override val completionEvent: SharedFlow<Unit> = _completionEvent.asSharedFlow()
 
+    private val _stopEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    override val stopEvent: SharedFlow<Unit> = _stopEvent.asSharedFlow()
+
     private val playback = PocketPlayback()
 
     private var tts: OfflineTts? = null
@@ -171,6 +174,7 @@ class PocketTtsEngine @Inject constructor(
         playback.stop()
         audioFocusManager.abandonFocus()
         _state.value = _state.value.copy(status = TtsStatus.IDLE)
+        _stopEvent.tryEmit(Unit)
     }
 
     override fun setVoice(voiceId: String) {

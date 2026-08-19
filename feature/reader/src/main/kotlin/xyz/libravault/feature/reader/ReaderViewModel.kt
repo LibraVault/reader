@@ -133,6 +133,23 @@ class ReaderViewModel @Inject constructor(
                 advanceOnCompletion()
             }
         }
+        // #280 — TtsAudioFocusManager can stop() the engine directly (e.g. an
+        // audiobook resumed from the lockscreen while Read Aloud is speaking),
+        // bypassing stopReadAloud() entirely. Without this, readAloudNextChapterProvider
+        // would stay set after such an external stop, ready to misread some later,
+        // unrelated completion event as "advance the book". Keyed off stopEvent
+        // rather than diffing `state` for a PLAYING/PAUSED -> IDLE edge: natural
+        // completion (advanceOnCompletion) *also* transitions through IDLE on every
+        // chapter, and that transition races the completionEvent collector below on
+        // the same underlying flows — a prior version of this fix nulled the
+        // provider before advanceOnCompletion() got to read it, breaking normal
+        // chapter-to-chapter advancing. stop() is never called by the natural
+        // completion path in either engine, so stopEvent can't collide with it.
+        viewModelScope.launch {
+            ttsEngineProvider.engine.flatMapLatest { it.stopEvent }.collect {
+                readAloudNextChapterProvider = null
+            }
+        }
         viewModelScope.launch {
             if (itemId != null) {
                 // Normal library flow — load by Room ID

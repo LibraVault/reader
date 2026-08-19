@@ -36,6 +36,9 @@ class AndroidTtsEngine @Inject constructor(
     private val _completionEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     override val completionEvent: SharedFlow<Unit> = _completionEvent.asSharedFlow()
 
+    private val _stopEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    override val stopEvent: SharedFlow<Unit> = _stopEvent.asSharedFlow()
+
     // All state mutations run on the main thread (via mainHandler or direct call from UI).
     // TTS progress callbacks post to mainHandler so reads and writes are never concurrent.
     // This eliminates the race where onDone fires mid-speak() and queues a chunk from the
@@ -121,6 +124,7 @@ class AndroidTtsEngine @Inject constructor(
         utterances = emptyList()
         currentUtteranceIndex = 0
         _state.value = _state.value.copy(status = TtsStatus.IDLE)
+        _stopEvent.tryEmit(Unit)
     }
 
     override fun setVoice(voiceId: String) {
