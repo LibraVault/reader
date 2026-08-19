@@ -76,6 +76,20 @@ status:needs-review
    └─ risk:high OR any finding ─► status:needs-human-merge ────► you decide
 ```
 
+`status:needs-human-merge` is the pipeline's terminal state, not a dead
+end: [`human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
+runs every 4 hours (`.claude/agents/human-merge-sweep-agent.md`) and does
+what a human would do with that backlog — re-verifies each PR is still
+current against `dev`, does a genuine second review, merges what's clean,
+and closes anything that's gone stale/conflicting/superseded (the same
+failure mode a manually-opened PR can hit if a sibling addressing the same
+issue merges first — see PR #292 for a real example this was built to
+catch). It never touches `.github/workflows/**`,
+`.github/agent-policy.yml`, or `.claude/agents/**` regardless of how clean
+those look — that class of change always needs a human directly. Every
+merge/close it performs is logged to
+[`docs/human-merge-sweep-log.md`](human-merge-sweep-log.md).
+
 At any point, applying `status:blocked` to an issue or PR stops every agent
 from acting on it — a per-item pause. For a repo-wide stop, every workflow
 checks the `AGENTS_PAUSED` repository variable (Settings → Actions →
