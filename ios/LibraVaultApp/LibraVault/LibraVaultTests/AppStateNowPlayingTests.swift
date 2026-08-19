@@ -17,8 +17,8 @@ final class AppStateNowPlayingTests: XCTestCase {
         UserPreferencesPersistence(defaults: UserDefaults(suiteName: "AppStateNowPlayingTests.\(UUID().uuidString)")!)
     }
 
-    private func makeIsolatedVaultPersistence() -> VaultPersistence {
-        VaultPersistence(defaults: UserDefaults(suiteName: "AppStateNowPlayingTests.Vaults.\(UUID().uuidString)")!)
+    private func makeIsolatedFolderPersistence() -> FolderPersistence {
+        FolderPersistence(defaults: UserDefaults(suiteName: "AppStateNowPlayingTests.Folders.\(UUID().uuidString)")!)
     }
 
     /// Waits for one hop through the main actor's task queue — every
@@ -32,19 +32,19 @@ final class AppStateNowPlayingTests: XCTestCase {
         wait(for: [expectation], timeout: 1.0)
     }
 
-    /// A real 2-chapter EPUB inside a real vault folder — needed only for the
+    /// A real 2-chapter EPUB inside a real folder — needed only for the
     /// chapter-title test below, which is the one behaviour here that actually
     /// depends on real chapter titles rather than just a book's title/author.
     /// Mirrors AppStatePlaybackTests.makeRealEPUBBook's shape.
-    private func makeTwoChapterEPUBBook(vaultPersistence: VaultPersistence) throws -> BookItem {
+    private func makeTwoChapterEPUBBook(folderPersistence: FolderPersistence) throws -> BookItem {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStateNowPlayingTests-\(UUID().uuidString)")
         let sourceDir = tempDir.appendingPathComponent("source", isDirectory: true)
-        let vaultFolder = tempDir.appendingPathComponent("vault", isDirectory: true)
+        let bookFolder = tempDir.appendingPathComponent("folder", isDirectory: true)
         let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
         let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
         try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
 
         try """
         <?xml version="1.0"?>
@@ -74,46 +74,46 @@ final class AppStateNowPlayingTests: XCTestCase {
         try "<html><body><h1>Second Chapter</h1><p>Some more real text.</p></body></html>"
             .write(to: oebpsDir.appendingPathComponent("chap1.xhtml"), atomically: true, encoding: .utf8)
 
-        let finalEpubURL = vaultFolder.appendingPathComponent("Fixture.epub")
+        let finalEpubURL = bookFolder.appendingPathComponent("Fixture.epub")
         try FileManager().zipItem(at: sourceDir, to: finalEpubURL, shouldKeepParent: false)
 
-        let vault = try vaultPersistence.makeVault(from: vaultFolder)
-        vaultPersistence.save([vault])
+        let folder = try folderPersistence.makeFolder(from: bookFolder)
+        folderPersistence.save([folder])
 
         return BookItem(
-            id: "vault:\(vault.id):\(finalEpubURL.path)",
+            id: "folder:\(folder.id):\(finalEpubURL.path)",
             title: "Fixture",
             author: "Fixture Author",
             format: .epub,
             fileURL: finalEpubURL,
-            vaultId: vault.id
+            folderId: folder.id
         )
     }
 
-    /// A real vault folder containing an arbitrary file at a real path — mirrors
+    /// A real folder containing an arbitrary file at a real path — mirrors
     /// AppStateAudioPlaybackTests.makeAudioBook. Used only for the remote skip tests
     /// below, which need a duration they control (via FakeAudioPlaybackEngine) rather
     /// than a TTS word-count estimate: a short/empty-text book floors
     /// totalEstimatedSeconds to exactly 1 second (see AppStatePlaybackTests'
     /// longChapterHTML comment) and would clamp every seek target down to that,
     /// defeating the point of these assertions.
-    private func makeAudioBook(vaultPersistence: VaultPersistence) throws -> BookItem {
-        let vaultFolder = FileManager.default.temporaryDirectory
+    private func makeAudioBook(folderPersistence: FolderPersistence) throws -> BookItem {
+        let audioFolder = FileManager.default.temporaryDirectory
             .appendingPathComponent("AppStateNowPlayingTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
-        let fileURL = vaultFolder.appendingPathComponent("track.mp3")
+        try FileManager.default.createDirectory(at: audioFolder, withIntermediateDirectories: true)
+        let fileURL = audioFolder.appendingPathComponent("track.mp3")
         try Data("not real audio, the fake engine never decodes this".utf8).write(to: fileURL)
 
-        let vault = try vaultPersistence.makeVault(from: vaultFolder)
-        vaultPersistence.save([vault])
+        let folder = try folderPersistence.makeFolder(from: audioFolder)
+        folderPersistence.save([folder])
 
         return BookItem(
-            id: "vault:\(vault.id):\(fileURL.path)",
+            id: "folder:\(folder.id):\(fileURL.path)",
             title: "Audiobook",
             author: "Author",
             format: .mp3,
             fileURL: fileURL,
-            vaultId: vault.id
+            folderId: folder.id
         )
     }
 
@@ -173,10 +173,10 @@ final class AppStateNowPlayingTests: XCTestCase {
     }
 
     func testMultiChapterBookPublishesTheCurrentChapterTitle() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let nowPlaying = FakeNowPlayingManager()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), nowPlayingManager: nowPlaying)
-        let book = try makeTwoChapterEPUBBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), nowPlayingManager: nowPlaying)
+        let book = try makeTwoChapterEPUBBook(folderPersistence: folderPersistence)
 
         state.startPlayback(book: book)
         XCTAssertEqual(nowPlaying.lastUpdate?.chapterTitle, "First Chapter")
@@ -205,12 +205,12 @@ final class AppStateNowPlayingTests: XCTestCase {
     // real content floors totalEstimatedSeconds to 1 second (see makeAudioBook's doc
     // comment), which would clamp `seek(to: 12)` down to 1 and defeat this assertion.
     func testSeekPublishesTheNewElapsedTime() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let nowPlaying = FakeNowPlayingManager()
         let engine = FakeAudioPlaybackEngine()
         engine.duration = 100
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine, nowPlayingManager: nowPlaying)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine, nowPlayingManager: nowPlaying)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.seek(to: 12)
@@ -245,10 +245,10 @@ final class AppStateNowPlayingTests: XCTestCase {
     // MARK: - Sleep timer expiry (mirrors AppStatePlaybackTests' #89 regression coverage)
 
     func testSleepTimerExpiryPublishesThePausedState() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let nowPlaying = FakeNowPlayingManager()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), nowPlayingManager: nowPlaying)
-        let book = try makeTwoChapterEPUBBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), nowPlayingManager: nowPlaying)
+        let book = try makeTwoChapterEPUBBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.handleSleepTimerExpired()
@@ -321,13 +321,13 @@ final class AppStateNowPlayingTests: XCTestCase {
     }
 
     func testRemoteSkipForwardUsesTheLiveSkipDurationSeconds() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let nowPlaying = FakeNowPlayingManager()
         let engine = FakeAudioPlaybackEngine()
         engine.duration = 100
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine, nowPlayingManager: nowPlaying)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine, nowPlayingManager: nowPlaying)
         state.skipDurationSeconds = 45
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         state.seek(to: 10)
 
@@ -338,13 +338,13 @@ final class AppStateNowPlayingTests: XCTestCase {
     }
 
     func testRemoteSkipBackwardUsesTheLiveSkipDurationSeconds() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let nowPlaying = FakeNowPlayingManager()
         let engine = FakeAudioPlaybackEngine()
         engine.duration = 100
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine, nowPlayingManager: nowPlaying)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine, nowPlayingManager: nowPlaying)
         state.skipDurationSeconds = 20
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         state.seek(to: 30)
 

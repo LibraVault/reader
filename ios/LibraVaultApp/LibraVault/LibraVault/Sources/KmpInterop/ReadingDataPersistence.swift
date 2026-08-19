@@ -5,7 +5,7 @@ import Foundation
 /// were pure in-memory state on a process-lifetime singleton — anything added was lost
 /// on every relaunch even though the UI (BookmarksSheet, "Add Bookmark", the reading
 /// progress bar) presents them as saved. Kept separate from the bridge, like
-/// VaultPersistence is kept separate from AppState, so it's testable against an
+/// FolderPersistence is kept separate from AppState, so it's testable against an
 /// isolated UserDefaults suite.
 struct ReadingDataPersistence {
     private let defaults: UserDefaults

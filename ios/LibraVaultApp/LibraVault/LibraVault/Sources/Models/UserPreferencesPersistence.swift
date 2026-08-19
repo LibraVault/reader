@@ -6,7 +6,7 @@ import Foundation
 /// session-only and reset to their compiled-in defaults on every relaunch. Kept
 /// separate from AppState (a plain struct, not an ObservableObject) so it's trivially
 /// testable against an isolated UserDefaults suite instead of the real `.standard`
-/// defaults, matching VaultPersistence's pattern.
+/// defaults, matching FolderPersistence's pattern.
 struct UserPreferencesPersistence {
     private let defaults: UserDefaults
 

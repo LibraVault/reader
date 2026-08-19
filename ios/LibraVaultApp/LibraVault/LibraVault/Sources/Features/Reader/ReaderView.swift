@@ -15,7 +15,7 @@ struct ReaderView: View {
     /// Real PDF document for on-screen page rendering — populated by loadContent()
     /// instead of `chapters` when book.format == .pdf. See PDFReaderContent.
     @State private var pdfDocument: PDFDocument?
-    /// Releases the vault security scope BookContentProvider.openPDFDocument started
+    /// Releases the folder security scope BookContentProvider.openPDFDocument started
     /// — must run exactly once, in onDisappear, since PDFKit reads lazily from disk
     /// for as long as pdfDocument is being displayed (see that function's doc
     /// comment).
@@ -28,7 +28,7 @@ struct ReaderView: View {
     /// Resolved image bytes for this Markdown file's `.image` blocks, keyed by the
     /// raw (unresolved) reference string as written in the source. Loaded eagerly in
     /// loadContent() — see BookContentProvider.markdownAssetData for why this can't
-    /// happen lazily during rendering (needs the vault's security-scoped access,
+    /// happen lazily during rendering (needs the folder's security-scoped access,
     /// which is only held open for the duration of that one call).
     @State private var markdownImages: [String: Data] = [:]
     @State private var unavailableReason: UnavailableReason?
@@ -248,7 +248,7 @@ struct ReaderView: View {
             } catch {
                 // book.format == .pdf here, so openPDFDocument's own unsupportedFormat
                 // guard can't fire — any failure is a real load problem (malformed
-                // file, vault no longer resolvable, empty/corrupt document).
+                // file, folder no longer resolvable, empty/corrupt document).
                 unavailableReason = .loadFailed
             }
             return
@@ -265,7 +265,7 @@ struct ReaderView: View {
             unavailableReason = .unsupportedFormat
         } catch {
             // A format with a real parser (EPUB) failed for some other reason —
-            // malformed file, vault no longer resolvable, etc.
+            // malformed file, folder no longer resolvable, etc.
             unavailableReason = .loadFailed
         }
     }

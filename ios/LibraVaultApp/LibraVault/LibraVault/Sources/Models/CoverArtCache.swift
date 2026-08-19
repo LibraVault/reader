@@ -46,7 +46,7 @@ struct CoverArtCache {
         return FileManager.default.fileExists(atPath: file.path) ? file : nil
     }
 
-    /// Removes the cached cover for a specific key (e.g. a file removed from its vault).
+    /// Removes the cached cover for a specific key (e.g. a file removed from its folder).
     func evict(key: String) {
         try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent("\(Self.keyHash(key)).jpg"))
     }

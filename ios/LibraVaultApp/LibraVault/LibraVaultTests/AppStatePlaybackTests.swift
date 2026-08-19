@@ -9,37 +9,37 @@ final class AppStatePlaybackTests: XCTestCase {
     // defaultPlaybackSpeed/defaultReadingTheme/skipDurationSeconds now, so without
     // this, one test's `state.defaultPlaybackSpeed = 2.5` leaks into every other
     // test in this file that constructs a plain AppState() expecting the compiled
-    // default of 1.0 (same reasoning as AppStateSettingsTests/AppStateVaultTests).
+    // default of 1.0 (same reasoning as AppStateSettingsTests/AppStateFolderTests).
     private func makeIsolatedPersistence() -> UserPreferencesPersistence {
         UserPreferencesPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.\(UUID().uuidString)")!)
     }
 
-    private func makeIsolatedVaultPersistence() -> VaultPersistence {
-        VaultPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.Vaults.\(UUID().uuidString)")!)
+    private func makeIsolatedFolderPersistence() -> FolderPersistence {
+        FolderPersistence(defaults: UserDefaults(suiteName: "AppStatePlaybackTests.Folders.\(UUID().uuidString)")!)
     }
 
-    /// A real EPUB inside a real vault folder, registered with `vaultPersistence` —
-    /// lets startPlayback's `BookContentProvider.chapters(for:vaultPersistence:)` call
+    /// A real EPUB inside a real folder, registered with `folderPersistence` —
+    /// lets startPlayback's `BookContentProvider.chapters(for:folderPersistence:)` call
     /// actually resolve and parse it, the same way it would for a book scanned from a
-    /// real vault. Defaults to a single short chapter; pass `chapterBodies` for
+    /// real folder. Defaults to a single short chapter; pass `chapterBodies` for
     /// multi-chapter fixtures or ones with enough real words that
     /// `estimateDuration`'s 1-second floor doesn't swallow speed/seek math (see
     /// `longChapterHTML` below).
     private func makeRealEPUBBook(
-        vaultPersistence: VaultPersistence,
+        folderPersistence: FolderPersistence,
         chapterBodies: [String] = ["<h1>Only Chapter</h1><p>Real playback text.</p>"]
     ) throws -> BookItem {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStatePlaybackTests-\(UUID().uuidString)")
-        // The epub gets zipped from sourceDir, then moved into vaultFolder — both are
+        // The epub gets zipped from sourceDir, then moved into bookFolder — both are
         // siblings under tempDir, never nested inside each other, so zipItem never
         // tries to archive the very file it's in the middle of writing.
         let sourceDir = tempDir.appendingPathComponent("source", isDirectory: true)
-        let vaultFolder = tempDir.appendingPathComponent("vault", isDirectory: true)
+        let bookFolder = tempDir.appendingPathComponent("folder", isDirectory: true)
         let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
         let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
         try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
 
         try """
         <?xml version="1.0"?>
@@ -67,19 +67,19 @@ final class AppStatePlaybackTests: XCTestCase {
                 .write(to: oebpsDir.appendingPathComponent("chap\(index).xhtml"), atomically: true, encoding: .utf8)
         }
 
-        let finalEpubURL = vaultFolder.appendingPathComponent("Fixture.epub")
+        let finalEpubURL = bookFolder.appendingPathComponent("Fixture.epub")
         try FileManager().zipItem(at: sourceDir, to: finalEpubURL, shouldKeepParent: false)
 
-        let vault = try vaultPersistence.makeVault(from: vaultFolder)
-        vaultPersistence.save([vault])
+        let folder = try folderPersistence.makeFolder(from: bookFolder)
+        folderPersistence.save([folder])
 
         return BookItem(
-            id: "vault:\(vault.id):\(finalEpubURL.path)",
+            id: "folder:\(folder.id):\(finalEpubURL.path)",
             title: "Fixture",
             author: "",
             format: .epub,
             fileURL: finalEpubURL,
-            vaultId: vault.id
+            folderId: folder.id
         )
     }
 
@@ -120,9 +120,9 @@ final class AppStatePlaybackTests: XCTestCase {
     // MARK: - Real chapter content (EPUB/PDF via BookContentProvider)
 
     func testStartPlaybackUsesRealChaptersForARealEPUB() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(folderPersistence: folderPersistence)
 
         state.startPlayback(book: book)
 
@@ -131,9 +131,9 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testSkipToChapterClampsToRealChapterCountForARealEPUB() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.skipToChapter(999)
@@ -142,9 +142,9 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testChangingSpeedMidPlaybackRecomputesDurationAndPreservesProgress() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence, chapterBodies: [longChapterHTML(title: "Chapter One")])
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(folderPersistence: folderPersistence, chapterBodies: [longChapterHTML(title: "Chapter One")])
         state.startPlayback(book: book)
         let originalTotal = state.totalEstimatedSeconds
         state.seek(to: originalTotal / 2)
@@ -252,11 +252,11 @@ final class AppStatePlaybackTests: XCTestCase {
 
     // MARK: - Markdown Read Aloud (#124)
 
-    /// A real .md file inside a real vault folder, registered with `vaultPersistence` —
+    /// A real .md file inside a real folder, registered with `folderPersistence` —
     /// mirrors makeRealEPUBBook's shape/purpose but far simpler, since Markdown needs
     /// no zip/manifest scaffolding, just a plain text file.
     private func makeRealMarkdownBook(
-        vaultPersistence: VaultPersistence,
+        folderPersistence: FolderPersistence,
         source: String = "# Only Chapter\nReal narratable text."
     ) throws -> BookItem {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStatePlaybackTests-md-\(UUID().uuidString)")
@@ -264,23 +264,23 @@ final class AppStatePlaybackTests: XCTestCase {
         let fileURL = tempDir.appendingPathComponent("Fixture.md")
         try source.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let vault = try vaultPersistence.makeVault(from: tempDir)
-        vaultPersistence.save([vault])
+        let folder = try folderPersistence.makeFolder(from: tempDir)
+        folderPersistence.save([folder])
 
         return BookItem(
-            id: "vault:\(vault.id):\(fileURL.path)",
+            id: "folder:\(folder.id):\(fileURL.path)",
             title: "Fixture",
             author: "",
             format: .markdown,
             fileURL: fileURL,
-            vaultId: vault.id
+            folderId: folder.id
         )
     }
 
     func testStartPlaybackWithARealMarkdownFileEntersAPlayingState() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealMarkdownBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealMarkdownBook(folderPersistence: folderPersistence)
 
         state.startPlayback(book: book)
 
@@ -296,9 +296,9 @@ final class AppStatePlaybackTests: XCTestCase {
         // and an alt-text-less image all produce no narration). Without this guard,
         // this reaches the exact phantom-player state #112 fixed for "no parser at
         // all": empty text, isPlaying = true, a 0-second estimate.
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealMarkdownBook(vaultPersistence: vaultPersistence, source: "![](./no-alt-text.png)")
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealMarkdownBook(folderPersistence: folderPersistence, source: "![](./no-alt-text.png)")
 
         state.startPlayback(book: book)
 
@@ -308,7 +308,7 @@ final class AppStatePlaybackTests: XCTestCase {
 
     func testStartPlaybackWithAnUnreachableMarkdownFileStillEntersAPlayingState() {
         // Mirrors testStartPlaybackUsesRealChaptersForARealEPUB's sibling behaviour:
-        // a parseable format whose file just isn't reachable (no vault fixture, as
+        // a parseable format whose file just isn't reachable (no folder fixture, as
         // here) should still enter a playing state — chapters ends up nil (parsing
         // never ran), not empty (parsed fine, nothing to say), and the guard added in
         // #124 is deliberately narrower than that so this case is unaffected.
@@ -339,17 +339,17 @@ final class AppStatePlaybackTests: XCTestCase {
 
     // MARK: - skipToChapter
 
-    private func makeThreeChapterEPUBBook(vaultPersistence: VaultPersistence) throws -> BookItem {
+    private func makeThreeChapterEPUBBook(folderPersistence: FolderPersistence) throws -> BookItem {
         try makeRealEPUBBook(
-            vaultPersistence: vaultPersistence,
+            folderPersistence: folderPersistence,
             chapterBodies: (1...3).map { longChapterHTML(title: "Chapter \($0)") }
         )
     }
 
     func testSkipToChapterClampsToValidRange() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeThreeChapterEPUBBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeThreeChapterEPUBBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.skipToChapter(999)
@@ -360,9 +360,9 @@ final class AppStatePlaybackTests: XCTestCase {
     }
 
     func testSkipToChapterResetsElapsedSeconds() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeThreeChapterEPUBBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeThreeChapterEPUBBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         state.seek(to: 50)
 
@@ -392,9 +392,9 @@ final class AppStatePlaybackTests: XCTestCase {
     // book would floor totalEstimatedSeconds to exactly 1 second and clamp every
     // seek in this test down to that, defeating the point of the assertions.
     func testSkipForwardAndBackwardMoveElapsedSeconds() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence, chapterBodies: [longChapterHTML(title: "Chapter One")])
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(folderPersistence: folderPersistence, chapterBodies: [longChapterHTML(title: "Chapter One")])
         state.startPlayback(book: book)
         state.seek(to: 5)
 
@@ -440,9 +440,9 @@ final class AppStatePlaybackTests: XCTestCase {
     // directly (the method the real countdown Timer calls at zero) rather than
     // waiting out a real countdown.
     func testSleepTimerExpiryPausesTextPlaybackWithoutClearingNowPlayingBook() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.handleSleepTimerExpired()

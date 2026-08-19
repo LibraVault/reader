@@ -99,12 +99,12 @@ final class AppState: ObservableObject {
     @Published private(set) var sleepTimerRemainingSeconds: Double?
 
     private let audioEngine: AudioPlaybackEngineProtocol
-    /// The vault whose security-scoped bookmark is held open for as long as an
+    /// The folder whose security-scoped bookmark is held open for as long as an
     /// audiobook is playing — unlike BookContentProvider's EPUB/PDF reads (which read
     /// the whole file upfront and can release scope immediately), AVAudioPlayer reads
     /// from the file for the duration of playback, so scope has to stay open until
     /// playback actually stops.
-    private var activeAudioVaultURL: URL?
+    private var activeAudioFolderURL: URL?
 
     /// Real chapters for the book currently loaded into the player, when its format
     /// has a parser (EPUB/PDF) and parsing succeeded. Loaded once per book in
@@ -152,21 +152,21 @@ final class AppState: ObservableObject {
     /// Drives RootView's `.navigationDestination(item:)` for ReaderView, the same way
     /// shouldNavigateToPlayer above drives PlayerView's — set by importSharedFile
     /// (#294) once a file shared in from another app has finished copying into the
-    /// Imported vault, so the OS handoff actually opens the document instead of
+    /// Imported folder, so the OS handoff actually opens the document instead of
     /// leaving the user on the Library screen. `item:` rather than another Bool flag:
     /// ReaderView needs the specific BookItem that was just imported, not just a
     /// trigger.
     @Published var pendingImportedBook: BookItem?
 
-    // MARK: - Vaults
+    // MARK: - Folders
     //
-    // Folder locations the user has granted access to via Settings' "Add Vault"
-    // picker — the iOS counterpart to Android's Storage Access Framework vault list.
-    // Persisted across launches through a security-scoped bookmark; see Vault.swift.
+    // Folder locations the user has granted access to via Settings' "Add Folder"
+    // picker — the iOS counterpart to Android's Storage Access Framework folder list.
+    // Persisted across launches through a security-scoped bookmark; see Folder.swift.
     // Genuinely scanned for book/audiobook files (LibraryFileScanner). `books` below
-    // is always real vault content — an empty `vaults` list means an empty library,
+    // is always real folder content — an empty `folders` list means an empty library,
     // not a fallback/demo one.
-    @Published private(set) var vaults: [Vault] = []
+    @Published private(set) var folders: [Folder] = []
 
     private var playbackTimer: Timer?
     private var sleepTimer: Timer?
@@ -177,7 +177,7 @@ final class AppState: ObservableObject {
     private var isSeedingPlaybackSpeedForNewSession = false
 
     private let bridge = LibravaultDomainBridge.shared
-    private let vaultPersistence: VaultPersistence
+    private let folderPersistence: FolderPersistence
     private let userPreferencesPersistence: UserPreferencesPersistence
     /// Drives Control Center/the lock screen (issue #309) — updated by
     /// `syncNowPlayingInfo()` from every playback control that changes what should be
@@ -186,19 +186,19 @@ final class AppState: ObservableObject {
     private let nowPlayingManager: NowPlayingManaging
 
     init(
-        vaultPersistence: VaultPersistence = VaultPersistence(),
+        folderPersistence: FolderPersistence = FolderPersistence(),
         userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence(),
         audioEngine: AudioPlaybackEngineProtocol = AudioPlaybackEngine(),
         nowPlayingManager: NowPlayingManaging = SystemNowPlayingManager()
     ) {
-        self.vaultPersistence = vaultPersistence
+        self.folderPersistence = folderPersistence
         self.userPreferencesPersistence = userPreferencesPersistence
         self.audioEngine = audioEngine
         self.nowPlayingManager = nowPlayingManager
         #if DEBUG
-        UITestFixtures.ensureVault(persistence: vaultPersistence)
+        UITestFixtures.ensureFolder(persistence: folderPersistence)
         #endif
-        vaults = vaultPersistence.loadVaults()
+        folders = folderPersistence.loadFolders()
         defaultReadingTheme = userPreferencesPersistence.loadReadingTheme()
         defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
@@ -249,7 +249,7 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let scanned = scanVaults()
+        let scanned = scanFolders()
         books = scanned.map { BookItem(from: $0) }
         bridge.log("Loaded \(books.count) books from library", tag: "Library")
 
@@ -263,7 +263,7 @@ final class AppState: ObservableObject {
     /// AVAsset metadata loading — see CoverArtExtractor) and patches real cover art
     /// into `books` as each extraction finishes, replacing that book's placeholder
     /// gradient. Detached rather than structured under `loadLibrary`'s own async
-    /// context so a rescan (addVault/removeVault) doesn't leave a stale enrichment
+    /// context so a rescan (addFolder/removeFolder) doesn't leave a stale enrichment
     /// pass racing a newer one — each call gets its own detached task, and a stale
     /// pass's writes for since-removed books are simply no-ops below (index lookup
     /// by id fails once a book is gone from `books`).
@@ -294,13 +294,13 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Adds a folder picked via Settings' `.fileImporter` as a new vault, persists it,
+    /// Adds a folder picked via Settings' `.fileImporter` as a new folder, persists it,
     /// and immediately rescans so its contents show up in the Library grid without
     /// requiring a manual refresh.
     ///
     /// Dedupes by resolved path — picking the same folder twice (easy to do, since
     /// it's the natural place to browse back to) would otherwise double up every file
-    /// in it in the Library grid, since each vault gets its own UUID and scans
+    /// in it in the Library grid, since each folder gets its own UUID and scans
     /// independently. Mirrors AddVaultFolderUseCase's URI dedup on the Android side.
     ///
     /// `allowedContentTypes: [.folder]` on the `.fileImporter` call is meant to keep
@@ -308,80 +308,80 @@ final class AppState: ObservableObject {
     /// document-provider extension is browsing, not the OS — some third-party
     /// providers (Google Drive being the most commonly reported one) don't honor a
     /// folder-only UTType filter and can hand back a plain file. Without this check,
-    /// that file becomes a "vault" that looks completely normal in Settings but
+    /// that file becomes a "folder" that looks completely normal in Settings but
     /// silently scans to 0 books forever, since `LibraryFileScanner.scan` walks it as
-    /// a directory (see issue #185's field report — a tester with 3 such vaults and a
+    /// a directory (see issue #185's field report — a tester with 3 such folders and a
     /// permanently empty Library).
-    func addVault(pickedURL: URL) {
+    func addFolder(pickedURL: URL) {
         let didStartAccessing = pickedURL.startAccessingSecurityScopedResource()
         let isDirectory = (try? pickedURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
         if didStartAccessing { pickedURL.stopAccessingSecurityScopedResource() }
         guard isDirectory else {
-            error = .invalidVaultSelection
+            error = .invalidFolderSelection
             return
         }
 
-        guard let vault = try? vaultPersistence.makeVault(from: pickedURL) else {
+        guard let folder = try? folderPersistence.makeFolder(from: pickedURL) else {
             error = AppError.storageAccessDenied
             return
         }
-        guard !vaults.contains(where: { vaultPersistence.resolvedURL(for: $0)?.path == pickedURL.path }) else {
+        guard !folders.contains(where: { folderPersistence.resolvedURL(for: $0)?.path == pickedURL.path }) else {
             return
         }
-        vaults.append(vault)
-        vaultPersistence.save(vaults)
+        folders.append(folder)
+        folderPersistence.save(folders)
         Task { await loadLibrary() }
     }
 
     /// Mirrors Android's `RemoveVaultFolderUseCase` (core:domain UseCases.kt): that
     /// use case's two steps are `libraryRepository.deleteByVault(vaultId)` — which,
     /// via Room's `ON DELETE CASCADE` foreign keys, also drops any highlights/
-    /// bookmarks/progress rows tied to that vault's library items — then
+    /// bookmarks/progress rows tied to that folder's library items — then
     /// `vaultRepository.removeVault(vaultId)`. iOS has no on-device database with FK
     /// cascades to lean on (see DomainBridge.swift's header comment — no KMP
     /// framework is actually linked in), so the same two steps are done explicitly
-    /// here instead: `bridge.removeVault(bookIds:)` is the Swift-native counterpart
-    /// to the cascading delete (without it, a removed vault's bookmarks/highlights/
+    /// here instead: `bridge.removeFolder(bookIds:)` is the Swift-native counterpart
+    /// to the cascading delete (without it, a removed folder's bookmarks/highlights/
     /// reading progress would silently linger forever in UserDefaults, keyed by book
-    /// ids that no longer resolve to anything), then the vault entry itself is
-    /// dropped from `vaultPersistence`, same as before.
+    /// ids that no longer resolve to anything), then the folder entry itself is
+    /// dropped from `folderPersistence`, same as before.
     ///
-    /// `async`, unlike `addVault` (which fires its rescan off as an internal,
+    /// `async`, unlike `addFolder` (which fires its rescan off as an internal,
     /// un-awaited `Task`) — the bridge cleanup here has no other synchronization
     /// point a caller (or a test) can hook into to know it's finished, so callers
     /// await this directly (see `SettingsView`'s confirm-alert action) instead of
     /// racing a detached `Task`.
-    func removeVault(_ vault: Vault) async {
-        let orphanedBookIds = books.filter { $0.vaultId == vault.id }.map(\.id)
+    func removeFolder(_ folder: Folder) async {
+        let orphanedBookIds = books.filter { $0.folderId == folder.id }.map(\.id)
         do {
             // Cascade-clean bookmarks/highlights/progress FIRST, matching Android's
             // RemoveVaultFolderUseCase (deleteByVault before removeVault). If this
-            // throws, the vault stays in persistence and its books' data survives —
+            // throws, the folder stays in persistence and its books' data survives —
             // orphaned-but-recoverable is the safe failure mode. Doing this after
-            // dropping the vault would risk the opposite: a vault silently gone while
+            // dropping the folder would risk the opposite: a folder silently gone while
             // its books' bookmarks/highlights/progress live on forever with no owner.
-            try await bridge.removeVault(bookIds: orphanedBookIds)
+            try await bridge.removeFolder(bookIds: orphanedBookIds)
         } catch {
-            bridge.logError("Couldn't remove vault \"\(vault.displayName)\"", tag: "Vault", error: error)
-            self.error = AppError.vaultRemovalFailed
+            bridge.logError("Couldn't remove folder \"\(folder.displayName)\"", tag: "Folder", error: error)
+            self.error = AppError.folderRemovalFailed
             return
         }
-        vaults.removeAll { $0.id == vault.id }
-        vaultPersistence.save(vaults)
+        folders.removeAll { $0.id == folder.id }
+        folderPersistence.save(folders)
         await loadLibrary()
     }
 
     /// Entry point for a file the OS hands LibraVault via "Open In"/"Copy to
     /// LibraVault" from another app's share sheet (see LibraVaultApp.swift's
-    /// `.onOpenURL` and Info.plist's CFBundleDocumentTypes). Unlike `addVault`, which
+    /// `.onOpenURL` and Info.plist's CFBundleDocumentTypes). Unlike `addFolder`, which
     /// grants access to a whole folder the user picked, this receives a single file —
     /// so instead of bookmarking it in place, it's copied into the permanent
-    /// `VaultPersistence.importedVault()` folder and the library is rescanned, the same
-    /// as if it had always lived in a vault.
+    /// `FolderPersistence.importedFolder()` folder and the library is rescanned, the same
+    /// as if it had always lived in a folder.
     ///
     /// Reports failure via `error` rather than crashing — RootView surfaces it as an
     /// alert (see its `errorAlertBinding`) — on an extension LibraryFileScanner doesn't
-    /// recognize, or on any failure to create/copy into the Imported vault. Every
+    /// recognize, or on any failure to create/copy into the Imported folder. Every
     /// failure path also leaves a trail in LibraVaultLogStore via `bridge.logError` —
     /// `error` alone tells the user something went wrong, but not *why*, which matters
     /// for a "sharing a book doesn't work" field report with no other diagnostics.
@@ -397,23 +397,23 @@ final class AppState: ObservableObject {
             return
         }
 
-        let vault: Vault
+        let folder: Folder
         let destinationFolder: URL
         do {
-            vault = try vaultPersistence.importedVault()
-            guard let resolved = vaultPersistence.resolvedURL(for: vault) else {
+            folder = try folderPersistence.importedFolder()
+            guard let resolved = folderPersistence.resolvedURL(for: folder) else {
                 throw AppError.fileImportFailed
             }
             destinationFolder = resolved
         } catch {
-            bridge.logError("Couldn't prepare the Imported vault", tag: "Import", error: error)
+            bridge.logError("Couldn't prepare the Imported folder", tag: "Import", error: error)
             self.error = AppError.fileImportFailed
             return
         }
 
-        if !vaults.contains(where: { $0.id == vault.id }) {
-            vaults.append(vault)
-            vaultPersistence.save(vaults)
+        if !folders.contains(where: { $0.id == folder.id }) {
+            folders.append(folder)
+            folderPersistence.save(folders)
         }
 
         // `Error` isn't guaranteed Sendable, so the detached task hands back a plain
@@ -427,7 +427,7 @@ final class AppState: ObservableObject {
             // The incoming URL (from another app's document provider, e.g. Files/
             // iCloud Drive) may itself be security-scoped even though the destination
             // isn't — mirrors the start/stop pairing already used in
-            // makeVault/LibraryFileScanner.
+            // makeFolder/LibraryFileScanner.
             let didStartAccessing = url.startAccessingSecurityScopedResource()
             defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
 
@@ -479,10 +479,10 @@ final class AppState: ObservableObject {
         return candidate
     }
 
-    private func scanVaults() -> [BookData] {
-        vaults.flatMap { vault -> [BookData] in
-            guard let resolvedURL = vaultPersistence.resolvedURL(for: vault) else { return [] }
-            return LibraryFileScanner.scan(vault: vault, resolvedURL: resolvedURL)
+    private func scanFolders() -> [BookData] {
+        folders.flatMap { folder -> [BookData] in
+            guard let resolvedURL = folderPersistence.resolvedURL(for: folder) else { return [] }
+            return LibraryFileScanner.scan(folder: folder, resolvedURL: resolvedURL)
         }
     }
 
@@ -512,7 +512,7 @@ final class AppState: ObservableObject {
         // an idle mini-player pinned to a book that can never play — while also having
         // torn down whatever session was legitimately playing. Gated on format rather
         // than on `nowPlayingChapters == nil` because a parseable format whose file just
-        // isn't reachable (no vault fixture, as in most of the playback tests) should
+        // isn't reachable (no folder fixture, as in most of the playback tests) should
         // still enter a playing state, as it always has. Callers gate too (see
         // ReaderSettingsSheet.showReadAloud); this is the backstop.
         guard book.format.isAudio || BookContentProvider.supportsChapterParsing(book.format) else { return }
@@ -541,10 +541,10 @@ final class AppState: ObservableObject {
             isSeedingPlaybackSpeedForNewSession = false
             stopTimer()
             audioEngine.stop()
-            releaseActiveAudioVaultAccess()
+            releaseActiveAudioFolderAccess()
             nowPlayingChapters = book.format.isAudio
                 ? nil
-                : try? BookContentProvider.chapters(for: book, vaultPersistence: vaultPersistence)
+                : try? BookContentProvider.chapters(for: book, folderPersistence: folderPersistence)
 
             // A Markdown file that parses successfully but has nothing speakable (an
             // image-only document, or one made entirely of code blocks/tables/thematic
@@ -580,22 +580,22 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Resolves the book's vault, opens the security-scoped bookmark for the
-    /// duration of playback (see activeAudioVaultURL's doc comment), and starts the
+    /// Resolves the book's folder, opens the security-scoped bookmark for the
+    /// duration of playback (see activeAudioFolderURL's doc comment), and starts the
     /// engine. Silently gives up on any failure (missing file reference, unresolvable
-    /// vault, unplayable file) — there's no real error-reporting path for playback
+    /// folder, unplayable file) — there's no real error-reporting path for playback
     /// failures yet, so this at least doesn't leave `isPlaying` lying about state.
     private func startAudioPlayback(book: BookItem) {
-        guard let fileURL = book.fileURL, let vaultId = book.vaultId,
-              let vault = vaultPersistence.loadVaults().first(where: { $0.id == vaultId }),
-              let resolvedVaultURL = vaultPersistence.resolvedURL(for: vault) else {
+        guard let fileURL = book.fileURL, let folderId = book.folderId,
+              let folder = folderPersistence.loadFolders().first(where: { $0.id == folderId }),
+              let resolvedFolderURL = folderPersistence.resolvedURL(for: folder) else {
             isPlaying = false
             nowPlayingBook = nil
             return
         }
 
-        let didStartAccessing = resolvedVaultURL.startAccessingSecurityScopedResource()
-        activeAudioVaultURL = didStartAccessing ? resolvedVaultURL : nil
+        let didStartAccessing = resolvedFolderURL.startAccessingSecurityScopedResource()
+        activeAudioFolderURL = didStartAccessing ? resolvedFolderURL : nil
 
         do {
             try audioEngine.play(fileURL: fileURL, rate: Float(playbackSpeed))
@@ -604,13 +604,13 @@ final class AppState: ObservableObject {
         } catch {
             isPlaying = false
             nowPlayingBook = nil
-            releaseActiveAudioVaultAccess()
+            releaseActiveAudioFolderAccess()
         }
     }
 
-    private func releaseActiveAudioVaultAccess() {
-        activeAudioVaultURL?.stopAccessingSecurityScopedResource()
-        activeAudioVaultURL = nil
+    private func releaseActiveAudioFolderAccess() {
+        activeAudioFolderURL?.stopAccessingSecurityScopedResource()
+        activeAudioFolderURL = nil
     }
 
     func togglePlayback() {
@@ -681,7 +681,7 @@ final class AppState: ObservableObject {
         stopTimer()
         cancelSleepTimer()
         audioEngine.stop()
-        releaseActiveAudioVaultAccess()
+        releaseActiveAudioFolderAccess()
         Task { await bridge.stopSpeaking() }
         syncNowPlayingInfo()
     }
@@ -857,13 +857,13 @@ struct BookItem: Identifiable, Hashable {
     /// filename-only scan, once CoverArtExtractor finishes for this book.
     var coverUrl: String?
     var progress: Double
-    /// The real file this book was scanned from, and the vault it belongs to — needed
+    /// The real file this book was scanned from, and the folder it belongs to — needed
     /// to reopen the book for content parsing/playback. Nil for books not backed by a
-    /// real vault scan (e.g. constructed directly in tests/previews).
+    /// real folder scan (e.g. constructed directly in tests/previews).
     let fileURL: URL?
-    let vaultId: String?
+    let folderId: String?
 
-    init(id: String, title: String, author: String, format: MediaFormat = .epub, coverUrl: String? = nil, progress: Double = 0.0, fileURL: URL? = nil, vaultId: String? = nil) {
+    init(id: String, title: String, author: String, format: MediaFormat = .epub, coverUrl: String? = nil, progress: Double = 0.0, fileURL: URL? = nil, folderId: String? = nil) {
         self.id = id
         self.title = title
         self.author = author
@@ -871,7 +871,7 @@ struct BookItem: Identifiable, Hashable {
         self.coverUrl = coverUrl
         self.progress = progress
         self.fileURL = fileURL
-        self.vaultId = vaultId
+        self.folderId = folderId
     }
 
     init(from bookData: BookData) {
@@ -882,7 +882,7 @@ struct BookItem: Identifiable, Hashable {
         self.coverUrl = nil
         self.progress = bookData.progress
         self.fileURL = bookData.fileURL
-        self.vaultId = bookData.vaultId
+        self.folderId = bookData.folderId
     }
 }
 
@@ -892,8 +892,8 @@ enum AppError: LocalizedError {
     case storageAccessDenied
     case unsupportedFileType
     case fileImportFailed
-    case invalidVaultSelection
-    case vaultRemovalFailed
+    case invalidFolderSelection
+    case folderRemovalFailed
 
     var errorDescription: String? {
         switch self {
@@ -905,12 +905,12 @@ enum AppError: LocalizedError {
             return "Storage access denied"
         case .unsupportedFileType:
             return "This file type isn't supported"
-        case .invalidVaultSelection:
+        case .invalidFolderSelection:
             return "Please select a folder, not a file — pick the folder that contains your books."
         case .fileImportFailed:
             return "Couldn't import that file"
-        case .vaultRemovalFailed:
-            return "Couldn't remove that vault. Please try again."
+        case .folderRemovalFailed:
+            return "Couldn't remove that folder. Please try again."
         }
     }
 }

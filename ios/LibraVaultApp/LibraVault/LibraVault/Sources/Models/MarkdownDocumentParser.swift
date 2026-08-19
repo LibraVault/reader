@@ -26,7 +26,7 @@ enum MarkdownBlock: Equatable {
     /// unresolved reference exactly as written in the source; resolving it against
     /// the file's location and loading the bytes happens separately (see
     /// BookContentProvider.markdownAssetData and ReaderView.loadContent), since that
-    /// needs the vault's security-scoped access, which this pure parsing layer has no
+    /// needs the folder's security-scoped access, which this pure parsing layer has no
     /// knowledge of. An image referenced inline alongside other text in a paragraph
     /// is not extracted specially — it falls through to plain alt-text like any other
     /// unhandled inline node (see BlockBuilder.walk's `default` case).

@@ -14,43 +14,43 @@ final class AppStateAudioPlaybackTests: XCTestCase {
         UserPreferencesPersistence(defaults: UserDefaults(suiteName: "AppStateAudioPlaybackTests.\(UUID().uuidString)")!)
     }
 
-    private func makeIsolatedVaultPersistence() -> VaultPersistence {
-        VaultPersistence(defaults: UserDefaults(suiteName: "AppStateAudioPlaybackTests.Vaults.\(UUID().uuidString)")!)
+    private func makeIsolatedFolderPersistence() -> FolderPersistence {
+        FolderPersistence(defaults: UserDefaults(suiteName: "AppStateAudioPlaybackTests.Folders.\(UUID().uuidString)")!)
     }
 
-    /// A real vault folder containing an arbitrary file at a real path — the fake
+    /// A real folder containing an arbitrary file at a real path — the fake
     /// engine never actually decodes it, so its contents don't matter, only that
-    /// `vaultPersistence.makeVault(from:)` can create a real bookmark for it (which,
+    /// `folderPersistence.makeFolder(from:)` can create a real bookmark for it (which,
     /// per its own doc comment, requires a real on-disk resource) and that
-    /// `fileURL`/`vaultId` round-trip correctly through startAudioPlayback's lookup.
-    private func makeAudioBook(vaultPersistence: VaultPersistence, format: MediaFormat = .mp3) throws -> BookItem {
-        let vaultFolder = FileManager.default.temporaryDirectory
+    /// `fileURL`/`folderId` round-trip correctly through startAudioPlayback's lookup.
+    private func makeAudioBook(folderPersistence: FolderPersistence, format: MediaFormat = .mp3) throws -> BookItem {
+        let audioFolder = FileManager.default.temporaryDirectory
             .appendingPathComponent("AppStateAudioPlaybackTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
-        let fileURL = vaultFolder.appendingPathComponent("track.mp3")
+        try FileManager.default.createDirectory(at: audioFolder, withIntermediateDirectories: true)
+        let fileURL = audioFolder.appendingPathComponent("track.mp3")
         try Data("not real audio, the fake engine never decodes this".utf8).write(to: fileURL)
 
-        let vault = try vaultPersistence.makeVault(from: vaultFolder)
-        vaultPersistence.save([vault])
+        let folder = try folderPersistence.makeFolder(from: audioFolder)
+        folderPersistence.save([folder])
 
         return BookItem(
-            id: "vault:\(vault.id):\(fileURL.path)",
+            id: "folder:\(folder.id):\(fileURL.path)",
             title: "Audiobook",
             author: "Author",
             format: format,
             fileURL: fileURL,
-            vaultId: vault.id
+            folderId: folder.id
         )
     }
 
     // MARK: - startPlayback
 
     func testStartPlaybackForAnAudioBookPlaysTheRealFileAtTheCurrentSpeed() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
         engine.duration = 42
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
 
         state.startPlayback(book: book)
 
@@ -62,9 +62,9 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     }
 
     func testStartPlaybackForAnAudioBookReportsOneChapterNamedAfterTheBook() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: FakeAudioPlaybackEngine())
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: FakeAudioPlaybackEngine())
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
 
         state.startPlayback(book: book)
 
@@ -83,11 +83,11 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     }
 
     func testStartPlaybackGivesUpGracefullyWhenTheEngineThrows() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
         engine.errorToThrowOnPlay = NSError(domain: "test", code: 1)
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
 
         state.startPlayback(book: book)
 
@@ -96,10 +96,10 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     }
 
     func testResumingTheSameAudioBookCallsResumeInsteadOfReplaying() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         state.togglePlayback() // pause
         XCTAssertEqual(engine.pauseCallCount, 1)
@@ -112,10 +112,10 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     // MARK: - togglePlayback
 
     func testTogglePlaybackForAnAudioBookPausesAndResumesTheEngine() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.togglePlayback()
@@ -130,11 +130,11 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     // MARK: - seek / skipForward / skipBackward
 
     func testSeekForAnAudioBookSetsTheEnginesElapsedPosition() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
         engine.duration = 100
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.seek(to: 30)
@@ -146,11 +146,11 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     // MARK: - playbackSpeed
 
     func testChangingSpeedForAnAudioBookAppliesItLiveWithoutRecomputingDuration() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
         engine.duration = 100
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         let totalBefore = state.totalEstimatedSeconds
 
@@ -163,10 +163,10 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     // MARK: - stopPlayback / onFinished
 
     func testStopPlaybackStopsTheEngine() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         let stopCountAfterStarting = engine.stopCallCount // startPlayback itself calls stop() once, as a defensive reset before play(), for any new session
 
@@ -177,10 +177,10 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     }
 
     func testEngineFinishingOnItsOwnStopsPlayback() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         engine.onFinished?()
@@ -204,10 +204,10 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     // real 3-second Timer (see AppState.startSleepFadeOut), so this test genuinely
     // waits that long for it to finish.
     func testSleepTimerExpiryFadesOutAudioThenPausesWithoutClearingNowPlayingBook() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.handleSleepTimerExpired()
@@ -227,10 +227,10 @@ final class AppStateAudioPlaybackTests: XCTestCase {
     }
 
     func testTogglingPlaybackMidFadeCancelsTheFadeAndRestoresVolume() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
+        let folderPersistence = makeIsolatedFolderPersistence()
         let engine = FakeAudioPlaybackEngine()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
-        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
 
         state.handleSleepTimerExpired()

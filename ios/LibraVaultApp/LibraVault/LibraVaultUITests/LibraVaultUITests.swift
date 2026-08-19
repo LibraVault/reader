@@ -23,12 +23,12 @@ final class LibraVaultUITests: XCTestCase {
     }
 
     /// Every test needs a real (non-mock) book to navigate against. The launch
-    /// argument tells the app to bootstrap a vault backed by a file it writes into
+    /// argument tells the app to bootstrap a folder backed by a file it writes into
     /// its own sandbox — see UITestFixtures.swift — instead of relying on any
     /// hardcoded library.
     private func makeApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTestFixtureVault"]
+        app.launchArguments = ["-uiTestFixtureFolder"]
         return app
     }
 
@@ -95,7 +95,7 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         app.launch()
 
-        // "To Kill a Mockingbird" is the fixture vault's only book — a freshly scanned
+        // "To Kill a Mockingbird" is the fixture folder's only book — a freshly scanned
         // file always starts at 0% progress, so it never shows in the Continue row.
         XCTAssertTrue(app.staticTexts["To Kill a Mockingbird"].waitForExistence(timeout: 5))
 
@@ -106,7 +106,7 @@ final class LibraVaultUITests: XCTestCase {
 
     // MARK: - Reader screen parity (Phase 3 of the Android/iOS UI parity plan)
     //
-    // All three navigate via "To Kill a Mockingbird" — the fixture vault's only book,
+    // All three navigate via "To Kill a Mockingbird" — the fixture folder's only book,
     // at 0% progress, so its title appears exactly once on the Library screen
     // (Continue-row books show their title twice: once there, once in the grid), which
     // is what a single-match staticTexts[...] query needs to avoid an ambiguous-match
@@ -252,7 +252,7 @@ final class LibraVaultUITests: XCTestCase {
         let app = makeApp()
         openSettings(in: app)
 
-        XCTAssertTrue(app.staticTexts["Vaults"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Folders"].waitForExistence(timeout: 5))
 
         // Every section, in the order SettingsView declares them, each scrolled into
         // view before being asserted. SwiftUI doesn't instantiate off-screen rows, so

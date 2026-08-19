@@ -171,22 +171,22 @@ final class LibraryViewLogicTests: XCTestCase {
         XCTAssertEqual(AppError.unsupportedFileType.errorDescription, "This file type isn't supported")
         XCTAssertEqual(AppError.fileImportFailed.errorDescription, "Couldn't import that file")
         XCTAssertEqual(
-            AppError.invalidVaultSelection.errorDescription,
+            AppError.invalidFolderSelection.errorDescription,
             "Please select a folder, not a file — pick the folder that contains your books."
         )
     }
 
     // MARK: - emptyLibraryHeadline / emptyLibraryMessage
 
-    func testEmptyLibraryGuidesToSettingsWhenNoVaultsConfigured() {
-        XCTAssertEqual(emptyLibraryHeadline(hasVaults: false), "Start Your Library")
-        XCTAssertTrue(emptyLibraryMessage(hasVaults: false).contains("Settings"))
-        XCTAssertTrue(emptyLibraryMessage(hasVaults: false).contains("Add Vault"))
+    func testEmptyLibraryGuidesToSettingsWhenNoFoldersConfigured() {
+        XCTAssertEqual(emptyLibraryHeadline(hasFolders: false), "Start Your Library")
+        XCTAssertTrue(emptyLibraryMessage(hasFolders: false).contains("Settings"))
+        XCTAssertTrue(emptyLibraryMessage(hasFolders: false).contains("Add Folder"))
     }
 
-    func testEmptyLibraryMessageDoesNotMentionSettingsWhenVaultsExist() {
-        XCTAssertEqual(emptyLibraryHeadline(hasVaults: true), "No Books Found")
-        XCTAssertFalse(emptyLibraryMessage(hasVaults: true).contains("Settings"))
+    func testEmptyLibraryMessageDoesNotMentionSettingsWhenFoldersExist() {
+        XCTAssertEqual(emptyLibraryHeadline(hasFolders: true), "No Books Found")
+        XCTAssertFalse(emptyLibraryMessage(hasFolders: true).contains("Settings"))
     }
 
     func testCoverPaletteIndexDiffersForDifferentIds() {
