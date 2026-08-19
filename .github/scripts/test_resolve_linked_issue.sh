@@ -98,6 +98,30 @@ check "same issue linked twice is not ambiguous" \
 "Closes #10
 Fixes #10"
 
+# find_linked_pr.sh's commit-message fallback (issue #317) feeds this same
+# function concatenated "<headline>\n<body>" blocks from every commit on a
+# PR, one after another — exercise that exact shape rather than assuming a
+# single PR-body-shaped string generalizes to it.
+check "closing line in a later commit of a concatenated multi-commit body (find_linked_pr.sh commit fallback, PR #310 shape)" \
+  "309" 0 \
+"feat(ios): wire up Now Playing controls
+
+Adds MPRemoteCommandCenter integration for lock screen playback.
+
+fix(pipeline): correct throttle window
+
+Closes #309"
+
+check "no closing line anywhere across a multi-commit body is not a match" \
+  "" 0 \
+"feat(ios): wire up Now Playing controls
+
+Adds MPRemoteCommandCenter integration for lock screen playback.
+
+fix(pipeline): correct throttle window
+
+Implements #309 per the design doc."
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "All checks passed."
