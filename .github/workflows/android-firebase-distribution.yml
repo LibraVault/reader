@@ -26,6 +26,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Firebase App Distribution's tester invite page auto-linkifies any
+      # dot-separated, domain-shaped token in the release notes text --
+      # without validating a real TLD or requiring a scheme -- so a bare
+      # version string like "v0.4.6.1-alpha" renders as a dead link to
+      # http://0.4.6.1-alpha (see issue #290). Firebase's own page heading
+      # already shows the build's version + build number, so restating it
+      # in the notes body is both redundant and broken. Fail fast, before
+      # the build/signing steps, rather than shipping a broken invite link.
+      # Logic lives in validate_release_notes.sh so it can be exercised by
+      # test_validate_release_notes.sh without a live workflow run.
+      - name: Validate release notes don't contain a bare version string
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: .github/scripts/validate_release_notes.sh
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
