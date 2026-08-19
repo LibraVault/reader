@@ -150,6 +150,31 @@ final class CoverArtExtractorTests: XCTestCase {
         XCTAssertNotNil(UIImage(data: data))
     }
 
+    /// Regression guard for the field-reported "PDF covers blurred" bug: PDFKit's
+    /// `PDFPage.thumbnail(of:for:)` rasterizes at exactly the pixel size it's asked
+    /// for (no implicit Retina-scale multiplier, unlike `UIGraphicsImageRenderer`), so
+    /// requesting a size well short of `CoverArtCache.maxCoverPx` bakes a permanently
+    /// blurry source into the cache — `CoverArtCache.save` only ever downsamples, it
+    /// never upscales. Reads pixel dimensions from the decoded `CGImage` rather than
+    /// `UIImage.size` since the latter is scale-adjusted and would hide a small pixel
+    /// buffer behind a normal-looking point size.
+    func testPdfCoverIsRasterizedAtCacheResolutionNotBlurrySize() async throws {
+        let pdfURL = try makeFixturePDF()
+        let book = BookData(id: "pdf-hires", title: "T", author: "A", format: .pdf, fileURL: pdfURL)
+
+        let result = await CoverArtExtractor.extractCoverPath(for: book, cache: cache)
+
+        let url = try XCTUnwrap(result)
+        let data = try Data(contentsOf: url)
+        let cgImage = try XCTUnwrap(UIImage(data: data)?.cgImage)
+
+        // The fixture is portrait (612x792 points), so height is the long edge and
+        // should be downsampled to land at (or very near) the cache's cap; width
+        // should scale proportionally, well above the old hardcoded 256px ceiling.
+        XCTAssertEqual(Double(cgImage.height), Double(CoverArtCache.maxCoverPx), accuracy: 1)
+        XCTAssertGreaterThan(cgImage.width, 350)
+    }
+
     // MARK: - Audio (embedded artwork via AVAsset common metadata)
 
     /// A real, valid, silent AAC/M4A file written via `AVAudioFile` — same technique
