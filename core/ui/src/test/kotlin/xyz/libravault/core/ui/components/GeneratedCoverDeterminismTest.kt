@@ -39,4 +39,29 @@ class GeneratedCoverDeterminismTest {
     fun `initials are uppercase`() {
         assertEquals(initialsFor("hello world"), "HW")
     }
+
+    // ── CoverFormatBadge.fromFormatName (#308) ──────────────────────────────────
+
+    @Test
+    fun `maps every real MediaFormat name to its badge`() {
+        assertEquals(CoverFormatBadge.Epub, CoverFormatBadge.fromFormatName("EPUB"))
+        assertEquals(CoverFormatBadge.Pdf, CoverFormatBadge.fromFormatName("PDF"))
+        assertEquals(CoverFormatBadge.Markdown, CoverFormatBadge.fromFormatName("MARKDOWN"))
+        for (audioName in listOf("MP3", "M4B", "OGG", "FLAC", "OPUS", "AAC")) {
+            assertEquals(CoverFormatBadge.Audio, CoverFormatBadge.fromFormatName(audioName), "for $audioName")
+        }
+    }
+
+    @Test
+    fun `matching is case-insensitive`() {
+        assertEquals(CoverFormatBadge.Epub, CoverFormatBadge.fromFormatName("epub"))
+        assertEquals(CoverFormatBadge.Pdf, CoverFormatBadge.fromFormatName("pdf"))
+    }
+
+    @Test
+    fun `unrecognized or unparseable names fall back to null, not a crash`() {
+        for (name in listOf("MOBI", "CBZ", "", "not-a-format")) {
+            assertEquals(null, CoverFormatBadge.fromFormatName(name), "for '$name'")
+        }
+    }
 }

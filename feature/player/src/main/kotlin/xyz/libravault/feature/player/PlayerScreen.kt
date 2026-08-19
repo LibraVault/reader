@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import xyz.libravault.core.ui.components.BookmarkAddedToast
+import xyz.libravault.core.ui.components.CoverFormatBadge
 import xyz.libravault.core.ui.components.GeneratedCover
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -362,6 +363,7 @@ private fun PlayerCoverArt(item: LibraryItem, modifier: Modifier = Modifier) {
                 title = item.title,
                 modifier = Modifier.fillMaxSize(),
                 initialStyle = MaterialTheme.typography.displayLarge,
+                format = CoverFormatBadge.fromFormatName(item.format.name),
             )
         }
     }
