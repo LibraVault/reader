@@ -503,13 +503,11 @@ final class AppState: ObservableObject {
 
         let isNewSession = nowPlayingBook?.id != book.id
         if isNewSession {
-            // Only reset to the preference / tear down the previous session's engine
-            // when this is genuinely a new listening session (a different book) —
-            // skipToChapter also routes through here to advance chapters of the
-            // *same* book, and shouldn't stomp a speed the listener just adjusted
-            // mid-session back to the default, restart audio from 0, or re-parse the
-            // book's file on every single chapter change.
-            playbackSpeed = defaultPlaybackSpeed
+            // Only tear down the previous session's engine when this is genuinely a
+            // new listening session (a different book) — skipToChapter also routes
+            // through here to advance chapters of the *same* book, and shouldn't
+            // restart audio from 0 or re-parse the book's file on every single
+            // chapter change.
             stopTimer()
             audioEngine.stop()
             releaseActiveAudioVaultAccess()
@@ -535,6 +533,21 @@ final class AppState: ObservableObject {
         nowPlayingBook = book
         nowPlayingChapter = book.format.isAudio ? 1 : chapter
         isPlaying = true
+
+        // (#309) Reset to the preference *after* nowPlayingBook is already updated,
+        // not before: playbackSpeed's didSet now also syncs Now Playing info (see its
+        // own doc comment), and syncing while nowPlayingBook still pointed at the old
+        // session (or nil, on the very first startPlayback ever) sparked a spurious extra
+        // "clear Control Center" call before this function's own trailing sync ran —
+        // three AppStateNowPlayingTests cases caught this (unsupported-format-while-
+        // another-book-plays, stopPlayback, sleep-timer-expiry all saw one extra
+        // clearCallCount). Doesn't change *what* speed gets applied, only *when* the
+        // observer sees a consistent nowPlayingBook while doing it — shouldn't stomp a
+        // speed the listener just adjusted mid-session either way, so this stays
+        // gated on isNewSession exactly as before.
+        if isNewSession {
+            playbackSpeed = defaultPlaybackSpeed
+        }
 
         if book.format.isAudio {
             if isNewSession {
