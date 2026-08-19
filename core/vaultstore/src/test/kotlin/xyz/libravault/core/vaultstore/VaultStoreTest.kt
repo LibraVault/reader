@@ -257,4 +257,57 @@ class VaultStoreTest {
         }
         assertTrue(store.listEntries().isEmpty(), "a failed rename must not leave a manifest entry behind")
     }
+
+    /**
+     * [setCoverArt] has the identical crash-safety structure as [importFile]
+     * above (encrypt-to-temp, rename, THEN update the manifest — old cover
+     * art is only deleted once the manifest points at the new one). Forces
+     * the rename of a NEW cover art into place to fail and asserts the
+     * manifest still points at the OLD cover art, and that the old cover art
+     * file itself was never deleted.
+     */
+    @Test
+    fun `a failed rename during setCoverArt leaves the manifest and old cover art untouched`() = runTest {
+        // Same technique as the import regression test above, but each call
+        // needs a distinct predictable id — the imported file's own id, the
+        // first (successful) cover art's id, and the second
+        // (deliberately-failed) cover art's id — so this test isn't
+        // accidentally exercising a path collision instead of the rename
+        // failure it's targeting.
+        var callCount = 0
+        val deterministicRandom = object : SecureRandom() {
+            override fun nextBytes(bytes: ByteArray) {
+                callCount++
+                bytes.fill((0x40 + callCount).toByte())
+            }
+        }
+        val dir = createTempDirectory(prefix = "vaultstore-setcoverart-rename-fail-test").toFile()
+        dir.deleteOnExit()
+        val store = VaultStore(dir, "alias", FakeHardwareKeyWrapFactory(), random = deterministicRandom)
+        store.create("1234".toCharArray(), fastParams)
+
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "title", null, "pdf")
+        val originalCover = ByteArray(10) { 1 }
+        store.setCoverArt(entry.fileId, originalCover)
+        val originalCoverFileId = store.listEntries().single().coverArtFileId!!
+
+        val predictedNewCoverFileId = ByteArray(16) { (0x40 + 3).toByte() }
+        store.contentFile(predictedNewCoverFileId).mkdirs() // occupy the target path so renameTo must fail
+
+        assertThrows<IllegalStateException> {
+            store.setCoverArt(entry.fileId, ByteArray(10) { 2 })
+        }
+
+        val entryAfter = store.listEntries().single()
+        assertArrayEquals(
+            originalCoverFileId,
+            entryAfter.coverArtFileId,
+            "a failed rename must leave the manifest pointing at the old cover art",
+        )
+        assertTrue(
+            store.contentFile(originalCoverFileId).exists(),
+            "a failed rename must not delete the old cover art file",
+        )
+        assertArrayEquals(originalCover, store.readCoverArt(entry.fileId))
+    }
 }
