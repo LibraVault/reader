@@ -23,7 +23,8 @@ import Foundation
 /// - open one instance per concurrent reader; do not share one instance across
 /// simultaneously-active callers.
 ///
-/// - Throws (from `init`): `.authenticationFailed` (wrong VMK, or the file was tampered with),
+/// - Throws (from `init`): `.authenticationFailed` (wrong VMK, or the file was tampered with,
+///   or a non-`nil` `expectedFileId` doesn't match the header's embedded id),
 ///   `.truncated` (the file is shorter than the header requires),
 ///   `.unsupportedFormatVersion`/`.unsupportedCipher` (the header names one this build doesn't understand),
 ///   `.malformedHeader` (a header field is structurally invalid, e.g. chunkSize <= 0).
@@ -49,9 +50,20 @@ final class VaultFileReader {
         ChunkedVaultWriter.chunkCountFor(totalPlaintextLength: plainSize, chunkSize: chunkSize)
     }
 
-    init(fileURL: URL, vmk: Data, expectedFileId: Data) throws {
+    /// - Parameter expectedFileId: cross-checked against the fileId embedded
+    ///   in the file's own header, closing "this is the wrong file's blob"
+    ///   fast rather than surfacing it as an opaque authentication failure
+    ///   three steps later on the first chunk read. Pass `nil` only when the
+    ///   caller genuinely has no external fileId to check against — the one
+    ///   caller that does this today is `VaultManifest.read` (#302), because
+    ///   the manifest's fileId varies on every write (see that type's doc
+    ///   comment) and is trusted from its own AEAD-authenticated header
+    ///   instead. Every other caller must keep passing a concrete id: `nil`
+    ///   is not "skip validation," it's "there is provably nothing else to
+    ///   validate against."
+    init(fileURL: URL, vmk: Data, expectedFileId: Data?) throws {
         precondition(
-            expectedFileId.count == VaultFormat.fileIdSizeBytes,
+            expectedFileId == nil || expectedFileId!.count == VaultFormat.fileIdSizeBytes,
             "expectedFileId must be \(VaultFormat.fileIdSizeBytes) bytes"
         )
 
@@ -82,7 +94,8 @@ final class VaultFileReader {
             // Not itself an AEAD failure - a fast, clear error for "this is the wrong
             // file's blob" rather than letting the caller discover it as an opaque
             // authentication failure three steps later on the first chunk read.
-            guard expectedFileId == parsedFileId else {
+            // Skipped entirely when expectedFileId is nil - see the init's doc comment.
+            if let expectedFileId, expectedFileId != parsedFileId {
                 throw VaultCryptoError.authenticationFailed
             }
             // Structural validation BEFORE any arithmetic uses these values - a
