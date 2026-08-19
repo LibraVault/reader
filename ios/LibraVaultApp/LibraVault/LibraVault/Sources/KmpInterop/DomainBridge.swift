@@ -245,7 +245,10 @@ struct BookData: Identifiable {
     var vaultId: String? = nil
 }
 
-enum MediaFormat: Equatable {
+// Hashable (which implies Equatable): needed transitively by BookItem's own Hashable
+// conformance (#294, see BookItem's doc comment in AppState.swift) — a plain
+// no-associated-values enum, so this costs nothing beyond what Equatable already did.
+enum MediaFormat: Hashable {
     case pdf
     case epub
     case markdown

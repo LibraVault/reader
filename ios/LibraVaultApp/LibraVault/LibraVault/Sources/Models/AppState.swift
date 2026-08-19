@@ -659,7 +659,10 @@ final class AppState: ObservableObject {
     }
 }
 
-struct BookItem: Identifiable {
+// Hashable (not just Equatable): RootView's `.navigationDestination(item:)` for
+// pendingImportedBook (#294) requires it — SwiftUI needs to hash the pushed item to
+// track its identity in the navigation path, not just compare it for equality.
+struct BookItem: Identifiable, Hashable {
     let id: String
     let title: String
     let author: String
