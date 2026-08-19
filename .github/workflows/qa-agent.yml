@@ -75,6 +75,7 @@ jobs:
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           if [ -z "$ISSUE_NUMBER" ]; then
             echo "Could not resolve the originating issue from PR #$PR_NUMBER's body (expects e.g. 'Closes #N' on its own line) — stopping, same as dev-agent.yml does for this condition." >&2
+            gh pr comment "$PR_NUMBER" --body "Could not find a \`Closes #N\`-style line in this PR's body — QA can't tell which issue to check acceptance criteria against. Add one (on its own line, e.g. \`Closes #123\`) and re-apply the label."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
