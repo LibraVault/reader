@@ -259,5 +259,41 @@ final class VaultStoreTests: XCTestCase {
         XCTAssertTrue(try store.listEntries().isEmpty, "a failed rename must not leave a manifest entry behind")
     }
 
+    /// Sibling of `testAFailedRenameDuringImportLeavesNoManifestEntryBehind`
+    /// for `setCoverArt`, which has the identical
+    /// encrypt-to-temp/rename/update-manifest structure and identical
+    /// cleanup-on-failure logic — proves the same crash-safety property
+    /// holds here too, not just for the original import path.
+    func testAFailedRenameDuringSetCoverArtLeavesTheManifestAndOldCoverUntouched() throws {
+        let predictedCoverFileId = Data(repeating: 0x43, count: 16)
+        var nextFileId = false
+        let store = newStore(newFileId: {
+            defer { nextFileId.toggle() }
+            // First call is the imported file's own fileId (real random is
+            // fine there); the second is setCoverArt's new cover fileId,
+            // which must be the predictable one so its target path can be
+            // pre-occupied below.
+            return nextFileId ? predictedCoverFileId : Data(repeating: 0x99, count: 16)
+        })
+        _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
+
+        let input = InputStream(data: Data(count: 10))
+        input.open()
+        let entry = try store.importFile(input: input, declaredSize: 10, title: "title", author: nil, format: "pdf")
+        input.close()
+        XCTAssertNil(entry.coverArtFileId, "sanity check: imported with no cover art yet")
+
+        // Occupy the target path so setCoverArt's finalize-rename must fail.
+        try FileManager.default.createDirectory(at: store.contentFile(fileId: predictedCoverFileId), withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(try store.setCoverArt(fileId: entry.fileId, jpegBytes: Data(count: 10))) { error in
+            guard case .internalError = error as? VaultStoreError else {
+                XCTFail("expected .internalError, got \(error)")
+                return
+            }
+        }
+        XCTAssertNil(try store.listEntries()[0].coverArtFileId, "a failed setCoverArt must not leave the manifest pointing at the new (nonexistent) cover")
+    }
+
     private func pin(_ s: String) -> [UInt8] { Array(s.utf8) }
 }

@@ -166,7 +166,7 @@ final class VaultStore {
         if exists() { throw VaultStoreError.vaultAlreadyExists }
         try FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
 
-        let newVault = try VaultKeyManager.create(pin: pin, argon2Params: argon2Params)
+        var newVault = try VaultKeyManager.create(pin: pin, argon2Params: argon2Params)
         do {
             let keyWrap = try keyWrapFactory.createNew(keyAlias: keystoreKeyAlias)
             let keystoreWrap = try keyWrap.wrap(newVault.material.wrappedVmkByKek.serialized)
@@ -182,8 +182,10 @@ final class VaultStore {
             vmk = newVault.vmk
             return newVault.recoveryKey
         } catch {
-            var vmkCopy = newVault.vmk
-            vmkCopy.secureZero()
+            // Scrub in place, not a copy — see NewVault.vmk's doc comment for
+            // why `var vmkCopy = newVault.vmk; vmkCopy.secureZero()` would
+            // silently zero the wrong buffer.
+            newVault.vmk.secureZero()
             try? FileManager.default.removeItem(at: vaultDir)
             throw error
         }
