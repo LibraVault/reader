@@ -2,30 +2,30 @@
 import Foundation
 import ZIPFoundation
 
-/// Bootstraps a real (non-mock) vault backed by a file the app writes into its own
+/// Bootstraps a real (non-mock) folder backed by a file the app writes into its own
 /// sandbox, so LibraVaultUITests can navigate against a genuinely scanned, genuinely
 /// parseable book instead of any hardcoded library or mock content. Only activates
 /// when the UI test target passes `launchArgument` (see LibraVaultUITests.swift) —
 /// never on a normal launch, and compiled out of Release builds entirely.
 enum UITestFixtures {
-    static let launchArgument = "-uiTestFixtureVault"
-    private static let vaultId = "ui-test-fixture-vault"
+    static let launchArgument = "-uiTestFixtureFolder"
+    private static let folderId = "ui-test-fixture-folder"
 
     /// Idempotent: safe to call on every launch, since UI tests relaunch the app
     /// (and its persisted UserDefaults/container) across test methods within a run.
-    static func ensureVault(persistence: VaultPersistence) {
+    static func ensureFolder(persistence: FolderPersistence) {
         guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return }
 
-        var vaults = persistence.loadVaults()
-        guard !vaults.contains(where: { $0.id == vaultId }) else { return }
+        var folders = persistence.loadFolders()
+        guard !folders.contains(where: { $0.id == folderId }) else { return }
 
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("UITestFixtureVault", isDirectory: true)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("UITestFixtureFolder", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try? writeFixtureEPUB(to: folder.appendingPathComponent("To Kill a Mockingbird.epub"))
 
         guard let bookmarkData = try? folder.bookmarkData() else { return }
-        vaults.append(Vault(id: vaultId, displayName: "UI Test Fixtures", bookmarkData: bookmarkData))
-        persistence.save(vaults)
+        folders.append(Folder(id: folderId, displayName: "UI Test Fixtures", bookmarkData: bookmarkData))
+        persistence.save(folders)
     }
 
     /// A real, valid, single-chapter EPUB — there's no mock content fallback for

@@ -8,14 +8,14 @@ struct BookChapter {
 
 /// Loads real chapter content for a book from its backing file — the only source of
 /// reading content in the app (EPUB, PDF; mobi/cbz/audio throw `.unsupportedFormat`
-/// so callers can show an honest "not supported" state). Re-resolves the vault's
+/// so callers can show an honest "not supported" state). Re-resolves the folder's
 /// security-scoped bookmark around the read, since LibraryFileScanner only holds
 /// scope briefly during the scan itself, not for the lifetime of the app.
 enum BookContentProvider {
     enum ContentError: Error, Equatable {
         case unsupportedFormat
         case missingFileReference
-        case vaultUnavailable
+        case folderUnavailable
     }
 
     /// Whether `chapters(for:)` has a parser for this format. Exposed so callers can
@@ -35,11 +35,11 @@ enum BookContentProvider {
         format == .epub || format == .pdf || format == .markdown
     }
 
-    static func chapters(for book: BookItem, vaultPersistence: VaultPersistence = VaultPersistence()) throws -> [BookChapter] {
+    static func chapters(for book: BookItem, folderPersistence: FolderPersistence = FolderPersistence()) throws -> [BookChapter] {
         guard supportsChapterParsing(book.format) else {
             throw ContentError.unsupportedFormat
         }
-        return try withSecurityScopedAccess(for: book, vaultPersistence: vaultPersistence) { fileURL in
+        return try withSecurityScopedAccess(for: book, folderPersistence: folderPersistence) { fileURL in
             switch book.format {
             case .epub: return try EPUBParser.parse(fileURL: fileURL)
             case .pdf: return try PDFParser.parse(fileURL: fileURL)
@@ -54,12 +54,12 @@ enum BookContentProvider {
 
     /// Raw Markdown source for the Markdown viewer. Parsing into renderable blocks
     /// happens separately (see MarkdownDocumentParser) — this stays a plain file read
-    /// so it mirrors chapters(for:)'s vault-resolution shape without depending on it.
-    static func markdownSource(for book: BookItem, vaultPersistence: VaultPersistence = VaultPersistence()) throws -> String {
+    /// so it mirrors chapters(for:)'s folder-resolution shape without depending on it.
+    static func markdownSource(for book: BookItem, folderPersistence: FolderPersistence = FolderPersistence()) throws -> String {
         guard book.format == .markdown else {
             throw ContentError.unsupportedFormat
         }
-        return try withSecurityScopedAccess(for: book, vaultPersistence: vaultPersistence) { fileURL in
+        return try withSecurityScopedAccess(for: book, folderPersistence: folderPersistence) { fileURL in
             try String(contentsOf: fileURL, encoding: .utf8)
         }
     }
@@ -74,7 +74,7 @@ enum BookContentProvider {
     static func markdownAssetData(
         for book: BookItem,
         relativePath: String,
-        vaultPersistence: VaultPersistence = VaultPersistence()
+        folderPersistence: FolderPersistence = FolderPersistence()
     ) throws -> Data {
         guard book.format == .markdown else {
             throw ContentError.unsupportedFormat
@@ -82,7 +82,7 @@ enum BookContentProvider {
         if relativePath.lowercased().hasPrefix("http://") || relativePath.lowercased().hasPrefix("https://") {
             throw ContentError.unsupportedFormat
         }
-        return try withSecurityScopedAccess(for: book, vaultPersistence: vaultPersistence) { fileURL in
+        return try withSecurityScopedAccess(for: book, folderPersistence: folderPersistence) { fileURL in
             guard let resolvedURL = URL(string: relativePath, relativeTo: fileURL)?.standardizedFileURL else {
                 throw ContentError.missingFileReference
             }
@@ -92,23 +92,23 @@ enum BookContentProvider {
 
     /// Opens a PDF for on-screen page rendering (PDFReaderContent's PDFView), not text
     /// extraction — unlike chapters(for:)/markdownSource(for:), which read a file's
-    /// full content upfront and can release the vault's security scope immediately,
+    /// full content upfront and can release the folder's security scope immediately,
     /// PDFKit's PDFView lazily rereads page data from disk as the user pages/scrolls,
     /// so scope must stay open for as long as the reader is displaying the document.
     /// Returns the opened document plus an `endAccess` closure the caller must invoke
     /// exactly once (e.g. ReaderView's onDisappear) to release that held-open scope.
     static func openPDFDocument(
         for book: BookItem,
-        vaultPersistence: VaultPersistence = VaultPersistence()
+        folderPersistence: FolderPersistence = FolderPersistence()
     ) throws -> (document: PDFDocument, endAccess: () -> Void) {
         guard book.format == .pdf else {
             throw ContentError.unsupportedFormat
         }
-        let (fileURL, vaultURL) = try resolveFileAndVaultURL(for: book, vaultPersistence: vaultPersistence)
+        let (fileURL, folderURL) = try resolveFileAndFolderURL(for: book, folderPersistence: folderPersistence)
 
-        let didStartAccessing = vaultURL.startAccessingSecurityScopedResource()
+        let didStartAccessing = folderURL.startAccessingSecurityScopedResource()
         let endAccess: () -> Void = {
-            if didStartAccessing { vaultURL.stopAccessingSecurityScopedResource() }
+            if didStartAccessing { folderURL.stopAccessingSecurityScopedResource() }
         }
 
         guard let document = PDFDocument(url: fileURL) else {
@@ -122,18 +122,18 @@ enum BookContentProvider {
         return (document, endAccess)
     }
 
-    /// Resolves the book's vault security-scoped bookmark and holds the scope open
+    /// Resolves the book's folder security-scoped bookmark and holds the scope open
     /// for the duration of `body`. Shared by chapters(for:) and markdownSource(for:)
-    /// since both need the same "resolve vault → start scope → read file" sequence.
+    /// since both need the same "resolve folder → start scope → read file" sequence.
     private static func withSecurityScopedAccess<T>(
         for book: BookItem,
-        vaultPersistence: VaultPersistence,
+        folderPersistence: FolderPersistence,
         _ body: (URL) throws -> T
     ) throws -> T {
-        let (fileURL, vaultURL) = try resolveFileAndVaultURL(for: book, vaultPersistence: vaultPersistence)
+        let (fileURL, folderURL) = try resolveFileAndFolderURL(for: book, folderPersistence: folderPersistence)
 
-        let didStartAccessing = vaultURL.startAccessingSecurityScopedResource()
-        defer { if didStartAccessing { vaultURL.stopAccessingSecurityScopedResource() } }
+        let didStartAccessing = folderURL.startAccessingSecurityScopedResource()
+        defer { if didStartAccessing { folderURL.stopAccessingSecurityScopedResource() } }
 
         return try body(fileURL)
     }
@@ -141,17 +141,17 @@ enum BookContentProvider {
     /// Shared by withSecurityScopedAccess and openPDFDocument — the latter can't use
     /// withSecurityScopedAccess's own scope handling since it needs the scope to
     /// outlive this call, not just the body closure.
-    private static func resolveFileAndVaultURL(
+    private static func resolveFileAndFolderURL(
         for book: BookItem,
-        vaultPersistence: VaultPersistence
-    ) throws -> (fileURL: URL, vaultURL: URL) {
-        guard let fileURL = book.fileURL, let vaultId = book.vaultId else {
+        folderPersistence: FolderPersistence
+    ) throws -> (fileURL: URL, folderURL: URL) {
+        guard let fileURL = book.fileURL, let folderId = book.folderId else {
             throw ContentError.missingFileReference
         }
-        guard let vault = vaultPersistence.loadVaults().first(where: { $0.id == vaultId }),
-              let resolvedVaultURL = vaultPersistence.resolvedURL(for: vault) else {
-            throw ContentError.vaultUnavailable
+        guard let folder = folderPersistence.loadFolders().first(where: { $0.id == folderId }),
+              let resolvedFolderURL = folderPersistence.resolvedURL(for: folder) else {
+            throw ContentError.folderUnavailable
         }
-        return (fileURL, resolvedVaultURL)
+        return (fileURL, resolvedFolderURL)
     }
 }

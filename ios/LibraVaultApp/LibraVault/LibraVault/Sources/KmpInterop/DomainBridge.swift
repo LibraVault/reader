@@ -8,7 +8,7 @@ import NaturalLanguage
 // (see docs/iOS-TESTFLIGHT-RELEASE-PROCESS.md) — bookmark/highlight/progress state
 // below is genuine Swift-native logic (now persisted, see initialize()), not a KMP
 // call. Library scanning is real: AppState.loadLibrary() always sources `books` from
-// LibraryFileScanner against the user's real vaults — there is no demo/fallback
+// LibraryFileScanner against the user's real folders — there is no demo/fallback
 // library here anymore.
 //
 // KMP Modules referenced by the original Phase D plan (never built):
@@ -162,23 +162,23 @@ class LibravaultDomainBridge: ObservableObject {
         logger?.d(tag: "Bookmarks", message: "Deleted bookmark \(bookmarkId)")
     }
 
-    // MARK: - Vault Operations
+    // MARK: - Folder Operations
 
     /// Swift-native counterpart to core:domain's `RemoveVaultFolderUseCase`
     /// (`libraryRepository.deleteByVault(vaultId)` half only — the second half,
-    /// `vaultRepository.removeVault(vaultId)`, is `VaultPersistence`'s job on iOS,
-    /// same as `addVault`'s counterpart `AddVaultFolderUseCase` already is). Called
-    /// by `AppState.removeVault(_:)` with the ids of every book that belonged to the
-    /// vault being removed, resolved *before* the vault entry itself is dropped.
+    /// `vaultRepository.removeVault(vaultId)`, is `FolderPersistence`'s job on iOS,
+    /// same as `addFolder`'s counterpart `AddVaultFolderUseCase` already is). Called
+    /// by `AppState.removeFolder(_:)` with the ids of every book that belonged to the
+    /// folder being removed, resolved *before* the folder entry itself is dropped.
     ///
     /// No KMP framework is actually linked into this app (see this file's header
     /// comment) — Android's use case relies on Room's `ON DELETE CASCADE` foreign
     /// keys to drop a deleted library item's highlights/bookmarks/progress rows for
     /// free; there's no on-device database here to do that automatically, so this
     /// walks the three dictionaries explicitly instead. Without it, a removed
-    /// vault's reading data would silently linger forever in UserDefaults, keyed by
+    /// folder's reading data would silently linger forever in UserDefaults, keyed by
     /// book ids nothing can ever resolve back to a real book again.
-    func removeVault(bookIds: [String]) async throws {
+    func removeFolder(bookIds: [String]) async throws {
         guard isInitialized else { throw DomainError.notInitialized }
         guard !bookIds.isEmpty else { return }
 
@@ -191,7 +191,7 @@ class LibravaultDomainBridge: ObservableObject {
         persistence.save(highlights: highlights)
         persistence.save(progress: progress)
 
-        logger?.d(tag: "Vaults", message: "Removed reading data for \(bookIds.count) book(s) from a deleted vault")
+        logger?.d(tag: "Folders", message: "Removed reading data for \(bookIds.count) book(s) from a deleted folder")
     }
 
     // MARK: - Logger Integration
@@ -238,11 +238,11 @@ struct BookData: Identifiable {
     var progress: Double = 0.0
     var highlights: [Highlight] = []
     var bookmarks: [Bookmark] = []
-    /// The real file this book was scanned from, and the vault it belongs to.
-    /// Populated for every real vault scan (see LibraryFileScanner) — optional only
+    /// The real file this book was scanned from, and the folder it belongs to.
+    /// Populated for every real folder scan (see LibraryFileScanner) — optional only
     /// because a handful of tests/previews construct a `BookData` without one.
     var fileURL: URL? = nil
-    var vaultId: String? = nil
+    var folderId: String? = nil
 }
 
 // Hashable (which implies Equatable): needed transitively by BookItem's own Hashable
@@ -263,7 +263,7 @@ enum MediaFormat: Hashable {
 
     /// Mirrors core:domain's `MediaFormat.isAudio()` (Models.kt) — used to split the
     /// Library grid into books vs. audiobooks and to detect audio files during a
-    /// vault scan (see LibraryFileScanner).
+    /// folder scan (see LibraryFileScanner).
     var isAudio: Bool {
         switch self {
         case .mp3, .m4b, .aac, .flac, .ogg, .opus: return true

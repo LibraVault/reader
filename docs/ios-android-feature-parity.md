@@ -10,7 +10,7 @@ don't let it silently go stale.
 
 | Area | Android | iOS | Notes |
 |---|---|---|---|
-| Vault scanning | ✅ `LibraryScannerImpl` (`core:storage`), 2-phase (stub scan, then metadata enrichment) | ✅ `LibraryFileScanner` + `AppState.loadLibrary`, same 2-phase shape | iOS phase 1 is filename-only; iOS title/author extraction from embedded metadata is still unimplemented (see next row) |
+| Folder scanning | ✅ `LibraryScannerImpl` (`core:storage`), 2-phase (stub scan, then metadata enrichment) | ✅ `LibraryFileScanner` + `AppState.loadLibrary`, same 2-phase shape | iOS phase 1 is filename-only; iOS title/author extraction from embedded metadata is still unimplemented (see next row) |
 | Title/author metadata | ✅ `MetadataExtractor` (ID3/M4B tags, EPUB OPF, filename fallback) | ❌ filename-only | iOS `BookData.title`/`.author` never read embedded metadata; open gap |
 | **Cover art** | ✅ `MetadataExtractor` + `CoverArtCache` (audio embedded art, EPUB OPF manifest, PDF page-1 render) | ✅ `CoverArtExtractor` + `CoverArtCache` (Swift port, same 512px cache cap) | Was [#76](https://github.com/LibraVault/reader/issues/76) — iOS previously always rendered a placeholder gradient, never real artwork. Fixed here. |
 | EPUB reading | ✅ Readium 3 | ✅ `EPUBParser` (native zip/XML parsing, no Readium) | Independent implementations; both real, not mocked |

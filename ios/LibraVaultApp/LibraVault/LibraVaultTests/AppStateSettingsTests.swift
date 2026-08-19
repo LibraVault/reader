@@ -7,28 +7,28 @@ final class AppStateSettingsTests: XCTestCase {
 
     // Isolated from the real UserDefaults.standard so these tests can assert on
     // "nothing saved yet" defaults without depending on (or polluting) whatever a
-    // previous test run left behind — same reasoning as AppStateVaultTests.
+    // previous test run left behind — same reasoning as AppStateFolderTests.
     private func makeIsolatedPersistence() -> UserPreferencesPersistence {
         UserPreferencesPersistence(defaults: UserDefaults(suiteName: "AppStateSettingsTests.\(UUID().uuidString)")!)
     }
 
-    private func makeIsolatedVaultPersistence() -> VaultPersistence {
-        VaultPersistence(defaults: UserDefaults(suiteName: "AppStateSettingsTests.Vaults.\(UUID().uuidString)")!)
+    private func makeIsolatedFolderPersistence() -> FolderPersistence {
+        FolderPersistence(defaults: UserDefaults(suiteName: "AppStateSettingsTests.Folders.\(UUID().uuidString)")!)
     }
 
     /// A real, single-chapter EPUB with a real 200-word chapter — comfortably above
     /// estimateDuration's 1-second floor at every speed, so seek/skip math in
     /// testSkipDurationFeedsSkipForwardAndBackward has room to be meaningfully
     /// asserted on (see AppStatePlaybackTests' longChapterHTML for the same reasoning).
-    private func makeRealEPUBBook(vaultPersistence: VaultPersistence) throws -> BookItem {
+    private func makeRealEPUBBook(folderPersistence: FolderPersistence) throws -> BookItem {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("AppStateSettingsTests-\(UUID().uuidString)")
         let sourceDir = tempDir.appendingPathComponent("source", isDirectory: true)
-        let vaultFolder = tempDir.appendingPathComponent("vault", isDirectory: true)
+        let bookFolder = tempDir.appendingPathComponent("folder", isDirectory: true)
         let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
         let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
         try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: vaultFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
 
         try """
         <?xml version="1.0"?>
@@ -51,19 +51,19 @@ final class AppStateSettingsTests: XCTestCase {
         try "<html><body><h1>Chapter One</h1><p>\(words)</p></body></html>"
             .write(to: oebpsDir.appendingPathComponent("chap0.xhtml"), atomically: true, encoding: .utf8)
 
-        let finalEpubURL = vaultFolder.appendingPathComponent("Fixture.epub")
+        let finalEpubURL = bookFolder.appendingPathComponent("Fixture.epub")
         try FileManager().zipItem(at: sourceDir, to: finalEpubURL, shouldKeepParent: false)
 
-        let vault = try vaultPersistence.makeVault(from: vaultFolder)
-        vaultPersistence.save([vault])
+        let folder = try folderPersistence.makeFolder(from: bookFolder)
+        folderPersistence.save([folder])
 
         return BookItem(
-            id: "vault:\(vault.id):\(finalEpubURL.path)",
+            id: "folder:\(folder.id):\(finalEpubURL.path)",
             title: "Fixture",
             author: "",
             format: .epub,
             fileURL: finalEpubURL,
-            vaultId: vault.id
+            folderId: folder.id
         )
     }
 
@@ -105,9 +105,9 @@ final class AppStateSettingsTests: XCTestCase {
     /// 1.0x speed (see AppState.estimateDuration), so seek/skip targets here have room
     /// to stay well under that ceiling.
     func testSkipDurationFeedsSkipForwardAndBackward() throws {
-        let vaultPersistence = makeIsolatedVaultPersistence()
-        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
-        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+        let folderPersistence = makeIsolatedFolderPersistence()
+        let state = AppState(folderPersistence: folderPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(folderPersistence: folderPersistence)
         state.startPlayback(book: book)
         state.seek(to: 5)
         state.skipDurationSeconds = 3

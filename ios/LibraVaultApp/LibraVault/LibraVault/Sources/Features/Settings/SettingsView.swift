@@ -3,12 +3,12 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
-    @State private var isPickingVaultFolder = false
+    @State private var isPickingFolder = false
     @State private var loggingEnabled: Bool
-    /// Drives the remove-vault confirmation alert below — set by the per-row trash
+    /// Drives the remove-folder confirmation alert below — set by the per-row trash
     /// button, matching Android's `vaultToRemove` (SettingsScreen.kt) rather than
     /// deleting on tap/swipe with no confirmation.
-    @State private var vaultPendingRemoval: Vault?
+    @State private var folderPendingRemoval: Folder?
     private let logStore = LibraVaultLogStore()
 
     private let skipDurationPresets: [Double] = [10, 15, 30, 45, 60]
@@ -20,7 +20,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            vaultsSection
+            foldersSection
             readingSection
             playbackSection
             ttsSection
@@ -34,63 +34,63 @@ struct SettingsView: View {
         .navigationTitle("Settings")
     }
 
-    // MARK: - Vaults
+    // MARK: - Folders
 
-    private var vaultsSection: some View {
+    private var foldersSection: some View {
         Section {
-            ForEach(appState.vaults) { vault in
+            ForEach(appState.folders) { folder in
                 HStack {
                     Image(systemName: "folder.fill")
                         .foregroundStyle(LibraVaultColor.primary)
-                    Text(vault.displayName)
+                    Text(folder.displayName)
                         .foregroundStyle(LibraVaultColor.onSurface)
                     Spacer()
                     // Trash icon + confirm alert (below), not swipe/long-press —
                     // matches Android's VaultRow (SettingsScreen.kt) for parity and
                     // discoverability. Deliberately not `.onDelete`: a bare swipe
-                    // would delete the vault with no confirmation at all.
+                    // would delete the folder with no confirmation at all.
                     Button {
-                        vaultPendingRemoval = vault
+                        folderPendingRemoval = folder
                     } label: {
                         Image(systemName: "trash")
                             .foregroundStyle(.red)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove vault")
+                    .accessibilityLabel("Remove folder")
                 }
             }
 
-            Button(action: { isPickingVaultFolder = true }) {
-                Label("Add Vault", systemImage: "plus.circle")
+            Button(action: { isPickingFolder = true }) {
+                Label("Add Folder", systemImage: "plus.circle")
             }
             .foregroundStyle(LibraVaultColor.primary)
         } header: {
-            sectionHeader("Vaults")
+            sectionHeader("Folders")
         }
-        .fileImporter(isPresented: $isPickingVaultFolder, allowedContentTypes: [.folder]) { result in
+        .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let pickedURL) = result {
-                appState.addVault(pickedURL: pickedURL)
+                appState.addFolder(pickedURL: pickedURL)
             }
         }
         // Copy mirrors Android's remove-vault AlertDialog (SettingsScreen.kt) word
         // for word, down to the quoted display name.
         .alert(
-            "Remove vault?",
+            "Remove folder?",
             isPresented: Binding(
-                get: { vaultPendingRemoval != nil },
-                set: { isPresented in if !isPresented { vaultPendingRemoval = nil } }
+                get: { folderPendingRemoval != nil },
+                set: { isPresented in if !isPresented { folderPendingRemoval = nil } }
             ),
-            presenting: vaultPendingRemoval
-        ) { vault in
+            presenting: folderPendingRemoval
+        ) { folder in
             Button("Remove", role: .destructive) {
-                vaultPendingRemoval = nil
-                Task { await appState.removeVault(vault) }
+                folderPendingRemoval = nil
+                Task { await appState.removeFolder(folder) }
             }
             Button("Cancel", role: .cancel) {
-                vaultPendingRemoval = nil
+                folderPendingRemoval = nil
             }
-        } message: { vault in
-            Text("This will remove \"\(vault.displayName)\" and all its items from the library.")
+        } message: { folder in
+            Text("This will remove \"\(folder.displayName)\" and all its items from the library.")
         }
     }
 
@@ -433,7 +433,7 @@ struct HelpView: View {
     private let topics: [HelpTopic] = [
         HelpTopic(
             question: "How do I add books?",
-            answer: "In Settings → Vaults, tap \"Add Vault\" and pick a folder. LibraVault reads every EPUB, PDF, and Markdown file inside it — nothing is copied off your device."
+            answer: "In Settings → Folders, tap \"Add Folder\" and pick a folder. LibraVault reads every EPUB, PDF, and Markdown file inside it — nothing is copied off your device."
         ),
         HelpTopic(
             question: "How do I turn pages or scroll?",

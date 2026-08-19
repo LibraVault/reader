@@ -17,8 +17,8 @@ final class LibraryFileScannerTests: XCTestCase {
         try Data().write(to: tempDir.appendingPathComponent(name))
     }
 
-    private var vault: Vault {
-        Vault(id: "v1", displayName: "Test Vault", bookmarkData: Data())
+    private var folder: Folder {
+        Folder(id: "v1", displayName: "Test Folder", bookmarkData: Data())
     }
 
     func testScanFindsKnownBookAndAudiobookExtensions() throws {
@@ -28,7 +28,7 @@ final class LibraryFileScannerTests: XCTestCase {
         try write("Novel.m4b")
         try write("notes.txt")
 
-        let results = LibraryFileScanner.scan(vault: vault, resolvedURL: tempDir)
+        let results = LibraryFileScanner.scan(folder: folder, resolvedURL: tempDir)
 
         XCTAssertEqual(results.count, 4)
         XCTAssertTrue(results.contains { $0.title == "Gatsby" && $0.format == .epub })
@@ -41,7 +41,7 @@ final class LibraryFileScannerTests: XCTestCase {
         try write("Notes.md")
         try write("LongForm.markdown")
 
-        let results = LibraryFileScanner.scan(vault: vault, resolvedURL: tempDir)
+        let results = LibraryFileScanner.scan(folder: folder, resolvedURL: tempDir)
 
         XCTAssertEqual(results.count, 2)
         XCTAssertTrue(results.contains { $0.title == "Notes" && $0.format == .markdown })
@@ -53,11 +53,11 @@ final class LibraryFileScannerTests: XCTestCase {
         try write("readme.txt")
         try write("cover.jpg")
 
-        XCTAssertTrue(LibraryFileScanner.scan(vault: vault, resolvedURL: tempDir).isEmpty)
+        XCTAssertTrue(LibraryFileScanner.scan(folder: folder, resolvedURL: tempDir).isEmpty)
     }
 
     func testScanReturnsEmptyForEmptyDirectory() {
-        XCTAssertTrue(LibraryFileScanner.scan(vault: vault, resolvedURL: tempDir).isEmpty)
+        XCTAssertTrue(LibraryFileScanner.scan(folder: folder, resolvedURL: tempDir).isEmpty)
     }
 
     func testScanFindsFilesInNestedSubdirectories() throws {
@@ -65,33 +65,33 @@ final class LibraryFileScannerTests: XCTestCase {
         try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
         try Data().write(to: subdir.appendingPathComponent("Book1.epub"))
 
-        let results = LibraryFileScanner.scan(vault: vault, resolvedURL: tempDir)
+        let results = LibraryFileScanner.scan(folder: folder, resolvedURL: tempDir)
 
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results.first?.title, "Book1")
     }
 
-    func testScanIdsAreNamespacedByVaultId() throws {
+    func testScanIdsAreNamespacedByFolderId() throws {
         try write("Book.epub")
-        let namedVault = Vault(id: "vault-42", displayName: "Test", bookmarkData: Data())
+        let namedFolder = Folder(id: "folder-42", displayName: "Test", bookmarkData: Data())
 
-        let results = LibraryFileScanner.scan(vault: namedVault, resolvedURL: tempDir)
+        let results = LibraryFileScanner.scan(folder: namedFolder, resolvedURL: tempDir)
 
         XCTAssertEqual(results.count, 1)
-        XCTAssertTrue(results[0].id.hasPrefix("vault:vault-42:"))
+        XCTAssertTrue(results[0].id.hasPrefix("folder:folder-42:"))
     }
 
-    /// `fileURL`/`vaultId` are what later reopen the real file for content parsing
+    /// `fileURL`/`folderId` are what later reopen the real file for content parsing
     /// and playback — a scan that only produces filename/format metadata is useless
     /// for anything beyond the Library grid.
-    func testScanPopulatesFileURLAndVaultId() throws {
+    func testScanPopulatesFileURLAndFolderId() throws {
         try write("Book.epub")
-        let namedVault = Vault(id: "vault-42", displayName: "Test", bookmarkData: Data())
+        let namedFolder = Folder(id: "folder-42", displayName: "Test", bookmarkData: Data())
 
-        let results = LibraryFileScanner.scan(vault: namedVault, resolvedURL: tempDir)
+        let results = LibraryFileScanner.scan(folder: namedFolder, resolvedURL: tempDir)
 
         let book = try XCTUnwrap(results.first)
-        XCTAssertEqual(book.vaultId, "vault-42")
+        XCTAssertEqual(book.folderId, "folder-42")
         XCTAssertEqual(book.fileURL?.lastPathComponent, "Book.epub")
     }
 }

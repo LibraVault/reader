@@ -95,15 +95,15 @@ struct LibraryView: View {
             Image(systemName: "books.vertical")
                 .font(.system(size: 48))
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            Text(emptyLibraryHeadline(hasVaults: !appState.vaults.isEmpty))
+            Text(emptyLibraryHeadline(hasFolders: !appState.folders.isEmpty))
                 .font(LibraVaultTypography.headlineSmall)
                 .foregroundStyle(LibraVaultColor.onBackground)
-            Text(emptyLibraryMessage(hasVaults: !appState.vaults.isEmpty))
+            Text(emptyLibraryMessage(hasFolders: !appState.folders.isEmpty))
                 .font(LibraVaultTypography.bodyMedium)
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, LibraVaultSpacing.xl)
-            if appState.vaults.isEmpty {
+            if appState.folders.isEmpty {
                 NavigationLink(destination: SettingsView()) {
                     Text("Go to Settings")
                 }
@@ -185,17 +185,17 @@ struct LibraryView: View {
 }
 
 /// Split out from LibraryView.emptyState so the copy choice — whether the user has any
-/// vaults configured at all vs. their vaults are just empty/still scanning — is a plain
-/// testable function. A first-launch user with zero vaults has no other way to discover
+/// folders configured at all vs. their folders are just empty/still scanning — is a plain
+/// testable function. A first-launch user with zero folders has no other way to discover
 /// that folders live in Settings, so that case gets explicit guidance; see issue #75.
-func emptyLibraryHeadline(hasVaults: Bool) -> String {
-    hasVaults ? "No Books Found" : "Start Your Library"
+func emptyLibraryHeadline(hasFolders: Bool) -> String {
+    hasFolders ? "No Books Found" : "Start Your Library"
 }
 
-func emptyLibraryMessage(hasVaults: Bool) -> String {
-    hasVaults
+func emptyLibraryMessage(hasFolders: Bool) -> String {
+    hasFolders
         ? "Add books to your library to get started"
-        : "Tap Settings > Add Vault to choose a folder where your books and audiobooks are stored."
+        : "Tap Settings > Add Folder to choose a folder where your books and audiobooks are stored."
 }
 
 /// Deterministic per-book gradient — the fallback CoverArtView below renders when a

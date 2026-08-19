@@ -1,6 +1,6 @@
 import Foundation
 
-/// Real (non-mock) filesystem scan of a vault folder for known book/audiobook file
+/// Real (non-mock) filesystem scan of a folder for known book/audiobook file
 /// extensions. This is the iOS-native counterpart to Android's FileScanner +
 /// MetadataExtractor (core:storage): deliberately simpler, since it only reads the
 /// filename and extension here — title/author/duration extraction is still the
@@ -27,9 +27,9 @@ enum LibraryFileScanner {
     ]
 
     /// Walks `resolvedURL` recursively and returns one `BookData` per recognized file.
-    /// `vault.id` is folded into each book's id so the same file rescanned across two
-    /// different vaults (unlikely, but possible if vaults overlap) doesn't collide.
-    static func scan(vault: Vault, resolvedURL: URL) -> [BookData] {
+    /// `folder.id` is folded into each book's id so the same file rescanned across two
+    /// different folders (unlikely, but possible if folders overlap) doesn't collide.
+    static func scan(folder: Folder, resolvedURL: URL) -> [BookData] {
         let didStartAccessing = resolvedURL.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { resolvedURL.stopAccessingSecurityScopedResource() } }
 
@@ -46,12 +46,12 @@ enum LibraryFileScanner {
             guard let format = extensionFormats[fileURL.pathExtension.lowercased()] else { continue }
             let title = fileURL.deletingPathExtension().lastPathComponent
             results.append(BookData(
-                id: "vault:\(vault.id):\(fileURL.path)",
+                id: "folder:\(folder.id):\(fileURL.path)",
                 title: title,
                 author: "",
                 format: format,
                 fileURL: fileURL,
-                vaultId: vault.id
+                folderId: folder.id
             ))
         }
         return results
