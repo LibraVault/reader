@@ -33,7 +33,7 @@ struct BookmarksSheet: View {
                         Image(systemName: "bookmark.fill")
                             .foregroundStyle(LibraVaultColor.primary)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(bookmark.position)
+                            Text(BookmarksSheet.displayLabel(for: bookmark.position))
                                 .font(LibraVaultTypography.bodyMedium)
                                 .foregroundStyle(LibraVaultColor.onSurface)
                             if let note = bookmark.note, !note.isEmpty {
@@ -93,6 +93,19 @@ struct BookmarksSheet: View {
         Task {
             try? await bridge.deleteBookmark(bookId: bookId, bookmarkId: bookmark.id)
         }
+    }
+
+    /// `ReaderView.currentLocatorPosition()` (#331) stores EPUB bookmark positions as
+    /// `"Locator:<chapterIndex>:<charOffset>"` — precise enough to survive repagination,
+    /// but not something to show a user verbatim. Surface the chapter number instead,
+    /// same granularity the old `"Chapter N"` format displayed. Every other prefix
+    /// (`"Page N"`, and the pre-existing `"Chapter N"` still written by nothing but read
+    /// for backward compatibility) is already human-readable as-is.
+    static func displayLabel(for position: String) -> String {
+        guard position.hasPrefix("Locator:") else { return position }
+        let chapterIndexPart = position.dropFirst("Locator:".count).split(separator: ":").first
+        guard let chapterIndex = chapterIndexPart.flatMap({ Int($0) }) else { return position }
+        return "Chapter \(chapterIndex + 1)"
     }
 }
 
