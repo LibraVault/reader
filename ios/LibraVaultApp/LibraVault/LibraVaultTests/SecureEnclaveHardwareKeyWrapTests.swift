@@ -19,10 +19,15 @@ import Security
 /// itself needs real hardware to verify.
 ///
 /// What's covered here: the full ECIES wrap/unwrap contract (round-trip,
-/// tamper detection, cross-key isolation), the Keychain lookup-by-tag
-/// contract `forExisting`/`createNew` share, and `createNew`'s documented
-/// failure in this environment. What's NOT covered, same gap Android has
-/// (issue #253/#279): `createNew` actually succeeding with
+/// tamper detection, cross-key isolation), and `createNew`'s documented
+/// failure in this environment. The Keychain lookup-by-tag contract
+/// `forExisting`/`createNew` share is *attempted* here but skips itself
+/// (`skipIfKeychainKeyPersistenceUnavailable`) on this CI job specifically,
+/// because `CODE_SIGNING_ALLOWED=NO` (`.github/workflows/ios-app-build.yml`)
+/// leaves the test bundle with zero entitlements, and `kSecClassKey`
+/// persistence needs at least one — confirmed against a real CI run
+/// (2026-08-19), not assumed. What's NOT covered at all, same gap Android
+/// has (issue #253/#279): `createNew` actually succeeding with
 /// `isHardwareBacked == true`, and passcode-change/biometric-re-enrollment
 /// survival — both need a real device.
 final class SecureEnclaveHardwareKeyWrapTests: XCTestCase {
@@ -117,11 +122,39 @@ final class SecureEnclaveHardwareKeyWrapTests: XCTestCase {
 
     // MARK: - factory: forExisting
 
-    func testForExistingOnMissingAliasThrowsKeyLost() {
+    /// This job runs with `CODE_SIGNING_ALLOWED=NO`
+    /// (`.github/workflows/ios-app-build.yml`) — with code signing off, the
+    /// test bundle carries zero entitlements, so `kSecClassKey` Keychain
+    /// persistence fails outright with `errSecMissingEntitlement`
+    /// (`-34018`) for *every* key, not just a specific alias — confirmed
+    /// against a real CI run (2026-08-19): `SecItemAdd` (`seedPersistedKey`)
+    /// and `SecItemCopyMatching` (`forExisting`'s lookup, even for a
+    /// deliberately-missing alias) both fail this way here. A signed build
+    /// (TestFlight, App Store, or CI with entitlements configured) has no
+    /// such restriction. Skips rather than asserting a specific outcome,
+    /// since "no entitlements at all" isn't a condition any of this code's
+    /// own logic is meant to produce a particular result for.
+    private func skipIfKeychainKeyPersistenceUnavailable(_ error: Error) throws {
+        let status: OSStatus?
+        if case HardwareKeyWrapError.keychainError(let keychainStatus) = error {
+            status = keychainStatus
+        } else {
+            let nsError = error as NSError
+            status = nsError.domain == NSOSStatusErrorDomain ? OSStatus(nsError.code) : nil
+        }
+        guard status == errSecMissingEntitlement else { return }
+        throw XCTSkip("Keychain SecKey persistence unavailable (errSecMissingEntitlement, OSStatus \(status!)) — this CI job runs with CODE_SIGNING_ALLOWED=NO; needs a signed build or real device")
+    }
+
+    func testForExistingOnMissingAliasThrowsKeyLost() throws {
         let factory = SecureEnclaveHardwareKeyWrapFactory()
         let missingAlias = uniqueAlias() // deliberately never seeded
 
-        XCTAssertThrowsError(try factory.forExisting(keyAlias: missingAlias)) { error in
+        do {
+            _ = try factory.forExisting(keyAlias: missingAlias)
+            XCTFail("expected forExisting to throw for a missing alias")
+        } catch {
+            try skipIfKeychainKeyPersistenceUnavailable(error)
             XCTAssertEqual(error as? HardwareKeyWrapError, .keyLost(keyAlias: missingAlias))
         }
     }
@@ -132,7 +165,12 @@ final class SecureEnclaveHardwareKeyWrapTests: XCTestCase {
         // `createNew` share, without needing real Secure Enclave hardware.
         let alias = uniqueAlias()
         aliasesToClean.append(alias)
-        _ = try seedPersistedKey(alias: alias)
+        do {
+            _ = try seedPersistedKey(alias: alias)
+        } catch {
+            try skipIfKeychainKeyPersistenceUnavailable(error)
+            throw error
+        }
 
         let factory = SecureEnclaveHardwareKeyWrapFactory()
         let wrap = try factory.forExisting(keyAlias: alias)
@@ -145,7 +183,12 @@ final class SecureEnclaveHardwareKeyWrapTests: XCTestCase {
     func testForExistingReturnsAFreshInstanceEachCallForTheSameKey() throws {
         let alias = uniqueAlias()
         aliasesToClean.append(alias)
-        _ = try seedPersistedKey(alias: alias)
+        do {
+            _ = try seedPersistedKey(alias: alias)
+        } catch {
+            try skipIfKeychainKeyPersistenceUnavailable(error)
+            throw error
+        }
 
         let factory = SecureEnclaveHardwareKeyWrapFactory()
         let firstInstance = try factory.forExisting(keyAlias: alias)
