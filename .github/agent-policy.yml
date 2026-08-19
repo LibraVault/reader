@@ -38,6 +38,7 @@ sensitive_paths:
   - "core/vaultstore/**"
   - "ios/LibraVaultApp/LibraVault/LibraVault/Sources/VaultCrypto/**"
   - "ios/LibraVaultApp/LibraVault/LibraVault/ThirdParty/Argon2/**"
+  - "ios/LibraVaultApp/LibraVault/LibraVault/Sources/VaultStore/**"
 
   # Frozen on-disk vault-format fixtures. These are the only thing proving
   # Android and iOS still agree on the wire format, and the failure mode is
