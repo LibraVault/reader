@@ -104,7 +104,16 @@ struct MarkdownReaderContent: View {
             )
             // Center-third only, matching ReaderTapZone's boundaries — see onCenterTap's
             // doc comment above for why left/right are deliberately inert here.
-            .simultaneousGesture(
+            //
+            // .highPriorityGesture, not .simultaneousGesture (#293): the VStack above has
+            // .textSelection(.enabled) applied, which installs its own tap-to-place-cursor
+            // gesture on the underlying text. A merely-simultaneous gesture here can lose
+            // that arbitration and never fire, silently swallowing the tap and leaving
+            // showToolbar (and the back button it gates in ReaderView) stuck hidden.
+            // .highPriorityGesture gives this gesture precedence over the text's own gesture
+            // for the same touch — it only affects tap arbitration, not the long-press drag
+            // text selection actually uses, so selecting text is unaffected.
+            .highPriorityGesture(
                 SpatialTapGesture(coordinateSpace: .local).onEnded { value in
                     if ReaderTapZone.classify(x: value.location.x, width: viewportWidth) == .center {
                         onCenterTap()

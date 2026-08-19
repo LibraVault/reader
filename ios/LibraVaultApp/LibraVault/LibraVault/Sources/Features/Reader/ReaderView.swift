@@ -5,6 +5,11 @@ struct ReaderView: View {
     let book: BookItem
 
     @EnvironmentObject var appState: AppState
+    /// Pops this pushed screen off the root NavigationStack (see LibraVaultApp.swift's
+    /// doc comment — only the root owns a stack, everything else is a destination) — used
+    /// by the #293 fallback exit affordance below, independent of showToolbar/the
+    /// center-tap gesture that normally reveals the navigation bar's own back button.
+    @Environment(\.dismiss) private var dismiss
     @State private var currentChapter = 1
     /// Real chapters for formats with a parser wired up (EPUB only — PDF used to
     /// share this reflowed-text path too, see PDFReaderContent's doc comment for why
@@ -177,6 +182,24 @@ struct ReaderView: View {
             }
         }
         .toolbar(showToolbar ? .visible : .hidden, for: .navigationBar)
+        // #293 fallback: when the navigation bar (and its back button) is hidden for
+        // Markdown, this is the only way out that doesn't depend on the center-tap
+        // gesture actually landing — see ReaderExitAffordance's doc comment for why
+        // Markdown specifically needs it and EPUB/PDF don't.
+        .overlay(alignment: .topLeading) {
+            if ReaderExitAffordance.isNeeded(format: book.format, showToolbar: showToolbar) {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(colors.onBackground)
+                        .padding(10)
+                        .background(colors.surface.opacity(0.85), in: Circle())
+                }
+                .padding(LibraVaultSpacing.md)
+                .accessibilityIdentifier("reader.exitButton")
+                .accessibilityLabel("Close")
+            }
+        }
         .sheet(isPresented: $showSettingsSheet) {
             ReaderSettingsSheet(
                 theme: $readingTheme,
