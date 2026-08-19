@@ -1,6 +1,5 @@
 import SwiftUI
 import Foundation
-import UIKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -827,7 +826,7 @@ final class AppState: ObservableObject {
             playbackRate: playbackSpeed,
             isPlaying: isPlaying,
             skipIntervalSeconds: skipDurationSeconds,
-            artwork: book.coverUrl.flatMap { UIImage(contentsOfFile: $0) }
+            coverArtPath: book.coverUrl
         ))
     }
 

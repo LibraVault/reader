@@ -22,11 +22,18 @@ struct NowPlayingSnapshot {
     /// Mirrors PlayerView's skip-back/skip-forward buttons (AppState.skipDurationSeconds)
     /// so the lock-screen/Control Center skip buttons jump the same distance.
     let skipIntervalSeconds: Double
-    /// Real cover art already extracted/cached by CoverArtExtractor/CoverArtCache — nil
-    /// falls back to whatever generic artwork the system shows on its own. The
+    /// Path to real cover art already extracted/cached by CoverArtExtractor/CoverArtCache
+    /// — nil falls back to whatever generic artwork the system shows on its own. The
     /// generated format-badge placeholder (CoverArtView's gradient fallback) is a
     /// separate, cross-platform issue and deliberately not reused here.
-    let artwork: UIImage?
+    ///
+    /// Deliberately a path, not a pre-decoded `UIImage` (issue #321): decoding here
+    /// would put a synchronous disk read + JPEG decode on `syncNowPlayingInfo`'s
+    /// main-actor hot path on every start/pause/resume/seek/chapter/speed-change
+    /// event. `SystemNowPlayingManager` defers the decode into
+    /// `MPMediaItemArtwork`'s lazy request handler instead, which the system only
+    /// invokes if/when it actually needs pixels, at the size it actually needs.
+    let coverArtPath: String?
 }
 
 /// The surface of system Now Playing / remote-command integration AppState depends
@@ -146,8 +153,8 @@ final class SystemNowPlayingManager: NowPlayingManaging {
         if let chapterTitle = snapshot.chapterTitle {
             info[MPMediaItemPropertyAlbumTitle] = chapterTitle
         }
-        if let artwork = snapshot.artwork {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: artwork.size) { _ in artwork }
+        if let coverArtPath = snapshot.coverArtPath {
+            info[MPMediaItemPropertyArtwork] = Self.artwork(forCoverAt: coverArtPath)
         }
         infoCenter.nowPlayingInfo = info
         infoCenter.playbackState = snapshot.isPlaying ? .playing : .paused
@@ -158,5 +165,35 @@ final class SystemNowPlayingManager: NowPlayingManaging {
         lastKnownIsPlaying = false
         infoCenter.nowPlayingInfo = nil
         infoCenter.playbackState = .stopped
+    }
+
+    /// Builds Now Playing artwork whose pixels are decoded lazily (issue #321) —
+    /// `boundsSize` just declares the largest size we can provide (matching
+    /// `CoverArtCache.maxCoverPx`, the cap every cached cover is already stored
+    /// under); the request handler only actually reads/decodes the file if/when
+    /// MediaPlayer calls it, at the size it says it needs.
+    static func artwork(forCoverAt path: String) -> MPMediaItemArtwork {
+        let maxSize = CGSize(width: CGFloat(CoverArtCache.maxCoverPx), height: CGFloat(CoverArtCache.maxCoverPx))
+        return MPMediaItemArtwork(boundsSize: maxSize) { requestedSize in
+            decodeArtwork(atPath: path, requestedSize: requestedSize)
+        }
+    }
+
+    /// Reads and downsamples the cover at `path` to `requestedSize`'s longest edge,
+    /// reusing `CoverArtCache`'s ImageIO thumbnail-during-decode helper so this never
+    /// fully decodes the already-cached (≤512px) cover before shrinking it further
+    /// for lock-screen/Control Center chrome, which is typically smaller still.
+    /// `internal` (not `private`) so it's directly unit-testable: `update(_:)` itself
+    /// no-ops under XCTest (see `isRunningUnderXCTest`'s doc comment), so this pure
+    /// decode logic needs its own seam to get coverage.
+    static func decodeArtwork(atPath path: String, requestedSize: CGSize) -> UIImage {
+        let maxDimension = max(Int(requestedSize.width.rounded(.up)), Int(requestedSize.height.rounded(.up)), 1)
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let downsampled = CoverArtCache.downsampledJPEG(from: data, maxDimension: maxDimension),
+              let image = UIImage(data: downsampled)
+        else {
+            return UIImage()
+        }
+        return image
     }
 }
