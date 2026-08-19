@@ -58,13 +58,47 @@ final class VaultStoreHasNoLeakSurfaceDependencyTests: XCTestCase {
 
         for file in swiftFiles {
             let contents = try String(contentsOf: file, encoding: .utf8)
+            let code = Self.stripLineComments(from: contents)
             for identifier in Self.forbiddenIdentifiers {
                 XCTAssertFalse(
-                    contents.contains(identifier),
+                    code.contains(identifier),
                     "\(file.lastPathComponent) references '\(identifier)' — Sources/VaultStore/ must never touch"
                         + " the app's plaintext persistence/cache layer"
                 )
             }
         }
+    }
+
+    /// Confirms `stripLineComments` fixes the false positive (a doc comment
+    /// merely naming a forbidden type) without opening a false negative (an
+    /// actual code reference on its own line still survives the strip and
+    /// would still fail `testNoFileUnderVaultStoreReferencesAPlaintextPersistenceType`).
+    func testStripLineCommentsDropsCommentMentionButKeepsRealCodeReference() {
+        let source = """
+            /// Callers must pre-process bytes through `CoverArtCache` first.
+            let cache = CoverArtCache.shared
+            """
+        let stripped = Self.stripLineComments(from: source)
+        XCTAssertFalse(stripped.contains("Callers must"), "doc comment line must be dropped entirely")
+        XCTAssertFalse(stripped.contains("first"), "doc comment line must be dropped entirely")
+        XCTAssertTrue(stripped.contains("CoverArtCache.shared"), "a real code reference must still be detectable")
+    }
+
+    /// Drops the `//`/`///` comment portion of every line so doc comments
+    /// merely *naming* a forbidden type (e.g. explaining a caller-side
+    /// boundary) don't trip the scan — only an actual reference in code
+    /// should. Deliberately line-based, not a full Swift tokenizer: this
+    /// codebase's convention (confirmed above) is exclusively `//`-style
+    /// comments under `Sources/VaultStore/`, no `/* */` block comments, so a
+    /// per-line split covers every real case without the complexity of a
+    /// real lexer.
+    private static func stripLineComments(from source: String) -> String {
+        source
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> Substring in
+                guard let commentRange = line.range(of: "//") else { return line }
+                return line[line.startIndex..<commentRange.lowerBound]
+            }
+            .joined(separator: "\n")
     }
 }
