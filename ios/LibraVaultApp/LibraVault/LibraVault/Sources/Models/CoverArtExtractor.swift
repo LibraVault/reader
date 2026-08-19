@@ -150,13 +150,23 @@ enum CoverArtExtractor {
 
     // MARK: - PDF (page 1 thumbnail via PDFKit)
 
+    /// `PDFPage.thumbnail(of:for:)` rasterizes at exactly the pixel size requested —
+    /// unlike `UIGraphicsImageRenderer`, it has no notion of the device's Retina scale
+    /// to apply on top. Requesting `CoverArtCache.maxCoverPx` up front (rather than an
+    /// arbitrary smaller size like the 256px this used to request) means the raster
+    /// this hands to `CoverArtCache.save` already fills its 512px-long-edge cap instead
+    /// of falling short of it, so the cache's own downsample step has real detail to
+    /// work with instead of upscale-blurring a too-small source when the grid displays
+    /// it at 120pt (240-360 physical px on a 2x/3x device) — field-reported as "PDF
+    /// covers blurred" while EPUB covers (pulled from the manifest at native
+    /// resolution) looked sharp.
     private static func extractPdfCover(fileURL: URL) -> Data? {
         guard let document = PDFDocument(url: fileURL), let page = document.page(at: 0) else { return nil }
 
         let pageBounds = page.bounds(for: .cropBox)
         guard pageBounds.width > 0, pageBounds.height > 0 else { return nil }
 
-        let width: CGFloat = 256
+        let width = CGFloat(CoverArtCache.maxCoverPx)
         let height = pageBounds.height / pageBounds.width * width
         let thumbnail = page.thumbnail(of: CGSize(width: width, height: height), for: .cropBox)
         return thumbnail.jpegData(compressionQuality: 0.85)
