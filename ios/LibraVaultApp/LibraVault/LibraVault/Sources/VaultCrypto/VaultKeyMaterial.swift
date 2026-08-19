@@ -27,9 +27,19 @@ struct VaultKeyMaterial: Equatable {
 /// `vmk` (ready to use immediately, e.g. to encrypt the first imported file),
 /// and the `recoveryKey` that MUST be shown to the user exactly once - this
 /// module does not retain or persist it anywhere.
+///
+/// `vmk` is deliberately `var`, not `let`: callers that fail after this is
+/// created (see `VaultStore.create`'s catch block) need to scrub it in
+/// place. `Data` is a copy-on-write value type, so zeroing a *copy* (e.g.
+/// `var c = newVault.vmk; c.secureZero()`) only zeroes the copy's freshly
+/// forked buffer, leaving this property's own storage — the only other
+/// reference keeping the original buffer alive — untouched. A `let` here
+/// would make that mistake the only way to scrub it. Mirrors Android's
+/// `NewVault.vmk: ByteArray`, whose reference semantics don't have this
+/// footgun (`newVault.vmk.fill(0)` mutates the one true backing array).
 struct NewVault {
     let material: VaultKeyMaterial
-    let vmk: Data
+    var vmk: Data
     let recoveryKey: Data
 }
 
