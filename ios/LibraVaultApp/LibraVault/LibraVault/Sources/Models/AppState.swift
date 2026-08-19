@@ -59,6 +59,19 @@ final class AppState: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published var playbackSpeed: Double = 1.0 {
         didSet {
+            // (#309) startPlayback seeds this from defaultPlaybackSpeed for every new
+            // session — a bookkeeping reset, not a live speed change the listener
+            // made. Without this guard that seeding assignment still runs this whole
+            // didSet: audioEngine.setRate() would fire redundantly right before
+            // startAudioPlayback's own play(rate:) call moments later (a real,
+            // CI-caught regression — see AppStateAudioPlaybackTests), and
+            // syncNowPlayingInfo() would fire against whatever nowPlayingBook still
+            // held at that exact point in startPlayback — stale/nil if seeded before
+            // it's set, a *different* book's info if seeded after — either way not
+            // what Control Center should show mid-setup. startPlayback's own trailing
+            // `defer { syncNowPlayingInfo() }` already publishes the real, final state
+            // once setup finishes, so none of this didSet's work is needed for a seed.
+            guard !isSeedingPlaybackSpeedForNewSession else { return }
             defer { syncNowPlayingInfo() }
             guard let book = nowPlayingBook else { return }
             if book.format.isAudio {
@@ -159,6 +172,10 @@ final class AppState: ObservableObject {
     private var playbackTimer: Timer?
     private var sleepTimer: Timer?
     private var sleepFadeTimer: Timer?
+    /// See playbackSpeed's didSet — true only for the instant startPlayback assigns
+    /// `playbackSpeed = defaultPlaybackSpeed` to seed a new session, suppressing that
+    /// didSet's live-speed-change side effects for what's actually just bookkeeping.
+    private var isSeedingPlaybackSpeedForNewSession = false
 
     private let bridge = LibravaultDomainBridge.shared
     private let vaultPersistence: VaultPersistence
@@ -503,11 +520,26 @@ final class AppState: ObservableObject {
 
         let isNewSession = nowPlayingBook?.id != book.id
         if isNewSession {
-            // Only tear down the previous session's engine when this is genuinely a
-            // new listening session (a different book) — skipToChapter also routes
-            // through here to advance chapters of the *same* book, and shouldn't
-            // restart audio from 0 or re-parse the book's file on every single
-            // chapter change.
+            // Only reset to the preference / tear down the previous session's engine
+            // when this is genuinely a new listening session (a different book) —
+            // skipToChapter also routes through here to advance chapters of the
+            // *same* book, and shouldn't stomp a speed the listener just adjusted
+            // mid-session back to the default, restart audio from 0, or re-parse the
+            // book's file on every single chapter change.
+            //
+            // (#309) isSeedingPlaybackSpeedForNewSession suppresses playbackSpeed's
+            // didSet for this specific assignment — without it, seeding the value
+            // (even to what it already was) still ran that whole didSet: for an audio
+            // book it fired audioEngine.setRate() redundantly right before
+            // startAudioPlayback's own play(rate:) call below (a real, CI-caught
+            // regression — see AppStateAudioPlaybackTests), and either way it called
+            // syncNowPlayingInfo() against whatever nowPlayingBook still held at this
+            // exact point — stale/nil, not the book actually being started. This
+            // function's own trailing `defer` already publishes the real, final state
+            // once setup finishes, so none of the didSet's work is needed here.
+            isSeedingPlaybackSpeedForNewSession = true
+            playbackSpeed = defaultPlaybackSpeed
+            isSeedingPlaybackSpeedForNewSession = false
             stopTimer()
             audioEngine.stop()
             releaseActiveAudioVaultAccess()
@@ -533,21 +565,6 @@ final class AppState: ObservableObject {
         nowPlayingBook = book
         nowPlayingChapter = book.format.isAudio ? 1 : chapter
         isPlaying = true
-
-        // (#309) Reset to the preference *after* nowPlayingBook is already updated,
-        // not before: playbackSpeed's didSet now also syncs Now Playing info (see its
-        // own doc comment), and syncing while nowPlayingBook still pointed at the old
-        // session (or nil, on the very first startPlayback ever) sparked a spurious extra
-        // "clear Control Center" call before this function's own trailing sync ran —
-        // three AppStateNowPlayingTests cases caught this (unsupported-format-while-
-        // another-book-plays, stopPlayback, sleep-timer-expiry all saw one extra
-        // clearCallCount). Doesn't change *what* speed gets applied, only *when* the
-        // observer sees a consistent nowPlayingBook while doing it — shouldn't stomp a
-        // speed the listener just adjusted mid-session either way, so this stays
-        // gated on isNewSession exactly as before.
-        if isNewSession {
-            playbackSpeed = defaultPlaybackSpeed
-        }
 
         if book.format.isAudio {
             if isNewSession {
