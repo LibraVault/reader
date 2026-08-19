@@ -74,6 +74,20 @@ gh secret list --repo LibraVault/reader
 
 ## Gotchas
 
+- **Don't restate the version number in `release_notes`.** Firebase's
+  tester invite page auto-linkifies dot-separated, domain-shaped tokens
+  (e.g. `0.4.6.1-alpha`) without validating a real TLD or requiring a
+  scheme, turning a version mention into a dead "Server Not Found" link —
+  confirmed live on the `0.4.6.1-alpha` / build 12 invite page (run
+  32177679056, see issue #290). The page's own auto-generated heading
+  ("Release notes for `0.4.6.1-alpha` (12)") already shows the version and
+  build number and has the exact same broken-link styling, but that part
+  is templated by Firebase itself from the APK's `versionName`/
+  `versionCode`, not from anything this repo submits, so it isn't
+  fixable here. The workflow's first step,
+  `.github/scripts/check_release_notes_version_link.sh`, fails the run
+  early if `release_notes` contains a bare version-like token — reference
+  the build ("this build fixes...") without repeating the version number.
 - **The `firebase-tools` version is pinned** (`npx firebase-tools@13.29.1`) rather than using `@latest`. Bump it deliberately when needed — an unpinned CLI version drifting under you is exactly the kind of surprise that cost real debugging time on the iOS side (see the Xcode-version gotcha in the TestFlight doc).
 - **APK output filename is dynamic**, not a fixed `app-release.apk` — `app/build.gradle.kts` embeds the git branch in the filename for local-build disambiguation. The workflow uses `find ... -name "*.apk" | head -1` rather than a hardcoded path.
 - **Don't add a Firebase Gradle plugin or `google-services.json`.** If a future change wants Crashlytics/Analytics, that's a deliberate scope decision that conflicts with this project's privacy stance and needs to be discussed first — this pipeline intentionally stays CLI-only, CI-side, with zero app-side footprint.

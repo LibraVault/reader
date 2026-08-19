@@ -26,6 +26,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fails fast, before any build/signing work, if release_notes would
+      # produce a dead link on Firebase's tester invite page — see
+      # .github/scripts/check_release_notes_version_link.sh and issue #290.
+      - name: Validate release notes don't contain a bare version string
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          printf '%s' "$RELEASE_NOTES" | .github/scripts/check_release_notes_version_link.sh
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
