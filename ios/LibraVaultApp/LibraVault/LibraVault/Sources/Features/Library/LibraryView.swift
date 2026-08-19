@@ -228,10 +228,79 @@ func generatedCoverGradient(for book: BookItem) -> LinearGradient {
     return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 
+/// Uppercase initials — first letters of the first two words, or the first two
+/// letters of a single-word title. Mirrors Android's `initialsFor` in
+/// `core/ui/components/GeneratedCover.kt` (same rule, same "?" empty-title fallback).
+func initials(for title: String) -> String {
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "?" }
+    let words = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+    if words.count >= 2, let first = words[0].first, let second = words[1].first {
+        return String([first, second]).uppercased()
+    }
+    return String(trimmed.prefix(2)).uppercased()
+}
+
+/// A [CoverArtView] placeholder's caption-band identity (issue #308) — mirrors
+/// Android's `core:ui` `CoverFormatBadge`, independently derived here from
+/// `MediaFormat` directly (iOS has no cross-module boundary to route around the way
+/// `core:ui`/`core:domain` do on Android). `nil` (mobi/cbz — recognized by the
+/// scanner but not yet readable, see `BookContentProvider`) keeps `CoverArtView`'s
+/// original generic "no cover art" treatment.
+enum CoverFormatBadge {
+    case epub, pdf, markdown, audio
+
+    init?(format: MediaFormat) {
+        switch format {
+        case .epub: self = .epub
+        case .pdf: self = .pdf
+        case .markdown: self = .markdown
+        case .mp3, .m4b, .aac, .flac, .ogg, .opus: self = .audio
+        case .mobi, .cbz: return nil
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .epub: return "book.closed"
+        case .pdf: return "doc.richtext"
+        case .markdown: return "doc.plaintext"
+        case .audio: return "headphones"
+        }
+    }
+
+    /// Matches `LibraryFormatFilter`'s own chip labels above ("EPUB"/"PDF"/"MD"/"Audio").
+    var label: String {
+        switch self {
+        case .epub: return "EPUB"
+        case .pdf: return "PDF"
+        case .markdown: return "MD"
+        case .audio: return "Audio"
+        }
+    }
+}
+
+/// Caption text/description shared by the generic and format-specific cases — kept as
+/// a free function (not a `CoverFormatBadge` case) since the generic "no format"
+/// treatment isn't itself a badge variant.
+private let noCoverArtDescription = "No cover art"
+
+/// Below this width the caption band shows the icon alone — the label doesn't fit
+/// legibly at, say, MiniPlayerBar's 40pt thumbnail. Matches Android's
+/// `MIN_WIDTH_FOR_LABEL` in `core:ui`'s `GeneratedCover.kt`.
+private let minWidthForCaptionLabel: CGFloat = 72
+
 /// Renders `book`'s real cover art (extracted by CoverArtExtractor, cached to disk by
-/// CoverArtCache) when one exists, falling back to `generatedCoverGradient` otherwise —
-/// the single place every cover-shaped surface (Library grid, Continue row, mini-player,
-/// full player) goes through, so "no real cover yet" degrades the same way everywhere.
+/// CoverArtCache) when one exists, falling back to a deterministic gradient + initials
+/// + a bottom caption band otherwise — the single place every cover-shaped surface
+/// (Library grid, Continue row, mini-player, full player) goes through, so "no real
+/// cover yet" degrades the same way everywhere.
+///
+/// The caption band (#308, mirroring Android's `GeneratedCover`/issue #168) exists so
+/// the gradient+initials alone don't read as a real, deliberately-designed cover —
+/// it shows a format-specific icon/label (book/PDF/doc/headphones + "EPUB"/"PDF"/
+/// "MD"/"Audio") when `book.format` maps to one, or the original generic
+/// "No cover art" treatment otherwise.
 ///
 /// Reads the cached JPEG synchronously via `UIImage(contentsOfFile:)` rather than
 /// `AsyncImage` — covers are local cache files already downsampled to a small fixed size
@@ -241,6 +310,8 @@ struct CoverArtView: View {
     let book: BookItem
     var cornerRadius: CGFloat = LibraVaultRadius.cover
 
+    private var badge: CoverFormatBadge? { CoverFormatBadge(format: book.format) }
+
     var body: some View {
         Group {
             if let coverPath = book.coverUrl, let uiImage = UIImage(contentsOfFile: coverPath) {
@@ -248,10 +319,47 @@ struct CoverArtView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                generatedCoverGradient(for: book)
+                placeholderContent
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    private var placeholderContent: some View {
+        GeometryReader { geometry in
+            ZStack {
+                generatedCoverGradient(for: book)
+
+                Text(initials(for: book.title))
+                    .font(LibraVaultTypography.headlineSmall)
+                    .fontWeight(.bold)
+                    .foregroundStyle(LibraVaultPalette.leatherLight.opacity(0.92))
+                    .lineLimit(1)
+
+                VStack {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: badge?.symbolName ?? "photo")
+                            .font(.system(size: 12))
+                            .foregroundStyle(LibraVaultPalette.leatherLight.opacity(0.9))
+                        if geometry.size.width >= minWidthForCaptionLabel {
+                            Text(badge?.label ?? noCoverArtDescription)
+                                .font(LibraVaultTypography.labelSmall)
+                                .foregroundStyle(LibraVaultPalette.leatherLight.opacity(0.9))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.black.opacity(0.38))
+                }
+            }
+            // The band's meaning (and, when known, which format) is on this one
+            // accessibility element — mirrors Android's outer `.semantics { }` on
+            // GeneratedCover, rather than the icon/text inside separately narrating.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(badge.map { "\(noCoverArtDescription) — \($0.label)" } ?? noCoverArtDescription)
+        }
     }
 }
 

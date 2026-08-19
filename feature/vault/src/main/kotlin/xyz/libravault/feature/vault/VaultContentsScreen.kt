@@ -186,7 +186,7 @@ private fun VaultEntryThumbnail(entry: VaultManifestEntry, coverJpeg: ByteArray?
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            VaultCoverPlaceholder(title = entry.title, modifier = Modifier.fillMaxSize())
+            VaultCoverPlaceholder(title = entry.title, format = entry.format, modifier = Modifier.fillMaxSize())
         }
     }
 }

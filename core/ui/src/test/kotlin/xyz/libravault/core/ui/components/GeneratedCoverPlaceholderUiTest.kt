@@ -69,4 +69,54 @@ class GeneratedCoverPlaceholderUiTest {
 
         composeTestRule.onNodeWithText(initialsFor("Dune")).assertIsDisplayed()
     }
+
+    // ── format-specific badge (#308) ────────────────────────────────────────────
+
+    @Test
+    fun `a known format replaces the generic label with its own`() {
+        composeTestRule.setContent {
+            LibravaultTheme {
+                GeneratedCover(title = "Dune", modifier = Modifier.size(160.dp), format = CoverFormatBadge.Epub)
+            }
+        }
+
+        composeTestRule.onNodeWithText("EPUB").assertIsDisplayed()
+        composeTestRule.onNodeWithText(NO_COVER_ART_DESCRIPTION).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a known format is still narrated as no cover art, plus which format`() {
+        composeTestRule.setContent {
+            LibravaultTheme {
+                GeneratedCover(title = "Dune", modifier = Modifier.size(160.dp), format = CoverFormatBadge.Pdf)
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("$NO_COVER_ART_DESCRIPTION — PDF").assertIsDisplayed()
+    }
+
+    @Test
+    fun `omits the format label at a narrow width, same as the generic case`() {
+        composeTestRule.setContent {
+            LibravaultTheme {
+                GeneratedCover(title = "Dune", modifier = Modifier.size(40.dp), format = CoverFormatBadge.Audio)
+            }
+        }
+
+        composeTestRule.onNodeWithText("Audio").assertDoesNotExist()
+        // The narrated description still carries the format even when the visible label doesn't fit.
+        composeTestRule.onNodeWithContentDescription("$NO_COVER_ART_DESCRIPTION — Audio").assertIsDisplayed()
+    }
+
+    @Test
+    fun `no format passed keeps the original generic treatment exactly`() {
+        composeTestRule.setContent {
+            LibravaultTheme {
+                GeneratedCover(title = "Dune", modifier = Modifier.size(160.dp))
+            }
+        }
+
+        composeTestRule.onNodeWithText(NO_COVER_ART_DESCRIPTION).assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(NO_COVER_ART_DESCRIPTION).assertIsDisplayed()
+    }
 }

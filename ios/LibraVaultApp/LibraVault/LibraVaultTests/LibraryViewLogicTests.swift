@@ -101,6 +101,63 @@ final class LibraryViewLogicTests: XCTestCase {
         }
     }
 
+    // MARK: - initials(for:) (#308)
+    //
+    // Mirrors Android's `initialsFor` test cases in
+    // core/ui/src/test/kotlin/.../GeneratedCoverDeterminismTest.kt, same rules.
+
+    func testInitialsExtractTwoUppercaseLettersFromMultiWordTitles() {
+        XCTAssertEqual(initials(for: "The Pragmatic Programmer"), "TP")
+        XCTAssertEqual(initials(for: "homo homini"), "HH")
+        XCTAssertEqual(initials(for: "Sapiens: A Brief History of Humankind"), "SA")
+    }
+
+    func testInitialsExtractTwoLettersFromSingleWordTitles() {
+        XCTAssertEqual(initials(for: "Dune"), "DU")
+        XCTAssertEqual(initials(for: "Be"), "BE")
+    }
+
+    func testInitialsFallBackToQuestionMarkForAnEmptyTitle() {
+        XCTAssertEqual(initials(for: ""), "?")
+        XCTAssertEqual(initials(for: "   "), "?")
+    }
+
+    func testInitialsAreUppercase() {
+        XCTAssertEqual(initials(for: "hello world"), "HW")
+    }
+
+    // MARK: - CoverFormatBadge(format:) (#308)
+
+    func testFormatBadgeMapsDocumentFormatsToThemselves() {
+        XCTAssertEqual(CoverFormatBadge(format: .epub)?.label, "EPUB")
+        XCTAssertEqual(CoverFormatBadge(format: .pdf)?.label, "PDF")
+        XCTAssertEqual(CoverFormatBadge(format: .markdown)?.label, "MD")
+    }
+
+    func testFormatBadgeMapsEveryAudioFormatToAudio() {
+        for format: MediaFormat in [.mp3, .m4b, .aac, .flac, .ogg, .opus] {
+            XCTAssertEqual(CoverFormatBadge(format: format)?.label, "Audio", "for \(format)")
+        }
+    }
+
+    /// mobi/cbz are recognized by the scanner but not yet readable (see
+    /// BookContentProvider) — no badge for them yet, `CoverArtView` falls back to the
+    /// original generic treatment rather than promising a format it can't actually open.
+    func testFormatBadgeIsNilForNotYetSupportedFormats() {
+        XCTAssertNil(CoverFormatBadge(format: .mobi))
+        XCTAssertNil(CoverFormatBadge(format: .cbz))
+    }
+
+    func testFormatBadgeSymbolsAreDistinctPerCase() {
+        let symbols = [
+            CoverFormatBadge.epub.symbolName,
+            CoverFormatBadge.pdf.symbolName,
+            CoverFormatBadge.markdown.symbolName,
+            CoverFormatBadge.audio.symbolName,
+        ]
+        XCTAssertEqual(Set(symbols).count, symbols.count, "each badge should use its own SF Symbol")
+    }
+
     // MARK: - AppError
 
     func testLibraryLoadFailedIncludesTheUnderlyingReason() {

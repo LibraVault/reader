@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -81,21 +86,61 @@ internal fun initialsFor(title: String): String {
  * variant) that layer their own meaning on top without duplicating the string. */
 const val NO_COVER_ART_DESCRIPTION: String = "No cover art"
 
-/** Below this width the caption band shows the icon alone — "No cover art" doesn't
- * fit legibly at, say, the 40dp MiniPlayerBar thumbnail size. */
+/** Below this width the caption band shows the icon alone — the label doesn't fit
+ * legibly at, say, the 40dp MiniPlayerBar thumbnail size. */
 private val MIN_WIDTH_FOR_LABEL: Dp = 72.dp
+
+/**
+ * A [GeneratedCover]'s caption-band identity, deliberately not `core:domain`'s
+ * `MediaFormat` (issue #308) — this module has no dependency on `core:domain` today,
+ * and a generic design-system component shouldn't need to know about every real
+ * media format the app supports, only the handful of icon/label buckets it renders.
+ * [fromFormatName] bridges the two by matching on the enum's *name* rather than the
+ * type itself — the same string-matching idiom `feature:library`'s
+ * `applyFormatFilter`/`FormatFilterRow` and the vault manifest's
+ * `VaultManifestEntry.format: String` already rely on elsewhere in this codebase — so
+ * every caller can pass `format.name` without this module taking on a new
+ * `core:domain` dependency.
+ */
+enum class CoverFormatBadge(internal val icon: ImageVector, internal val label: String) {
+    Epub(Icons.AutoMirrored.Outlined.MenuBook, "EPUB"),
+    Pdf(Icons.Outlined.PictureAsPdf, "PDF"),
+    Markdown(Icons.Outlined.Description, "MD"),
+    Audio(Icons.Outlined.Headphones, "Audio");
+
+    companion object {
+        /** `null` for a name this doesn't recognize — a future format not bucketed
+         * yet, or corrupt/unparseable manifest data (see `VaultCoverPlaceholder`'s use
+         * of this against `VaultManifestEntry.format`). [GeneratedCover] falls back to
+         * its original generic "no cover art" treatment when this returns `null`. */
+        fun fromFormatName(name: String): CoverFormatBadge? = when (name.uppercase()) {
+            "EPUB" -> Epub
+            "PDF" -> Pdf
+            "MARKDOWN" -> Markdown
+            "MP3", "M4B", "OGG", "FLAC", "OPUS", "AAC" -> Audio
+            else -> null
+        }
+    }
+}
 
 /**
  * Deterministic two-tone cover-art placeholder used when a real cover image is
  * missing. Pairs a diagonal gradient (hashed from the title) with 2-letter initials
- * in the serif display type, plus an explicit "No cover art" caption band along the
- * bottom edge (icon-only below [MIN_WIDTH_FOR_LABEL]).
+ * in the serif display type, plus a caption band along the bottom edge (icon-only
+ * below [MIN_WIDTH_FOR_LABEL]).
  *
  * The caption band exists because the gradient+initials alone can read as a real,
  * deliberately-designed cover rather than a stand-in for a missing one — see
  * https://github.com/LibraVault/reader/issues/168. It replaces the previous
  * ambiguous-by-itself treatment outright rather than adding a second, separate
  * "no cover" component, so every existing caller gets the fix for free.
+ *
+ * [format] (issue #308) swaps the band's generic "no image" icon/text for a
+ * format-specific one (book/PDF/doc/headphones + "EPUB"/"PDF"/"MD"/"Audio") when a
+ * caller has one handy — still inside the same dark band, so it reads as "this is a
+ * stand-in, and here's what kind of item it stands in for" rather than a real cover,
+ * preserving #168's intent. `null` (the default) keeps the original generic
+ * treatment exactly as before, so existing callers are unaffected.
  *
  * The cover container's shape is unchanged — the caller should wrap with its own
  * [Modifier.clip] if a rounded card is desired.
@@ -105,6 +150,7 @@ fun GeneratedCover(
     title: String,
     modifier: Modifier = Modifier,
     initialStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.headlineSmall,
+    format: CoverFormatBadge? = null,
 ) {
     val (top, bottom) = remember(title) { CoverPalette[paletteIndexFor(title)] }
     val initials = remember(title) { initialsFor(title) }
@@ -113,10 +159,11 @@ fun GeneratedCover(
             colors = listOf(top, bottom),
         )
     }
+    val bandDescription = format?.let { "$NO_COVER_ART_DESCRIPTION — ${it.label}" } ?: NO_COVER_ART_DESCRIPTION
     BoxWithConstraints(
         modifier = modifier
             .background(brush)
-            .semantics { contentDescription = NO_COVER_ART_DESCRIPTION },
+            .semantics { contentDescription = bandDescription },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -139,7 +186,7 @@ fun GeneratedCover(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Outlined.ImageNotSupported,
+                imageVector = format?.icon ?: Icons.Outlined.ImageNotSupported,
                 contentDescription = null, // the band's meaning is already on the outer semantics node
                 tint = LeatherLight.copy(alpha = 0.9f),
                 modifier = Modifier.size(12.dp),
@@ -147,7 +194,7 @@ fun GeneratedCover(
             if (showLabel) {
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = NO_COVER_ART_DESCRIPTION,
+                    text = format?.label ?: NO_COVER_ART_DESCRIPTION,
                     style = MaterialTheme.typography.labelSmall,
                     color = LeatherLight.copy(alpha = 0.9f),
                     maxLines = 1,
