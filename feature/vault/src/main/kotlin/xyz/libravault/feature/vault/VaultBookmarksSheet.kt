@@ -45,14 +45,16 @@ import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import xyz.libravault.core.vaultstore.VaultBookmark
 
-/** Sort key / label formatting for [VaultBookmark.positionRef] — only the two
- * conventions the vault reader actually produces (`"page:N"` for PDF, a
- * Readium Locator JSON blob for EPUB). A private duplicate of
- * `feature:reader`'s `ReaderComponents.kt` equivalents rather than a new
- * cross-module dependency, matching how the rest of `feature:vault`'s
- * reading UI is intentionally parallel, not shared. */
+/** Sort key / label formatting for [VaultBookmark.positionRef] — the three
+ * conventions vault content actually produces (`"page:N"` for PDF, a
+ * Readium Locator JSON blob for EPUB, `"ms:N"` for audio via
+ * [VaultPlayerViewModel]). A private duplicate of `feature:reader`'s
+ * `ReaderComponents.kt` equivalents rather than a new cross-module
+ * dependency, matching how the rest of `feature:vault`'s reading UI is
+ * intentionally parallel, not shared. */
 private fun vaultPositionRefSortKey(ref: String): Long = when {
     ref.startsWith("page:") -> (ref.removePrefix("page:").toIntOrNull() ?: Int.MAX_VALUE).toLong()
+    ref.startsWith("ms:") -> ref.removePrefix("ms:").toLongOrNull() ?: Long.MAX_VALUE
     ref.startsWith("{") -> runCatching {
         val locs = JSONObject(ref).optJSONObject("locations")
         val prog = locs?.optDouble("totalProgression", -1.0)?.takeIf { it >= 0 }
@@ -69,6 +71,8 @@ private fun vaultPositionRefSortKey(ref: String): Long = when {
 private fun formatVaultBookmarkLabel(positionRef: String): String = when {
     positionRef.startsWith("page:") ->
         positionRef.removePrefix("page:").toIntOrNull()?.let { "Page ${it + 1}" } ?: positionRef
+    positionRef.startsWith("ms:") ->
+        positionRef.removePrefix("ms:").toLongOrNull()?.let { formatVaultBookmarkPositionMs(it) } ?: positionRef
     positionRef.startsWith("{") -> runCatching {
         val json = JSONObject(positionRef)
         val title = json.optString("title").takeIf { it.isNotBlank() }
@@ -85,6 +89,14 @@ private fun formatVaultBookmarkLabel(positionRef: String): String = when {
         }
     }.getOrDefault("Bookmark")
     else -> positionRef
+}
+
+private fun formatVaultBookmarkPositionMs(ms: Long): String {
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 /** Bookmarks sheet for vault content — same swipe-to-delete + edit-note-dialog

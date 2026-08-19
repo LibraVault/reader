@@ -59,6 +59,24 @@ class VaultBookmarksSheetUiTest {
     }
 
     @Test
+    fun `an audio ms-style bookmark shows an mm-ss label`() {
+        val bookmark = VaultBookmark(id = 1L, positionRef = "ms:65000", createdAtEpochMillis = 0L)
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultBookmarksSheet(
+                    bookmarks = listOf(bookmark),
+                    onBookmarkClick = {},
+                    onBookmarkDelete = {},
+                    onEditNote = { _, _ -> },
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("1:05").assertIsDisplayed()
+    }
+
+    @Test
     fun `an explicit label wins over the derived position label`() {
         val bookmark = VaultBookmark(id = 1L, positionRef = "page:4", label = "My chapter", createdAtEpochMillis = 0L)
         composeTestRule.setContent {
