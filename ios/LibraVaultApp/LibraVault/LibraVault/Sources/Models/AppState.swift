@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UIKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -58,6 +59,7 @@ final class AppState: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published var playbackSpeed: Double = 1.0 {
         didSet {
+            defer { syncNowPlayingInfo() }
             guard let book = nowPlayingBook else { return }
             if book.format.isAudio {
                 // Real audio: the engine's own currentTime/duration already reflect
@@ -161,15 +163,22 @@ final class AppState: ObservableObject {
     private let bridge = LibravaultDomainBridge.shared
     private let vaultPersistence: VaultPersistence
     private let userPreferencesPersistence: UserPreferencesPersistence
+    /// Drives Control Center/the lock screen (issue #309) — updated by
+    /// `syncNowPlayingInfo()` from every playback control that changes what should be
+    /// displayed there, and wired below to route the system's play/pause/skip
+    /// commands back into this instance's own playback controls.
+    private let nowPlayingManager: NowPlayingManaging
 
     init(
         vaultPersistence: VaultPersistence = VaultPersistence(),
         userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence(),
-        audioEngine: AudioPlaybackEngineProtocol = AudioPlaybackEngine()
+        audioEngine: AudioPlaybackEngineProtocol = AudioPlaybackEngine(),
+        nowPlayingManager: NowPlayingManaging = SystemNowPlayingManager()
     ) {
         self.vaultPersistence = vaultPersistence
         self.userPreferencesPersistence = userPreferencesPersistence
         self.audioEngine = audioEngine
+        self.nowPlayingManager = nowPlayingManager
         #if DEBUG
         UITestFixtures.ensureVault(persistence: vaultPersistence)
         #endif
@@ -189,6 +198,28 @@ final class AppState: ObservableObject {
         audioEngine.onFinished = { [weak self] in
             Task { @MainActor [weak self] in
                 self?.stopPlayback()
+            }
+        }
+
+        // Hopped onto the main actor rather than called inline: MPRemoteCommandCenter
+        // invokes command targets off-main, and AppState's playback controls are
+        // @MainActor-isolated — mirrors audioEngine.onProgress/onFinished above.
+        self.nowPlayingManager.onPlay = { [weak self] in
+            Task { @MainActor [weak self] in self?.remotePlay() }
+        }
+        self.nowPlayingManager.onPause = { [weak self] in
+            Task { @MainActor [weak self] in self?.remotePause() }
+        }
+        self.nowPlayingManager.onSkipForward = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.skipForward(seconds: self.skipDurationSeconds)
+            }
+        }
+        self.nowPlayingManager.onSkipBackward = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.skipBackward(seconds: self.skipDurationSeconds)
             }
         }
 
@@ -453,6 +484,11 @@ final class AppState: ObservableObject {
     // since there's no real audio stream to measure against for synthesized speech.
 
     func startPlayback(book: BookItem, chapter: Int = 1) {
+        // Runs on every exit path (including the early-return guards below), so
+        // Control Center always ends up reflecting whatever actually happened here —
+        // a genuine start, a no-op on an unsupported format, or a resumed session.
+        defer { syncNowPlayingInfo() }
+
         // A text format with no chapter parser has nothing to narrate — mobi/cbz never
         // reach BookContentProvider.chapters' switch (Markdown does, since #124). Bail
         // out first, before any teardown or state assignment: continuing would speak an
@@ -549,6 +585,7 @@ final class AppState: ObservableObject {
     }
 
     func togglePlayback() {
+        defer { syncNowPlayingInfo() }
         guard let book = nowPlayingBook else { return }
         cancelSleepFadeOut()
         isPlaying.toggle()
@@ -563,6 +600,22 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Routed from the system play command (Control Center/lock screen/a headphone
+    /// remote) via `nowPlayingManager.onPlay` — fires unconditionally whenever the
+    /// system reports it, so this decides whether "play" is actually appropriate for
+    /// the current state before touching anything. Reuses `togglePlayback()` rather
+    /// than duplicating its pause/resume branches.
+    private func remotePlay() {
+        guard nowPlayingBook != nil, !isPlaying else { return }
+        togglePlayback()
+    }
+
+    /// Counterpart to `remotePlay()` for the system pause command.
+    private func remotePause() {
+        guard nowPlayingBook != nil, isPlaying else { return }
+        togglePlayback()
+    }
+
     func skipToChapter(_ chapter: Int) {
         guard let book = nowPlayingBook else { return }
         let clamped = max(1, min(chapter, nowPlayingChapterCount))
@@ -574,6 +627,7 @@ final class AppState: ObservableObject {
     /// but the wall-clock elapsed timer honors a manual position the same way a real
     /// player would.
     func seek(to seconds: Double) {
+        defer { syncNowPlayingInfo() }
         guard let book = nowPlayingBook else { return }
         let clamped = max(0, min(seconds, totalEstimatedSeconds))
         elapsedSeconds = clamped
@@ -600,6 +654,7 @@ final class AppState: ObservableObject {
         audioEngine.stop()
         releaseActiveAudioVaultAccess()
         Task { await bridge.stopSpeaking() }
+        syncNowPlayingInfo()
     }
 
     func scheduleSleepTimer(minutes: Double) {
@@ -663,6 +718,7 @@ final class AppState: ObservableObject {
                     self.audioEngine.pause()
                     self.audioEngine.volume = 1.0
                     self.isPlaying = false
+                    self.syncNowPlayingInfo()
                 }
             }
         }
@@ -681,6 +737,7 @@ final class AppState: ObservableObject {
         isPlaying = false
         stopTimer()
         Task { await bridge.pauseSpeaking() }
+        syncNowPlayingInfo()
     }
 
     private func startTimer() {
@@ -716,6 +773,44 @@ final class AppState: ObservableObject {
         let wordCount = Double(text.split(separator: " ").count)
         let effectiveWordsPerMinute = 150.0 * max(speed, 0.1)
         return max((wordCount / effectiveWordsPerMinute) * 60, 1)
+    }
+
+    // MARK: - Now Playing (Control Center / lock screen — issue #309)
+
+    /// Pushes the current playback state to `nowPlayingManager`, or clears it once
+    /// `nowPlayingBook` goes nil — called from every playback control that changes
+    /// what should be displayed there (start/pause/resume/seek/chapter change/speed
+    /// change) rather than on every `elapsedSeconds` tick: the system interpolates
+    /// the displayed elapsed time forward on its own between updates using the rate
+    /// we report, so a per-tick update would be redundant chatter, not more accuracy.
+    private func syncNowPlayingInfo() {
+        guard let book = nowPlayingBook else {
+            nowPlayingManager.clear()
+            return
+        }
+        nowPlayingManager.update(NowPlayingSnapshot(
+            title: book.title,
+            artist: book.author,
+            chapterTitle: currentChapterTitle(),
+            elapsedSeconds: elapsedSeconds,
+            totalSeconds: totalEstimatedSeconds,
+            playbackRate: playbackSpeed,
+            isPlaying: isPlaying,
+            skipIntervalSeconds: skipDurationSeconds,
+            artwork: book.coverUrl.flatMap { UIImage(contentsOfFile: $0) }
+        ))
+    }
+
+    /// Nil for audiobooks and single-chapter text books (nowPlayingChapterCount is 1
+    /// in both cases) — there's nothing more specific to show than the title/artist
+    /// already convey, so the Now Playing "album" line is left blank rather than
+    /// repeating the book title.
+    private func currentChapterTitle() -> String? {
+        guard nowPlayingChapterCount > 1 else { return nil }
+        let titles = nowPlayingChapterTitles
+        let index = nowPlayingChapter - 1
+        guard titles.indices.contains(index) else { return nil }
+        return titles[index]
     }
 }
 
