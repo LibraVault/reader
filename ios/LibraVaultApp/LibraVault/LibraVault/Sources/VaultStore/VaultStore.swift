@@ -104,6 +104,7 @@ final class VaultStore {
     private let nowEpochMillis: () -> Int64
     private let usableSpaceBytes: () -> Int64
     private let newFileIdGenerator: () throws -> Data
+    private let onCreateFailureVmkForTesting: ((Data) -> Void)?
 
     private var vmk: Data?
 
@@ -120,13 +121,22 @@ final class VaultStore {
     ///     collision, mirroring Android's injectable `random: SecureRandom`
     ///     constructor parameter (used by its "failed rename during import"
     ///     regression test).
+    ///   - onCreateFailureVmkForTesting: test-only hook, fired from
+    ///     `create()`'s catch block with `NewVault.vmk`'s value immediately
+    ///     after the in-place scrub is attempted. Exists solely so a test can
+    ///     observe whether that scrub actually zeroed `NewVault.vmk`'s own
+    ///     storage — `newVault` is a local variable that never otherwise
+    ///     escapes `create()` on the failure path, so there is no black-box
+    ///     way to tell "zeroed a copy" apart from "zeroed in place" from
+    ///     outside this class. Always `nil` in production.
     init(
         vaultDir: URL,
         keystoreKeyAlias: String,
         keyWrapFactory: HardwareKeyWrapFactory,
         nowEpochMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
         usableSpaceBytes: (() -> Int64)? = nil,
-        newFileId: (() throws -> Data)? = nil
+        newFileId: (() throws -> Data)? = nil,
+        onCreateFailureVmkForTesting: ((Data) -> Void)? = nil
     ) {
         self.vaultDir = vaultDir
         self.keystoreKeyAlias = keystoreKeyAlias
@@ -134,6 +144,7 @@ final class VaultStore {
         self.nowEpochMillis = nowEpochMillis
         self.usableSpaceBytes = usableSpaceBytes ?? { Self.defaultUsableSpaceBytes(vaultDir: vaultDir) }
         self.newFileIdGenerator = newFileId ?? { try SecureRandom.bytes(count: VaultFormat.fileIdSizeBytes) }
+        self.onCreateFailureVmkForTesting = onCreateFailureVmkForTesting
     }
 
     private static func defaultUsableSpaceBytes(vaultDir: URL) -> Int64 {
@@ -166,7 +177,7 @@ final class VaultStore {
         if exists() { throw VaultStoreError.vaultAlreadyExists }
         try FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
 
-        let newVault = try VaultKeyManager.create(pin: pin, argon2Params: argon2Params)
+        var newVault = try VaultKeyManager.create(pin: pin, argon2Params: argon2Params)
         do {
             let keyWrap = try keyWrapFactory.createNew(keyAlias: keystoreKeyAlias)
             let keystoreWrap = try keyWrap.wrap(newVault.material.wrappedVmkByKek.serialized)
@@ -182,8 +193,11 @@ final class VaultStore {
             vmk = newVault.vmk
             return newVault.recoveryKey
         } catch {
-            var vmkCopy = newVault.vmk
-            vmkCopy.secureZero()
+            // Scrub in place, not a copy — see NewVault.vmk's doc comment for
+            // why `var vmkCopy = newVault.vmk; vmkCopy.secureZero()` would
+            // silently zero the wrong buffer.
+            newVault.vmk.secureZero()
+            onCreateFailureVmkForTesting?(newVault.vmk)
             try? FileManager.default.removeItem(at: vaultDir)
             throw error
         }

@@ -55,4 +55,42 @@ final class VaultConfigTests: XCTestCase {
         let key = WrappedKey(nonce: VaultCryptoTestSupport.randomData(12), ciphertext: VaultCryptoTestSupport.randomData(48))
         XCTAssertEqual(WrappedKey(serialized: key.serialized), key)
     }
+
+    /// `VaultStore.unlockWithPin`/`unlockWithRecoveryKey` both start with
+    /// `VaultConfig.read` — a missing `vault.json` (e.g. a half-created
+    /// vault directory, or a caller that got the path wrong) must surface as
+    /// a thrown error, never as empty/default config data silently accepted.
+    func testReadThrowsWhenVaultJsonIsMissing() {
+        let vaultDir = newVaultDir() // never written to
+        XCTAssertThrowsError(try VaultConfig.read(vaultDir: vaultDir))
+    }
+
+    /// Corrupt base64 in any field must throw `.malformedHeader`, not crash
+    /// or silently substitute empty data — same contract `VaultConfig.read`'s
+    /// own doc comment documents.
+    func testReadThrowsMalformedHeaderOnCorruptBase64() throws {
+        let vaultDir = newVaultDir()
+        try VaultConfig.write(
+            vaultDir: vaultDir,
+            keystoreKeyAlias: "alias",
+            argon2Salt: VaultCryptoTestSupport.randomData(16),
+            argon2Params: .defaultParams,
+            keystoreWrap: WrappedBlob(ciphertext: VaultCryptoTestSupport.randomData(48)),
+            wrappedVmkByRecovery: WrappedKey(nonce: VaultCryptoTestSupport.randomData(12), ciphertext: VaultCryptoTestSupport.randomData(48))
+        )
+
+        // Corrupt the on-disk JSON's argon2SaltB64 field in place — "not
+        // valid base64" rather than "missing" or "wrong type", to target the
+        // Data(base64Encoded:) guard specifically.
+        var json = try String(contentsOf: VaultConfig.path(vaultDir: vaultDir), encoding: .utf8)
+        json = json.replacingOccurrences(of: "\"argon2SaltB64\":\"", with: "\"argon2SaltB64\":\"not-valid-base64!!!")
+        try json.write(to: VaultConfig.path(vaultDir: vaultDir), atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try VaultConfig.read(vaultDir: vaultDir)) { error in
+            guard case .malformedHeader = error as? VaultCryptoError else {
+                XCTFail("expected .malformedHeader, got \(error)")
+                return
+            }
+        }
+    }
 }

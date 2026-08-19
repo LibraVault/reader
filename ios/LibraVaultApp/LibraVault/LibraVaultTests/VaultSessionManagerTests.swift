@@ -90,4 +90,36 @@ final class VaultSessionManagerTests: XCTestCase {
         let store = await manager.requireUnlocked(id)
         XCTAssertTrue(store.isUnlocked)
     }
+
+    /// `VaultStoreTests` covers wrong-PIN/throttle logic thoroughly, but only
+    /// by calling `VaultStore` directly — this proves the actual entry point
+    /// the app calls (`VaultSessionManager`) forwards those outcomes rather
+    /// than e.g. swallowing them or always reporting `.success`.
+    func testUnlockWithPinForwardsWrongCredentialWithoutUnlocking() async throws {
+        let manager = newManager()
+        let result = try await manager.createVault(displayName: "Personal", pin: pin("1234"))
+        guard case .success(let id, _) = result else { XCTFail("expected .success"); return }
+        await manager.lock(id)
+
+        let outcome = try await manager.unlockWithPin(id: id, pin: pin("9999"))
+        XCTAssertEqual(outcome, .wrongCredential)
+        let unlocked = await manager.isUnlocked(id)
+        XCTAssertFalse(unlocked)
+    }
+
+    func testUnlockWithPinForwardsThrottledAfterRepeatedFailures() async throws {
+        let manager = newManager()
+        let result = try await manager.createVault(displayName: "Personal", pin: pin("1234"))
+        guard case .success(let id, _) = result else { XCTFail("expected .success"); return }
+        await manager.lock(id)
+
+        var lastOutcome: UnlockOutcome?
+        for _ in 0..<10 {
+            lastOutcome = try await manager.unlockWithPin(id: id, pin: pin("9999"))
+        }
+        guard case .throttled = lastOutcome else {
+            XCTFail("expected throttling after repeated failures, got \(String(describing: lastOutcome))")
+            return
+        }
+    }
 }
