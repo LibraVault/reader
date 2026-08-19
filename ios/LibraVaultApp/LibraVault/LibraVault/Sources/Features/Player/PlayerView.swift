@@ -12,11 +12,19 @@ struct PlayerView: View {
     @State private var showSleepTimerSheet = false
     @State private var showSpeedSheet = false
 
-    private var book: BookItem? { appState.nowPlayingBook }
+    /// (#309, principal-review finding on PR #310) The scrub bar's live drag
+    /// position, tracked separately from `appState.elapsedSeconds` so dragging it
+    /// doesn't call `appState.seek(to:)` on every frame — `seek(to:)` now also syncs
+    /// Now Playing info (a synchronous cover-art disk read plus an IPC round-trip to
+    /// `nowplayingd`), which a plain `Slider(value:)` binding would have fired many
+    /// times per second for the whole gesture. `isDraggingScrubber` gates
+    /// `sliderSection`'s displayed value: the drag's own live position while
+    /// dragging, `appState.elapsedSeconds` otherwise (so external changes — another
+    /// skip button, a remote command — still show up when not actively dragging).
+    @State private var isDraggingScrubber = false
+    @State private var scrubberDragValue: Double = 0
 
-    private var elapsedBinding: Binding<Double> {
-        Binding(get: { appState.elapsedSeconds }, set: { appState.seek(to: $0) })
-    }
+    private var book: BookItem? { appState.nowPlayingBook }
 
     var body: some View {
         Group {
@@ -167,13 +175,34 @@ struct PlayerView: View {
         }
     }
 
+    /// The live drag position while the scrub bar is being dragged, otherwise
+    /// `appState.elapsedSeconds` — see `isDraggingScrubber`'s doc comment.
+    private var scrubberDisplayValue: Double {
+        isDraggingScrubber ? scrubberDragValue : appState.elapsedSeconds
+    }
+
     @ViewBuilder
     private var sliderSection: some View {
         VStack(spacing: LibraVaultSpacing.xs) {
-            Slider(value: elapsedBinding, in: 0...max(appState.totalEstimatedSeconds, 1))
-                .tint(LibraVaultColor.primary)
+            Slider(
+                value: Binding(get: { scrubberDisplayValue }, set: { scrubberDragValue = $0 }),
+                in: 0...max(appState.totalEstimatedSeconds, 1),
+                onEditingChanged: { isEditing in
+                    if isEditing {
+                        // Drag just started — seed the drag value from wherever
+                        // playback actually is right now, not a stale 0.
+                        scrubberDragValue = appState.elapsedSeconds
+                    } else {
+                        // Drag ended — commit once, the only point that should
+                        // actually seek/sync Now Playing.
+                        appState.seek(to: scrubberDragValue)
+                    }
+                    isDraggingScrubber = isEditing
+                }
+            )
+            .tint(LibraVaultColor.primary)
             HStack {
-                Text(formatPlaybackTime(appState.elapsedSeconds))
+                Text(formatPlaybackTime(scrubberDisplayValue))
                 Spacer()
                 Text(formatPlaybackTime(appState.totalEstimatedSeconds))
             }
