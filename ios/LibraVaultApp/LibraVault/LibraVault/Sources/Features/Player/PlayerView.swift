@@ -12,11 +12,16 @@ struct PlayerView: View {
     @State private var showSleepTimerSheet = false
     @State private var showSpeedSheet = false
 
-    private var book: BookItem? { appState.nowPlayingBook }
+    /// (#309, principal-review finding on PR #310) The scrub bar's live drag
+    /// state, tracked separately from `appState.elapsedSeconds` so dragging it
+    /// doesn't call `appState.seek(to:)` on every frame — `seek(to:)` now also syncs
+    /// Now Playing info (a synchronous cover-art disk read plus an IPC round-trip to
+    /// `nowplayingd`), which a plain `Slider(value:)` binding would have fired many
+    /// times per second for the whole gesture. The drag/commit decision itself lives
+    /// in `PlayerScrubberState`, a plain struct, so it's unit-testable without SwiftUI.
+    @State private var scrubberState = PlayerScrubberState()
 
-    private var elapsedBinding: Binding<Double> {
-        Binding(get: { appState.elapsedSeconds }, set: { appState.seek(to: $0) })
-    }
+    private var book: BookItem? { appState.nowPlayingBook }
 
     var body: some View {
         Group {
@@ -167,13 +172,32 @@ struct PlayerView: View {
         }
     }
 
+    /// The live drag position while the scrub bar is being dragged, otherwise
+    /// `appState.elapsedSeconds` — see `PlayerScrubberState`.
+    private var scrubberDisplayValue: Double {
+        scrubberState.displayValue(elapsedSeconds: appState.elapsedSeconds)
+    }
+
     @ViewBuilder
     private var sliderSection: some View {
         VStack(spacing: LibraVaultSpacing.xs) {
-            Slider(value: elapsedBinding, in: 0...max(appState.totalEstimatedSeconds, 1))
-                .tint(LibraVaultColor.primary)
+            Slider(
+                value: Binding(
+                    get: { scrubberDisplayValue },
+                    set: { scrubberState.updateDragValue($0) }
+                ),
+                in: 0...max(appState.totalEstimatedSeconds, 1),
+                onEditingChanged: { isEditing in
+                    if let commitValue = scrubberState.editingChanged(isEditing, elapsedSeconds: appState.elapsedSeconds) {
+                        // Drag ended — commit once, the only point that should
+                        // actually seek/sync Now Playing.
+                        appState.seek(to: commitValue)
+                    }
+                }
+            )
+            .tint(LibraVaultColor.primary)
             HStack {
-                Text(formatPlaybackTime(appState.elapsedSeconds))
+                Text(formatPlaybackTime(scrubberDisplayValue))
                 Spacer()
                 Text(formatPlaybackTime(appState.totalEstimatedSeconds))
             }
