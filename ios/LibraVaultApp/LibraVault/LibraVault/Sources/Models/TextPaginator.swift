@@ -31,6 +31,18 @@ enum TextPaginator {
     static func paginate(text: String, font: UIFont, lineSpacing: CGFloat, pageSize: CGSize) -> [Range<String.Index>] {
         guard !text.isEmpty, pageSize.width > 0, pageSize.height > 0 else { return [] }
 
+        // A container shorter than a single line of this font (plus its line
+        // spacing) can never fit even one full line. TextKit does not surface that
+        // as a zero-glyph container the way the loop below assumes — it force-lays
+        // out at least one glyph per line rather than leaving a container empty, to
+        // avoid a non-advancing layout — so on a real device this produced one
+        // one-glyph "page" per character instead of the documented single fallback
+        // page. Catch the degenerate case here, before the per-page loop, instead
+        // of relying on a zero-glyph signal that never actually fires.
+        guard pageSize.height >= font.lineHeight + lineSpacing else {
+            return [text.startIndex..<text.endIndex]
+        }
+
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = lineSpacing
 
