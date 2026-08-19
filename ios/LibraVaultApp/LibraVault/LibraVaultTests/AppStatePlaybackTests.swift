@@ -433,4 +433,30 @@ final class AppStatePlaybackTests: XCTestCase {
         state.cancelSleepTimer()
         XCTAssertNil(state.sleepTimerRemainingSeconds)
     }
+
+    // Regression test for issue #89: sleep-timer expiry used to call stopPlayback(),
+    // which unconditionally cleared nowPlayingBook and produced an empty "nothing
+    // playing" screen instead of just pausing. Calls handleSleepTimerExpired()
+    // directly (the method the real countdown Timer calls at zero) rather than
+    // waiting out a real countdown.
+    func testSleepTimerExpiryPausesTextPlaybackWithoutClearingNowPlayingBook() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence())
+        let book = try makeRealEPUBBook(vaultPersistence: vaultPersistence)
+        state.startPlayback(book: book)
+
+        state.handleSleepTimerExpired()
+
+        XCTAssertNotNil(state.nowPlayingBook, "sleep timer should pause, not fully tear down playback")
+        XCTAssertFalse(state.isPlaying)
+    }
+
+    func testSleepTimerExpiryIsANoOpWhenNothingIsPlaying() {
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
+
+        state.handleSleepTimerExpired()
+
+        XCTAssertNil(state.nowPlayingBook)
+        XCTAssertFalse(state.isPlaying)
+    }
 }

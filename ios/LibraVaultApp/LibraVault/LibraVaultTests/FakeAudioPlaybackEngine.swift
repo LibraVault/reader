@@ -15,6 +15,7 @@ final class FakeAudioPlaybackEngine: AudioPlaybackEngineProtocol {
     /// configurable per test since there's no real file being decoded.
     var duration: Double = 100
     var elapsed: Double = 0
+    var volume: Float = 1.0
 
     /// Set before calling play() to make it throw, exercising AppState's
     /// unplayable-file error path.

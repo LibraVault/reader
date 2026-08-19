@@ -147,6 +147,7 @@ final class AppState: ObservableObject {
 
     private var playbackTimer: Timer?
     private var sleepTimer: Timer?
+    private var sleepFadeTimer: Timer?
 
     private let bridge = LibravaultDomainBridge.shared
     private let vaultPersistence: VaultPersistence
@@ -529,6 +530,7 @@ final class AppState: ObservableObject {
 
     func togglePlayback() {
         guard let book = nowPlayingBook else { return }
+        cancelSleepFadeOut()
         isPlaying.toggle()
         if book.format.isAudio {
             if isPlaying { audioEngine.resume() } else { audioEngine.pause() }
@@ -589,7 +591,7 @@ final class AppState: ObservableObject {
                 remaining -= 1
                 if remaining <= 0 {
                     self.cancelSleepTimer()
-                    self.stopPlayback()
+                    self.handleSleepTimerExpired()
                 } else {
                     self.sleepTimerRemainingSeconds = remaining
                 }
@@ -601,6 +603,64 @@ final class AppState: ObservableObject {
         sleepTimer?.invalidate()
         sleepTimer = nil
         sleepTimerRemainingSeconds = nil
+        cancelSleepFadeOut()
+    }
+
+    /// Fired when the sleep-timer countdown reaches zero. Unlike `stopPlayback()`
+    /// (the previous, buggy behaviour — see issue #89), this pauses playback without
+    /// clearing `nowPlayingBook`/chapter/elapsed state, so the player still shows what
+    /// was playing rather than an empty "nothing playing" screen if the listener wants
+    /// to resume. Audio-format playback fades out over
+    /// `Self.sleepTimerFadeOutSeconds` first, matching Android's SleepTimer; TTS/text
+    /// playback just pauses — AVSpeechSynthesizer has no mid-utterance volume control
+    /// to fade.
+    func handleSleepTimerExpired() {
+        guard let book = nowPlayingBook, isPlaying else { return }
+        guard book.format.isAudio else {
+            pauseForSleepTimer()
+            return
+        }
+        startSleepFadeOut()
+    }
+
+    private static let sleepTimerFadeOutSeconds = 3.0
+    private static let sleepTimerFadeSteps = 30
+
+    private func startSleepFadeOut() {
+        sleepFadeTimer?.invalidate()
+        audioEngine.volume = 1.0
+        var stepsElapsed = 0
+        let totalSteps = Self.sleepTimerFadeSteps
+        let stepInterval = Self.sleepTimerFadeOutSeconds / Double(totalSteps)
+        sleepFadeTimer = Timer.scheduledTimer(withTimeInterval: stepInterval, repeats: true) { [weak self] timer in
+            Task { @MainActor [weak self] in
+                guard let self else { timer.invalidate(); return }
+                stepsElapsed += 1
+                self.audioEngine.volume = Float(max(0, totalSteps - stepsElapsed)) / Float(totalSteps)
+                if stepsElapsed >= totalSteps {
+                    timer.invalidate()
+                    self.sleepFadeTimer = nil
+                    self.audioEngine.pause()
+                    self.audioEngine.volume = 1.0
+                    self.isPlaying = false
+                }
+            }
+        }
+    }
+
+    /// Restores volume in case a fade was interrupted (e.g. the listener manually
+    /// cancels the sleep timer, or toggles playback, mid-fade) — without this the next
+    /// resume could silently play back at whatever partial volume the fade had reached.
+    private func cancelSleepFadeOut() {
+        sleepFadeTimer?.invalidate()
+        sleepFadeTimer = nil
+        audioEngine.volume = 1.0
+    }
+
+    private func pauseForSleepTimer() {
+        isPlaying = false
+        stopTimer()
+        Task { await bridge.pauseSpeaking() }
     }
 
     private func startTimer() {

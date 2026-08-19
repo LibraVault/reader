@@ -193,4 +193,50 @@ final class AppStateAudioPlaybackTests: XCTestCase {
         XCTAssertNil(state.nowPlayingBook)
         XCTAssertFalse(state.isPlaying)
     }
+
+    // MARK: - Sleep timer expiry
+
+    // Regression test for issue #89: sleep-timer expiry used to call stopPlayback(),
+    // which unconditionally cleared nowPlayingBook and produced an empty "nothing
+    // playing" screen instead of fading out and pausing. Calls
+    // handleSleepTimerExpired() directly (the method the real countdown Timer calls
+    // at zero) rather than waiting out a real countdown, but the fade-out itself is a
+    // real 3-second Timer (see AppState.startSleepFadeOut), so this test genuinely
+    // waits that long for it to finish.
+    func testSleepTimerExpiryFadesOutAudioThenPausesWithoutClearingNowPlayingBook() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let engine = FakeAudioPlaybackEngine()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        state.startPlayback(book: book)
+
+        state.handleSleepTimerExpired()
+
+        // Immediately after expiry: still fading, not torn down.
+        XCTAssertNotNil(state.nowPlayingBook, "sleep timer should pause, not fully tear down playback")
+        XCTAssertEqual(engine.pauseCallCount, 0, "should still be fading, not paused yet")
+
+        let expectation = expectation(description: "sleep timer fade-out completes")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { expectation.fulfill() }
+        wait(for: [expectation], timeout: 5.0)
+
+        XCTAssertEqual(engine.pauseCallCount, 1)
+        XCTAssertEqual(engine.volume, 1.0, "volume should be restored after the fade, not left silent for the next resume")
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertNotNil(state.nowPlayingBook, "sleep timer should pause, not fully tear down playback")
+    }
+
+    func testTogglingPlaybackMidFadeCancelsTheFadeAndRestoresVolume() throws {
+        let vaultPersistence = makeIsolatedVaultPersistence()
+        let engine = FakeAudioPlaybackEngine()
+        let state = AppState(vaultPersistence: vaultPersistence, userPreferencesPersistence: makeIsolatedPersistence(), audioEngine: engine)
+        let book = try makeAudioBook(vaultPersistence: vaultPersistence)
+        state.startPlayback(book: book)
+
+        state.handleSleepTimerExpired()
+        state.togglePlayback() // pause manually mid-fade
+
+        XCTAssertEqual(engine.volume, 1.0, "a manual pause mid-fade shouldn't leave volume silenced")
+        XCTAssertEqual(engine.pauseCallCount, 1)
+    }
 }
