@@ -135,6 +135,15 @@ final class AppState: ObservableObject {
     /// sibling view's local state.
     @Published var shouldNavigateToPlayer = false
 
+    /// Drives RootView's `.navigationDestination(item:)` for ReaderView, the same way
+    /// shouldNavigateToPlayer above drives PlayerView's — set by importSharedFile
+    /// (#294) once a file shared in from another app has finished copying into the
+    /// Imported vault, so the OS handoff actually opens the document instead of
+    /// leaving the user on the Library screen. `item:` rather than another Bool flag:
+    /// ReaderView needs the specific BookItem that was just imported, not just a
+    /// trigger.
+    @Published var pendingImportedBook: BookItem?
+
     // MARK: - Vaults
     //
     // Folder locations the user has granted access to via Settings' "Add Vault"
@@ -360,9 +369,13 @@ final class AppState: ObservableObject {
         }
 
         // `Error` isn't guaranteed Sendable, so the detached task hands back a plain
-        // String (or nil for success) rather than the thrown error itself.
+        // String (or nil for success) rather than the thrown error itself — bundled
+        // with the destination URL (both Sendable, so the tuple is too) so the caller
+        // can find the just-imported book again after loadLibrary() below without
+        // recomputing uniqueDestinationURL a second time and risking it resolve to a
+        // different candidate name than the one actually written to disk.
         let filename = url.lastPathComponent
-        let copyFailureDescription: String? = await Task.detached(priority: .userInitiated) {
+        let (destinationURL, copyFailureDescription): (URL, String?) = await Task.detached(priority: .userInitiated) {
             // The incoming URL (from another app's document provider, e.g. Files/
             // iCloud Drive) may itself be security-scoped even though the destination
             // isn't — mirrors the start/stop pairing already used in
@@ -373,9 +386,9 @@ final class AppState: ObservableObject {
             let destinationURL = Self.uniqueDestinationURL(for: filename, in: destinationFolder)
             do {
                 try FileManager.default.copyItem(at: url, to: destinationURL)
-                return nil
+                return (destinationURL, nil)
             } catch {
-                return String(describing: error)
+                return (destinationURL, String(describing: error))
             }
         }.value
 
@@ -384,6 +397,13 @@ final class AppState: ObservableObject {
             self.error = AppError.fileImportFailed
         } else {
             await loadLibrary()
+            // (#294) Without this, "Open in LibraVault"/"Copy to LibraVault" from
+            // another app correctly launched LibraVault but just left the user on the
+            // Library screen — the file was imported, but nothing pushed the Reader
+            // for it, so opening a shared file looked like it did nothing. Matched by
+            // fileURL rather than filename: uniqueDestinationURL may have renamed it
+            // ("Book 2.md") to avoid clobbering an existing file with the same name.
+            pendingImportedBook = books.first(where: { $0.fileURL == destinationURL })
         }
     }
 
