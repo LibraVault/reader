@@ -296,24 +296,36 @@ jobs:
           # dev-agent.yml invocation for an issue already mid-run (the
           # issues:labeled trigger matches status:ready-for-dev).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Separate var, used for `gh pr create` and for `git push` when
-          # the diff touches .github/workflows/** — see the prompt below
-          # for both. GITHUB_TOKEN can't create PRs at all in this repo
-          # (see the App-token step's comment above); separately, GitHub
-          # hard-blocks GITHUB_TOKEN from ever pushing a change under
-          # .github/workflows/**, no matter what permissions this step's
-          # `permissions:` block grants it — confirmed live (issue #237's
-          # own dev-agent run hit exactly this, on both GITHUB_TOKEN and,
-          # at the time, an under-permissioned APP_GH_TOKEN — see
-          # libravault-pipeline-bot's now-granted `workflows` App
-          # permission). Neither call risks a self-loop: PR creation and
-          # a plain `git push` don't trigger any workflow this pipeline
-          # listens for (ours all trigger on `labeled`, not `opened` or
-          # `push`) — the one acknowledged side effect is jvm-tests.yml's
-          # own `on: push` trigger firing an extra, redundant run for
-          # that one push (tracked separately, issue #244); narrow and
-          # rare enough (only fires when a diff touches workflow files)
-          # not to be worth engineering around here.
+          # Separate var, used for `gh pr create` and for every `git push`
+          # — see the prompt below for both. GITHUB_TOKEN can't create PRs
+          # at all in this repo (see the App-token step's comment above);
+          # separately, GitHub hard-blocks GITHUB_TOKEN from ever pushing a
+          # change under .github/workflows/**, no matter what permissions
+          # this step's `permissions:` block grants it — confirmed live
+          # (issue #237's own dev-agent run hit exactly this, on both
+          # GITHUB_TOKEN and, at the time, an under-permissioned
+          # APP_GH_TOKEN — see libravault-pipeline-bot's now-granted
+          # `workflows` App permission).
+          #
+          # Every `git push` uses APP_GH_TOKEN unconditionally, not just
+          # workflow-file diffs — found live (issue #311): a revise-mode
+          # push authenticated as GITHUB_TOKEN gets attributed to actor
+          # `github-actions[bot]` on the resulting `pull_request:
+          # synchronize` event, which — for reasons not fully root-caused,
+          # see the issue — lands that event's checks on `action_required`
+          # with zero jobs ever created, same-repo or not. The initial
+          # PR-open push never hit this because `gh pr create` (already on
+          # APP_GH_TOKEN) is what's attributed on the `opened` event, not
+          # whichever token pushed the branch first. Pushing everything as
+          # the App sidesteps the gate entirely rather than requiring the
+          # underlying repo/org setting to be found and corrected. Neither
+          # call risks a self-loop: PR creation and a plain `git push`
+          # don't trigger any workflow this pipeline listens for (ours all
+          # trigger on `labeled`, not `opened`, `synchronize`, or `push`),
+          # and jvm-tests.yml/ios-app-build.yml's own `on: push` triggers
+          # are scoped to `dev`/`main` only (issue #244) so a push to a
+          # `fix/*`/`feature/*` branch here doesn't fire a redundant run
+          # either — which token performed the push doesn't change that.
           APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
         uses: anthropics/claude-code-action@v1
         with:
@@ -397,19 +409,18 @@ jobs:
             existing PR's branch instead), the default token can't create
             PRs at all in this repo, so run it as:
             `GH_TOKEN="$APP_GH_TOKEN" gh pr create --base dev ...` — that
-            env var is already set for you. Everything else (comments,
-            labels, git push) uses the default token as normal, with ONE
-            exception: if your diff touches anything under
-            `.github/workflows/**`, a plain `git push`/`git push origin
-            <branch>` will be rejected — GitHub hard-blocks the default
-            token from ever pushing workflow-file changes, no matter what
-            permissions it has. For that push only, use the elevated
-            token instead:
+            env var is already set for you. Comments and labels use the
+            default token as normal, but every `git push` — in both triage
+            and revise mode, whether or not your diff touches
+            `.github/workflows/**` — must use the elevated token instead:
             `git push https://x-access-token:$APP_GH_TOKEN@github.com/${{ github.repository }}.git HEAD:<branch-name>`
-            (substitute your actual branch name). Every other push, and
-            every other operation, keeps using the default token as
-            normal — only the one push that includes a workflow-file
-            change needs this. You are running non-interactively in CI —
+            (substitute your actual branch name). A plain `git push`/`git
+            push origin <branch>` with the default token will either be
+            rejected outright (workflow-file diffs) or, for a revise-mode
+            push to an already-open PR, silently leave that push's checks
+            stuck on `action_required` with zero jobs ever created (issue
+            #311) — so always use the elevated token for pushes, no
+            exceptions. You are running non-interactively in CI —
             there is no human to ask a follow-up question. If the persona
             says to stop and ask, do that by commenting and applying
             status:needs-info; do not wait for a reply.
