@@ -182,7 +182,32 @@ quickly, never to answer for them.
      `status:needs-info` label describes a crash, an exhausted turn
      budget, workflow-file drift, or an infra/flakiness issue — NOT a
      real scoping question and NOT a repeated/persistent test failure.
-     Check whether this item has already been retried once by a previous
+
+     Before treating it as safe to retry, read *every* comment on the
+     item, not just the one that applied the current `status:needs-info`
+     label — a later comment can already have investigated the exact
+     same failure and reached a firmer conclusion than "just retry it."
+     Specifically: if any comment analyzes this failure in more detail
+     than the generic "crashed or exhausted its turn budget" bot notice
+     (e.g. it names the specific run/log it pulled, distinguishes the
+     failure pattern, notes a repeat occurrence of the identical
+     failure, or explicitly recommends against an automatic retry) and
+     that comment does not itself conclude the item is safe to retry,
+     treat this as the **genuine human-decision-needed** case below
+     instead — even though the underlying failure (crash/turn-budget/
+     drift) would otherwise qualify as transient on its own. A generic
+     crash comment is not evidence of anything beyond "the run didn't
+     finish"; a more specific comment that already looked closer and
+     said not to retry outranks it. This is a fuzzy read of free-text
+     language, unlike the exact-match marker check below — when
+     genuinely unsure whether an existing comment counts as this,
+     assume it does and fall through to the human-decision case. A
+     missed retry costs nothing (the next sweep run reconsiders it);
+     retrying past a comment that already said not to just reproduces
+     the same crash and burns another cycle.
+
+     Otherwise (no comment already reached that conclusion), check
+     whether this item has already been retried once by a previous
      sweep run: search its comments (`gh issue view`/`gh pr view --json
      comments`) for the exact literal marker `<!-- human-merge-sweep-retry
      -->` — always include this HTML-comment marker, verbatim, as the
