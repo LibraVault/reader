@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct LibraVaultApp: App {
     @StateObject private var appState = AppState()
+    @StateObject private var encryptedVaultRuntime = EncryptedVaultRuntime()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .environmentObject(encryptedVaultRuntime)
                 // Fires when the OS hands LibraVault a file via "Open In"/"Copy to
                 // LibraVault" from another app's share sheet (see Info.plist's
                 // CFBundleDocumentTypes) — the single entry point for every format

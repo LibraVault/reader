@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var encryptedVaultRuntime: EncryptedVaultRuntime
     @State private var isPickingFolder = false
     @State private var loggingEnabled: Bool
     /// Drives the remove-folder confirmation alert below — set by the per-row trash
@@ -21,6 +22,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             foldersSection
+            encryptedVaultsSection
             readingSection
             playbackSection
             ttsSection
@@ -91,6 +93,29 @@ struct SettingsView: View {
             }
         } message: { folder in
             Text("This will remove \"\(folder.displayName)\" and all its items from the library.")
+        }
+    }
+
+    // MARK: - Encrypted Vaults
+
+    /// Distinct from `foldersSection` above on purpose — see #323's rename:
+    /// a Folder just points at files already on disk, a Vault encrypts a
+    /// real, separate copy of them behind a PIN. Deliberately its own
+    /// labeled section, not folded into Folders, so the two never read as
+    /// the same feature.
+    private var encryptedVaultsSection: some View {
+        Section {
+            NavigationLink {
+                EncryptedVaultListView(runtime: encryptedVaultRuntime)
+            } label: {
+                Label("Encrypted Vaults", systemImage: "lock.fill")
+            }
+        } header: {
+            sectionHeader("Encrypted Vaults")
+        } footer: {
+            Text("Vaults encrypt copies of your files behind a PIN — separate from your Folders above.")
+                .font(LibraVaultTypography.bodySmall)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }
     }
 
@@ -495,4 +520,5 @@ struct BulletPoint: View {
         SettingsView()
     }
     .environmentObject(AppState())
+    .environmentObject(EncryptedVaultRuntime())
 }
