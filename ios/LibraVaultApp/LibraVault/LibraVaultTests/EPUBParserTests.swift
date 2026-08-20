@@ -398,4 +398,85 @@ final class EPUBParserTests: XCTestCase {
     func testPlainTextReturnsEmptyForNoData() {
         XCTAssertEqual(EPUBParser.plainText(fromHTML: Data()), "")
     }
+
+    // MARK: - parseBlocks (#356)
+
+    func testParseBlocksParsesHeadingsParagraphsListsAndImages() {
+        let xhtml = """
+        <html><body>
+        <h1>Chapter One</h1>
+        <p>Some <b>bold</b> text.</p>
+        <ul><li>First item</li><li>Second item</li></ul>
+        <p><img src="cover.jpg" alt="Cover art"/></p>
+        </body></html>
+        """
+
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(xhtml.utf8))
+
+        XCTAssertEqual(blocks, [
+            .heading(level: 1, text: [MarkdownInlineRun(text: "Chapter One", bold: false, italic: false, code: false)]),
+            .paragraph(text: [
+                MarkdownInlineRun(text: "Some ", bold: false, italic: false, code: false),
+                MarkdownInlineRun(text: "bold", bold: true, italic: false, code: false),
+                MarkdownInlineRun(text: " text.", bold: false, italic: false, code: false),
+            ]),
+            .unorderedList(items: [
+                [.paragraph(text: [MarkdownInlineRun(text: "First item", bold: false, italic: false, code: false)])],
+                [.paragraph(text: [MarkdownInlineRun(text: "Second item", bold: false, italic: false, code: false)])],
+            ]),
+            .image(url: "cover.jpg", altText: "Cover art"),
+        ])
+    }
+
+    /// `<ol start>`, `<blockquote>`, `<hr>`, and a standalone (not paragraph-wrapped)
+    /// `<img>` — the rest of the XHTML subset the block model needs to carry through.
+    func testParseBlocksParsesOrderedListStartBlockquoteAndThematicBreak() {
+        let xhtml = """
+        <html><body>
+        <ol start="3"><li>Third</li></ol>
+        <blockquote><p>A quote.</p></blockquote>
+        <hr/>
+        <img src="pic.png" alt="A pic"/>
+        </body></html>
+        """
+
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(xhtml.utf8))
+
+        XCTAssertEqual(blocks, [
+            .orderedList(
+                items: [[.paragraph(text: [MarkdownInlineRun(text: "Third", bold: false, italic: false, code: false)])]],
+                start: 3
+            ),
+            .blockQuote(blocks: [
+                .paragraph(text: [MarkdownInlineRun(text: "A quote.", bold: false, italic: false, code: false)]),
+            ]),
+            .thematicBreak,
+            .image(url: "pic.png", altText: "A pic"),
+        ])
+    }
+
+    /// Regression test for #108, restated for the block model: the entity-heavy,
+    /// undeclared-entity XHTML that makes `XMLParser` fail outright must still produce
+    /// a single readable block — via `strippingTags`'s existing fallback — rather than
+    /// an empty array, which would render as a blank page.
+    func testParseBlocksFallsBackToSingleParagraphForMalformedXHTML() {
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(Self.awkwardXHTML.utf8))
+
+        XCTAssertEqual(blocks.count, 1)
+        guard case let .paragraph(text) = blocks[0] else {
+            return XCTFail("expected a single fallback paragraph block, got \(blocks)")
+        }
+        let joined = text.map(\.text).joined()
+        XCTAssertTrue(joined.contains("Foreword"))
+        XCTAssertTrue(joined.contains("Held\u{00A0}up his elastic toy & grinned."))
+        XCTAssertTrue(joined.contains("Second para."))
+    }
+
+    func testParseBlocksIsNeverEmptyForDocumentWithProse() {
+        XCTAssertFalse(EPUBParser.parseBlocks(fromHTML: Data(Self.awkwardXHTML.utf8)).isEmpty)
+    }
+
+    func testParseBlocksReturnsEmptyForNoData() {
+        XCTAssertEqual(EPUBParser.parseBlocks(fromHTML: Data()), [])
+    }
 }
