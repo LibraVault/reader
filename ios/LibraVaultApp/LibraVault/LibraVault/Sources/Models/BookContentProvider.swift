@@ -7,7 +7,11 @@ struct BookChapter {
     /// EPUB-only for now (#357) — the block-model parse of this chapter's XHTML (see
     /// `EPUBParser.parseBlocks`), empty for PDF/Markdown chapters, which don't build
     /// one. `text` is kept around alongside this rather than removed, since bookmarks/
-    /// TOC still resolve against it (#361 tracks migrating those).
+    /// TOC still resolve against it — `ReaderView` doesn't render or navigate `blocks`
+    /// yet (that's #360). #361 verified `text` is unaffected by `blocks`/`images` being
+    /// present and added `EPUBLocator.blockIndex(forCharOffset:in:)`, a tested fallback
+    /// mapping from a saved flat-text offset onto the nearest block, ready for #360 to
+    /// use once it wires block-based navigation in.
     let blocks: [MarkdownBlock]
     /// Resolved bytes for every `.image` block in `blocks`, keyed by the raw
     /// (unresolved) `src` exactly as referenced there — mirrors

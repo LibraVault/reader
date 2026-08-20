@@ -577,4 +577,56 @@ final class EPUBParserTests: XCTestCase {
         XCTAssertEqual(chapters.count, 1)
         XCTAssertEqual(chapters[0].images["icon.png"], Self.onePixelPNG)
     }
+
+    // MARK: - Bookmark/locator compatibility with the block model (#361)
+
+    /// The literal regression this issue guards against: adding `blocks`/`images`
+    /// (#357) to `BookChapter` must not change `.text` — that's still what
+    /// `TextPaginator` and `ReaderView.navigateToLocator` resolve saved
+    /// `"Locator:<chapterIndex>:<charOffset>"` bookmarks against (EPUB rendering
+    /// hasn't moved onto blocks yet, see #360), so an existing bookmark keeps
+    /// resolving exactly as it did before #357 landed.
+    func testBlocksAndImagesDoNotChangeChapterText() throws {
+        let epubURL = try makeFixtureEPUB(
+            items: [
+                SpineItem(
+                    href: "Text/chap0.xhtml",
+                    entryPath: "OEBPS/Text/chap0.xhtml",
+                    body: "<html><body><h1>Cover</h1><p><img src=\"images/cover.png\" alt=\"Cover art\"/></p><p>Real prose here.</p></body></html>"
+                ),
+            ],
+            extraFiles: ["OEBPS/Text/images/cover.png": Self.onePixelPNG]
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertFalse(chapters[0].blocks.isEmpty, "test needs a real block model to be meaningful")
+        XCTAssertFalse(chapters[0].images.isEmpty, "test needs a real resolved image to be meaningful")
+        XCTAssertTrue(chapters[0].text.contains("Real prose here."))
+        XCTAssertTrue(chapters[0].text.contains("Cover"))
+    }
+
+    /// `EPUBLocator.blockIndex(forCharOffset:in:)` walking real blocks from
+    /// `EPUBParser.parse` — not just hand-built `MarkdownBlock`s in
+    /// `EPUBLocatorTests` — catches a mismatch between how the parser actually nests
+    /// real content (headings, paragraphs) and how the locator counts through it.
+    func testLocatorResolvesAgainstRealParsedChapterBlocks() throws {
+        let epubURL = try makeFixtureEPUB(items: [
+            SpineItem(
+                href: "chap0.xhtml",
+                entryPath: "OEBPS/chap0.xhtml",
+                body: "<html><body><h1>Chapter One</h1><p>First paragraph.</p><p>Second paragraph.</p></body></html>"
+            ),
+        ])
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+        let blocks = chapters[0].blocks
+        XCTAssertEqual(blocks.count, 3, "fixture expected to produce heading + 2 paragraphs")
+
+        XCTAssertEqual(EPUBLocator.blockIndex(forCharOffset: 0, in: blocks), 0, "offset 0 must land on the heading")
+        XCTAssertEqual(
+            EPUBLocator.blockIndex(forCharOffset: 100_000, in: blocks), 2,
+            "an offset past everything must clamp to the last real block, not crash"
+        )
+    }
 }
