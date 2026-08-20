@@ -78,18 +78,18 @@ final class ScreenCaptureMonitor: ObservableObject {
 
 @MainActor
 private struct SecureScreenModifier: ViewModifier {
-    @StateObject private var monitor: ScreenCaptureMonitor
-
-    // `@MainActor` on the struct (not just `body`) is required here: the
-    // default argument `= ScreenCaptureMonitor()` below calls a
-    // `@MainActor`-isolated initializer, and default-argument expressions
-    // run in the isolation context of the initializer they're attached to
-    // — without this, CI's real build (not just a local guess) failed with
-    // "call to main actor-isolated initializer ... in a synchronous
-    // nonisolated context".
-    init(monitor: @autoclosure @escaping () -> ScreenCaptureMonitor = ScreenCaptureMonitor()) {
-        _monitor = StateObject(wrappedValue: monitor())
-    }
+    // No injectable init: nothing in this codebase constructs
+    // `SecureScreenModifier` with a custom monitor (tests exercise
+    // `ScreenCaptureMonitor` directly, not through this modifier), so
+    // there's no reason to carry an `@autoclosure` default-parameter init
+    // here — that shape ran into a real CI build failure twice ("call to
+    // main actor-isolated initializer ... in a synchronous nonisolated
+    // context"), since an `@autoclosure` parameter's own inferred
+    // isolation does NOT follow the enclosing `@MainActor` type/init the
+    // way a plain stored-property default initializer does. A synthesized
+    // `init()` with a `@MainActor`-isolated default property value is the
+    // simpler, actually-correct shape.
+    @StateObject private var monitor = ScreenCaptureMonitor()
 
     func body(content: Content) -> some View {
         content
@@ -128,6 +128,14 @@ extension View {
     /// step, independent of #204's general (toggle-gated) Screen Security
     /// spike. See `ScreenCaptureMonitor`'s doc comment for exactly what this
     /// does and doesn't prevent.
+    ///
+    /// `@MainActor` explicitly: `SecureScreenModifier` is `@MainActor`
+    /// (needed so its `@StateObject` default, `ScreenCaptureMonitor()`, can
+    /// call a `@MainActor`-isolated init), and constructing it here is a
+    /// synchronous call that must itself be MainActor-isolated for the same
+    /// reason — plain `View` extension methods aren't implicitly
+    /// MainActor-isolated just because every real caller happens to be one.
+    @MainActor
     func secureVaultScreen() -> some View {
         modifier(SecureScreenModifier())
     }
