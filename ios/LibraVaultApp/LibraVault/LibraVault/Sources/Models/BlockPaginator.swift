@@ -79,6 +79,33 @@ enum BlockPaginator {
         return pages
     }
 
+    /// Finds the index into `pages` whose contiguous run of blocks contains flat block
+    /// index `blockIndex` (an offset into the chapter's original `blocks` array this
+    /// paginator was given), or the last page if `blockIndex` falls beyond every page —
+    /// the block-model counterpart to `TextPaginator.pageIndex(containing:in:text:)`,
+    /// used by `ReaderView` to re-locate the reader's visible position after a
+    /// repagination and to resolve a saved `"Locator:<chapterIndex>:<blockIndex>"`
+    /// bookmark. Blocks never split across pages (see `paginate`'s doc comment), so
+    /// unlike a character offset this doesn't need range math — just counting.
+    static func pageIndex(containingBlockIndex blockIndex: Int, in pages: [[MarkdownBlock]]) -> Int {
+        guard !pages.isEmpty else { return 0 }
+        var cumulative = 0
+        for (index, page) in pages.enumerated() {
+            cumulative += page.count
+            if blockIndex < cumulative { return index }
+        }
+        return pages.count - 1
+    }
+
+    /// Flat block index (into the chapter's original `blocks` array) of the first
+    /// block on `pages[pageIndex]` — the inverse of `pageIndex(containingBlockIndex:in:)`
+    /// above, used to capture a stable anchor for the page currently on screen before a
+    /// repagination replaces `pages` wholesale.
+    static func firstBlockIndex(ofPage pageIndex: Int, in pages: [[MarkdownBlock]]) -> Int {
+        guard pageIndex > 0, pageIndex <= pages.count else { return 0 }
+        return pages.prefix(pageIndex).reduce(0) { $0 + $1.count }
+    }
+
     /// Fixed height for a `.image` block whose bytes couldn't be resolved from
     /// `images` — matches `MarkdownBlockView`'s placeholder (a photo icon, plus a
     /// line of alt text when present) closely enough to keep pagination stable
