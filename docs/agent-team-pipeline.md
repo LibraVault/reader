@@ -249,10 +249,24 @@ noticed and hand-applied `risk:low`/`status:needs-qa`.
 triggers on `pull_request: opened`/`reopened`, skips PRs authored by
 `libravault-pipeline-bot[bot]` (those are already handled synchronously by
 `dev-agent.yml` itself) and PRs already carrying a pipeline status label
-(idempotent against `reopened` re-firing), then runs the exact same
-deterministic classify-and-label step `dev-agent.yml`'s tail runs for its
-own PRs. It runs no agent — this is a pure backstop, not a fourth triage
-path.
+(idempotent against `reopened` re-firing), then runs the same
+deterministic risk-classification step `dev-agent.yml`'s tail runs for its
+own PRs — but the status label it hands off depends on whether the PR
+links an issue:
+
+- **Linked issue** (a `Closes #N`-style line in the PR body): applies
+  `status:needs-qa`, same as `dev-agent.yml`'s own handoff — there's an
+  issue for `qa-agent.yml` to check acceptance criteria against.
+- **No linked issue** (e.g. a human or a Claude Code session pushing
+  self-authored work with nothing to close — confirmed live: PRs #326,
+  #335, #342): applies `status:needs-review` instead, routing straight to
+  `principal-review.yml`. `qa-agent.yml` hard-stops when it can't resolve
+  a linked issue, so handing it `status:needs-qa` would just dead-end
+  there; `principal-review.yml` already tolerates a missing linked issue
+  gracefully. Added in [#344](https://github.com/LibraVault/reader/pull/344)
+  (closes [#343](https://github.com/LibraVault/reader/issues/343)).
+
+It runs no agent — this is a pure backstop, not a fourth triage path.
 
 ## `claude-code-action` gotchas
 
