@@ -438,7 +438,15 @@ jobs:
             next, so always write it, even if something went wrong earlier.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
-            --max-turns 90
+            # Raised 40->70->90->120 as issues keep getting more
+            # cross-cutting (e.g. #370: 9+ real call sites to touch).
+            # Issue #370 (2026-08-20) hit 90 after ~33 turns of legitimate
+            # recon and 23 real edit calls across 7 files, all before a
+            # single commit — see the persona's "Open the PR early" #370
+            # note. This bump buys headroom for genuinely wide changes;
+            # it does not fix a run that defers branching/committing to
+            # the end, which the persona change addresses separately.
+            --max-turns 120
 
       - name: Force-classify risk and advance to QA
         # !cancelled() rather than the implicit success()-only default: if
