@@ -1,5 +1,4 @@
 import XCTest
-import AVFoundation
 @testable import LibraVault
 
 @MainActor
@@ -13,24 +12,52 @@ final class VaultPlayerViewModelTests: XCTestCase {
         return (manager, id)
     }
 
-    /// A real, valid, silent WAV file — same fixture-building approach as
-    /// `AudioPlaybackEngineTests`. Imported under the `"mp3"` format string
-    /// deliberately: `VaultManifestEntry.format` only decides *routing*
-    /// (`VaultContentFormat.isAudio`) here, never what `AVAudioPlayer(data:)`
-    /// actually decodes — it sniffs the real container from the bytes
-    /// themselves (see `VaultAudioPlaybackEngine`'s own doc comment on why
-    /// it never passes a `fileTypeHint`), so a genuine WAV byte stream loads
-    /// correctly regardless of the declared format string.
-    private func importFixtureAudio(into manager: VaultSessionManager, vaultId: String, seconds: Double = 1.0, title: String = "A Track") async throws -> Data {
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
-        let frameCount = AVAudioFrameCount(44100 * seconds)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
+    /// A real, valid, silent WAV — hand-written classic 16-bit PCM, byte by
+    /// byte; see `VaultAudioPlaybackEngineTests.makeFixtureWAVData`'s doc
+    /// comment for why (in short: `AVAudioFile`/`AVAudioFormat.standardFormat`
+    /// writes 32-bit float PCM, which `AVAudioPlayer(data:fileTypeHint:)`
+    /// reported `duration` `0` for in CI even with an explicit `.wav` hint).
+    /// Imported under the `"mp3"` format string deliberately:
+    /// `VaultManifestEntry.format` only decides *routing*
+    /// (`VaultContentFormat.isAudio`) here, never what
+    /// `AVAudioPlayer(data:fileTypeHint:)` actually decodes —
+    /// `VaultAudioPlaybackEngine.fileTypeHint(for:)` sniffs the real
+    /// container from the bytes themselves, so a genuine WAV byte stream
+    /// loads correctly (and gets the correct `.wav` hint) regardless of the
+    /// declared format string.
+    private func makeFixtureWAVData(seconds: Double, sampleRate: UInt32 = 44100) -> Data {
+        let bitsPerSample: UInt16 = 16
+        let channelCount: UInt16 = 1
+        let sampleCount = Int(Double(sampleRate) * seconds)
+        let byteRate = sampleRate * UInt32(channelCount) * UInt32(bitsPerSample / 8)
+        let blockAlign = channelCount * (bitsPerSample / 8)
+        let dataSize = UInt32(sampleCount * Int(channelCount) * Int(bitsPerSample / 8))
 
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("player-vm-fixture-\(UUID().uuidString).wav")
-        let audioFile = try AVAudioFile(forWriting: fileURL, settings: format.settings)
-        try audioFile.write(from: buffer)
-        let data = try Data(contentsOf: fileURL)
+        var data = Data()
+        func appendASCII(_ s: String) { data.append(contentsOf: s.utf8) }
+        func appendUInt32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+        func appendUInt16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+
+        appendASCII("RIFF")
+        appendUInt32(36 + dataSize)
+        appendASCII("WAVE")
+        appendASCII("fmt ")
+        appendUInt32(16)
+        appendUInt16(1) // PCM
+        appendUInt16(channelCount)
+        appendUInt32(sampleRate)
+        appendUInt32(byteRate)
+        appendUInt16(blockAlign)
+        appendUInt16(bitsPerSample)
+        appendASCII("data")
+        appendUInt32(dataSize)
+        data.append(Data(count: Int(dataSize)))
+
+        return data
+    }
+
+    private func importFixtureAudio(into manager: VaultSessionManager, vaultId: String, seconds: Double = 1.0, title: String = "A Track") async throws -> Data {
+        let data = makeFixtureWAVData(seconds: seconds)
 
         let store = await manager.requireUnlocked(vaultId)
         let input = InputStream(data: data)

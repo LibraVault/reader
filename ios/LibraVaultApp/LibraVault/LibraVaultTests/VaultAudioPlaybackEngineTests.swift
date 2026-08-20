@@ -15,24 +15,51 @@ final class VaultAudioPlaybackEngineTests: XCTestCase {
         XCTAssertThrowsError(try engine.load(data: notAudio, rate: 1.0))
     }
 
-    /// A real, valid, silent WAV — same fixture-building approach as
-    /// `AudioPlaybackEngineTests.makeFixtureWAV`, read back as `Data` since
-    /// this engine loads from memory, not a file URL.
-    private func makeFixtureWAVData(seconds: Double) throws -> Data {
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
-        let frameCount = AVAudioFrameCount(44100 * seconds)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
+    /// A real, valid, silent WAV — hand-written classic 16-bit PCM, byte by
+    /// byte, deliberately *not* built via `AVAudioFile`/
+    /// `AVAudioFormat.standardFormat` (which produces 32-bit float PCM).
+    /// That float variant is what this fixture originally used: it decodes
+    /// fine through `AVAudioPlayer(contentsOf:)` (a real file URL, what the
+    /// non-vault `AudioPlaybackEngineTests` exercises), but
+    /// `AVAudioPlayer(data:fileTypeHint:)` reported `duration` as `0` for
+    /// it in CI — even with an explicit `.wav` hint (workflow run
+    /// 32392013297). Classic 16-bit PCM is the most universally-decodable
+    /// WAV variant there is, and writing it by hand removes any dependency
+    /// on `AVAudioFile`'s own write-format behavior from the equation
+    /// entirely.
+    private func makeFixtureWAVData(seconds: Double, sampleRate: UInt32 = 44100) -> Data {
+        let bitsPerSample: UInt16 = 16
+        let channelCount: UInt16 = 1
+        let sampleCount = Int(Double(sampleRate) * seconds)
+        let byteRate = sampleRate * UInt32(channelCount) * UInt32(bitsPerSample / 8)
+        let blockAlign = channelCount * (bitsPerSample / 8)
+        let dataSize = UInt32(sampleCount * Int(channelCount) * Int(bitsPerSample / 8))
 
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("vault-audio-fixture-\(UUID().uuidString).wav")
-        let audioFile = try AVAudioFile(forWriting: fileURL, settings: format.settings)
-        try audioFile.write(from: buffer)
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-        return try Data(contentsOf: fileURL)
+        var data = Data()
+        func appendASCII(_ s: String) { data.append(contentsOf: s.utf8) }
+        func appendUInt32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+        func appendUInt16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+
+        appendASCII("RIFF")
+        appendUInt32(36 + dataSize)
+        appendASCII("WAVE")
+        appendASCII("fmt ")
+        appendUInt32(16) // fmt chunk size for classic PCM
+        appendUInt16(1) // format tag 1 = PCM
+        appendUInt16(channelCount)
+        appendUInt32(sampleRate)
+        appendUInt32(byteRate)
+        appendUInt16(blockAlign)
+        appendUInt16(bitsPerSample)
+        appendASCII("data")
+        appendUInt32(dataSize)
+        data.append(Data(count: Int(dataSize))) // silence — all-zero samples
+
+        return data
     }
 
     func testLoadReportsTheDatasRealDuration() throws {
-        let data = try makeFixtureWAVData(seconds: 1.0)
+        let data = makeFixtureWAVData(seconds: 1.0)
 
         let engine = VaultAudioPlaybackEngine()
         try engine.load(data: data, rate: 1.0)
@@ -41,7 +68,7 @@ final class VaultAudioPlaybackEngineTests: XCTestCase {
     }
 
     func testElapsedIsClampedToDuration() throws {
-        let data = try makeFixtureWAVData(seconds: 1.0)
+        let data = makeFixtureWAVData(seconds: 1.0)
         let engine = VaultAudioPlaybackEngine()
         try engine.load(data: data, rate: 1.0)
 
@@ -53,7 +80,7 @@ final class VaultAudioPlaybackEngineTests: XCTestCase {
     }
 
     func testStopClearsDuration() throws {
-        let data = try makeFixtureWAVData(seconds: 1.0)
+        let data = makeFixtureWAVData(seconds: 1.0)
         let engine = VaultAudioPlaybackEngine()
         try engine.load(data: data, rate: 1.0)
         XCTAssertGreaterThan(engine.duration, 0)
