@@ -421,6 +421,39 @@ final class VaultStore {
 
         let reader = try VaultFileReader(fileURL: contentFile(fileId: coverFileId), vmk: vmkNow, expectedFileId: coverFileId)
         defer { reader.close() }
+        return try Self.drainFully(reader)
+    }
+
+    /// Decrypts `fileId`'s *content* (not cover art) fully into memory and
+    /// returns it as one `Data` — the primitive #203's read/play adapters
+    /// (`VaultReaderViewModel`/`VaultPlayerViewModel`, for EPUB/PDF/audio)
+    /// build on: hand the result straight to `PDFDocument(data:)`,
+    /// `AVAudioPlayer(data:)`, or ZIPFoundation's `Archive(data:accessMode:)`
+    /// (via `VaultEPUBParser`), all of which operate entirely in memory — no
+    /// plaintext temp file is ever written.
+    ///
+    /// This is the simplest-correct tier, matching Android's own *fallback*
+    /// path (`VaultMemfdFallback`), not its primary lazy-per-page one — fine
+    /// for typical EPUB/PDF sizes and the audio MVP (see #203), but it does
+    /// mean peak memory scales with the file's full plaintext size. A lazy,
+    /// range-read adapter built directly on `openReader(fileId:)` is the
+    /// future streaming path for files where that matters.
+    /// - Throws: `.entryNotFound` if there's no manifest entry for `fileId`.
+    func readFullContent(fileId: Data) throws -> Data {
+        let vmkNow = try requireUnlocked()
+        guard (try VaultManifest.read(vaultDir: vaultDir, vmk: vmkNow).first(where: { $0.fileId == fileId })) != nil else {
+            throw VaultStoreError.entryNotFound(fileId: fileId)
+        }
+        let reader = try VaultFileReader(fileURL: contentFile(fileId: fileId), vmk: vmkNow, expectedFileId: fileId)
+        defer { reader.close() }
+        return try Self.drainFully(reader)
+    }
+
+    /// Reads every byte of `reader`'s plaintext into one `Data`, chunk by
+    /// chunk via `readAt` — shared by `readCoverArt` and `readFullContent`,
+    /// the only two callers that want a whole decrypted file rather than a
+    /// range of it.
+    private static func drainFully(_ reader: VaultFileReader) throws -> Data {
         var result = Data(capacity: Int(reader.plainSize))
         var offset: Int64 = 0
         while offset < reader.plainSize {

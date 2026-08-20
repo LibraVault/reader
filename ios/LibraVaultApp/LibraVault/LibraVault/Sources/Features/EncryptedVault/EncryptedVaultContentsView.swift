@@ -14,7 +14,12 @@ struct EncryptedVaultContentsView: View {
     // on one already on screen.
     @State private var screenSecurityEnabled = VaultScreenSecurityPreference.isEnabled()
 
+    private let vaultId: String
+    private let sessionManager: VaultSessionManager
+
     init(vaultId: String, sessionManager: VaultSessionManager) {
+        self.vaultId = vaultId
+        self.sessionManager = sessionManager
         _viewModel = StateObject(wrappedValue: EncryptedVaultContentsViewModel(vaultId: vaultId, sessionManager: sessionManager))
     }
 
@@ -24,13 +29,17 @@ struct EncryptedVaultContentsView: View {
                 emptyState
             } else {
                 List(viewModel.entries, id: \.fileId) { entry in
-                    VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
-                        Text(entry.title)
-                            .foregroundStyle(LibraVaultColor.onSurface)
-                        if let author = entry.author {
-                            Text(author)
-                                .font(LibraVaultTypography.bodySmall)
-                                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                    NavigationLink {
+                        destination(for: entry)
+                    } label: {
+                        VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
+                            Text(entry.title)
+                                .foregroundStyle(LibraVaultColor.onSurface)
+                            if let author = entry.author {
+                                Text(author)
+                                    .font(LibraVaultTypography.bodySmall)
+                                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -83,6 +92,20 @@ struct EncryptedVaultContentsView: View {
             ImportProgressSheet(items: viewModel.importItems, isImporting: viewModel.isImporting) {
                 viewModel.clearImportItems()
             }
+        }
+    }
+
+    /// EPUB/PDF open through `VaultReaderView`, audio through
+    /// `VaultPlayerView` — see #203. An unsupported format (nothing this
+    /// build's import picker would have accepted, so unreachable in
+    /// practice) still needs a body; `VaultReaderView` itself surfaces that
+    /// as its own `.error` state rather than crashing here.
+    @ViewBuilder
+    private func destination(for entry: VaultManifestEntry) -> some View {
+        if VaultContentFormat.isAudio(entry.format) {
+            VaultPlayerView(vaultId: vaultId, fileId: entry.fileId, sessionManager: sessionManager)
+        } else {
+            VaultReaderView(vaultId: vaultId, fileId: entry.fileId, sessionManager: sessionManager)
         }
     }
 
