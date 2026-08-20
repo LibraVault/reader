@@ -76,6 +76,10 @@ status:needs-review
    └─ risk:high OR any finding ─► status:needs-human-merge ────► you decide
 ```
 
+Not pictured above: `status:needs-info` isn't always a dead end back to a
+human immediately — see `human-merge-sweep.yml`'s circuit breaker just
+below for what happens when the same item lands there 3+ times.
+
 `status:needs-human-merge` and `status:needs-info` are both places the
 pipeline parks work on a human, not dead ends:
 [`human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
@@ -100,7 +104,19 @@ what a human would do with both backlogs:
   either already has a clear explanation for the human, or gets one added
   if it didn't.
 
-Every merge, close, or retry it performs is logged to
+**Circuit breaker**: an issue or PR that has hit `status:needs-info` 3 or
+more times over its lifetime (cumulative — including a cycle a human
+already intervened on once before) gets pulled out of the loop entirely:
+the sweep swaps `status:needs-info` for `status:escalated` and stops
+touching it, permanently — no more retries, no more comments, nothing.
+`status:escalated` is a one-way door only a human clears, treated
+everywhere in the sweep exactly like `status:blocked`. This exists so a
+genuinely stuck item can't just keep bouncing between "pipeline tries
+again" and "needs info" indefinitely without ever becoming *more* visible
+each time it fails — after the third strike it gets its own distinct
+label instead of blending into the general needs-info pile.
+
+Every merge, close, retry, or escalation it performs is logged to
 [`docs/human-merge-sweep-log.md`](human-merge-sweep-log.md).
 
 At any point, applying `status:blocked` to an issue or PR stops every agent
