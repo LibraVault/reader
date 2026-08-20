@@ -232,14 +232,7 @@ final class TextPaginatorTests: XCTestCase {
         let backgroundPaginationDone = expectation(description: "background pagination completes")
         var backgroundThreadPages: [Range<String.Index>] = []
         DispatchQueue.global(qos: .userInitiated).async {
-            // TODO(#336): deliberately mismatched pageSize, see AGENTS.md "prove a new
-            // test can fail" — a `lineSpacing` mismatch of 6 vs 7 here first (same idea,
-            // smaller delta) did NOT change the page ranges for this text, so it proved
-            // nothing; reverted to a matching `pageSize` once CI confirms this one is
-            // actually red.
-            backgroundThreadPages = TextPaginator.paginate(
-                text: text, font: font, lineSpacing: 6, pageSize: CGSize(width: 150, height: 200)
-            )
+            backgroundThreadPages = TextPaginator.paginate(text: text, font: font, lineSpacing: 6, pageSize: pageSize)
             backgroundPaginationDone.fulfill()
         }
         wait(for: [backgroundPaginationDone], timeout: 10)
