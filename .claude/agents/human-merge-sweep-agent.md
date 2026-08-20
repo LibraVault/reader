@@ -144,7 +144,13 @@ quickly, never to answer for them.
    PR as an issue for its timeline). If the count is **3 or more**:
    - Remove `status:needs-info`, add `status:escalated` — both with the
      default `GH_TOKEN` (this is a terminal state, nothing downstream
-     needs to be triggered by it, unlike Part 3's retry label).
+     needs to be triggered by it, unlike Part 3's retry label). This
+     label already exists in the repo (created alongside this feature,
+     matching every other `status:*` label's convention of being created
+     manually rather than by a labels-sync workflow) — if `--add-label`
+     ever fails with "label does not exist," that means someone deleted
+     it, not a bug in this logic; recreate it rather than working around
+     the failure.
    - Post ONE `gh issue comment`/`gh pr comment` stating plainly that
      this item has required human intervention 3+ times and automated
      handling has stopped — name the count, and briefly point at the

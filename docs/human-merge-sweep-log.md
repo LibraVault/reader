@@ -3,8 +3,9 @@
 Every state-changing action performed unattended by
 [`.github/workflows/human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
 (`.claude/agents/human-merge-sweep-agent.md`) — a merge, a stale/superseded
-close, or a needs-info retry — appended right after the action by the
-agent itself. Posting a comment does NOT get a row here (it's already
+close, a needs-info retry, or a circuit-breaker escalation — appended
+right after the action by the agent itself. Posting a comment does NOT
+get a row here (it's already
 visible on the issue/PR itself); this log is specifically for the actions
 that change pipeline state without a human directly triggering them. A
 durable, human-readable audit trail, distinct from
