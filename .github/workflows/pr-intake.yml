@@ -17,6 +17,19 @@ name: PR Intake
 # classify-and-label logic dev-agent.yml's tail already runs for its own
 # PRs, applied here for PRs it didn't open — see that workflow's last
 # step for the twin of the step below.
+#
+# A PR opened this way doesn't always link an issue via a `Closes #N`-style
+# line either (confirmed live: PRs #326, #335, #342 — self-authored feature
+# work with no filed issue to link to). That's not grounds to skip labeling
+# either — it degrades to "treat it like any other manually-opened PR,"
+# still risk-classified and still routed into the pipeline, just at
+# `status:needs-review` instead of `status:needs-qa`: qa-agent.yml hard-stops
+# when it can't resolve a linked issue (nothing to check acceptance criteria
+# against), so handing it status:needs-qa would just dead-end there with a
+# comment asking for a `Closes #N` line that, for a genuinely issue-less PR,
+# can never be satisfied. principal-review.yml already tolerates a missing
+# linked issue gracefully (see its own guard step's comment), which is why
+# that's the right landing spot instead.
 
 on:
   pull_request:
@@ -63,18 +76,20 @@ jobs:
           set -euo pipefail
           PR_NUMBER="${{ github.event.pull_request.number }}"
 
+          # No early exit when this comes back empty — see the top-of-file
+          # comment. issue_number is still exported (possibly empty) so
+          # the classify step below knows which label to hand off to.
           ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
           if [ -z "$ISSUE_NUMBER" ]; then
-            echo "PR #$PR_NUMBER doesn't link an issue (no 'Closes #N' etc in its body) — not a pipeline PR, nothing to do." >&2
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "PR #$PR_NUMBER doesn't link an issue (no 'Closes #N' etc in its body) — proceeding anyway as a manually-opened, issue-less PR (see top-of-file comment)." >&2
           fi
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
           # Idempotency / re-entry guard: `reopened` can fire on a PR this
           # workflow (or a human) already labeled once. Any existing
           # pipeline status label means intake already happened (or a
           # human/qa/review round has since moved it on) — don't relabel
-          # over that state.
+          # over that state. Applies whether or not an issue is linked.
           PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
           if echo ",$PR_LABELS," | grep -qE ",status:(needs-qa|needs-review|needs-info|needs-human-merge|blocked|in-progress),"; then
             echo "PR #$PR_NUMBER already carries a pipeline status label ($PR_LABELS) — already picked up, nothing to do." >&2
@@ -82,18 +97,23 @@ jobs:
             exit 0
           fi
 
-          # Guarded rather than left to fail under set -e, same rationale
-          # as dev-agent.yml's own guard: a deleted/transferred issue
-          # shouldn't hard-crash this step, just proceed as unblocked.
-          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
-            echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
-            ISSUE_LABELS=""
-          }
-          if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
-            echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
-            gh pr comment "$PR_NUMBER" --body "The linked issue (#$ISSUE_NUMBER) carries \`status:blocked\` — a human parked this, skipping automated intake for this PR. Remove the label from the issue to resume."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          # Nothing to check here without a linked issue — an issue-less
+          # PR has no status:blocked source to read besides the PR itself,
+          # already covered by the idempotency guard above.
+          if [ -n "$ISSUE_NUMBER" ]; then
+            # Guarded rather than left to fail under set -e, same rationale
+            # as dev-agent.yml's own guard: a deleted/transferred issue
+            # shouldn't hard-crash this step, just proceed as unblocked.
+            ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+              echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+              ISSUE_LABELS=""
+            }
+            if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+              echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
+              gh pr comment "$PR_NUMBER" --body "The linked issue (#$ISSUE_NUMBER) carries \`status:blocked\` — a human parked this, skipping automated intake for this PR. Remove the label from the issue to resume."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -106,15 +126,15 @@ jobs:
           app-id: ${{ vars.PIPELINE_APP_ID }}
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
 
-      - name: Classify risk and hand off to qa-agent
+      - name: Classify risk and hand off to qa-agent or principal-review
         if: steps.guard.outputs.skip != 'true'
         env:
           # risk:* labels stay on GITHUB_TOKEN — nothing in this pipeline
           # triggers on a risk:* label event, so there's no cross-workflow
           # need here (mirrors dev-agent.yml's own risk-classification
-          # step). Only status:needs-qa, further down, needs the App
-          # token — see docs/agent-team-pipeline.md's "Cross-workflow
-          # triggering" section for why.
+          # step). Only status:needs-qa/status:needs-review, further down,
+          # need the App token — see docs/agent-team-pipeline.md's
+          # "Cross-workflow triggering" section for why.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -122,6 +142,7 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
 
           git fetch origin "$BASE_REF" "$HEAD_REF"
 
@@ -129,7 +150,17 @@ jobs:
           python3 .github/scripts/classify_pr_risk.py \
             "origin/$BASE_REF" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"
 
-          GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
-          echo "Applied status:needs-qa to #$PR_NUMBER."
-
-          gh pr comment "$PR_NUMBER" --body "This PR was opened outside the automated pipeline (author isn't \`libravault-pipeline-bot[bot]\`), so \`dev-agent.yml\`'s own end-of-run classification step never ran for it — it would otherwise have sat with no risk/status label and nothing downstream would pick it up (see issue #223's actual history). This deterministic backstop (\`pr-intake.yml\`) classified its risk and applied \`status:needs-qa\` to route it into the normal pipeline from here."
+          if [ -n "$ISSUE_NUMBER" ]; then
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
+            echo "Applied status:needs-qa to #$PR_NUMBER."
+            gh pr comment "$PR_NUMBER" --body "This PR was opened outside the automated pipeline (author isn't \`libravault-pipeline-bot[bot]\`), so \`dev-agent.yml\`'s own end-of-run classification step never ran for it — it would otherwise have sat with no risk/status label and nothing downstream would pick it up (see issue #223's actual history). This deterministic backstop (\`pr-intake.yml\`) classified its risk and applied \`status:needs-qa\` to route it into the normal pipeline from here."
+          else
+            # No linked issue to check acceptance criteria against, so
+            # qa-agent.yml is the wrong landing spot — its own guard hard-
+            # stops on exactly this condition (see top-of-file comment).
+            # Land on status:needs-review instead, which principal-review.yml
+            # already handles gracefully with no linked issue.
+            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-review
+            echo "Applied status:needs-review to #$PR_NUMBER."
+            gh pr comment "$PR_NUMBER" --body "This PR was opened outside the automated pipeline (author isn't \`libravault-pipeline-bot[bot]\`) and doesn't link an issue (no \`Closes #N\`-style line in its body), so there's no acceptance criteria for \`qa-agent.yml\` to verify against — it would otherwise sit with no risk/status label and nothing downstream would pick it up (see issue #223's actual history, and issue #343 for this issue-less case specifically). This deterministic backstop (\`pr-intake.yml\`) classified its risk and applied \`status:needs-review\` to route it straight to principal review."
+          fi
