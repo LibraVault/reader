@@ -14,20 +14,15 @@ final class VaultPlayerViewModelTests: XCTestCase {
     }
 
     /// A real, valid, silent WAV file — same fixture-building approach as
-    /// `AudioPlaybackEngineTests`/`VaultAudioPlaybackEngineTests` (see the
-    /// latter's own doc comment for why this writes classic 16-bit integer
-    /// PCM rather than `AVAudioFormat`'s 32-bit float "standard" format:
-    /// `AVAudioPlayer(data:fileTypeHint:)` doesn't reliably report duration
-    /// for the `WAVE_FORMAT_EXTENSIBLE` header `AVAudioFile` writes for
-    /// float). Imported under the `"mp3"` format string deliberately:
-    /// `VaultManifestEntry.format` only decides *routing*
-    /// (`VaultContentFormat.isAudio`) here, never what
-    /// `AVAudioPlayer(data:fileTypeHint:)` actually decodes — it sniffs the
-    /// real container from the bytes themselves via
-    /// `VaultAudioPlaybackEngine.fileTypeHint(for:)`, so a genuine WAV byte
-    /// stream loads correctly regardless of the declared format string.
+    /// `AudioPlaybackEngineTests`. Imported under the `"mp3"` format string
+    /// deliberately: `VaultManifestEntry.format` only decides *routing*
+    /// (`VaultContentFormat.isAudio`) here, never what `AVAudioPlayer(data:)`
+    /// actually decodes — it sniffs the real container from the bytes
+    /// themselves (see `VaultAudioPlaybackEngine`'s own doc comment on why
+    /// it never passes a `fileTypeHint`), so a genuine WAV byte stream loads
+    /// correctly regardless of the declared format string.
     private func importFixtureAudio(into manager: VaultSessionManager, vaultId: String, seconds: Double = 1.0, title: String = "A Track") async throws -> Data {
-        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 44100, channels: 1, interleaved: true)!
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
         let frameCount = AVAudioFrameCount(44100 * seconds)
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
         buffer.frameLength = frameCount
