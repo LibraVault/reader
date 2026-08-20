@@ -5,7 +5,30 @@ struct ReaderView: View {
     let book: BookItem
 
     @EnvironmentObject var appState: AppState
-    @State private var currentChapter = 1
+    /// 0-based chapter index, paired with `currentPageInChapter` below to locate the
+    /// reader's exact on-screen page. Replaces the old 1-based `currentChapter`,
+    /// which conflated "chapter" (one EPUB spine item) with "page" — see issue #331.
+    @State private var currentChapterIndex = 0
+    /// 0-based index into `pagination[currentChapterIndex]`.
+    @State private var currentPageInChapter = 0
+    /// Per-chapter screen-sized page ranges from `TextPaginator`, indexed to match
+    /// `chapters` — nil until the first `repaginate(for:)` call, which needs a real
+    /// `GeometryReader`-measured size to lay text out against. See TextPaginator.swift.
+    @State private var pagination: [[Range<String.Index>]]?
+    /// The inputs `pagination` was last computed from, so `repaginate(for:)` can skip
+    /// re-running TextKit layout over every chapter when `GeometryReader` re-evaluates
+    /// its closure without the measured size (or font settings) actually changing —
+    /// which happens on every body pass, not just real resizes/rotations.
+    @State private var lastPaginationSize: CGSize?
+    @State private var lastPaginationFontSize: Double?
+    @State private var lastPaginationLineSpacing: Double?
+    @State private var lastPaginationFontDesign: Font.Design?
+    /// A saved reading-progress fraction waiting to be resolved into a (chapter, page)
+    /// once the first `repaginate(for:)` call has real page boundaries to resolve it
+    /// against — mirrors PDF's `restoredIndex` in `loadContent()`, which can restore
+    /// immediately since `PDFDocument.pageCount` doesn't depend on a measured view
+    /// size the way `TextPaginator`'s page count does. Cleared once consumed.
+    @State private var pendingRestoreFraction: Double?
     /// Real chapters for formats with a parser wired up (EPUB only — PDF used to
     /// share this reflowed-text path too, see PDFReaderContent's doc comment for why
     /// that changed). nil until `loadContent()` resolves — briefly renders
@@ -261,6 +284,12 @@ struct ReaderView: View {
                 return
             }
             chapters = loaded
+            // No page boundaries exist yet — the first repaginate(for:) call (driven
+            // by paginatedContent's GeometryReader) consumes this to restore the
+            // reader to roughly where it left off, the same way PDF's loadContent
+            // does with pdfCurrentPageIndex above.
+            let savedFraction = bridge.progress[book.id] ?? 0
+            if savedFraction > 0 { pendingRestoreFraction = savedFraction }
         } catch BookContentProvider.ContentError.unsupportedFormat {
             unavailableReason = .unsupportedFormat
         } catch {
@@ -286,11 +315,195 @@ struct ReaderView: View {
         markdownImages = images
     }
 
-    private var chapterCount: Int { chapters?.count ?? 0 }
+    /// Total real page count across every chapter — this, not `chapters?.count`
+    /// (the EPUB spine-item count), is what "Page X of Y" and the progress bar read
+    /// from. 0 before the first `repaginate(for:)` call has run.
+    private var totalPageCount: Int {
+        pagination?.reduce(0) { $0 + $1.count } ?? 0
+    }
 
-    private func chapterText(for index: Int) -> String {
-        guard let chapters, !chapters.isEmpty else { return "" }
-        return chapters[(index - 1) % chapters.count].text
+    /// 1-based page number for display, counting every page in every chapter before
+    /// `currentChapterIndex` plus `currentPageInChapter`.
+    private var globalPageNumber: Int {
+        guard let pagination else { return 1 }
+        let pagesBeforeCurrentChapter = pagination.prefix(currentChapterIndex).reduce(0) { $0 + $1.count }
+        return pagesBeforeCurrentChapter + currentPageInChapter + 1
+    }
+
+    /// The text of the page currently on screen. Empty either before pagination has
+    /// run yet or for a chapter TextPaginator produced zero pages for (an
+    /// image-only spine item — see emptyPageNotice).
+    private var currentPageText: String {
+        guard let pagination, let chapters,
+              currentChapterIndex < pagination.count, currentChapterIndex < chapters.count,
+              currentPageInChapter < pagination[currentChapterIndex].count
+        else { return "" }
+        let range = pagination[currentChapterIndex][currentPageInChapter]
+        return String(chapters[currentChapterIndex].text[range])
+    }
+
+    private var hasPreviousPage: Bool {
+        guard let pagination, currentChapterIndex < pagination.count else { return false }
+        if currentPageInChapter > 0 { return true }
+        return pagination[..<currentChapterIndex].contains { !$0.isEmpty }
+    }
+
+    private var hasNextPage: Bool {
+        guard let pagination, currentChapterIndex < pagination.count else { return false }
+        if currentPageInChapter + 1 < pagination[currentChapterIndex].count { return true }
+        return pagination[(currentChapterIndex + 1)...].contains { !$0.isEmpty }
+    }
+
+    /// Advances one screen-sized page, crossing into the next chapter's first
+    /// non-empty page once the current chapter is exhausted (an image-only chapter
+    /// paginates to zero pages and must be skipped over, not landed on).
+    private func goToNextPage() {
+        guard let pagination, currentChapterIndex < pagination.count else { return }
+        if currentPageInChapter + 1 < pagination[currentChapterIndex].count {
+            currentPageInChapter += 1
+            updateProgress()
+            return
+        }
+        var nextChapterIndex = currentChapterIndex + 1
+        while nextChapterIndex < pagination.count, pagination[nextChapterIndex].isEmpty {
+            nextChapterIndex += 1
+        }
+        guard nextChapterIndex < pagination.count else { return }
+        currentChapterIndex = nextChapterIndex
+        currentPageInChapter = 0
+        updateProgress()
+    }
+
+    /// Mirror of goToNextPage() — lands on the previous chapter's *last* non-empty
+    /// page, since that's the page immediately before the current chapter's first.
+    private func goToPreviousPage() {
+        guard let pagination, currentChapterIndex < pagination.count else { return }
+        if currentPageInChapter > 0 {
+            currentPageInChapter -= 1
+            updateProgress()
+            return
+        }
+        var previousChapterIndex = currentChapterIndex - 1
+        while previousChapterIndex >= 0, pagination[previousChapterIndex].isEmpty {
+            previousChapterIndex -= 1
+        }
+        guard previousChapterIndex >= 0 else { return }
+        currentChapterIndex = previousChapterIndex
+        currentPageInChapter = max(pagination[previousChapterIndex].count - 1, 0)
+        updateProgress()
+    }
+
+    /// The chapter index + character offset the reader is currently showing, in the
+    /// *current* pagination — captured before a repagination replaces `pagination`
+    /// wholesale, so the new pagination can locate the same offset again afterward.
+    /// nil before the first pagination has run (nothing to anchor to yet).
+    private func currentPageOffset() -> (chapterIndex: Int, charOffset: Int)? {
+        guard let pagination, let chapters,
+              currentChapterIndex < pagination.count, currentChapterIndex < chapters.count,
+              currentPageInChapter < pagination[currentChapterIndex].count
+        else { return nil }
+        let range = pagination[currentChapterIndex][currentPageInChapter]
+        let text = chapters[currentChapterIndex].text
+        let offset = text.distance(from: text.startIndex, to: range.lowerBound)
+        return (currentChapterIndex, offset)
+    }
+
+    private func locate(chapterIndex: Int, charOffset: Int, in newPagination: [[Range<String.Index>]]) {
+        guard let chapters, chapterIndex >= 0, chapterIndex < newPagination.count, chapterIndex < chapters.count else { return }
+        currentChapterIndex = chapterIndex
+        currentPageInChapter = TextPaginator.pageIndex(
+            containing: charOffset,
+            in: newPagination[chapterIndex],
+            text: chapters[chapterIndex].text
+        )
+    }
+
+    /// Resolves a saved reading-progress fraction (see pendingRestoreFraction) into a
+    /// (chapter, page) against a freshly computed pagination — mirrors PDF's
+    /// `savedFraction * lastPageIndex` restore math in loadContent(), just expressed
+    /// over the two-level chapter/page index instead of PDFKit's flat page count.
+    private func locate(globalFraction fraction: Double, in newPagination: [[Range<String.Index>]]) {
+        let total = newPagination.reduce(0) { $0 + $1.count }
+        guard total > 0 else { return }
+        var remaining = min(max(Int((fraction * Double(total)).rounded()), 0), total - 1)
+        for (chapterIndex, pages) in newPagination.enumerated() {
+            if remaining < pages.count {
+                currentChapterIndex = chapterIndex
+                currentPageInChapter = remaining
+                return
+            }
+            remaining -= pages.count
+        }
+    }
+
+    /// A `UIFont` matching the `Font.system(size:design:)` `paginatedContent` renders
+    /// with — `TextPaginator` needs a concrete `UIFont` (TextKit predates SwiftUI's
+    /// `Font`), and page boundaries only match what's drawn if this mirrors that
+    /// rendering call exactly.
+    private static func uiFont(size: CGFloat, design: Font.Design) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size)
+        let systemDesign: UIFontDescriptor.SystemDesign
+        switch design {
+        case .serif: systemDesign = .serif
+        case .rounded: systemDesign = .rounded
+        case .monospaced: systemDesign = .monospaced
+        default: systemDesign = .default
+        }
+        guard let descriptor = base.fontDescriptor.withDesign(systemDesign) else { return base }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// Re-derives `pagination` for every chapter against `size` (the space
+    /// `paginatedContent`'s `GeometryReader` measured, reduced for this view's own
+    /// `LibraVaultSpacing.lg` padding) and the current font settings — called from
+    /// `paginatedContent` on appear and whenever size/fontSize/lineSpacing/fontDesign
+    /// change. A no-op unless one of those actually changed since the last run:
+    /// `GeometryReader` re-evaluates its closure on every body pass, not just real
+    /// resizes, and TextKit layout over a whole chapter isn't free.
+    ///
+    /// Preserves the reader's visible position across the repagination — captures the
+    /// current page's starting character offset beforehand and re-locates the page
+    /// containing that offset afterward, rather than reusing the old page *index*
+    /// blindly (indices shift; offsets don't). On the very first run (no prior
+    /// pagination to anchor from), resolves `pendingRestoreFraction` instead, if set.
+    private func repaginate(for size: CGSize) {
+        guard let chapters, !chapters.isEmpty else { return }
+        let pageSize = CGSize(
+            width: max(size.width - 2 * LibraVaultSpacing.lg, 0),
+            height: max(size.height - 2 * LibraVaultSpacing.lg, 0)
+        )
+        guard pageSize.width > 0, pageSize.height > 0 else { return }
+
+        let isFirstPagination = pagination == nil
+        guard isFirstPagination
+            || pageSize != lastPaginationSize
+            || fontSize != lastPaginationFontSize
+            || lineSpacing != lastPaginationLineSpacing
+            || fontDesign != lastPaginationFontDesign
+        else { return }
+
+        let anchorOffset = isFirstPagination ? nil : currentPageOffset()
+
+        let font = Self.uiFont(size: 16 * fontSize, design: fontDesign)
+        let newPagination = chapters.map {
+            TextPaginator.paginate(text: $0.text, font: font, lineSpacing: 8 * lineSpacing, pageSize: pageSize)
+        }
+
+        pagination = newPagination
+        lastPaginationSize = pageSize
+        lastPaginationFontSize = fontSize
+        lastPaginationLineSpacing = lineSpacing
+        lastPaginationFontDesign = fontDesign
+
+        if let anchorOffset {
+            locate(chapterIndex: anchorOffset.chapterIndex, charOffset: anchorOffset.charOffset, in: newPagination)
+        } else if let fraction = pendingRestoreFraction {
+            pendingRestoreFraction = nil
+            locate(globalFraction: fraction, in: newPagination)
+        } else {
+            currentChapterIndex = min(currentChapterIndex, max(newPagination.count - 1, 0))
+            currentPageInChapter = 0
+        }
     }
 
     private var paginatedContent: some View {
@@ -299,10 +512,10 @@ struct ReaderView: View {
                 ScrollViewReader { scrollProxy in
                     ScrollView {
                         Group {
-                            if chapterText(for: currentChapter).isEmpty {
+                            if currentPageText.isEmpty {
                                 emptyPageNotice
                             } else {
-                                Text(chapterText(for: currentChapter))
+                                Text(currentPageText)
                                     .font(.system(size: 16 * fontSize, design: fontDesign))
                                     .lineSpacing(8 * lineSpacing)
                                     .foregroundStyle(colors.onBackground)
@@ -310,16 +523,16 @@ struct ReaderView: View {
                             }
                         }
                         .padding(LibraVaultSpacing.lg)
-                        .id(currentChapter)
+                        .id(globalPageNumber)
                     }
                     .frame(maxHeight: .infinity)
                     // The ScrollView keeps its offset across content swaps, so without this
-                    // the < > buttons land the next chapter's text at the previous scroll
+                    // the < > buttons land the next page's text at the previous scroll
                     // position instead of the top — reported as janky page-to-page scrolling
                     // on Mac (Catalyst), where the trackpad makes the leftover offset obvious.
-                    .onChange(of: currentChapter) { _, newChapter in
+                    .onChange(of: globalPageNumber) { _, newPageNumber in
                         withAnimation {
-                            scrollProxy.scrollTo(newChapter, anchor: .top)
+                            scrollProxy.scrollTo(newPageNumber, anchor: .top)
                         }
                     }
                     // Left/right/center tap zones, mirroring Android's Readium
@@ -332,26 +545,35 @@ struct ReaderView: View {
                         }
                     )
                 }
+                // Repaginate whenever the measured layout area changes (first
+                // appearance, rotation, Split View / Slide Over resize on iPad) or the
+                // type settings that affect layout change — repaginate(for:) itself
+                // no-ops if none of those actually moved since the last run.
+                .onAppear { repaginate(for: geometry.size) }
+                .onChange(of: geometry.size) { _, newSize in repaginate(for: newSize) }
+                .onChange(of: fontSize) { _, _ in repaginate(for: geometry.size) }
+                .onChange(of: lineSpacing) { _, _ in repaginate(for: geometry.size) }
+                .onChange(of: fontDesign) { _, _ in repaginate(for: geometry.size) }
             }
 
             if showToolbar {
                 HStack(spacing: LibraVaultSpacing.lg) {
-                    Button(action: { if currentChapter > 1 { currentChapter -= 1; updateProgress() } }) {
+                    Button(action: goToPreviousPage) {
                         Image(systemName: "chevron.left")
                     }
-                    .disabled(currentChapter <= 1)
+                    .disabled(!hasPreviousPage)
 
-                    Text("Page \(currentChapter) of \(chapterCount)")
+                    Text("Page \(globalPageNumber) of \(max(totalPageCount, 1))")
                         .font(LibraVaultTypography.labelMedium)
 
-                    ProgressView(value: Double(currentChapter) / Double(chapterCount))
+                    ProgressView(value: Double(globalPageNumber), total: Double(max(totalPageCount, 1)))
                         .tint(colors.primary)
                         .frame(maxWidth: .infinity)
 
-                    Button(action: { if currentChapter < chapterCount { currentChapter += 1; updateProgress() } }) {
+                    Button(action: goToNextPage) {
                         Image(systemName: "chevron.right")
                     }
-                    .disabled(currentChapter >= chapterCount)
+                    .disabled(!hasNextPage)
                 }
                 .foregroundStyle(colors.onSurfaceVariant)
                 .padding(LibraVaultSpacing.lg)
@@ -360,12 +582,15 @@ struct ReaderView: View {
         }
     }
 
+    /// Continuous scroll mode — unlike paginatedContent this shows whole chapters
+    /// concatenated, so it has no notion of a screen-sized "page" and is untouched by
+    /// TextPaginator (issue #331 is scoped to paginatedContent only).
     private var scrollingContent: some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(alignment: .leading, spacing: LibraVaultSpacing.xl) {
-                    ForEach(1...chapterCount, id: \.self) { chapter in
-                        Text(chapterText(for: chapter))
+                    ForEach(Array((chapters ?? []).enumerated()), id: \.offset) { _, chapter in
+                        Text(chapter.text)
                             .font(.system(size: 16 * fontSize, design: fontDesign))
                             .lineSpacing(8 * lineSpacing)
                             .foregroundStyle(colors.onBackground)
@@ -390,9 +615,9 @@ struct ReaderView: View {
     private func handlePaginatedTap(x: CGFloat, width: CGFloat) {
         switch ReaderTapZone.classify(x: x, width: width) {
         case .previous:
-            if currentChapter > 1 { currentChapter -= 1; updateProgress() }
+            goToPreviousPage()
         case .next:
-            if currentChapter < chapterCount { currentChapter += 1; updateProgress() }
+            goToNextPage()
         case .center:
             withAnimation { showToolbar.toggle() }
         }
@@ -501,8 +726,12 @@ struct ReaderView: View {
     }
 
     private func updateProgress() {
+        // totalPageCount is legitimately 0 before the first pagination has run, and
+        // (rarely) for a book whose every chapter paginates to zero pages (all-image
+        // content) — either way there's no real fraction to persist yet.
+        guard totalPageCount > 0 else { return }
         Task {
-            let progress = Double(currentChapter) / Double(chapterCount)
+            let progress = Double(globalPageNumber) / Double(totalPageCount)
             try? await bridge.updateProgress(bookId: book.id, progress: progress)
         }
     }
@@ -527,7 +756,13 @@ struct ReaderView: View {
             switch book.format {
             case .markdown: position = "scroll:\(markdownScrollFraction)"
             case .pdf: position = "Page \(pdfCurrentPageIndex + 1)"
-            default: position = "Chapter \(currentChapter)"
+            // A page *index* isn't stable across a repagination (font size, line
+            // spacing, font design, or screen size changing all shift where page
+            // boundaries fall), but a character offset within the chapter's own text
+            // is — it survives both a fresh app launch's re-parse of the same file and
+            // any future repagination. See navigateToLocator below and TextPaginator's
+            // pageIndex(containing:in:text:), which resolves this back to a page.
+            default: position = "Locator:\(currentChapterIndex):\(currentPageOffset()?.charOffset ?? 0)"
             }
             try? await bridge.addBookmark(bookId: book.id, position: position)
         }
@@ -545,10 +780,42 @@ struct ReaderView: View {
             if blockCount > 0 {
                 pendingTocBlockIndex = min(max(Int((fraction * Double(blockCount)).rounded()), 0), blockCount - 1)
             }
+        } else if bookmark.position.hasPrefix("Locator:") {
+            navigateToLocator(bookmark.position)
         } else if bookmark.position.hasPrefix("Chapter "), let chapter = Int(bookmark.position.dropFirst("Chapter ".count)) {
-            currentChapter = max(1, min(chapter, max(chapterCount, 1)))
+            // Backward compatibility: bookmarks saved before issue #331 introduced the
+            // "Locator:" format above have no character offset to resolve, only a
+            // 1-based chapter number — land on that chapter's first page rather than
+            // failing to navigate at all.
+            let lastChapterIndex = max((chapters?.count ?? 1) - 1, 0)
+            currentChapterIndex = max(0, min(chapter - 1, lastChapterIndex))
+            currentPageInChapter = 0
         }
         showBookmarksSheet = false
+    }
+
+    /// Parses `"Locator:<chapterIndex>:<charOffset>"` (see addBookmark) and resolves
+    /// it against the chapter's *current* pagination — the reader is already open and
+    /// laid out by the time bookmarks are navigable, so repaginate(for:) has already
+    /// run and this doesn't need its own layout pass.
+    private func navigateToLocator(_ position: String) {
+        let components = position.dropFirst("Locator:".count).split(separator: ":")
+        guard components.count == 2,
+              let chapterIndex = Int(components[0]),
+              let charOffset = Int(components[1]),
+              let chapters, chapterIndex >= 0, chapterIndex < chapters.count
+        else { return }
+
+        currentChapterIndex = chapterIndex
+        if let pagination, chapterIndex < pagination.count, !pagination[chapterIndex].isEmpty {
+            currentPageInChapter = TextPaginator.pageIndex(
+                containing: charOffset,
+                in: pagination[chapterIndex],
+                text: chapters[chapterIndex].text
+            )
+        } else {
+            currentPageInChapter = 0
+        }
     }
 
     /// The toolbar Play button hands off to the real Player screen (Phase 4) instead
@@ -556,12 +823,15 @@ struct ReaderView: View {
     /// push PlayerView, the same trigger the mini-player's tap uses. For PDF,
     /// AppState.startPlayback's `chapter` parameter means "PDF page number" (it loads
     /// one BookChapter per page via PDFParser under the hood), so it takes
-    /// pdfCurrentPageIndex there instead of the EPUB-only `currentChapter` state.
+    /// pdfCurrentPageIndex there instead. Narration is chapter-granular regardless of
+    /// on-screen page (BookContentProvider.chapters), so EPUB keeps using
+    /// currentChapterIndex (+1 for the existing 1-based `chapter` param) rather than
+    /// the finer-grained page position introduced by issue #331.
     private func toggleReadAloud() {
         if isCurrentlyPlayingThisBook {
             appState.stopPlayback()
         } else {
-            let chapter = book.format == .pdf ? pdfCurrentPageIndex + 1 : currentChapter
+            let chapter = book.format == .pdf ? pdfCurrentPageIndex + 1 : currentChapterIndex + 1
             appState.startPlayback(book: book, chapter: chapter)
             appState.shouldNavigateToPlayer = true
         }

@@ -33,7 +33,12 @@ struct BookmarksSheet: View {
                         Image(systemName: "bookmark.fill")
                             .foregroundStyle(LibraVaultColor.primary)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(bookmark.position)
+                            // bookmark.position is an internal locator (see
+                            // BookmarkPositionFormatter's doc comment), not display
+                            // text — showing it verbatim used to leak raw strings
+                            // like "Locator:0:0" once EPUB's bookmark format moved
+                            // off a bare chapter number (issue #331).
+                            Text(BookmarkPositionFormatter.displayText(for: bookmark.position))
                                 .font(LibraVaultTypography.bodyMedium)
                                 .foregroundStyle(LibraVaultColor.onSurface)
                             if let note = bookmark.note, !note.isEmpty {
