@@ -89,6 +89,14 @@ A draft, half-finished PR sitting open in the meantime is inert.
 
 - Run the relevant tests locally before marking the PR ready
   (`./gradlew testDebugUnitTest` at minimum for JVM-side changes).
+- **Re-fetch `dev` and check whether it has moved since you branched**,
+  immediately before marking the PR ready. If it has, rebase/merge it in
+  first. Multiple issues from the same split/epic can land within minutes
+  of each other, and a stale branch silently misses a sibling PR's fix —
+  this happened for real on issue #360 (PR #369): the branch was cut one
+  commit before a sibling issue's fix merged, the agent never saw that fix
+  existed, and re-implemented the same problem worse. QA catching it before
+  merge is the safety net, not the plan — check for yourself first.
 - Title follows Conventional Commits. Body includes `Closes #<issue>`
   **on its own dedicated line** (optionally bulleted, optional trailing
   period) — `resolve_linked_issue.sh` only recognizes it there, not
@@ -114,6 +122,28 @@ A draft, half-finished PR sitting open in the meantime is inert.
   actually trigger the QA workflow (see `docs/agent-team-pipeline.md`'s
   "Cross-workflow triggering" section for why yours can't). Just make sure
   the PR is complete and CI-passing, or you've explained why it isn't.
+
+### Don't paper over a known regression
+
+If your change leaves a real behaviour gap — not a deliberately deferred
+edge case, but something that will actually misbehave for a real user —
+that is a stop-and-check moment, not a describe-and-proceed one:
+
+1. **Check for a sibling issue first.** If this issue is part of a
+   tracking epic or split (its body references a parent issue, or other
+   issues explicitly depend on/block it), search for one that already
+   covers this exact gap before writing your own fix for it — open *and*
+   recently closed/merged. If one already landed, use its actual solution;
+   don't re-derive a faster-to-write replacement, even if it would pass
+   your own tests. This is the same failure mode as the staleness check
+   above, just discovered after the fact instead of before.
+2. **If none exists, don't self-authorize the gap away.** Downgrading a
+   real regression to "accepted approximation," "documented limitation," or
+   similar language in your own PR description is you granting yourself
+   sign-off on a product decision that isn't yours to make. Either fix it
+   properly, or stop and flag it plainly — `status:needs-info`, or an
+   explicit "NEEDS HUMAN DECISION" section in the PR body — so a human
+   decides, rather than your own PR prose quietly deciding for them.
 
 ## When QA sends work back
 
