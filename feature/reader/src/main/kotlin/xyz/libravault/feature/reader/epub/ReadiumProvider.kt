@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.services.isRestricted
+import org.readium.r2.shared.publication.services.protectionName
 import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.asset.AssetRetriever
@@ -12,6 +14,19 @@ import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.epub.EpubParser
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Thrown by [ReadiumProvider.open] when Readium's content-protection detection
+ * (`Publication.isRestricted`, backed by `FallbackContentProtection` for schemes like
+ * Adobe ADEPT or LCP that Libravault doesn't support — see KNOWN_LIMITATIONS.md) flags
+ * the opened publication as DRM-restricted. Kept distinct from open()'s generic failure
+ * path so callers can show DRM-specific copy instead of a raw parser error — without
+ * this, an encrypted EPUB's ciphertext was parsed as if it were plaintext XHTML and
+ * rendered as garbled text (issue #351).
+ */
+class DrmProtectedException(val schemeName: String?) : Exception(
+    "Publication is protected by DRM" + (schemeName?.let { " ($it)" } ?: "") + " and cannot be opened"
+)
 
 /**
  * Application-scoped wrapper around Readium's publication opening pipeline.
@@ -80,7 +95,15 @@ class ReadiumProvider @Inject constructor(
             asset = asset,
             allowUserInteraction = false
         ).fold(
-            onSuccess = { Result.success(it) },
+            onSuccess = { publication ->
+                if (publication.isRestricted) {
+                    val schemeName = publication.protectionName
+                    publication.close()
+                    Result.failure(DrmProtectedException(schemeName))
+                } else {
+                    Result.success(publication)
+                }
+            },
             onFailure = {
                 Result.failure(
                     Exception("Failed to open publication: ${it.message}")
