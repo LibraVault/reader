@@ -23,6 +23,10 @@ struct ReaderView: View {
     @State private var lastPaginationFontSize: Double?
     @State private var lastPaginationLineSpacing: Double?
     @State private var lastPaginationFontDesign: Font.Design?
+    /// Bumped on every `repaginate(for:)` call that actually launches a background
+    /// pagination task, and compared again once that task's result comes back — see
+    /// that function's doc comment for why a stale result must not win.
+    @State private var paginationGeneration = 0
     /// A saved reading-progress fraction waiting to be resolved into a (chapter, page)
     /// once the first `repaginate(for:)` call has real page boundaries to resolve it
     /// against — mirrors PDF's `restoredIndex` in `loadContent()`, which can restore
@@ -466,6 +470,17 @@ struct ReaderView: View {
     /// containing that offset afterward, rather than reusing the old page *index*
     /// blindly (indices shift; offsets don't). On the very first run (no prior
     /// pagination to anchor from), resolves `pendingRestoreFraction` instead, if set.
+    ///
+    /// The actual TextKit layout (`chapters.map { TextPaginator.paginate(...) }`) runs
+    /// on a detached background task, not inline — issue #336 measured ~4s of main-
+    /// thread layout work for a ~900k-character synthetic book (`TextPaginatorTests`'s
+    /// large-book regression test), which would otherwise freeze the whole UI for that
+    /// long on every rotation, Split View/Slide Over resize, or Reading Settings
+    /// change. `TextPaginator.paginate` only ever builds its own private
+    /// `NSTextStorage`/`NSLayoutManager`/`NSTextContainer` graph — never one attached to
+    /// a live view — so laying it out off the main thread is safe. `paginationGeneration`
+    /// guards against a call started by an earlier trigger finishing *after* a newer
+    /// one (e.g. two rotations in quick succession) and clobbering its result.
     private func repaginate(for size: CGSize) {
         guard let chapters, !chapters.isEmpty else { return }
         let pageSize = CGSize(
@@ -483,26 +498,38 @@ struct ReaderView: View {
         else { return }
 
         let anchorOffset = isFirstPagination ? nil : currentPageOffset()
+        let restoreFraction = pendingRestoreFraction
 
         let font = Self.uiFont(size: 16 * fontSize, design: fontDesign)
-        let newPagination = chapters.map {
-            TextPaginator.paginate(text: $0.text, font: font, lineSpacing: 8 * lineSpacing, pageSize: pageSize)
-        }
+        let lineSpacingPoints = 8 * lineSpacing
+        let chapterTexts = chapters.map(\.text)
 
-        pagination = newPagination
         lastPaginationSize = pageSize
         lastPaginationFontSize = fontSize
         lastPaginationLineSpacing = lineSpacing
         lastPaginationFontDesign = fontDesign
 
-        if let anchorOffset {
-            locate(chapterIndex: anchorOffset.chapterIndex, charOffset: anchorOffset.charOffset, in: newPagination)
-        } else if let fraction = pendingRestoreFraction {
-            pendingRestoreFraction = nil
-            locate(globalFraction: fraction, in: newPagination)
-        } else {
-            currentChapterIndex = min(currentChapterIndex, max(newPagination.count - 1, 0))
-            currentPageInChapter = 0
+        paginationGeneration += 1
+        let generation = paginationGeneration
+
+        Task.detached(priority: .userInitiated) {
+            let newPagination = chapterTexts.map {
+                TextPaginator.paginate(text: $0, font: font, lineSpacing: lineSpacingPoints, pageSize: pageSize)
+            }
+            await MainActor.run {
+                guard generation == self.paginationGeneration else { return }
+                self.pagination = newPagination
+
+                if let anchorOffset {
+                    self.locate(chapterIndex: anchorOffset.chapterIndex, charOffset: anchorOffset.charOffset, in: newPagination)
+                } else if let restoreFraction {
+                    self.pendingRestoreFraction = nil
+                    self.locate(globalFraction: restoreFraction, in: newPagination)
+                } else {
+                    self.currentChapterIndex = min(self.currentChapterIndex, max(newPagination.count - 1, 0))
+                    self.currentPageInChapter = 0
+                }
+            }
         }
     }
 

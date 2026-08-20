@@ -199,9 +199,47 @@ final class TextPaginatorTests: XCTestCase {
         let elapsed = CFAbsoluteTimeGetCurrent() - start
 
         XCTAssertFalse(pagination.contains { $0.isEmpty }, "every chapter of a realistic book should produce at least one page")
+        // Measured ~4.3s on a GitHub Actions macOS-26 Simulator runner (see PR for
+        // this issue) — 8s gives real CI-hardware variance headroom while still
+        // catching a change that makes this meaningfully (roughly 2x+) worse.
         XCTAssertLessThan(
-            elapsed, 0.0001, // TODO(#336): deliberately-too-tight, see AGENTS.md "prove a new test can fail" — replaced with a real budget once CI reports the actual number.
+            elapsed, 8.0,
             "repaginating a ~900k-character, 30-chapter book took \(elapsed)s on this runner — investigate for a regression (issue #336)"
         )
+    }
+
+    // MARK: - Off-main-thread pagination safety (issue #336)
+
+    /// `ReaderView.repaginate(for:)` now runs `TextPaginator.paginate` on a background
+    /// `Task.detached` rather than inline on the main thread (issue #336, to stop the
+    /// multi-second main-thread freeze the test above measures from ever reaching the
+    /// UI) — safe only because `paginate` builds its own private `NSTextStorage`/
+    /// `NSLayoutManager`/`NSTextContainer` graph and never touches one attached to a
+    /// live view. This confirms that assumption holds: identical input laid out on a
+    /// background queue must produce exactly the same page ranges as laid out on the
+    /// main thread — a divergence here would mean the background path is unsafe.
+    func testPaginatingOffTheMainThreadProducesTheSameResultAsOnTheMainThread() {
+        let text = Array(
+            repeating: "Background-thread pagination must match the main thread exactly. ",
+            count: 400
+        ).joined()
+        let font = UIFont.systemFont(ofSize: 18)
+        let pageSize = CGSize(width: 320, height: 480)
+
+        let mainThreadPages = TextPaginator.paginate(text: text, font: font, lineSpacing: 6, pageSize: pageSize)
+        XCTAssertGreaterThan(mainThreadPages.count, 1, "test needs multiple pages to be meaningful")
+
+        let backgroundPaginationDone = expectation(description: "background pagination completes")
+        var backgroundThreadPages: [Range<String.Index>] = []
+        DispatchQueue.global(qos: .userInitiated).async {
+            // TODO(#336): deliberately mismatched lineSpacing, see AGENTS.md "prove a
+            // new test can fail" — reverted to a matching `6` once CI confirms red.
+            backgroundThreadPages = TextPaginator.paginate(text: text, font: font, lineSpacing: 7, pageSize: pageSize)
+            backgroundPaginationDone.fulfill()
+        }
+        wait(for: [backgroundPaginationDone], timeout: 10)
+
+        XCTAssertEqual(backgroundThreadPages.count, mainThreadPages.count)
+        XCTAssertEqual(backgroundThreadPages, mainThreadPages)
     }
 }
