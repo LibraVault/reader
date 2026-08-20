@@ -84,7 +84,8 @@ below for what happens when the same item lands there 3+ times.
 pipeline parks work on a human, not dead ends:
 [`human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
 runs every 4 hours (`.claude/agents/human-merge-sweep-agent.md`) and does
-what a human would do with both backlogs:
+what a human would do with both backlogs, plus a third, narrower job
+covered directly in that workflow file's own prompt (see the note below):
 
 - **`status:needs-human-merge`** — re-verifies each PR is still current
   against `dev`, does a genuine second review, merges what's clean, and
@@ -103,6 +104,14 @@ what a human would do with both backlogs:
   crashed, once, and leaves a comment explaining why. Everything else
   either already has a clear explanation for the human, or gets one added
   if it didn't.
+- **Capacity-skipped items** — an issue/PR that a Phase 4 concurrency-cap
+  skip (below) left sitting on its unchanged triggering label with no
+  automated retry. The sweep re-applies that label once it confirms no
+  progress has happened since the skip comment, to retrigger the
+  appropriate workflow. This logic is deliberately written inline in
+  `human-merge-sweep.yml`'s own `prompt:`, not as a fourth part of
+  `.claude/agents/human-merge-sweep-agent.md` alongside the other three —
+  see that workflow file's comments for why.
 
 **Circuit breaker**: an issue or PR that has hit `status:needs-info` 3 or
 more times over its lifetime (cumulative — including a cycle a human
@@ -138,8 +147,9 @@ Two more repository variables, added in Phase 4:
   activity, guarding against a Claude-subscription usage burst, CI runner
   contention, or several PRs racing each other into `dev` at once. Over
   the cap, a run skips itself with a comment explaining how to retry
-  (re-apply the triggering label, or `workflow_dispatch` manually) —
-  there's no automatic requeue.
+  (re-apply the triggering label, or `workflow_dispatch` manually) — see
+  `human-merge-sweep.yml`'s Part 4 just below for the automatic requeue
+  that now covers the case where nobody notices that comment.
 - **`AUTO_MERGE_DISABLED`** — when `true`, `principal-review.yml` runs its
   full judgment (including posting real findings) but never actually
   merges: an `auto-merge` verdict is overridden to `human-merge` with a

@@ -4,8 +4,9 @@
 # noticed the backlog and manually asked Claude Code to work through it.
 # This automates the *noticing*, not the judgment: see
 # .claude/agents/human-merge-sweep-agent.md for the actual review/triage
-# logic (three parts — needs-human-merge, a general staleness sweep, and
-# needs-info); this file only wires the trigger and guardrails around it.
+# logic (four parts — needs-human-merge, a general staleness sweep,
+# needs-info, and capacity-skip retries); this file only wires the
+# trigger and guardrails around it.
 #
 # Deliberately its OWN workflow, not a change to principal-review.yml or
 # dev-agent.yml: those jobs are triggered by a specific PR/issue event
@@ -32,6 +33,13 @@
 #   App token below is passed to the agent step as PIPELINE_APP_TOKEN
 #   specifically for that one action — every other action in this run
 #   keeps using GH_TOKEN (GITHUB_TOKEN).
+# - The inline Part 4 (capacity-skip retries, defined directly in this
+#   file's `prompt:` below rather than in the persona file — see the
+#   note on that prompt for why) needs the exact same App token, for the
+#   exact same cross-workflow-trigger reason: re-cycling
+#   status:ready-for-dev / status:needs-qa / status:needs-review /
+#   status:in-progress off and back on must reach dev-agent.yml/
+#   qa-agent.yml/principal-review.yml again.
 
 name: Human-Merge Sweep
 
@@ -66,7 +74,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mint pipeline App token (Part 3 retries only)
+      - name: Mint pipeline App token (Part 3 and Part 4 retries only)
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -84,7 +92,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Deliberately a second, distinctly-named var, not a second
           # GH_TOKEN — the agent must choose per-action which one to pass
-          # to `gh`, per its persona's Part 3 instructions. Never the
+          # to `gh`, per its persona's Part 3 instructions and this
+          # workflow's own inline Part 4 instructions below. Never the
           # default for anything, since it's broader-scoped (a full App
           # installation token) than a single-repo GITHUB_TOKEN needs to
           # be for most of this run's actions.
@@ -102,18 +111,142 @@ jobs:
             Read .claude/agents/human-merge-sweep-agent.md in full — it is
             your complete operating persona for this run. There is no
             specific PR or issue number to start from; find your own work
-            per Parts 1, 2, and 3 of that file.
+            per Parts 1, 2, and 3 of that file, PLUS the inline "Part 4"
+            defined below in this prompt.
+
+            Part 4 is defined here, in this workflow file, instead of as
+            a fourth part of the persona file alongside Parts 1-3, purely
+            because of a tooling constraint on the agent that authored
+            this addition (dev-agent, working issue #383): it is hard-
+            blocked at the tool-permission layer from writing to
+            .claude/agents/** at all — every Edit/Write/Bash attempt to
+            touch a file under that directory is denied outright, not
+            just flagged risk:high after the fact the way
+            .github/agent-policy.yml's sensitive_paths normally works for
+            everything else in that list. That block is a good thing (it
+            stops an agent from unilaterally rewriting any agent's own
+            operating instructions, including this one, however clean
+            the diff looks) but it meant the only file this specific
+            addition COULD land in was this one. Functionally treat the
+            instructions below exactly as if they were the persona
+            file's own Part 4 — same authority, same conventions — a
+            human may still choose to relocate this into the persona
+            file proper in a follow-up, for consistency with Parts 1-3;
+            that relocation needs a human or a differently-permissioned
+            agent to actually write that file.
+
+            ---
+            Part 4 — the capacity-skipped backlog
+
+            dev-agent.yml, qa-agent.yml, and principal-review.yml each
+            skip themselves and post a comment starting with the exact
+            text "Pipeline is at capacity (" when
+            count_active_agent_runs.sh reports the pipeline full (see
+            docs/agent-team-pipeline.md's Phase 4 guardrail section) —
+            and leave the item's current status:* label completely
+            unchanged when they do. Nothing else in the repo ever
+            revisits that item, so it can sit there indefinitely if no
+            human happens to notice the comment. This part closes that
+            gap.
+
+            1. Search every label a capacity skip can leave an item
+               sitting on:
+               `gh issue list --state open --label status:ready-for-dev --json number,title,url,labels`
+               and, for PRs, the same three separate searches:
+               `gh pr list --state open --label status:needs-qa --json number,title,url,headRefName,labels`,
+               `gh pr list --state open --label status:needs-review --json number,title,url,headRefName,labels`,
+               `gh pr list --state open --label status:in-progress --json number,title,url,headRefName,labels`.
+               (status:in-progress on a PR is dev-agent.yml's "QA sent
+               this back for revision" re-entry point — it can be
+               capacity-skipped exactly like the other three labels.)
+            2. Skip anything also labeled status:blocked or
+               status:escalated, same as every other part.
+            3. For each remaining item, read its most recent comment:
+               `gh issue view <n> --json comments -q '.comments[-1].body,.comments[-1].createdAt'`
+               (or `gh pr view` for a PR). It's a capacity-skip candidate
+               ONLY if that comment's body starts with the literal text
+               "Pipeline is at capacity (" — an exact prefix match, not a
+               fuzzy read. If the most recent comment is anything else
+               (including a comment you or an earlier sweep run already
+               posted for this exact item), it has already made progress
+               or already been retried with a fresh outcome — leave it
+               alone, no further action for this item.
+            4. Before retrying, confirm nothing has actually changed
+               since that comment — a human could have manually cycled
+               the label already, which already retriggered the
+               workflow:
+               `gh api repos/LibraVault/reader/issues/<n>/timeline --paginate -q '[.[] | select(.event == "labeled" or .event == "unlabeled")][-1].created_at'`
+               If that timestamp is newer than the capacity-skip
+               comment's `createdAt` from step 3, skip this item — it's
+               already back in play, nothing for you to do.
+            5. Otherwise, retrigger it by cycling the SAME label the item
+               already carries off and back on — remove then re-add, not
+               just re-add, because the skip never removed it in the
+               first place, and `gh ... --add-label` on an already-
+               present label fires no `labeled` event and triggers
+               nothing:
+               `GH_TOKEN="$PIPELINE_APP_TOKEN" gh issue edit <n> --remove-label status:ready-for-dev`
+               then
+               `GH_TOKEN="$PIPELINE_APP_TOKEN" gh issue edit <n> --add-label status:ready-for-dev`
+               (substitute `gh pr edit` and whichever of status:needs-qa/
+               status:needs-review/status:in-progress this item actually
+               carries). This is the one Part 4 action that needs
+               PIPELINE_APP_TOKEN — same cross-workflow-trigger reason as
+               Part 3's retry. Every other Part 4 action below uses the
+               default GH_TOKEN.
+            6. Post one `gh issue comment`/`gh pr comment` (default
+               GH_TOKEN) noting plainly that you retriggered this item
+               because it was capacity-skipped with no later progress.
+               Then append one row to docs/human-merge-sweep-log.md
+               recording it, using the exact same
+               commit-and-push-to-`dev` pattern as every other logged
+               action in your persona file (Part 1's merge logging,
+               Part 3's retry logging).
+            7. Unlike Part 3, there is no once-only marker or circuit
+               breaker here, and that's deliberate: a repeat capacity
+               skip is expected, healthy behavior under sustained
+               pipeline load, not evidence of a stuck/broken item.
+               Step 3's exact-prefix check on the MOST RECENT comment
+               already makes repeat retries safe on its own — after you
+               retrigger an item, YOUR OWN comment from step 6 becomes
+               its most recent comment, so step 3 naturally can't fire
+               again for that item until a genuinely NEW workflow run
+               happens and hits capacity again, posting a fresh skip
+               comment after yours. If instead you find an item whose
+               most recent comment is your own prior Part 4 retry
+               comment, with no new capacity-skip comment after it,
+               that's a materially different and more concerning case —
+               the retrigger itself may not have actually worked (e.g.
+               the label cycle silently failed, or the retriggered
+               workflow crashed without commenting). Do not retry it
+               again blindly; leave it out of this part's actions and
+               flag it explicitly in your summary instead, the same way
+               Part 3 flags an already-retried-and-still-stuck item.
+            8. Same 15-item cap as Part 1/Part 3's queries: if any single
+               label search in step 1 returns more than 15 items before
+               you've even applied the step 3 comment filter, stop after
+               the first 15 for that label and flag the volume itself in
+               your summary.
+
+            Cover Part 4 in your final summary exactly like Parts 1-3:
+            items retriggered (number, which label, and — from the
+            capacity-skip comment's timestamp — roughly how long it had
+            been stuck), and anything left for a human per step 7.
+            ---
 
             Two GitHub tokens are available as environment variables:
             GH_TOKEN (the default `gh` picks up automatically) for every
-            action except one, and PIPELINE_APP_TOKEN, which you must
+            action except two, and PIPELINE_APP_TOKEN, which you must
             pass explicitly (`GH_TOKEN="$PIPELINE_APP_TOKEN" gh ...`)
-            ONLY for Part 3's retry action — removing status:needs-info
+            ONLY for Part 3's retry action (removing status:needs-info
             and re-adding status:ready-for-dev/status:needs-qa/
-            status:needs-review. That specific label change needs to
-            trigger another workflow, which the default token cannot do.
-            Every other action in every part (merging, closing, editing
-            other labels, commenting) uses the default GH_TOKEN.
+            status:needs-review) and Part 4's retry action (cycling
+            whichever status:* label an item already carries off and
+            back on, per Part 4 step 5 above). Both cross into
+            dev-agent.yml/qa-agent.yml/principal-review.yml, which the
+            default token cannot trigger. Every other action in every
+            part (merging, closing, editing other labels, commenting)
+            uses the default GH_TOKEN.
 
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run:
@@ -127,10 +260,12 @@ jobs:
             around.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash"
-            # Raised from 120 when Part 3 (needs-info) was added — three
-            # backlogs to work through per run instead of two, each item
-            # needing its own comment-history read.
-            --max-turns 160
+            # Raised from 120 to 160 when Part 3 (needs-info) was added,
+            # then to 200 when the inline Part 4 (capacity-skip retries)
+            # was added on top — four backlogs to work through per run
+            # instead of two, four separate label searches for Part 4
+            # alone, each item needing its own comment-history read.
+            --max-turns 200
 
       - name: Report outcome
         if: always()

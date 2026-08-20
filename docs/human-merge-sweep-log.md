@@ -2,8 +2,9 @@
 
 Every state-changing action performed unattended by
 [`.github/workflows/human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
-(`.claude/agents/human-merge-sweep-agent.md`) — a merge, a stale/superseded
-close, a needs-info retry, or a circuit-breaker escalation — appended
+(`.claude/agents/human-merge-sweep-agent.md`, plus that workflow file's
+own inline "Part 4") — a merge, a stale/superseded close, a needs-info
+retry, a capacity-skip retry, or a circuit-breaker escalation — appended
 right after the action by the agent itself. Posting a comment does NOT
 get a row here (it's already
 visible on the issue/PR itself); this log is specifically for the actions
@@ -17,9 +18,13 @@ machine — never a product/scope decision. Part 3's needs-info handling
 adds a row for a retry (a bounded, at-most-once, reversible label change)
 and for a circuit-breaker escalation (`status:needs-info` → `status:
 escalated` after 3+ lifetime occurrences — irreversible by this
-automation, only a human undoes it); a plain clarifying comment left for
-a human to answer does not get a row, since it changes nothing and is
-already visible in place.
+automation, only a human undoes it); Part 4 adds a row each time it
+cycles a status:* label off and back on to retrigger a run that a
+Phase 4 concurrency-cap skip left stuck with no automated progress
+(unlike Part 3's retry, Part 4 has no once-only cap — see that Part's
+step 7 for why repeat retries are expected and safe there); a plain
+clarifying comment left for a human to answer does not get a row, since
+it changes nothing and is already visible in place.
 
 | When (UTC) | Item | Title | Action | Reason |
 |---|---|---|---|---|
