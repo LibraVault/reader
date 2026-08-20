@@ -177,7 +177,11 @@ enum MarkdownHeadingStyle {
     }
 }
 
-private struct MarkdownBlockView: View {
+/// Not `private`: EPUB's block-model rendering (`ReaderView.paginatedContent`/
+/// `.scrollingContent`, #360) reuses this directly rather than duplicating its
+/// per-case rendering — including the `.image` case's resolved-`Data`-vs-placeholder
+/// behavior, which is already correct and tested here.
+struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let images: [String: Data]
     let colors: LibraVaultColorScheme
