@@ -354,4 +354,263 @@ enum EPUBParser {
         }
         return String(firstLine.prefix(80))
     }
+
+    // MARK: - HTML → block model (#356)
+
+    /// Parses one chapter's XHTML into a structured block model instead of reducing it
+    /// to flat text — reuses `MarkdownBlock`'s shape (`MarkdownDocumentParser.swift`)
+    /// rather than a parallel type, since the subset of XHTML real EPUBs use (headings,
+    /// paragraphs, lists, images) maps directly onto cases that type already defines
+    /// for Markdown, and `MarkdownBlockView` can render it with no changes. Wiring this
+    /// into `BookChapter`/`ReaderView` is out of scope here (see #356) — this is only
+    /// the parsing half.
+    ///
+    /// `XMLParser`, not `NSAttributedString`, drives the primary path: it can express
+    /// `<img>` structurally (`NSAttributedString`'s HTML importer discards `src`), and
+    /// unlike that importer its accept/reject behaviour doesn't vary by OS version.
+    /// XHTML that's valid-but-unusual (undeclared entities, unusual doctypes) still
+    /// makes `XMLParser` fail outright rather than degrade gracefully — the same shape
+    /// of problem `plainText(fromHTML:)` exists to solve (#108) — so on any parse
+    /// failure, or a parse that yields nothing, this falls back to `strippingTags`'s
+    /// flat text as a single `.paragraph` block. Never an empty array for a document
+    /// with prose: that would be the blank page, restated as a block-model invariant.
+    static func parseBlocks(fromHTML data: Data) -> [MarkdownBlock] {
+        guard !data.isEmpty else { return [] }
+
+        if let blocks = parseXHTMLBlocks(data), !blocks.isEmpty {
+            return blocks
+        }
+
+        let text = strippingTags(from: data)
+        guard !text.isEmpty else { return [] }
+        return [.paragraph(text: [MarkdownInlineRun(text: text, bold: false, italic: false, code: false)])]
+    }
+
+    private static func parseXHTMLBlocks(_ data: Data) -> [MarkdownBlock]? {
+        let delegate = XHTMLTreeXMLDelegate()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        guard parser.parse() else { return nil }
+        return blocksForContainer(delegate.root.children)
+    }
+
+    /// A single node of the raw XHTML tree — `tag == nil` marks a text node, whose
+    /// content lives in `text`. Built once per chapter by `XHTMLTreeXMLDelegate`, then
+    /// walked separately by the block- and inline-level converters below; keeping the
+    /// tree itself dumb (no block-model knowledge) keeps those converters testable in
+    /// isolation from `XMLParser`'s SAX callbacks.
+    private final class XHTMLNode {
+        let tag: String?
+        var text: String = ""
+        var attributes: [String: String] = [:]
+        var children: [XHTMLNode] = []
+        init(tag: String?) { self.tag = tag }
+    }
+
+    /// Builds an `XHTMLNode` tree from `XMLParser`'s SAX callbacks. Adjacent character
+    /// data is merged into one text node — `foundCharacters` can fire more than once
+    /// for what is logically a single run (e.g. split around an entity reference) —
+    /// so block/inline conversion never has to re-merge fragments itself.
+    private final class XHTMLTreeXMLDelegate: NSObject, XMLParserDelegate {
+        let root = XHTMLNode(tag: nil)
+        private var stack: [XHTMLNode]
+
+        override init() {
+            stack = [root]
+            super.init()
+        }
+
+        func parser(
+            _ parser: XMLParser,
+            didStartElement elementName: String,
+            namespaceURI: String?,
+            qualifiedName qName: String?,
+            attributes attributeDict: [String: String]
+        ) {
+            let node = XHTMLNode(tag: elementName.lowercased())
+            node.attributes = attributeDict
+            stack.last?.children.append(node)
+            stack.append(node)
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            guard let current = stack.last, current.tag != "script", current.tag != "style" else { return }
+            if let last = current.children.last, last.tag == nil {
+                last.text += string
+            } else {
+                let node = XHTMLNode(tag: nil)
+                node.text = string
+                current.children.append(node)
+            }
+        }
+
+        func parser(
+            _ parser: XMLParser,
+            didEndElement elementName: String,
+            namespaceURI: String?,
+            qualifiedName qName: String?
+        ) {
+            if stack.count > 1 { stack.removeLast() }
+        }
+    }
+
+    /// Tags whose presence among a container's *direct* children marks that container
+    /// as block-level content (split child-by-child) rather than inline content (see
+    /// `blocksForContainer`). `img` counts as block-level here so a bare `<img>` in the
+    /// body becomes an `.image` block rather than being swallowed into a paragraph.
+    private static let blockLevelTags: Set<String> = [
+        "html", "body", "p", "ul", "ol", "li", "blockquote", "hr", "div",
+        "section", "article", "header", "footer", "nav", "aside", "figure",
+        "h1", "h2", "h3", "h4", "h5", "h6", "table", "img",
+    ]
+
+    /// Converts a container's children to blocks. A container with no block-level
+    /// direct child (e.g. `<li>plain text with <b>emphasis</b></li>`) is inline-only
+    /// content and collapses to a single `.paragraph` so its styling and spacing stay
+    /// intact, rather than shattering into one block per text/element child — the same
+    /// distinction HTML's own content model draws between block and inline elements.
+    private static func blocksForContainer(_ children: [XHTMLNode]) -> [MarkdownBlock] {
+        let hasBlockChild = children.contains { child in
+            guard let tag = child.tag else { return false }
+            return blockLevelTags.contains(tag)
+        }
+        guard hasBlockChild else {
+            let runs = inlineRuns(for: children)
+            return runs.isEmpty ? [] : [.paragraph(text: runs)]
+        }
+        return children.flatMap { blocks(for: $0) }
+    }
+
+    private static func blocks(for node: XHTMLNode) -> [MarkdownBlock] {
+        guard let tag = node.tag else {
+            let trimmed = node.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
+            return [.paragraph(text: [MarkdownInlineRun(text: trimmed, bold: false, italic: false, code: false)])]
+        }
+
+        switch tag {
+        case "h1", "h2", "h3", "h4", "h5", "h6":
+            let level = Int(tag.dropFirst()) ?? 1
+            let runs = inlineRuns(for: node.children)
+            return runs.isEmpty ? [] : [.heading(level: level, text: runs)]
+
+        case "p":
+            if let image = singleImage(in: node) { return [image] }
+            let runs = inlineRuns(for: node.children)
+            return runs.isEmpty ? [] : [.paragraph(text: runs)]
+
+        case "img":
+            return [.image(url: node.attributes["src"] ?? "", altText: node.attributes["alt"] ?? "")]
+
+        case "ul":
+            let items = node.children.filter { $0.tag == "li" }.map { blocksForContainer($0.children) }
+            return items.isEmpty ? [] : [.unorderedList(items: items)]
+
+        case "ol":
+            let start = node.attributes["start"].flatMap(Int.init) ?? 1
+            let items = node.children.filter { $0.tag == "li" }.map { blocksForContainer($0.children) }
+            return items.isEmpty ? [] : [.orderedList(items: items, start: start)]
+
+        case "blockquote":
+            let nested = blocksForContainer(node.children)
+            return nested.isEmpty ? [] : [.blockQuote(blocks: nested)]
+
+        case "hr":
+            return [.thematicBreak]
+
+        case "head", "title", "style", "script":
+            return []
+
+        default:
+            return blocksForContainer(node.children)
+        }
+    }
+
+    /// True when `node` (a `<p>`) contains nothing but a single `<img>` — the XHTML
+    /// analogue of `MarkdownDocumentParser.visitParagraph`'s same special case, so a
+    /// standalone `![alt](src)`-equivalent paragraph becomes an `.image` block rather
+    /// than an empty one (an `<img>` has no inline text of its own to fall back to).
+    private static func singleImage(in node: XHTMLNode) -> MarkdownBlock? {
+        let meaningfulChildren = node.children.filter { child in
+            guard child.tag == nil else { return true }
+            return !child.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard meaningfulChildren.count == 1, let only = meaningfulChildren.first, only.tag == "img" else {
+            return nil
+        }
+        return .image(url: only.attributes["src"] ?? "", altText: only.attributes["alt"] ?? "")
+    }
+
+    private static func inlineRuns(for children: [XHTMLNode]) -> [MarkdownInlineRun] {
+        var runs: [MarkdownInlineRun] = []
+        for child in children {
+            walkInline(child, bold: false, italic: false, code: false, into: &runs)
+        }
+        return trimmedEdges(runs)
+    }
+
+    /// Mirrors `MarkdownDocumentParser.BlockBuilder.walk`: recurses through inline
+    /// markup accumulating style flags, and falls through to a plain text run (or, for
+    /// `<img>`, its alt text) for anything unrecognised, rather than dropping it.
+    private static func walkInline(
+        _ node: XHTMLNode,
+        bold: Bool,
+        italic: Bool,
+        code: Bool,
+        into runs: inout [MarkdownInlineRun]
+    ) {
+        guard let tag = node.tag else {
+            let collapsed = collapsingWhitespace(node.text)
+            guard !collapsed.isEmpty else { return }
+            runs.append(MarkdownInlineRun(text: collapsed, bold: bold, italic: italic, code: code))
+            return
+        }
+
+        switch tag {
+        case "b", "strong":
+            for child in node.children { walkInline(child, bold: true, italic: italic, code: code, into: &runs) }
+        case "i", "em":
+            for child in node.children { walkInline(child, bold: bold, italic: true, code: code, into: &runs) }
+        case "code", "tt":
+            for child in node.children { walkInline(child, bold: bold, italic: italic, code: true, into: &runs) }
+        case "br":
+            runs.append(MarkdownInlineRun(text: "\n", bold: bold, italic: italic, code: code))
+        case "img":
+            let altText = node.attributes["alt"] ?? ""
+            guard !altText.isEmpty else { return }
+            runs.append(MarkdownInlineRun(text: altText, bold: bold, italic: italic, code: code))
+        default:
+            for child in node.children { walkInline(child, bold: bold, italic: italic, code: code, into: &runs) }
+        }
+    }
+
+    /// Collapses a run of whitespace (including the newlines/indentation pretty-printed
+    /// XHTML introduces between tags) to a single space, matching how a browser
+    /// collapses inline whitespace — without this, indentation inside `<p>`/`<li>` would
+    /// render as literal blank lines in the reader.
+    private static func collapsingWhitespace(_ text: String) -> String {
+        text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    /// Trims leading whitespace off the first run and trailing whitespace off the last
+    /// — the collapsed-but-unresolved edges of a block's own content (e.g. `<p>\n  Hi\n
+    /// </p>`) — then drops any run left empty by that trim. Only the outer edges are
+    /// touched; a single space *between* two runs (e.g. `"foo "` before `<b>bar</b>`)
+    /// is real content, not indentation, and must survive.
+    private static func trimmedEdges(_ runs: [MarkdownInlineRun]) -> [MarkdownInlineRun] {
+        guard !runs.isEmpty else { return runs }
+        var result = runs
+        let first = result[0]
+        result[0] = MarkdownInlineRun(
+            text: first.text.replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression),
+            bold: first.bold, italic: first.italic, code: first.code
+        )
+        let lastIndex = result.count - 1
+        let last = result[lastIndex]
+        result[lastIndex] = MarkdownInlineRun(
+            text: last.text.replacingOccurrences(of: #"\s+$"#, with: "", options: .regularExpression),
+            bold: last.bold, italic: last.italic, code: last.code
+        )
+        return result.filter { !$0.text.isEmpty }
+    }
 }
