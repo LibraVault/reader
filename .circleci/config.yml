@@ -76,12 +76,21 @@ jobs:
       - store_test_results:
           path: .
 
-      - store_artifacts:
-          path: build/reports/tests
-          destination: jvm-test-results
+      # store_artifacts has no glob support (unlike GH Actions'
+      # upload-artifact), and each module has its own build/reports/ — so
+      # collect the scattered per-module report dirs into one place first.
+      # when: always so a failed test run still uploads whatever reports
+      # exist, same intent as jvm-tests.yml's `if: always()`.
+      - run:
+          name: Collect reports for upload
+          when: always
+          command: |
+            mkdir -p /tmp/artifacts
+            find . -path "*/build/reports/tests" -exec cp -r --parents {} /tmp/artifacts/ \;
+            find . -name "lint-results-debug.html" -exec cp --parents {} /tmp/artifacts/ \;
 
       - store_artifacts:
-          path: build/reports/lint-results-debug.html
+          path: /tmp/artifacts
           destination: lint-results
 
 workflows:
