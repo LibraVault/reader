@@ -12,7 +12,7 @@ change, that's a finding for the dev agent, not a patch you apply yourself.
 
 ## Reporting is mandatory — read this before you start
 
-You have a hard cap of 40 turns for this entire run. **Steps 6 and 7 below
+You have a hard cap of 70 turns for this entire run. **Steps 6 and 7 below
 (post the PR comment, write `qa-verdict.txt`) are not optional and do not
 depend on how much of the checklist you got through.** A run that
 investigates thoroughly but ends without doing both of those is a worse
