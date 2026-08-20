@@ -19,10 +19,10 @@ import Foundation
 /// then lands on the *nearest* block — possibly off by a paragraph or two — rather than
 /// failing outright or landing back at chapter start.
 ///
-/// Not yet called from `ReaderView` — EPUB rendering is still exclusively flat-text
-/// (#360 tracks switching it to the block model), so there is nothing block-based to
-/// navigate to yet. This exists so #360 has a ready, tested mapping to resolve existing
-/// bookmarks against once it wires block-based navigation in.
+/// Called from `ReaderView.navigateToLocator` (via `resolve(_:chapters:)` below) to
+/// resolve a pre-#360 bookmark once block-based navigation is wired in — #360-onward
+/// bookmarks already store a block index directly and don't need this mapping, but
+/// still go through `resolve(_:chapters:)` so the two formats share one entry point.
 enum EPUBLocator {
     /// Returns an index into `blocks`, clamped to `blocks.indices` — `0` for an empty
     /// `blocks` array (nothing to resolve against; callers should treat this the same as
@@ -76,5 +76,36 @@ enum EPUBLocator {
 
     private static func length(of runs: [MarkdownInlineRun]) -> Int {
         runs.reduce(0) { $0 + $1.text.count }
+    }
+
+    /// Resolves a saved EPUB bookmark's `"Locator:<chapterIndex>:<N>"` string (see
+    /// `ReaderView.addBookmark`/`navigateToBookmark`) into a `(chapterIndex,
+    /// blockIndex)` pair, ready for `BlockPaginator.pageIndex(containingBlockIndex:in:)`.
+    ///
+    /// The format has two eras sharing the same `"Locator:"` prefix: pre-#360
+    /// bookmarks (EPUB rendered flat text) store `N` as a character offset into
+    /// `BookChapter.text`; #360-onward bookmarks store `N` as a block index directly
+    /// and append a trailing `":block"` component so the two can be told apart from
+    /// the string alone — without it, a small legacy char offset and a small
+    /// block-model block index are indistinguishable, and resolving one as the other
+    /// silently mis-navigates instead of failing loudly.
+    ///
+    /// Returns `nil` if `position` isn't a `"Locator:"` string, its components don't
+    /// parse as integers, or `chapterIndex` is out of range for `chapters` — callers
+    /// should treat that the same as "nothing to navigate to."
+    static func resolve(_ position: String, chapters: [BookChapter]) -> (chapterIndex: Int, blockIndex: Int)? {
+        guard position.hasPrefix("Locator:") else { return nil }
+        let components = position.dropFirst("Locator:".count).split(separator: ":")
+        guard components.count >= 2,
+              let chapterIndex = Int(components[0]),
+              let rawNumber = Int(components[1]),
+              chapterIndex >= 0, chapterIndex < chapters.count
+        else { return nil }
+
+        let isBlockIndexFormat = components.count >= 3 && components[2] == "block"
+        let resolvedBlockIndex = isBlockIndexFormat
+            ? rawNumber
+            : blockIndex(forCharOffset: rawNumber, in: chapters[chapterIndex].blocks)
+        return (chapterIndex, resolvedBlockIndex)
     }
 }

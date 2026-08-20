@@ -815,8 +815,10 @@ struct ReaderView: View {
             // comment), so a flat block index survives both a fresh app launch's
             // re-parse of the same file and any future repagination. See
             // navigateToLocator below and BlockPaginator.pageIndex(containingBlockIndex:in:),
-            // which resolves this back to a page.
-            default: position = "Locator:\(currentChapterIndex):\(currentBlockAnchor()?.blockIndex ?? 0)"
+            // which resolves this back to a page. The trailing ":block" marks this as
+            // a block index rather than the pre-#360 character offset the same
+            // "Locator:" prefix used to store — see EPUBLocator.resolve(_:chapters:).
+            default: position = "Locator:\(currentChapterIndex):\(currentBlockAnchor()?.blockIndex ?? 0):block"
             }
             try? await bridge.addBookmark(bookId: book.id, position: position)
         }
@@ -848,29 +850,26 @@ struct ReaderView: View {
         showBookmarksSheet = false
     }
 
-    /// Parses `"Locator:<chapterIndex>:<blockIndex>"` (see addBookmark) and resolves
-    /// it against the chapter's *current* block pagination — the reader is already
-    /// open and laid out by the time bookmarks are navigable, so repaginate(for:) has
+    /// Parses `"Locator:<chapterIndex>:<N>"` (see addBookmark) via
+    /// `EPUBLocator.resolve(_:chapters:)` and resolves the resulting block index
+    /// against the chapter's *current* block pagination — the reader is already open
+    /// and laid out by the time bookmarks are navigable, so repaginate(for:) has
     /// already run and this doesn't need its own layout pass.
     ///
-    /// `blockIndex` used to be a character offset (pre-#360, when EPUB rendered plain
-    /// text): a bookmark saved back then resolves here as if that same number were a
-    /// block index instead, which for any chapter with fewer blocks than that offset
-    /// simply clamps to the chapter's last page (`BlockPaginator.pageIndex`'s
-    /// out-of-range fallback) rather than crashing or landing exactly right — an
-    /// acceptable approximation for a pre-migration bookmark, not a correctness bug in
-    /// bookmarks saved under this format going forward.
+    /// `N` used to be a character offset (pre-#360, when EPUB rendered plain text);
+    /// `EPUBLocator.resolve` tells that apart from a post-#360 block index using the
+    /// locator string's trailing marker and maps a legacy offset onto its nearest
+    /// block, so a pre-migration bookmark lands close to its original reading
+    /// position instead of clamping to the chapter's last page.
     private func navigateToLocator(_ position: String) {
-        let components = position.dropFirst("Locator:".count).split(separator: ":")
-        guard components.count == 2,
-              let chapterIndex = Int(components[0]),
-              let blockIndex = Int(components[1]),
-              let chapters, chapterIndex >= 0, chapterIndex < chapters.count
-        else { return }
+        guard let chapters, let resolved = EPUBLocator.resolve(position, chapters: chapters) else { return }
 
-        currentChapterIndex = chapterIndex
-        if let blockPagination, chapterIndex < blockPagination.count, !blockPagination[chapterIndex].isEmpty {
-            currentPageInChapter = BlockPaginator.pageIndex(containingBlockIndex: blockIndex, in: blockPagination[chapterIndex])
+        currentChapterIndex = resolved.chapterIndex
+        if let blockPagination, resolved.chapterIndex < blockPagination.count, !blockPagination[resolved.chapterIndex].isEmpty {
+            currentPageInChapter = BlockPaginator.pageIndex(
+                containingBlockIndex: resolved.blockIndex,
+                in: blockPagination[resolved.chapterIndex]
+            )
         } else {
             currentPageInChapter = 0
         }
