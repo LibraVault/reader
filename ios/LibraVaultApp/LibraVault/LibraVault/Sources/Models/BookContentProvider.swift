@@ -4,6 +4,30 @@ import PDFKit
 struct BookChapter {
     let title: String
     let text: String
+    /// Structured blocks for this chapter, reusing `MarkdownBlock`/`MarkdownInlineRun`
+    /// (see MarkdownDocumentParser.swift) — the same shape EPUBParser.parseBlocks
+    /// (#356) produces from a chapter's XHTML. Empty for parsers not yet wired up to
+    /// the block model (PDF, MarkdownDocumentParser.chaptersForNarration) — `text`
+    /// stays the source of truth for those, and for bookmarks/TOC (#361) on every
+    /// format until that's ported too.
+    let blocks: [MarkdownBlock]
+    /// This chapter's `<img>` asset bytes, keyed by the raw (unresolved) `src` exactly
+    /// as `blocks`' `.image` cases reference it — mirrors how `ReaderView.markdownImages`
+    /// keys Markdown's own image dictionary. Resolved and read eagerly at parse time
+    /// (see EPUBParser.parse), not lazily during rendering, since that needs the
+    /// archive/security-scoped access which is only held open for the duration of the
+    /// parse call, not the reader's lifetime. Empty when blocks has no `.image` cases,
+    /// or every reference failed to resolve (broken/missing asset — skipped per-image
+    /// rather than failing the whole chapter, mirroring markdownAssetData's per-image
+    /// failure handling in ReaderView.loadMarkdownImages).
+    let images: [String: Data]
+
+    init(title: String, text: String, blocks: [MarkdownBlock] = [], images: [String: Data] = [:]) {
+        self.title = title
+        self.text = text
+        self.blocks = blocks
+        self.images = images
+    }
 }
 
 /// Loads real chapter content for a book from its backing file — the only source of

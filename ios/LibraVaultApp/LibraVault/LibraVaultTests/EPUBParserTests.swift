@@ -479,4 +479,130 @@ final class EPUBParserTests: XCTestCase {
     func testParseBlocksReturnsEmptyForNoData() {
         XCTAssertEqual(EPUBParser.parseBlocks(fromHTML: Data()), [])
     }
+
+    // MARK: - Chapter image resolution (#357)
+
+    /// A fixture EPUB with one spine chapter at `OEBPS/Text/chapter.xhtml` (mirroring
+    /// a real book's directory layout, not a flat root) whose body is fully caller-
+    /// controlled, plus — when both are provided — a real asset written at
+    /// `imageEntryPath` (relative to the archive root). Omitting the asset while the
+    /// body still references it exercises the "reference present, bytes missing" case
+    /// `parse(fileURL:)` must tolerate without failing the whole chapter.
+    private func makeFixtureEPUBWithChapterBody(
+        _ body: String,
+        imageEntryPath: String? = nil,
+        imageBytes: Data? = nil
+    ) throws -> URL {
+        let sourceDir = tempDir.appendingPathComponent("img-source-\(UUID().uuidString)", isDirectory: true)
+        let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
+        let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
+        let textDir = oebpsDir.appendingPathComponent("Text", isDirectory: true)
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: textDir, withIntermediateDirectories: true)
+
+        try """
+        <?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>
+        """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        try """
+        <?xml version="1.0"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+          <manifest><item id="chap0" href="Text/chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+          <spine><itemref idref="chap0"/></spine>
+        </package>
+        """.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+        try "<html><body>\(body)</body></html>"
+            .write(to: textDir.appendingPathComponent("chapter.xhtml"), atomically: true, encoding: .utf8)
+
+        if let imageEntryPath, let imageBytes {
+            let imageURL = sourceDir.appendingPathComponent(imageEntryPath)
+            try FileManager.default.createDirectory(
+                at: imageURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try imageBytes.write(to: imageURL)
+        }
+
+        let epubURL = tempDir.appendingPathComponent("fixture-img-\(UUID().uuidString).epub")
+        try FileManager().zipItem(at: sourceDir, to: epubURL, shouldKeepParent: false)
+        return epubURL
+    }
+
+    func testParseResolvesImageBytesForRelativeSrcInSubdirectory() throws {
+        let epubURL = try makeFixtureEPUBWithChapterBody(
+            #"<p>Chapter text.</p><p><img src="images/cover.jpg" alt="Cover"/></p>"#,
+            imageEntryPath: "OEBPS/Text/images/cover.jpg",
+            imageBytes: Data([0xAA, 0xBB, 0xCC])
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertTrue(chapters[0].blocks.contains(.image(url: "images/cover.jpg", altText: "Cover")))
+        XCTAssertEqual(chapters[0].images["images/cover.jpg"], Data([0xAA, 0xBB, 0xCC]))
+    }
+
+    /// The image `src` is relative to the *chapter's* own directory
+    /// (`OEBPS/Text/`), not the OPF's base directory (`OEBPS/`) — `../Images/`
+    /// resolves up out of `Text/` into a sibling directory.
+    func testParseResolvesImageBytesWithParentDirectoryTraversalSrc() throws {
+        let epubURL = try makeFixtureEPUBWithChapterBody(
+            #"<p><img src="../Images/cover.jpg" alt="Cover"/></p>"#,
+            imageEntryPath: "OEBPS/Images/cover.jpg",
+            imageBytes: Data([0x01, 0x02])
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters[0].images["../Images/cover.jpg"], Data([0x01, 0x02]))
+    }
+
+    /// A referenced image that never resolves (moved/deleted asset, malformed
+    /// producer output) is skipped, not a load failure — the chapter still parses,
+    /// keeps its text and its `.image` block, just with nothing in `images` for it.
+    func testParseSkipsUnresolvableImageReferenceWithoutFailingChapter() throws {
+        let epubURL = try makeFixtureEPUBWithChapterBody(
+            #"<p>Chapter text.</p><p><img src="missing.jpg" alt="Gone"/></p>"#
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertTrue(chapters[0].text.contains("Chapter text."))
+        XCTAssertTrue(chapters[0].blocks.contains(.image(url: "missing.jpg", altText: "Gone")))
+        XCTAssertTrue(chapters[0].images.isEmpty)
+    }
+
+    /// A plain-text-only chapter (no `<img>` anywhere) must still load fine, with an
+    /// empty image dict rather than nil or a failure.
+    func testParseImageDictEmptyForChapterWithoutImages() throws {
+        let epubURL = try makeFixtureEPUBWithChapterBody("<p>No pictures here.</p>")
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertFalse(chapters[0].blocks.isEmpty)
+        XCTAssertTrue(chapters[0].images.isEmpty)
+    }
+
+    /// An `<img>` nested inside a list item — not just a top-level or `<p>`-wrapped
+    /// image — must still be found and resolved; images can appear anywhere in the
+    /// block tree, not only at the top level.
+    func testParseResolvesImageNestedInsideListItem() throws {
+        let epubURL = try makeFixtureEPUBWithChapterBody(
+            #"<ul><li><img src="pic.png" alt="Pic"/></li></ul>"#,
+            imageEntryPath: "OEBPS/Text/pic.png",
+            imageBytes: Data([0x09, 0x08])
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters[0].images["pic.png"], Data([0x09, 0x08]))
+    }
 }

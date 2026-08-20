@@ -31,7 +31,14 @@ enum EPUBParser {
             let html = (try? extractSpineItem(href, from: archive)) ?? Data()
             let text = plainText(fromHTML: html)
             let title = chapterTitle(fromHTML: html, fallback: "Chapter \(index + 1)")
-            return BookChapter(title: title, text: text)
+            let blocks = parseBlocks(fromHTML: html)
+            // `<img src>` in a chapter's XHTML is relative to *that chapter's own*
+            // location in the archive, not the OPF's base directory (which spineHrefs
+            // above is already resolved relative to) — so images are resolved against
+            // href's own containing directory, one level more specific.
+            let chapterDirectory = (href as NSString).deletingLastPathComponent
+            let images = resolveImages(for: blocks, chapterDirectory: chapterDirectory, from: archive)
+            return BookChapter(title: title, text: text, blocks: blocks, images: images)
         }
     }
 
@@ -612,5 +619,81 @@ enum EPUBParser {
             bold: last.bold, italic: last.italic, code: last.code
         )
         return result.filter { !$0.text.isEmpty }
+    }
+
+    // MARK: - Chapter image resolution (#357)
+
+    /// Reads every `.image` block's asset bytes out of the archive up front, keyed by
+    /// the raw `src` the blocks reference — mirrors how `ReaderView.loadMarkdownImages`
+    /// resolves Markdown's own image blocks, but here at parse time rather than in the
+    /// view, since `parse(fileURL:)` already has the archive open. A url that fails to
+    /// resolve (missing entry, external http(s) reference) is skipped rather than
+    /// failing the whole chapter — `BookChapter.images`'s doc comment explains why.
+    private static func resolveImages(
+        for blocks: [MarkdownBlock],
+        chapterDirectory: String,
+        from archive: Archive
+    ) -> [String: Data] {
+        var images: [String: Data] = [:]
+        for url in imageURLs(in: blocks) {
+            if let data = resolveImageData(url: url, chapterDirectory: chapterDirectory, from: archive) {
+                images[url] = data
+            }
+        }
+        return images
+    }
+
+    /// Every unique `.image` url referenced anywhere in `blocks`, including inside
+    /// nested containers (`unorderedList`/`orderedList` items, `blockQuote`) — an
+    /// image is not only ever a top-level block (e.g. a `<figure>` inside a `<li>`).
+    /// Order-preserving so resolution is deterministic, though the result is a
+    /// dictionary and callers shouldn't rely on that ordering.
+    private static func imageURLs(in blocks: [MarkdownBlock]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        func visit(_ blocks: [MarkdownBlock]) {
+            for block in blocks {
+                switch block {
+                case let .image(url, _):
+                    if seen.insert(url).inserted { result.append(url) }
+                case let .blockQuote(nested):
+                    visit(nested)
+                case let .unorderedList(items):
+                    items.forEach(visit)
+                case let .orderedList(items, _):
+                    items.forEach(visit)
+                case .heading, .paragraph, .codeBlock, .thematicBreak, .table, .mermaidDiagram:
+                    break
+                }
+            }
+        }
+        visit(blocks)
+        return result
+    }
+
+    /// Resolves a single `<img src>` reference against the chapter's own directory in
+    /// the archive and reads its bytes, tolerating the same href-vs-entry-name gap
+    /// `extractSpineItem` handles for spine items (percent-encoding, `..` traversal,
+    /// flattened archives) — an image reference is exactly as prone to that mismatch as
+    /// a spine href is. Never resolves absolute http(s) URLs, mirroring
+    /// `BookContentProvider.markdownAssetData`: LibraVault is offline-first. Returns
+    /// `nil` (not throws) for anything unresolvable — the caller skips it rather than
+    /// failing the chapter.
+    private static func resolveImageData(url: String, chapterDirectory: String, from archive: Archive) -> Data? {
+        let lowered = url.lowercased()
+        guard !url.isEmpty, !lowered.hasPrefix("http://"), !lowered.hasPrefix("https://") else { return nil }
+
+        let joined = chapterDirectory.isEmpty ? url : "\(chapterDirectory)/\(url)"
+        if let entry = firstEntry(for: joined, in: archive) {
+            return try? read(entry, from: archive)
+        }
+
+        // Flattened-archive fallback, mirroring extractSpineItem: accept a unique
+        // filename match when the directory-qualified path doesn't resolve.
+        let filename = (resolveEntryPath(joined).first.map { ($0 as NSString).lastPathComponent }) ?? joined
+        guard !filename.isEmpty else { return nil }
+        let matches = archive.filter { ($0.path as NSString).lastPathComponent == filename }
+        guard matches.count == 1, let entry = matches.first else { return nil }
+        return try? read(entry, from: archive)
     }
 }

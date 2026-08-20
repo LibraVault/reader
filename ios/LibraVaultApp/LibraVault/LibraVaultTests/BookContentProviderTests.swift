@@ -84,6 +84,93 @@ final class BookContentProviderTests: XCTestCase {
         XCTAssertTrue(chapters[0].text.contains("Real chapter text."))
     }
 
+    // MARK: - EPUB blocks + resolved images (#357)
+
+    /// `text` alone doesn't prove the block/image path (#356/#357) actually ran end to
+    /// end through `chapters(for:)` — a plain-text-only chapter must still produce
+    /// non-empty `blocks` and an *empty* (not nil, not failing) `images` dict.
+    func testChaptersEPUBBlocksArePresentAndImageDictIsEmptyForPlainTextEPUB() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeFolderAndBook(persistence: persistence)
+
+        let chapters = try BookContentProvider.chapters(for: book, folderPersistence: persistence)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertFalse(chapters[0].blocks.isEmpty)
+        XCTAssertTrue(chapters[0].images.isEmpty)
+    }
+
+    /// A folder-backed EPUB (real security-scoped-bookmark plumbing, not a bare
+    /// `EPUBParser.parse(fileURL:)` call) whose chapter references one embedded image,
+    /// resolvable via the block model's `url` key — the acceptance criterion for #357.
+    private func makeFolderAndBookWithImage(persistence: FolderPersistence) throws -> (folder: Folder, book: BookItem) {
+        let epubFolder = tempDir.appendingPathComponent("img-folder-\(UUID().uuidString)", isDirectory: true)
+        let oebpsDir = epubFolder.appendingPathComponent("OEBPS", isDirectory: true)
+        let textDir = oebpsDir.appendingPathComponent("Text", isDirectory: true)
+        let metaInfDir = epubFolder.appendingPathComponent("META-INF", isDirectory: true)
+        try FileManager.default.createDirectory(at: textDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+
+        try """
+        <?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>
+        """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        try """
+        <?xml version="1.0"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+          <manifest><item id="chap0" href="Text/chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+          <spine><itemref idref="chap0"/></spine>
+        </package>
+        """.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+        try #"<html><body><p>Chapter with a picture.</p><p><img src="images/cover.jpg" alt="Cover"/></p></body></html>"#
+            .write(to: textDir.appendingPathComponent("chapter.xhtml"), atomically: true, encoding: .utf8)
+
+        let imagesDir = textDir.appendingPathComponent("images", isDirectory: true)
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        try Data([0xDE, 0xAD, 0xBE, 0xEF]).write(to: imagesDir.appendingPathComponent("cover.jpg"))
+
+        let epubURL = tempDir.appendingPathComponent("Fixture-img-\(UUID().uuidString).epub")
+        try FileManager().zipItem(at: epubFolder, to: epubURL, shouldKeepParent: false)
+
+        // Same re-homing as makeFolderAndBook: the folder must point at the directory
+        // *containing* the epub, with the epub itself living inside it.
+        let realFolder = tempDir.appendingPathComponent("realfolder-img-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: realFolder, withIntermediateDirectories: true)
+        let finalEpubURL = realFolder.appendingPathComponent("Fixture.epub")
+        try FileManager.default.moveItem(at: epubURL, to: finalEpubURL)
+
+        let folder = try persistence.makeFolder(from: realFolder)
+        persistence.save([folder])
+
+        let book = BookItem(
+            id: "folder:\(folder.id):\(finalEpubURL.path)",
+            title: "Fixture",
+            author: "",
+            format: .epub,
+            fileURL: finalEpubURL,
+            folderId: folder.id
+        )
+        return (folder, book)
+    }
+
+    func testChaptersReturnsResolvedImageDataForEPUBWithEmbeddedImage() throws {
+        let persistence = makeIsolatedPersistence()
+        let (_, book) = try makeFolderAndBookWithImage(persistence: persistence)
+
+        let chapters = try BookContentProvider.chapters(for: book, folderPersistence: persistence)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertTrue(chapters[0].text.contains("Chapter with a picture."))
+        XCTAssertTrue(chapters[0].blocks.contains(.image(url: "images/cover.jpg", altText: "Cover")))
+        XCTAssertEqual(chapters[0].images["images/cover.jpg"], Data([0xDE, 0xAD, 0xBE, 0xEF]))
+    }
+
     /// A real, single-page PDF (drawn via UIGraphicsPDFRenderer, the standard Apple
     /// PDF-authoring API) placed inside a real folder, mirroring
     /// makeFolderAndBook's EPUB setup — proves the .pdf branch of the format switch
@@ -124,6 +211,10 @@ final class BookContentProviderTests: XCTestCase {
 
         XCTAssertEqual(chapters.count, 1)
         XCTAssertTrue(chapters[0].text.contains("Real PDF page text."))
+        // PDF isn't wired to the block model (#357 scoped that to EPUB only) — default
+        // `blocks`/`images` stay empty rather than nil, so `text` remains authoritative.
+        XCTAssertTrue(chapters[0].blocks.isEmpty)
+        XCTAssertTrue(chapters[0].images.isEmpty)
     }
 
     // MARK: - openPDFDocument
