@@ -408,8 +408,14 @@ jobs:
             (only in triage mode — in revise mode, push commits to the
             existing PR's branch instead), the default token can't create
             PRs at all in this repo, so run it as:
-            `GH_TOKEN="$APP_GH_TOKEN" gh pr create --base dev ...` — that
-            env var is already set for you. Comments and labels use the
+            `GH_TOKEN="$APP_GH_TOKEN" gh pr create --draft --base dev ...` —
+            that env var is already set for you. Open it as `--draft` and
+            early: right after your first real, committed progress, not at
+            the end — see the persona's "Open the PR early, as a
+            checkpoint" section for why. Once you're actually done (tests
+            pass locally or you've explained why not), mark it ready with
+            `gh pr ready <PR-number>` (default token is fine for this one —
+            it's a state toggle, not creation). Comments and labels use the
             default token as normal, but every `git push` — in both triage
             and revise mode, whether or not your diff touches
             `.github/workflows/**` — must use the elevated token instead:
@@ -613,6 +619,20 @@ jobs:
             exit 0
           fi
           echo "Classifying risk for PR #$PR_NUMBER"
+
+          # Safety net for the persona's "open early as --draft, mark ready
+          # once done" workflow: the run just reported success
+          # (steps.agent.outcome != 'failure' above), so this PR is about
+          # to be advanced into real QA/review regardless — a still-draft
+          # PR can't be merged later even after passing both, and sits in a
+          # confusing state (status:needs-qa on something GitHub still
+          # marks "Draft"). `gh pr ready` is a no-op if it's already ready,
+          # so this is harmless on the common path where the agent already
+          # did it itself; `|| true` because a PR the agent explicitly left
+          # in draft on purpose (persona says stop-and-ask, not stop-mid-
+          # draft, so this shouldn't happen, but fail open rather than
+          # blocking classification over it) shouldn't hard-fail this step.
+          gh pr ready "$PR_NUMBER" 2>/dev/null || true
 
           HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
           git fetch origin dev "$HEAD_REF"
