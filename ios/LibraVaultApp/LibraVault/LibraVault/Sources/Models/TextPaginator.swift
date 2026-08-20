@@ -31,15 +31,24 @@ enum TextPaginator {
     static func paginate(text: String, font: UIFont, lineSpacing: CGFloat, pageSize: CGSize) -> [Range<String.Index>] {
         guard !text.isEmpty, pageSize.width > 0, pageSize.height > 0 else { return [] }
 
-        // A container shorter than a single line of this font (plus its line
-        // spacing) can never fit even one full line. TextKit does not surface that
-        // as a zero-glyph container the way the loop below assumes — it force-lays
-        // out at least one glyph per line rather than leaving a container empty, to
-        // avoid a non-advancing layout — so on a real device this produced one
-        // one-glyph "page" per character instead of the documented single fallback
-        // page. Catch the degenerate case here, before the per-page loop, instead
-        // of relying on a zero-glyph signal that never actually fires.
-        guard pageSize.height >= font.lineHeight + lineSpacing else {
+        // A container shorter than a single line of this font can never fit even
+        // one full line. TextKit does not surface that as a zero-glyph container
+        // the way the loop below assumes — it force-lays out at least one glyph
+        // per line rather than leaving a container empty, to avoid a non-advancing
+        // layout — so on a real device this produced one one-glyph "page" per
+        // character instead of the documented single fallback page. Catch the
+        // degenerate case here, before the per-page loop, instead of relying on a
+        // zero-glyph signal that never actually fires.
+        //
+        // Only `font.lineHeight` is required, not `+ lineSpacing`: `lineSpacing`
+        // is inserted *between* lines (after each line's own fragment), so a
+        // container only needs room for one line's height to receive a non-zero
+        // glyph range — it doesn't also need room for the gap that would follow
+        // it. Requiring the extra `lineSpacing` here rejected containers that
+        // TextKit could actually lay one real line into, falling back to a single
+        // giant page unnecessarily for a narrow height window just above
+        // `lineHeight`.
+        guard pageSize.height >= font.lineHeight else {
             return [text.startIndex..<text.endIndex]
         }
 
