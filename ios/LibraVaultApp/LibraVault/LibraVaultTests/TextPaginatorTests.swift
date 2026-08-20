@@ -164,4 +164,44 @@ final class TextPaginatorTests: XCTestCase {
 
         XCTAssertEqual(TextPaginator.pageIndex(containing: anchorOffset, in: repaginatedPages, text: text), 0)
     }
+
+    // MARK: - Large-book regression guard (issue #336)
+
+    /// `ReaderView.repaginate(for:)` calls this once per chapter, synchronously on the
+    /// main thread, on every rotation/Split-View resize and on every Reading Settings
+    /// change (font size, line spacing, font design) — see ReaderView.swift. This times
+    /// that exact per-chapter loop against a synthetic book sized like a long novel or
+    /// omnibus (~30 chapters, ~900k characters total, the scenario issue #336 flagged as
+    /// unmeasured) at the reader's default font settings and a page size representative
+    /// of a phone screen, so a future change that makes pagination accidentally
+    /// quadratic (or otherwise much more expensive) fails CI instead of only surfacing as
+    /// on-device jank. The threshold is a generous regression budget, not a tight perf
+    /// target — see issue #336 for what the measured number here implies about whether
+    /// debouncing or lazy/background pagination is actually warranted.
+    func testRepaginatingARealisticallyLargeBookCompletesWithinARegressionBudget() {
+        let chapterText = Array(
+            repeating: "The quick brown fox jumps over the lazy dog, again and again, across a very long chapter. ",
+            count: 300
+        ).joined()
+        XCTAssertGreaterThan(chapterText.count, 25_000, "test needs a realistically long chapter to be meaningful")
+        let chapters = Array(repeating: chapterText, count: 30)
+
+        // Matches ReaderView's default fontSize (1.0 -> 16pt) / lineSpacing (1.4 ->
+        // 11.2pt) and a page size representative of a phone screen after ReaderView's
+        // own padding.
+        let font = UIFont.systemFont(ofSize: 16)
+        let pageSize = CGSize(width: 350, height: 650)
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let pagination = chapters.map {
+            TextPaginator.paginate(text: $0, font: font, lineSpacing: 11.2, pageSize: pageSize)
+        }
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        XCTAssertFalse(pagination.contains { $0.isEmpty }, "every chapter of a realistic book should produce at least one page")
+        XCTAssertLessThan(
+            elapsed, 0.0001, // TODO(#336): deliberately-too-tight, see AGENTS.md "prove a new test can fail" — replaced with a real budget once CI reports the actual number.
+            "repaginating a ~900k-character, 30-chapter book took \(elapsed)s on this runner — investigate for a regression (issue #336)"
+        )
+    }
 }
