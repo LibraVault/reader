@@ -76,18 +76,31 @@ status:needs-review
    └─ risk:high OR any finding ─► status:needs-human-merge ────► you decide
 ```
 
-`status:needs-human-merge` is the pipeline's terminal state, not a dead
-end: [`human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
+`status:needs-human-merge` and `status:needs-info` are both places the
+pipeline parks work on a human, not dead ends:
+[`human-merge-sweep.yml`](../.github/workflows/human-merge-sweep.yml)
 runs every 4 hours (`.claude/agents/human-merge-sweep-agent.md`) and does
-what a human would do with that backlog — re-verifies each PR is still
-current against `dev`, does a genuine second review, merges what's clean,
-and closes anything that's gone stale/conflicting/superseded (the same
-failure mode a manually-opened PR can hit if a sibling addressing the same
-issue merges first — see PR #292 for a real example this was built to
-catch). It never touches `.github/workflows/**`,
-`.github/agent-policy.yml`, or `.claude/agents/**` regardless of how clean
-those look — that class of change always needs a human directly. Every
-merge/close it performs is logged to
+what a human would do with both backlogs:
+
+- **`status:needs-human-merge`** — re-verifies each PR is still current
+  against `dev`, does a genuine second review, merges what's clean, and
+  closes anything that's gone stale/conflicting/superseded (the same
+  failure mode a manually-opened PR can hit if a sibling addressing the
+  same issue merges first — see PR #292 for a real example this was built
+  to catch). It never touches `.github/workflows/**`,
+  `.github/agent-policy.yml`, or `.claude/agents/**` regardless of how
+  clean those look — that class of change always needs a human directly.
+- **`status:needs-info`** — a genuinely different task: most items here
+  are a real question only a human can answer (scope, product intent,
+  anything security-sensitive), and the sweep never guesses at those. It
+  only acts when the label was applied because the *pipeline itself* got
+  stuck (a crashed run, workflow-file drift) rather than because there's
+  an actual open question — in that case it retries the stage that
+  crashed, once, and leaves a comment explaining why. Everything else
+  either already has a clear explanation for the human, or gets one added
+  if it didn't.
+
+Every merge, close, or retry it performs is logged to
 [`docs/human-merge-sweep-log.md`](human-merge-sweep-log.md).
 
 At any point, applying `status:blocked` to an issue or PR stops every agent

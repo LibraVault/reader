@@ -1,17 +1,19 @@
-# Periodic sweep of docs/agent-team-pipeline.md's terminal
-# `status:needs-human-merge` state — the one step in that pipeline that
-# still needed a human to notice the backlog and manually ask Claude Code
-# to review + merge it. This automates the *noticing*, not the judgment:
-# see .claude/agents/human-merge-sweep-agent.md for the actual review
-# logic; this file only wires the trigger and guardrails around it.
+# Periodic sweep of everything docs/agent-team-pipeline.md's state machine
+# parks on a human — `status:needs-human-merge` PRs AND `status:needs-info`
+# issues/PRs — both of which previously only got cleared when a human
+# noticed the backlog and manually asked Claude Code to work through it.
+# This automates the *noticing*, not the judgment: see
+# .claude/agents/human-merge-sweep-agent.md for the actual review/triage
+# logic (three parts — needs-human-merge, a general staleness sweep, and
+# needs-info); this file only wires the trigger and guardrails around it.
 #
-# Deliberately its OWN workflow, not a change to principal-review.yml:
-# that workflow's job is the FIRST review, triggered by a specific PR
-# event (status:needs-review being applied) with a $PR_NUMBER from that
-# event to work with. This one has no triggering PR — it wakes up on a
-# timer and has to go find its own work (the whole needs-human-merge
-# backlog, plus a general staleness sweep), which is a different shape of
-# job even though the review technique it uses is deliberately the same.
+# Deliberately its OWN workflow, not a change to principal-review.yml or
+# dev-agent.yml: those jobs are triggered by a specific PR/issue event
+# (a label being applied) with useful context from that event. This one
+# has no triggering item — it wakes up on a timer and has to go find its
+# own work across the whole backlog, which is a different shape of job
+# even though the review technique it uses for Part 1 is deliberately the
+# same as principal-review.yml's.
 #
 # Auth: plain GITHUB_TOKEN, not the pipeline App token. Merging and
 # closing PRs — unlike *opening* one (see dev-agent.yml's own comment) —
@@ -66,8 +68,8 @@ jobs:
           prompt: |
             Read .claude/agents/human-merge-sweep-agent.md in full — it is
             your complete operating persona for this run. There is no
-            specific PR number to start from; find your own work per Part
-            1 and Part 2 of that file.
+            specific PR or issue number to start from; find your own work
+            per Parts 1, 2, and 3 of that file.
 
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run:
@@ -81,7 +83,10 @@ jobs:
             around.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash"
-            --max-turns 120
+            # Raised from 120 when Part 3 (needs-info) was added — three
+            # backlogs to work through per run instead of two, each item
+            # needing its own comment-history read.
+            --max-turns 160
 
       - name: Report outcome
         if: always()
