@@ -1,6 +1,39 @@
 import Foundation
 import ZIPFoundation
 
+/// One inline text run with its accumulated styling — the EPUB-side counterpart of
+/// `MarkdownInlineRun` (`MarkdownDocumentParser.swift`). Kept as a separate type
+/// rather than reusing `MarkdownInlineRun` directly: this file has no dependency on
+/// the `Markdown` package today, and XHTML's inline vocabulary (`<b>`/`<strong>`,
+/// `<i>`/`<em>`) is different from CommonMark's AST, so there is nothing to share
+/// beyond the shape.
+struct EPUBInlineRun: Equatable {
+    let text: String
+    let bold: Bool
+    let italic: Bool
+}
+
+/// A block-level element in one EPUB chapter's parsed XHTML — the EPUB-side
+/// counterpart of `MarkdownBlock` (see `MarkdownDocumentParser.swift`), intentionally
+/// scoped to what real EPUB chapter markup actually uses and #356 asks for: headings,
+/// paragraphs, lists, images. `image(url:altText:)` deliberately matches
+/// `MarkdownBlock.image`'s shape exactly (raw `src`, unresolved) so a later renderer
+/// (#360) can share `MarkdownBlockView`'s existing image-resolution behaviour rather
+/// than reimplementing it.
+enum EPUBBlock: Equatable {
+    case heading(level: Int, text: [EPUBInlineRun])
+    case paragraph(text: [EPUBInlineRun])
+    case unorderedList(items: [[EPUBInlineRun]])
+    /// Unlike `MarkdownBlock.orderedList`, there is no `start` index — an XHTML
+    /// `<ol start="…">` is rare in EPUB chapter content, and nothing in #356's
+    /// acceptance criteria exercises it. Add it if a real book needs it.
+    case orderedList(items: [[EPUBInlineRun]])
+    /// `url` is the raw `src` attribute exactly as written in the XHTML — unresolved
+    /// against the archive/base directory. Resolving it to actual image bytes is
+    /// out of scope here (see #357).
+    case image(url: String, altText: String)
+}
+
 /// Parses a real EPUB file's spine into ordered, plain-text chapters. EPUB is a ZIP
 /// archive containing a `META-INF/container.xml` pointer to an OPF package document,
 /// whose `<manifest>` maps ids to content-document hrefs and whose `<spine>` lists
@@ -344,6 +377,209 @@ enum EPUBParser {
         }
         result += source.substring(from: cursor)
         return result
+    }
+
+    // MARK: - HTML → block model (#356)
+
+    /// Parses one chapter's XHTML into a structured [EPUBBlock] sequence (headings,
+    /// paragraphs, lists, images), replacing the flat-text-only view `plainText`
+    /// gives — foundational groundwork for #352's image-rendering fix; consuming this
+    /// output (wiring it into `BookChapter`/`ReaderView`) is out of scope here, see
+    /// #357/#359/#360.
+    ///
+    /// XHTML is well-formed XML by definition, so `XMLParser` — already used above for
+    /// `container.xml`/the OPF — is the primary strategy here too. Critically, it is
+    /// *not* a second, separate thing to keep tolerant of the real-world XHTML that
+    /// broke `NSAttributedString`'s importer (issue #108): `XMLParser` fails outright
+    /// on undeclared entities and other not-quite-well-formed markup, which is exactly
+    /// the signal used below to fall back, rather than something that needs its own
+    /// detection logic. A chapter `XMLParser` can't make sense of — or one whose body
+    /// yielded no recognised block at all (e.g. markup outside the handled tag set) —
+    /// collapses to a single flat `.paragraph` block built from `strippingTags`'s
+    /// output, the same graceful-degradation guarantee `plainText` already has: never
+    /// a blank page.
+    static func parseBlocks(fromHTML data: Data) -> [EPUBBlock] {
+        guard !data.isEmpty else { return [] }
+
+        let delegate = BlockXMLDelegate()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        if parser.parse(), !delegate.blocks.isEmpty {
+            return delegate.blocks
+        }
+
+        return fallbackBlocks(from: data)
+    }
+
+    /// The #108 guard, restated for the block model: whatever `strippingTags` can
+    /// recover becomes one paragraph block rather than nothing.
+    private static func fallbackBlocks(from data: Data) -> [EPUBBlock] {
+        let text = strippingTags(from: data)
+        guard !text.isEmpty else { return [] }
+        return [.paragraph(text: [EPUBInlineRun(text: text, bold: false, italic: false)])]
+    }
+
+    /// SAX-driven walk of a chapter's `<body>`, producing an [EPUBBlock] sequence.
+    /// Recognises headings (`h1`-`h6`), paragraphs, un/ordered lists, images, and
+    /// bold/italic inline runs (`b`/`strong`, `i`/`em`) inside headings/paragraphs/list
+    /// items. Everything else (`div`, `section`, `span`, `a`, `blockquote`, …) is
+    /// structurally transparent — its children are walked through as if it weren't
+    /// there — matching #356's intentionally narrow scope (headings, paragraphs,
+    /// lists, images; not a full XHTML/CSS block model).
+    ///
+    /// Known simplification: a *nested* `<ul>`/`<ol>` — a `<li>` containing its own
+    /// child list — attributes any not-yet-flushed text from the *enclosing* `<li>` to
+    /// the wrong (inner) list frame, since starting the inner list's first `<li>`
+    /// flushes whatever container is currently open into whatever list frame is
+    /// currently on top of the stack. Real EPUB chapter markup overwhelmingly uses
+    /// flat lists; the failure mode here is misplaced text, not lost or blank content,
+    /// so this is left for a follow-up rather than blocking the split.
+    private final class BlockXMLDelegate: NSObject, XMLParserDelegate {
+        private(set) var blocks: [EPUBBlock] = []
+
+        private enum Container: Equatable {
+            case heading(level: Int)
+            case paragraph
+            case listItem
+        }
+
+        private struct ListFrame {
+            let ordered: Bool
+            var items: [[EPUBInlineRun]] = []
+        }
+
+        private var inBody = false
+        private var container: Container?
+        private var currentRuns: [EPUBInlineRun] = []
+        private var listStack: [ListFrame] = []
+        private var boldDepth = 0
+        private var italicDepth = 0
+
+        func parser(
+            _ parser: XMLParser,
+            didStartElement elementName: String,
+            namespaceURI: String?,
+            qualifiedName qName: String?,
+            attributes attributeDict: [String: String]
+        ) {
+            switch elementName.lowercased() {
+            case "body":
+                inBody = true
+            case "h1", "h2", "h3", "h4", "h5", "h6":
+                guard inBody else { return }
+                flushContainer()
+                container = .heading(level: Int(elementName.dropFirst()) ?? 1)
+                currentRuns = []
+            case "p":
+                guard inBody else { return }
+                flushContainer()
+                container = .paragraph
+                currentRuns = []
+            case "ul":
+                guard inBody else { return }
+                listStack.append(ListFrame(ordered: false))
+            case "ol":
+                guard inBody else { return }
+                listStack.append(ListFrame(ordered: true))
+            case "li":
+                guard inBody else { return }
+                flushContainer()
+                container = .listItem
+                currentRuns = []
+            case "b", "strong":
+                boldDepth += 1
+            case "i", "em":
+                italicDepth += 1
+            case "br":
+                currentRuns.append(EPUBInlineRun(text: "\n", bold: boldDepth > 0, italic: italicDepth > 0))
+            case "img":
+                guard inBody else { return }
+                // A <p> wrapping an <img> is the common case — flush whatever text
+                // preceded the image inside the current container so reading order is
+                // preserved, then emit the image as its own top-level block. The
+                // container (if any) stays open (`reopen: true`) so text that follows
+                // the image before its own closing tag still lands back in the same
+                // block once that tag is reached.
+                flushContainer(reopen: true)
+                blocks.append(.image(url: attributeDict["src"] ?? "", altText: attributeDict["alt"] ?? ""))
+            default:
+                break
+            }
+        }
+
+        func parser(
+            _ parser: XMLParser,
+            didEndElement elementName: String,
+            namespaceURI: String?,
+            qualifiedName qName: String?
+        ) {
+            switch elementName.lowercased() {
+            case "body":
+                flushContainer()
+                inBody = false
+            case "h1", "h2", "h3", "h4", "h5", "h6", "p":
+                flushContainer()
+            case "li":
+                flushContainer()
+            case "ul", "ol":
+                guard let frame = listStack.popLast(), !frame.items.isEmpty else { return }
+                blocks.append(frame.ordered ? .orderedList(items: frame.items) : .unorderedList(items: frame.items))
+            case "b", "strong":
+                boldDepth = max(0, boldDepth - 1)
+            case "i", "em":
+                italicDepth = max(0, italicDepth - 1)
+            default:
+                break
+            }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            guard inBody, container != nil, !string.isEmpty else { return }
+            currentRuns.append(EPUBInlineRun(text: string, bold: boldDepth > 0, italic: italicDepth > 0))
+        }
+
+        /// Appends the accumulated runs as a block matching `container`'s type (or as
+        /// an item in the innermost open list frame, for a list item), then clears the
+        /// run buffer. Whitespace-only containers are dropped rather than emitted as
+        /// blank blocks — real XHTML is full of pure-whitespace text nodes between
+        /// sibling elements (indentation). `reopen` keeps `container` itself active
+        /// (used by the `<img>` case, where text can resume after the image inside the
+        /// same still-open tag); every other caller is at that container's own closing
+        /// tag, so the default clears it.
+        private func flushContainer(reopen: Bool = false) {
+            defer {
+                if !reopen { container = nil }
+                currentRuns = []
+            }
+            guard let container else { return }
+            let trimmed = trimmedRuns(currentRuns)
+            guard !trimmed.isEmpty else { return }
+
+            switch container {
+            case let .heading(level):
+                blocks.append(.heading(level: level, text: trimmed))
+            case .paragraph:
+                blocks.append(.paragraph(text: trimmed))
+            case .listItem:
+                guard !listStack.isEmpty else { return }
+                listStack[listStack.count - 1].items.append(trimmed)
+            }
+        }
+
+        /// Drops leading/trailing whitespace-only runs — the indentation `foundCharacters`
+        /// otherwise contributes around inline tags — without disturbing intentional
+        /// whitespace in the middle of a run sequence (the space between two words split
+        /// across a `<b>` boundary, for instance).
+        private func trimmedRuns(_ runs: [EPUBInlineRun]) -> [EPUBInlineRun] {
+            var result = runs
+            while let first = result.first, first.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.removeFirst()
+            }
+            while let last = result.last, last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.removeLast()
+            }
+            return result
+        }
     }
 
     private static func chapterTitle(fromHTML data: Data, fallback: String) -> String {

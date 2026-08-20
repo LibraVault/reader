@@ -398,4 +398,128 @@ final class EPUBParserTests: XCTestCase {
     func testPlainTextReturnsEmptyForNoData() {
         XCTAssertEqual(EPUBParser.plainText(fromHTML: Data()), "")
     }
+
+    // MARK: - parseBlocks (block model, #356)
+
+    /// The acceptance-criteria case: a chapter with headings, a styled paragraph,
+    /// both list kinds, and an image parses into the exact expected block sequence —
+    /// including the image splitting its wrapping paragraph in two around it.
+    func testParseBlocksProducesExpectedSequenceForHeadingsParagraphsListsImages() {
+        let html = """
+        <html><body>
+        <h1>Chapter One</h1>
+        <p>Some <b>bold</b> and <i>italic</i> text.</p>
+        <ul><li>Apple</li><li>Banana</li></ul>
+        <ol><li>First</li><li>Second</li></ol>
+        <p>Caption: <img src="pic.png" alt="A cat"/></p>
+        </body></html>
+        """
+
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(html.utf8))
+
+        XCTAssertEqual(blocks, [
+            .heading(level: 1, text: [EPUBInlineRun(text: "Chapter One", bold: false, italic: false)]),
+            .paragraph(text: [
+                EPUBInlineRun(text: "Some ", bold: false, italic: false),
+                EPUBInlineRun(text: "bold", bold: true, italic: false),
+                EPUBInlineRun(text: " and ", bold: false, italic: false),
+                EPUBInlineRun(text: "italic", bold: false, italic: true),
+                EPUBInlineRun(text: " text.", bold: false, italic: false),
+            ]),
+            .unorderedList(items: [
+                [EPUBInlineRun(text: "Apple", bold: false, italic: false)],
+                [EPUBInlineRun(text: "Banana", bold: false, italic: false)],
+            ]),
+            .orderedList(items: [
+                [EPUBInlineRun(text: "First", bold: false, italic: false)],
+                [EPUBInlineRun(text: "Second", bold: false, italic: false)],
+            ]),
+            .paragraph(text: [EPUBInlineRun(text: "Caption: ", bold: false, italic: false)]),
+            .image(url: "pic.png", altText: "A cat"),
+        ])
+    }
+
+    /// An `<img>` doesn't need a wrapping `<p>` — real EPUB markup often places it
+    /// directly under a `<div>`/`<body>`.
+    func testParseBlocksCapturesStandaloneImageNotWrappedInParagraph() {
+        let html = """
+        <html><body><h1>Chapter</h1><img src="fig1.png" alt="Figure 1"/><p>After image.</p></body></html>
+        """
+
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(html.utf8))
+
+        XCTAssertEqual(blocks, [
+            .heading(level: 1, text: [EPUBInlineRun(text: "Chapter", bold: false, italic: false)]),
+            .image(url: "fig1.png", altText: "Figure 1"),
+            .paragraph(text: [EPUBInlineRun(text: "After image.", bold: false, italic: false)]),
+        ])
+    }
+
+    /// An empty `<ul>`/`<ol>` (no `<li>` children) is dropped rather than emitted as a
+    /// block with zero items.
+    func testParseBlocksSkipsEmptyLists() {
+        let html = "<html><body><p>Before.</p><ul></ul><p>After.</p></body></html>"
+
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(html.utf8))
+
+        XCTAssertEqual(blocks, [
+            .paragraph(text: [EPUBInlineRun(text: "Before.", bold: false, italic: false)]),
+            .paragraph(text: [EPUBInlineRun(text: "After.", bold: false, italic: false)]),
+        ])
+    }
+
+    func testParseBlocksReturnsEmptyForNoData() {
+        XCTAssertEqual(EPUBParser.parseBlocks(fromHTML: Data()), [])
+    }
+
+    // MARK: - parseBlocks fallback (issue #108 regression guard)
+
+    /// The exact malformed-XHTML shape that broke `NSAttributedString`'s importer
+    /// (issue #108) must still produce a single, non-empty fallback paragraph block —
+    /// never a blank page — when the block-model path is used instead. Unlike
+    /// `testPlainTextIsNeverEmptyForDocumentWithProse` (whose sibling comment notes
+    /// WebKit's HTML importer rejecting `&nbsp;` is an OS-version-dependent detail,
+    /// not something this suite can pin down), this test's fallback trigger IS
+    /// deterministic: `&nbsp;` is not one of XML's five predefined entities, isn't
+    /// declared by an internal/external DTD subset here, and `XMLParser` — a strict,
+    /// non-HTML XML parser (libxml2) — treats an undeclared general entity reference
+    /// as a hard well-formedness violation on every platform version, not a "maybe".
+    func testParseBlocksFallsBackToSingleParagraphForMalformedXHTML() {
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(Self.awkwardXHTML.utf8))
+
+        guard blocks.count == 1, case let .paragraph(runs) = blocks[0] else {
+            XCTFail("expected a single fallback paragraph block, got \(blocks)")
+            return
+        }
+        XCTAssertEqual(runs.count, 1, "fallback block should be one flat run, got \(runs)")
+        XCTAssertTrue(runs[0].text.contains("Foreword"))
+        XCTAssertTrue(runs[0].text.contains("Second para."))
+        XCTAssertFalse(runs[0].text.contains("<"), "tags leaked into fallback block text: \(runs[0].text)")
+        XCTAssertFalse(runs[0].text.contains("Chapter 8"), "<title> leaked into fallback block text: \(runs[0].text)")
+    }
+
+    /// Well-formed XML that nonetheless yields nothing the block walker recognises
+    /// (text with no wrapping `<p>`/heading/`<li>`) must still fall back to readable
+    /// prose rather than an empty block list — the "parsed fine, structured badly"
+    /// counterpart to the malformed-markup case above.
+    func testParseBlocksFallsBackWhenWellFormedButNoRecognizedBlocks() {
+        let html = "<html><body><div>Loose text with no wrapping tag.</div></body></html>"
+
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(html.utf8))
+
+        guard blocks.count == 1, case let .paragraph(runs) = blocks[0] else {
+            XCTFail("expected a single fallback paragraph block, got \(blocks)")
+            return
+        }
+        XCTAssertTrue(runs.first?.text.contains("Loose text with no wrapping tag.") == true)
+    }
+
+    /// A well-formed but entirely empty body (whitespace only) has genuinely nothing
+    /// to show — this is not the #108 blank-page bug, which was prose disappearing,
+    /// not an already-empty chapter staying empty.
+    func testParseBlocksReturnsEmptyForBodyWithNoProse() {
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data("<html><body>   </body></html>".utf8))
+
+        XCTAssertEqual(blocks, [])
+    }
 }
