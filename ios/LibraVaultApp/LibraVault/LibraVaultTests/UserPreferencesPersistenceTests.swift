@@ -21,6 +21,12 @@ final class UserPreferencesPersistenceTests: XCTestCase {
         XCTAssertEqual(UserPreferencesPersistence(defaults: defaults).loadReadingTheme(), .sepia)
     }
 
+    func testSaveThenLoadRoundTripsSystemReadingTheme() {
+        let defaults = makeIsolatedDefaults()
+        UserPreferencesPersistence(defaults: defaults).save(readingTheme: .system)
+        XCTAssertEqual(UserPreferencesPersistence(defaults: defaults).loadReadingTheme(), .system)
+    }
+
     // MARK: - Playback speed
 
     func testLoadPlaybackSpeedDefaultsTo1WhenNothingSaved() {

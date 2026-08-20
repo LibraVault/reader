@@ -143,3 +143,13 @@ struct ReaderSettingsSheet: View {
         mode: .constant(.paginated)
     )
 }
+
+#Preview("System theme selected") {
+    ReaderSettingsSheet(
+        theme: .constant(.system),
+        fontSize: .constant(1.0),
+        lineSpacing: .constant(1.4),
+        fontDesign: .constant(.default),
+        mode: .constant(.paginated)
+    )
+}

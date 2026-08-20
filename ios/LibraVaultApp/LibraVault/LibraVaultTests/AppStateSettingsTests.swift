@@ -77,6 +77,12 @@ final class AppStateSettingsTests: XCTestCase {
         XCTAssertEqual(state.defaultReadingTheme, .sepia)
     }
 
+    func testDefaultReadingThemeIsSettableToSystem() {
+        let state = AppState(userPreferencesPersistence: makeIsolatedPersistence())
+        state.defaultReadingTheme = .system
+        XCTAssertEqual(state.defaultReadingTheme, .system)
+    }
+
     func testDefaultPlaybackSpeedDefaultsTo1() {
         XCTAssertEqual(AppState(userPreferencesPersistence: makeIsolatedPersistence()).defaultPlaybackSpeed, 1.0)
     }

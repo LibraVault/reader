@@ -35,8 +35,9 @@ struct MarkdownReaderContent: View {
     /// `LibraVaultColorScheme` is built *from* a `ReadingTheme` (see
     /// LibraVaultColor.forReadingTheme) but doesn't carry it back, and
     /// mermaid.js needs its own theme name (see mermaidThemeName(for:)), not
-    /// LibraVault's derived colour tokens.
-    let readingTheme: ReadingTheme
+    /// LibraVault's derived colour tokens. Already resolved to a concrete choice by
+    /// ReaderView (see `ReadingTheme.resolved(for:)`) — `.system` never reaches here.
+    let readingTheme: ConcreteReadingTheme
     /// 0...1 fraction of the way through `blocks`, restored from saved progress.
     let initialScrollFraction: Double
     let onScrollFractionChanged: (Double) -> Void
@@ -184,7 +185,7 @@ private struct MarkdownBlockView: View {
     let fontSize: Double
     let lineSpacing: Double
     let fontDesign: Font.Design
-    let readingTheme: ReadingTheme
+    let readingTheme: ConcreteReadingTheme
 
     var body: some View {
         switch block {

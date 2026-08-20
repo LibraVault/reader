@@ -7,7 +7,9 @@ import WebKit
 /// v1 scope: built-in theme names only, not custom `themeVariables` — sepia maps to
 /// `neutral` as the closest stock theme, not a hand-tuned colour match for
 /// LibraVault's actual sepia palette. Deferred for the same reason Android's is.
-func mermaidThemeName(for readingTheme: ReadingTheme) -> String {
+/// Takes `ConcreteReadingTheme`, not `ReadingTheme` — callers resolve `.system`
+/// against the environment's colorScheme first (see `ReadingTheme.resolved(for:)`).
+func mermaidThemeName(for readingTheme: ConcreteReadingTheme) -> String {
     switch readingTheme {
     case .light: return "default"
     case .dark: return "dark"
@@ -67,7 +69,7 @@ final class MermaidResourceSchemeHandler: NSObject, WKURLSchemeHandler {
 /// philosophy), which applies identically here.
 struct MermaidDiagramView: UIViewRepresentable {
     let source: String
-    let readingTheme: ReadingTheme
+    let readingTheme: ConcreteReadingTheme
     /// If rendering hasn't produced a height or an error within this window, treated
     /// as a failure — mirrors Android's `renderTimeoutMs`.
     var renderTimeoutSeconds: TimeInterval = 8
@@ -182,7 +184,7 @@ struct MermaidDiagramView: UIViewRepresentable {
 /// composable's three-way `when` (loading spinner / real WebView / fallback text).
 struct MermaidDiagramBlockView: View {
     let source: String
-    let readingTheme: ReadingTheme
+    let readingTheme: ConcreteReadingTheme
     let colors: LibraVaultColorScheme
     let fontSize: Double
 
