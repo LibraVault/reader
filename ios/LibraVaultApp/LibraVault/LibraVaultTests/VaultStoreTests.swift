@@ -213,6 +213,67 @@ final class VaultStoreTests: XCTestCase {
         XCTAssertEqual(try reader.readAt(offset: 0, length: content.count), content)
     }
 
+    /// #203's primitive: the whole-file-in-memory read `VaultReaderViewModel`/
+    /// `VaultPlayerViewModel` build their `PDFDocument(data:)`/
+    /// `AVAudioPlayer(data:)`/`VaultEPUBParser.parse(data:)` calls on.
+    func testReadFullContentReturnsTheExactOriginalBytes() throws {
+        let store = newStore()
+        _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
+
+        let content = VaultCryptoTestSupport.randomData(250_000)
+        let input = InputStream(data: content)
+        input.open()
+        let entry = try store.importFile(input: input, declaredSize: Int64(content.count), title: "Title", author: nil, format: "epub")
+        input.close()
+
+        XCTAssertEqual(try store.readFullContent(fileId: entry.fileId), content)
+    }
+
+    func testReadFullContentWhileLockedThrows() throws {
+        let store = newStore()
+        _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
+        let input = InputStream(data: Data(count: 10))
+        input.open()
+        let entry = try store.importFile(input: input, declaredSize: 10, title: "Title", author: nil, format: "pdf")
+        input.close()
+        store.lock()
+
+        XCTAssertThrowsError(try store.readFullContent(fileId: entry.fileId)) { error in
+            XCTAssertEqual(error as? VaultStoreError, .vaultLocked)
+        }
+    }
+
+    func testReadFullContentForUnknownFileIdThrowsEntryNotFound() throws {
+        let store = newStore()
+        _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
+        let unknownFileId = Data(repeating: 0xAB, count: 16)
+
+        XCTAssertThrowsError(try store.readFullContent(fileId: unknownFileId)) { error in
+            XCTAssertEqual(error as? VaultStoreError, .entryNotFound(fileId: unknownFileId))
+        }
+    }
+
+    /// #203's confidentiality property, verified directly rather than only
+    /// by code review: decrypting content for reading/playing must never
+    /// write a plaintext copy anywhere the OS temp directory can see.
+    func testReadFullContentWritesNoTemporaryFile() throws {
+        let store = newStore()
+        _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
+        let content = VaultCryptoTestSupport.randomData(50_000)
+        let input = InputStream(data: content)
+        input.open()
+        let entry = try store.importFile(input: input, declaredSize: Int64(content.count), title: "Title", author: nil, format: "epub")
+        input.close()
+
+        let tmpDir = FileManager.default.temporaryDirectory
+        let before = Set((try? FileManager.default.contentsOfDirectory(atPath: tmpDir.path)) ?? [])
+
+        _ = try store.readFullContent(fileId: entry.fileId)
+
+        let after = Set((try? FileManager.default.contentsOfDirectory(atPath: tmpDir.path)) ?? [])
+        XCTAssertEqual(after, before, "readFullContent must not leave any new file behind in the temp directory")
+    }
+
     func testManifestSurvivesALockUnlockCycle() throws {
         let store = newStore()
         _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
