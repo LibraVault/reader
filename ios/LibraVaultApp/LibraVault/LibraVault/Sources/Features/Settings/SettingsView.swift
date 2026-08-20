@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var encryptedVaultRuntime: EncryptedVaultRuntime
     @State private var isPickingFolder = false
     @State private var loggingEnabled: Bool
+    @State private var screenSecurityEnabled: Bool
     /// Drives the remove-folder confirmation alert below — set by the per-row trash
     /// button, matching Android's `vaultToRemove` (SettingsScreen.kt) rather than
     /// deleting on tap/swipe with no confirmation.
@@ -17,6 +18,7 @@ struct SettingsView: View {
     init() {
         let store = LibraVaultLogStore()
         _loggingEnabled = State(initialValue: store.isEnabled)
+        _screenSecurityEnabled = State(initialValue: VaultScreenSecurityPreference.isEnabled())
     }
 
     var body: some View {
@@ -110,10 +112,22 @@ struct SettingsView: View {
             } label: {
                 Label("Encrypted Vaults", systemImage: "lock.fill")
             }
+
+            // #204: mirrors Android's SwitchSetting in the same
+            // "Encrypted Vaults" section (SettingsScreen.kt) — same copy,
+            // same "on by default" default. Read once at Settings' own
+            // appearance (via `init`, not a live `VaultScreenSecurityPreference`
+            // read on every render) and written straight through on toggle,
+            // matching `loggingEnabled` right above.
+            Toggle("Screen Security", isOn: $screenSecurityEnabled)
+                .tint(LibraVaultColor.primary)
+                .onChange(of: screenSecurityEnabled) { _, newValue in
+                    VaultScreenSecurityPreference.setEnabled(newValue)
+                }
         } header: {
             sectionHeader("Encrypted Vaults")
         } footer: {
-            Text("Vaults encrypt copies of your files behind a PIN — separate from your Folders above.")
+            Text("Vaults encrypt copies of your files behind a PIN — separate from your Folders above. Screen Security blanks vault content while screen-recorded, AirPlay-mirrored, or in the App Switcher; on by default.")
                 .font(LibraVaultTypography.bodySmall)
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }
