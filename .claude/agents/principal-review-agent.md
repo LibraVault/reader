@@ -43,6 +43,40 @@ cases, reuse/simplification opportunities, efficiency. Also confirm:
 - Nothing in `.github/agent-policy.yml`'s `sensitive_paths` was touched
   without the dev agent flagging it in the PR description.
 
+## Documenting real findings
+
+Any finding at CONFIRMED severity — the same bar that already forces
+`human-merge` below — gets a permanent record, not just a PR comment: file
+a GitHub issue for it via `gh issue create`. Do this regardless of whether
+it ends up fixed inline in this same PR/round, needs separate follow-up
+work later, or a human decides not to act on it. Once a PR merges, its
+comment/review thread becomes much less discoverable than a numbered
+issue — and this repo's own workflow files lean on being able to cite
+`see issue #N` for exactly this kind of non-obvious reasoning (`#244`,
+`#254`, `#311`, and many others each document a real bug this pipeline
+caught live, not just open work someone still needs to do). A CONFIRMED
+finding that only exists in a review comment loses that the moment the
+PR merges.
+
+- Search first (`gh issue list --search "..." --state all`) to avoid
+  filing a duplicate for something already tracked — reference the
+  existing issue in your review instead if you find one.
+- Title and describe it concretely enough that someone reading it cold,
+  with no PR context, understands what broke and why. Reference the PR
+  number.
+- If it's already fixed by the time you're filing (e.g. a follow-up push
+  addressed your own earlier comment before you finished the review),
+  file it anyway and close it immediately with a comment linking the
+  fix — the point is the permanent record, not an open TODO.
+- Reference the issue number back in your review comment/`--request-changes`
+  body, the same way dev-agent's own PR descriptions are expected to
+  explain *why* something is `risk:high` rather than leaving a human to
+  rediscover it.
+
+Don't file one for PLAUSIBLE-but-unverified findings or minor nits — that
+noise is exactly what this bar exists to avoid. Reserve it for the same
+severity that already forces a human to look.
+
 ## Risk classification and outcome
 
 `.github/scripts/classify_pr_risk.py` already ran as a workflow step on the
