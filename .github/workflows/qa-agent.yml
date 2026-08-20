@@ -226,13 +226,13 @@ jobs:
             The persona's "Reporting is mandatory" section is not
             optional framing — read it first and budget your turns to it
             before you start investigating. This workflow step has its own
-            hard --max-turns 40 below; if you exhaust it without having
+            hard --max-turns 70 below; if you exhaust it without having
             posted the PR comment and written qa-verdict.txt, the PR is
             left with no usable signal at all, which is worse than a fast,
             low-confidence FAIL.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,WebSearch"
-            --max-turns 40
+            --max-turns 70
 
       - name: Mint pipeline App token
         # !cancelled(): must still run even if "Run QA agent" failed/crashed
@@ -292,18 +292,18 @@ jobs:
             exit 0
           fi
 
-          # A genuine crash (max-turns exhausted, tool error) is a pipeline
-          # failure, not a QA finding — there's nothing for dev-agent's
-          # automated retry to act on, so route straight to a human instead
-          # of spending that retry on a blank slate. Mirrors dev-agent.yml's
-          # identical steps.agent.outcome check for the same reason.
-          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
-            echo "QA agent run crashed for PR #$PR_NUMBER — routing to status:needs-info instead of a scored verdict." >&2
-            gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
-            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
-            gh pr comment "$PR_NUMBER" --body "qa-agent's run crashed or exhausted its turn budget (see the [workflow run]($RUN_URL)) before reaching a verdict — routed to a human instead of silently leaving this on status:needs-qa or spending the automated dev-agent retry on a run that found nothing. Needs a human to either re-run QA (re-add \`status:needs-qa\`) or review this PR directly."
-            exit 0
-          fi
+          # Look for a real verdict FIRST, before consulting the agent
+          # step's own exit status. A "failure" outcome (max-turns
+          # exhausted, tool error) doesn't mean the agent produced nothing —
+          # PR #355 (2026-08-20) hit exactly this: the agent posted a full,
+          # reasoned "QA verdict: FAIL" comment, then ran out of its turn
+          # budget completing step 7 (writing qa-verdict.txt) as its very
+          # last action, which flipped the step to failure and used to
+          # cause this workflow to discard the verdict it had already
+          # posted and report a generic crash instead. Checking outcome
+          # first threw away real signal; checking for a verdict first
+          # doesn't lose anything — a true blank-slate crash still has
+          # neither signal below and falls through to the crash branch.
 
           # Primary signal: qa-verdict.txt, written as the agent's mandated
           # last action.
@@ -346,16 +346,36 @@ jobs:
 
           VERDICT="${FILE_VERDICT:-$COMMENT_VERDICT}"
 
-          # Neither signal present: the agent's run reported nothing at all.
-          # Same reasoning as the crash branch above — this is an agent
-          # malfunction, not a QA finding, so it doesn't burn the automated
-          # dev-agent retry or get labeled as an ordinary QA failure.
+          # Neither signal present: the agent's run reported nothing at
+          # all. This is an agent malfunction, not a QA finding, so it
+          # doesn't burn the automated dev-agent retry or get labeled as
+          # an ordinary QA failure — but the message differs depending on
+          # whether the step itself also crashed (max-turns exhausted,
+          # tool error) or exited cleanly with just nothing to show for it.
           if [ -z "$VERDICT" ]; then
-            echo "QA agent produced neither a verdict file nor a verdict comment line — treating as an agent malfunction, not a QA finding." >&2
-            gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
-            GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
-            gh pr comment "$PR_NUMBER" --body "qa-agent's run completed (see the [workflow run]($RUN_URL)) without producing a verdict — no \`qa-verdict.txt\` and no \"QA verdict: PASS/FAIL\" line in any comment it posted. This is an agent-level failure, not a real QA finding, so it isn't being sent through the automated dev-agent retry — nothing was actually found to fix. Needs a human to either re-run QA (re-add \`status:needs-qa\`) or review this PR directly."
+            if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+              echo "QA agent run crashed for PR #$PR_NUMBER before producing any verdict — routing to status:needs-info instead of a scored verdict." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
+              GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "qa-agent's run crashed or exhausted its turn budget (see the [workflow run]($RUN_URL)) before reaching a verdict — routed to a human instead of silently leaving this on status:needs-qa or spending the automated dev-agent retry on a run that found nothing. Needs a human to either re-run QA (re-add \`status:needs-qa\`) or review this PR directly."
+            else
+              echo "QA agent produced neither a verdict file nor a verdict comment line — treating as an agent malfunction, not a QA finding." >&2
+              gh pr edit "$PR_NUMBER" --remove-label status:needs-qa || true
+              GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              gh pr comment "$PR_NUMBER" --body "qa-agent's run completed (see the [workflow run]($RUN_URL)) without producing a verdict — no \`qa-verdict.txt\` and no \"QA verdict: PASS/FAIL\" line in any comment it posted. This is an agent-level failure, not a real QA finding, so it isn't being sent through the automated dev-agent retry — nothing was actually found to fix. Needs a human to either re-run QA (re-add \`status:needs-qa\`) or review this PR directly."
+            fi
             exit 0
+          fi
+
+          # A verdict was found even though the step itself exited
+          # failure — the agent produced its result, then ran out of turn
+          # budget doing cleanup (or hit some other tool error) afterward.
+          # Use the real verdict rather than discarding it, but leave a
+          # visible note so a human skimming the workflow run's red X isn't
+          # misled into thinking nothing came out of it.
+          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+            echo "QA agent step exited failure after already producing a verdict — using the verdict instead of discarding it as a crash." >&2
+            gh pr comment "$PR_NUMBER" --body "Note: the QA agent's run technically exited with a failure status (see the [workflow run]($RUN_URL)) — most likely it exhausted its turn budget right after posting the verdict below — but a complete verdict was already posted before that happened, so it's being used as a real QA result rather than discarded as a crash."
           fi
 
           echo "QA verdict for #$PR_NUMBER: $VERDICT"
