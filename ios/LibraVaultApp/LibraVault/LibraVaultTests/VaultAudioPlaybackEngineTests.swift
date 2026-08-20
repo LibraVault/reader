@@ -82,9 +82,13 @@ final class VaultAudioPlaybackEngineTests: XCTestCase {
         XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.wav.rawValue)
     }
 
-    func testFileTypeHintRecognizesFLAC() {
+    /// `AVFileType` has no FLAC case in this SDK (a real CI compile failure
+    /// on `AVFileType.flac` caught that — see `fileTypeHint`'s doc comment),
+    /// so FLAC's magic bytes deliberately fall through to `nil` here, same as
+    /// any other unrecognized container, and `AVAudioPlayer` sniffs it itself.
+    func testFileTypeHintReturnsNilForFLAC() {
         let bytes: [UInt8] = [0x66, 0x4C, 0x61, 0x43] + [UInt8](repeating: 0, count: 8) // "fLaC"
-        XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.flac.rawValue)
+        XCTAssertNil(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)))
     }
 
     func testFileTypeHintRecognizesM4A() {

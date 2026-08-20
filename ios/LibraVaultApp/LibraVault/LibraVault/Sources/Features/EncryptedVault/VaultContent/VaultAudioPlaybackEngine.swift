@@ -74,14 +74,17 @@ final class VaultAudioPlaybackEngine: NSObject {
     /// `AVAudioPlayer(data:fileTypeHint:)` — see this type's doc comment for
     /// why an explicit hint is required, not optional. Covers every
     /// container `AVAudioPlayer` natively decodes among the formats this app
-    /// imports (`LibraryFileScanner`'s `MediaFormat.isAudio` cases); returns
-    /// `nil` for anything unrecognized so `AVAudioPlayer` falls back to its
-    /// own (unreliable, per the doc comment) sniffing rather than this
-    /// method guessing wrong. `internal`, not `private` — per AGENTS.md's
-    /// "pure helpers should be internal, not private" guidance — so
-    /// `VaultAudioPlaybackEngineTests` can exercise each container branch
-    /// directly against small synthetic byte arrays, instead of only via
-    /// `load(data:rate:)` and a real fixture per format.
+    /// imports (`LibraryFileScanner`'s `MediaFormat.isAudio` cases) that
+    /// `AVFileType` actually exposes a case for — FLAC has no `AVFileType`
+    /// member in this SDK, so its magic bytes (`fLaC`) deliberately have no
+    /// dedicated branch below and fall through to `nil` like any other
+    /// unrecognized container, letting `AVAudioPlayer` sniff it itself.
+    /// Returns `nil` for anything else unrecognized for the same reason.
+    /// `internal`, not `private` — per AGENTS.md's "pure helpers should be
+    /// internal, not private" guidance — so `VaultAudioPlaybackEngineTests`
+    /// can exercise each container branch directly against small synthetic
+    /// byte arrays, instead of only via `load(data:rate:)` and a real fixture
+    /// per format.
     static func fileTypeHint(for data: Data) -> String? {
         guard data.count >= 12 else { return nil }
         let bytes = [UInt8](data.prefix(12))
@@ -90,10 +93,13 @@ final class VaultAudioPlaybackEngine: NSObject {
         if bytes[0...3].elementsEqual([0x52, 0x49, 0x46, 0x46]), bytes[8...11].elementsEqual([0x57, 0x41, 0x56, 0x45]) {
             return AVFileType.wav.rawValue
         }
-        // fLaC
-        if bytes[0...3].elementsEqual([0x66, 0x4C, 0x61, 0x43]) {
-            return AVFileType.flac.rawValue
-        }
+        // fLaC — no AVFileType case exists for FLAC in this SDK (confirmed by a
+        // real CI compile failure on `AVFileType.flac`, not just local
+        // `swift -frontend -parse`, which doesn't type-check against the real
+        // AVFoundation SDK and missed this). Falls through to `nil` rather than
+        // guessing an unverifiable raw UTI string, same as any other
+        // unrecognized container below — AVAudioPlayer's own sniffing is the
+        // fallback.
         // ....ftyp — MPEG-4 container (.m4a/.m4b)
         if bytes[4...7].elementsEqual([0x66, 0x74, 0x79, 0x70]) {
             return AVFileType.m4a.rawValue
