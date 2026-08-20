@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import LibraVault
 
 @MainActor
@@ -46,6 +47,65 @@ final class VaultReaderViewModelTests: XCTestCase {
         let entry = try store.importFile(input: input, declaredSize: Int64(data.count), title: "My Book", author: nil, format: "epub")
         input.close()
         return entry.fileId
+    }
+
+    /// A real, valid, multi-page PDF (drawn via `UIGraphicsPDFRenderer`, real
+    /// text-showing operators, not an image) — `PDFDocument(data:)` and
+    /// `PDFPage.string` both parse it exactly like a real imported document.
+    private func makeFixturePDFData(pageCount: Int) -> Data {
+        let pageRect = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        return renderer.pdfData { context in
+            for index in 0..<pageCount {
+                context.beginPage()
+                let text = "Page \(index + 1) content" as NSString
+                text.draw(at: CGPoint(x: 10, y: 10), withAttributes: [.font: UIFont.systemFont(ofSize: 18)])
+            }
+        }
+    }
+
+    private func importFixturePDF(into manager: VaultSessionManager, vaultId: String, pageCount: Int) async throws -> Data {
+        let pdfData = makeFixturePDFData(pageCount: pageCount)
+        let store = await manager.requireUnlocked(vaultId)
+        let input = InputStream(data: pdfData)
+        input.open()
+        let entry = try store.importFile(input: input, declaredSize: Int64(pdfData.count), title: "My PDF", author: nil, format: "pdf")
+        input.close()
+        return entry.fileId
+    }
+
+    /// Regression coverage for the QA gap this file originally shipped
+    /// with: nothing exercised `VaultReaderViewModel.load()`'s
+    /// `PDFDocument(data:)` success branch through to `.pdfReady` — every
+    /// other `format: "pdf"` reference in this PR's tests was either
+    /// manifest-only plumbing or an audio-player rejection case.
+    func testLoadPdfReadyExposesTheDecryptedDocument() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixturePDF(into: manager, vaultId: id, pageCount: 3)
+
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+
+        XCTAssertEqual(vm.state, .pdfReady(title: "My PDF"))
+        XCTAssertEqual(vm.pdfDocument?.pageCount, 3)
+    }
+
+    func testAddHighlightOnAPdfCapturesTheCurrentPageTextAndPersists() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixturePDF(into: manager, vaultId: id, pageCount: 2)
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+        vm.currentPageIndex = 1
+
+        await vm.addHighlight()
+
+        XCTAssertEqual(vm.highlights.count, 1)
+        XCTAssertEqual(vm.highlights.first?.positionRef, "page:1")
+        XCTAssertTrue(vm.highlights.first?.highlightedText.contains("Page 2 content") ?? false)
+
+        let vm2 = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm2.load()
+        XCTAssertEqual(vm2.highlights.count, 1)
     }
 
     func testLoadEpubReadyExposesChaptersFromTheDecryptedContent() async throws {

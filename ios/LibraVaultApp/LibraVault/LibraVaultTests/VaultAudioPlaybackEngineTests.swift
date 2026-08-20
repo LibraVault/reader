@@ -63,4 +63,53 @@ final class VaultAudioPlaybackEngineTests: XCTestCase {
         XCTAssertEqual(engine.duration, 0)
         XCTAssertFalse(engine.isPlaying)
     }
+
+    // MARK: - fileTypeHint(for:)
+    //
+    // Regression coverage for the actual bug this file's tests caught in CI:
+    // AVAudioPlayer(data:) without an explicit fileTypeHint silently reports
+    // duration 0 instead of throwing — see VaultAudioPlaybackEngine's own
+    // doc comment. testLoadReportsTheDatasRealDuration above already proves
+    // the WAV branch end-to-end; these exercise the remaining container
+    // branches directly against small synthetic headers, since building a
+    // real fixture file per format (mp3/m4a/flac encoders) is unnecessary
+    // ceremony for what's fundamentally a magic-byte lookup.
+
+    func testFileTypeHintRecognizesWAV() {
+        var bytes = [UInt8](repeating: 0, count: 12)
+        bytes[0...3] = [0x52, 0x49, 0x46, 0x46] // "RIFF"
+        bytes[8...11] = [0x57, 0x41, 0x56, 0x45] // "WAVE"
+        XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.wav.rawValue)
+    }
+
+    func testFileTypeHintRecognizesFLAC() {
+        let bytes: [UInt8] = [0x66, 0x4C, 0x61, 0x43] + [UInt8](repeating: 0, count: 8) // "fLaC"
+        XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.flac.rawValue)
+    }
+
+    func testFileTypeHintRecognizesM4A() {
+        var bytes = [UInt8](repeating: 0, count: 12)
+        bytes[4...7] = [0x66, 0x74, 0x79, 0x70] // "ftyp" at offset 4
+        XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.m4a.rawValue)
+    }
+
+    func testFileTypeHintRecognizesMP3WithID3Tag() {
+        let bytes: [UInt8] = [0x49, 0x44, 0x33] + [UInt8](repeating: 0, count: 9) // "ID3"
+        XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.mp3.rawValue)
+    }
+
+    func testFileTypeHintRecognizesMP3WithRawFrameSync() {
+        var bytes = [UInt8](repeating: 0, count: 12)
+        bytes[0] = 0xFF
+        bytes[1] = 0xFB // 11 set sync bits + MPEG-1 Layer III
+        XCTAssertEqual(VaultAudioPlaybackEngine.fileTypeHint(for: Data(bytes)), AVFileType.mp3.rawValue)
+    }
+
+    func testFileTypeHintReturnsNilForUnrecognizedData() {
+        XCTAssertNil(VaultAudioPlaybackEngine.fileTypeHint(for: Data("not an audio header".utf8)))
+    }
+
+    func testFileTypeHintReturnsNilForDataShorterThanTwelveBytes() {
+        XCTAssertNil(VaultAudioPlaybackEngine.fileTypeHint(for: Data([0x52, 0x49, 0x46, 0x46])))
+    }
 }
