@@ -24,9 +24,10 @@
 #   being off. principal-review.yml's own "Auto-merge if approved" step
 #   already proves plain GITHUB_TOKEN can merge, so that's what Parts 1/2
 #   use, same as that step.
-# - Part 3's retry action is different: it re-applies a label
-#   (status:ready-for-dev / status:needs-qa / status:needs-review) that
-#   must itself trigger dev-agent.yml/qa-agent.yml/principal-review.yml.
+# - Parts 3 and 4's retry actions are different: each re-applies a label
+#   (status:needs-info for Part 3, or status:ready-for-dev/status:needs-qa/
+#   status:needs-review for Part 4) that must itself trigger
+#   dev-agent.yml/qa-agent.yml/principal-review.yml.
 #   GITHUB_TOKEN cannot do that — GitHub does not let actions taken with
 #   it trigger further workflow runs (see docs/agent-team-pipeline.md's
 #   "Cross-workflow triggering" section; pr-intake.yml mints the same App
@@ -68,7 +69,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mint pipeline App token (Part 3 retries only)
+      - name: Mint pipeline App token (Part 3/4 retries only)
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -86,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Deliberately a second, distinctly-named var, not a second
           # GH_TOKEN — the agent must choose per-action which one to pass
-          # to `gh`, per its persona's Part 3 instructions. Never the
+          # to `gh`, per its persona's Part 3/4 instructions. Never the
           # default for anything, since it's broader-scoped (a full App
           # installation token) than a single-repo GITHUB_TOKEN needs to
           # be for most of this run's actions.
@@ -104,18 +105,20 @@ jobs:
             Read .claude/agents/human-merge-sweep-agent.md in full — it is
             your complete operating persona for this run. There is no
             specific PR or issue number to start from; find your own work
-            per Parts 1, 2, and 3 of that file.
+            per Parts 1 through 4 of that file.
 
             Two GitHub tokens are available as environment variables:
             GH_TOKEN (the default `gh` picks up automatically) for every
-            action except one, and PIPELINE_APP_TOKEN, which you must
+            action except two, and PIPELINE_APP_TOKEN, which you must
             pass explicitly (`GH_TOKEN="$PIPELINE_APP_TOKEN" gh ...`)
-            ONLY for Part 3's retry action — removing status:needs-info
-            and re-adding status:ready-for-dev/status:needs-qa/
-            status:needs-review. That specific label change needs to
-            trigger another workflow, which the default token cannot do.
-            Every other action in every part (merging, closing, editing
-            other labels, commenting) uses the default GH_TOKEN.
+            ONLY for Part 3's retry action (removing status:needs-info and
+            re-adding status:ready-for-dev/status:needs-qa/status:needs-
+            review) and Part 4's retry action (re-applying status:ready-
+            for-dev/status:needs-qa/status:needs-review after a capacity
+            skip). Both label changes need to trigger another workflow,
+            which the default token cannot do. Every other action in
+            every part (merging, closing, editing other labels,
+            commenting) uses the default GH_TOKEN.
 
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run:
