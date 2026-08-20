@@ -24,7 +24,13 @@ jobs:
   jvm-tests:
     docker:
       - image: cimg/android:2026.08
-    resource_class: medium
+    # `large` (~8GB), not `medium` (~4GB): the first real run OOM'd mid-suite
+    # ("Gradle build daemon disappeared unexpectedly") during
+    # :core:database:testDebugUnitTest — Robolectric + a persistent Gradle
+    # daemon + Kotlin daemon + forked test JVMs all competing for RAM in a
+    # 4GB container. GitHub Actions' ubuntu-latest gives ~7GB, which is why
+    # jvm-tests.yml doesn't need this. See also --no-daemon below.
+    resource_class: large
     environment:
       JVM_OPTS: -Xmx3200m
     steps:
@@ -41,10 +47,12 @@ jobs:
 
       # Same task list as jvm-tests.yml's "Run JVM tests" step — see that
       # file's comment for why the flavor-specific tasks are named explicitly.
+      # --no-daemon: this container is single-use, so a persistent daemon
+      # buys nothing and is pure memory overhead (see resource_class comment).
       - run:
           name: Run JVM tests
           command: |
-            ./gradlew testDebugUnitTest \
+            ./gradlew --no-daemon testDebugUnitTest \
               :feature:settings:testFdroidDebugUnitTest \
               :feature:settings:testPlayDebugUnitTest \
               :app:testFdroidDebugUnitTest \
@@ -53,7 +61,7 @@ jobs:
 
       - run:
           name: Run Lint
-          command: ./gradlew lint
+          command: ./gradlew --no-daemon lint
 
       - save_cache:
           key: gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
@@ -61,8 +69,12 @@ jobs:
             - ~/.gradle/caches
             - ~/.gradle/wrapper
 
+      # Each module's JUnit XML lands under its own build/test-results/ dir
+      # (e.g. core/domain/build/test-results/testDebugUnitTest/), not one
+      # top-level build/test-results — point at the repo root so CircleCI's
+      # recursive scan actually finds them.
       - store_test_results:
-          path: build/test-results
+          path: .
 
       - store_artifacts:
           path: build/reports/tests
