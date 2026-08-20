@@ -1,11 +1,13 @@
 # Periodic sweep of everything docs/agent-team-pipeline.md's state machine
-# parks on a human — `status:needs-human-merge` PRs AND `status:needs-info`
-# issues/PRs — both of which previously only got cleared when a human
-# noticed the backlog and manually asked Claude Code to work through it.
-# This automates the *noticing*, not the judgment: see
-# .claude/agents/human-merge-sweep-agent.md for the actual review/triage
-# logic (three parts — needs-human-merge, a general staleness sweep, and
-# needs-info); this file only wires the trigger and guardrails around it.
+# parks on a human, or silently stalls with no automated retry —
+# `status:needs-human-merge` PRs, `status:needs-info` issues/PRs, and
+# items stuck after a Phase 4 concurrency-cap skip — all of which
+# previously only got cleared when a human noticed the backlog and
+# manually asked Claude Code to work through it. This automates the
+# *noticing*, not the judgment: see .claude/agents/human-merge-sweep-agent.md
+# for the actual review/triage logic (four parts — needs-human-merge, a
+# general staleness sweep, needs-info, and capacity-skip retries); this
+# file only wires the trigger and guardrails around it.
 #
 # Deliberately its OWN workflow, not a change to principal-review.yml or
 # dev-agent.yml: those jobs are triggered by a specific PR/issue event
