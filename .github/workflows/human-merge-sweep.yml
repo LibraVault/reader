@@ -1,0 +1,144 @@
+# Periodic sweep of everything docs/agent-team-pipeline.md's state machine
+# parks on a human — `status:needs-human-merge` PRs AND `status:needs-info`
+# issues/PRs — both of which previously only got cleared when a human
+# noticed the backlog and manually asked Claude Code to work through it.
+# This automates the *noticing*, not the judgment: see
+# .claude/agents/human-merge-sweep-agent.md for the actual review/triage
+# logic (three parts — needs-human-merge, a general staleness sweep, and
+# needs-info); this file only wires the trigger and guardrails around it.
+#
+# Deliberately its OWN workflow, not a change to principal-review.yml or
+# dev-agent.yml: those jobs are triggered by a specific PR/issue event
+# (a label being applied) with useful context from that event. This one
+# has no triggering item — it wakes up on a timer and has to go find its
+# own work across the whole backlog, which is a different shape of job
+# even though the review technique it uses for Part 1 is deliberately the
+# same as principal-review.yml's.
+#
+# Auth is split, deliberately, not uniformly one token or the other:
+# - Merging and closing PRs, and every Part 1/2 action — unlike *opening*
+#   a PR (see dev-agent.yml's own comment) — isn't blocked by this repo's
+#   "Allow GitHub Actions to create and approve pull requests" setting
+#   being off. principal-review.yml's own "Auto-merge if approved" step
+#   already proves plain GITHUB_TOKEN can merge, so that's what Parts 1/2
+#   use, same as that step.
+# - Part 3's retry action is different: it re-applies a label
+#   (status:ready-for-dev / status:needs-qa / status:needs-review) that
+#   must itself trigger dev-agent.yml/qa-agent.yml/principal-review.yml.
+#   GITHUB_TOKEN cannot do that — GitHub does not let actions taken with
+#   it trigger further workflow runs (see docs/agent-team-pipeline.md's
+#   "Cross-workflow triggering" section; pr-intake.yml mints the same App
+#   token for exactly this reason, applying status:needs-qa). The minted
+#   App token below is passed to the agent step as PIPELINE_APP_TOKEN
+#   specifically for that one action — every other action in this run
+#   keeps using GH_TOKEN (GITHUB_TOKEN).
+
+name: Human-Merge Sweep
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  # claude-code-action requests an OIDC ID token as part of its own
+  # auth/telemetry setup. Without this, actions/core's OidcClient can't
+  # find ACTIONS_ID_TOKEN_REQUEST_URL in the environment and the agent
+  # step fails after 3 retries with "Could not fetch an OIDC token" —
+  # same failure already diagnosed for dev-agent.yml/qa-agent.yml/
+  # principal-review.yml (issue #158). continue-on-error below would
+  # swallow this silently without the permission fixing it at the source.
+  id-token: write
+
+concurrency:
+  group: human-merge-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    if: vars.AGENTS_PAUSED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mint pipeline App token (Part 3 retries only)
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - name: Run human-merge sweep agent
+        id: agent
+        # Mirrors principal-review.yml's identical continue-on-error: a
+        # crash here (exhausted turns, tool error) must not silently
+        # discard the run with zero signal — the step below always
+        # records an outcome regardless of how this one ends.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Deliberately a second, distinctly-named var, not a second
+          # GH_TOKEN — the agent must choose per-action which one to pass
+          # to `gh`, per its persona's Part 3 instructions. Never the
+          # default for anything, since it's broader-scoped (a full App
+          # installation token) than a single-repo GITHUB_TOKEN needs to
+          # be for most of this run's actions.
+          PIPELINE_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Not triggered by any PR/issue event (schedule/workflow_dispatch
+          # only), so claude-code-action's non-human-actor guard never
+          # applies here — no allowed_bots needed, unlike
+          # principal-review.yml/qa-agent.yml.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: true
+          prompt: |
+            Read .claude/agents/human-merge-sweep-agent.md in full — it is
+            your complete operating persona for this run. There is no
+            specific PR or issue number to start from; find your own work
+            per Parts 1, 2, and 3 of that file.
+
+            Two GitHub tokens are available as environment variables:
+            GH_TOKEN (the default `gh` picks up automatically) for every
+            action except one, and PIPELINE_APP_TOKEN, which you must
+            pass explicitly (`GH_TOKEN="$PIPELINE_APP_TOKEN" gh ...`)
+            ONLY for Part 3's retry action — removing status:needs-info
+            and re-adding status:ready-for-dev/status:needs-qa/
+            status:needs-review. That specific label change needs to
+            trigger another workflow, which the default token cannot do.
+            Every other action in every part (merging, closing, editing
+            other labels, commenting) uses the default GH_TOKEN.
+
+            Do not use anything that depends on a completion notification
+            arriving later — there is no such mechanism in this CI run:
+            - No subagent delegation (the Agent tool, any
+              "Explore"/"Task" subagent type).
+            - No backgrounded Bash commands (run_in_background) that you
+              then wait to be notified about.
+            Run every command in the foreground and wait for its real
+            output before continuing, even if reviewing a PR takes
+            several minutes — that's normal here, not a problem to work
+            around.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash"
+            # Raised from 120 when Part 3 (needs-info) was added — three
+            # backlogs to work through per run instead of two, each item
+            # needing its own comment-history read.
+            --max-turns 160
+
+      - name: Report outcome
+        if: always()
+        run: |
+          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+            echo "### :warning: Human-merge sweep crashed or exhausted its turn budget" >> "$GITHUB_STEP_SUMMARY"
+            echo "See the job log above for what it managed to do before that happened." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Human-merge sweep completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "See the job log above for the summary the agent printed at the end of its run." >> "$GITHUB_STEP_SUMMARY"
+          fi
