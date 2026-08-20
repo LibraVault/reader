@@ -44,6 +44,31 @@ final class TextPaginatorTests: XCTestCase {
         XCTAssertEqual(onlyPage.upperBound, text.endIndex)
     }
 
+    /// A container tall enough for one real line, but not for that line plus a
+    /// full `lineSpacing` gap, must still paginate normally rather than falling
+    /// back to a single page holding the whole remaining chapter — see the
+    /// degenerate-pageSize guard's comment in `paginate(text:font:lineSpacing:pageSize:)`.
+    /// This is the exact narrow window issue #337 tightened the guard for.
+    func testPageSizeBetweenLineHeightAndLineHeightPlusSpacingPaginatesNormally() {
+        let lineSpacing: CGFloat = 4
+        let pageHeight = font.lineHeight + (lineSpacing / 2)
+        let text = Array(repeating: "Word ", count: 200).joined()
+
+        let pages = TextPaginator.paginate(
+            text: text, font: font, lineSpacing: lineSpacing,
+            pageSize: CGSize(width: 200, height: pageHeight)
+        )
+
+        XCTAssertGreaterThan(
+            pages.count, 1,
+            "a container tall enough for one line should paginate normally, not fall back to a single page"
+        )
+        XCTAssertLessThan(
+            pages[0].upperBound, text.endIndex,
+            "first page should hold only what actually fits one line, not the whole remaining text"
+        )
+    }
+
     /// Page ranges must exactly cover the source text once each — no gaps, no
     /// overlaps, no dropped characters — regardless of how many pages that took.
     func testPagesCoverTheEntireTextContiguouslyWithNoGapsOrOverlaps() {
