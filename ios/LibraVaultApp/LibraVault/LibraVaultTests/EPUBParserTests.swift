@@ -16,8 +16,9 @@ final class EPUBParserTests: XCTestCase {
 
     /// Builds a real, minimal, valid EPUB — zipped with the same `FileManager.zipItem`
     /// mechanism a real EPUB is packaged with — containing one XHTML chapter per
-    /// entry in `chapterBodies`, in spine order.
-    private func makeFixtureEPUB(chapterBodies: [String]) throws -> URL {
+    /// entry in `chapterBodies`, in spine order. `includeEncryption` writes a stub
+    /// `META-INF/encryption.xml`, the OCF marker for a DRM-protected archive (issue #351).
+    private func makeFixtureEPUB(chapterBodies: [String], includeEncryption: Bool = false) throws -> URL {
         let sourceDir = tempDir.appendingPathComponent("source-\(UUID().uuidString)", isDirectory: true)
         let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
         let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
@@ -25,6 +26,17 @@ final class EPUBParserTests: XCTestCase {
         try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
 
         try "application/epub+zip".write(to: sourceDir.appendingPathComponent("mimetype"), atomically: true, encoding: .utf8)
+
+        if includeEncryption {
+            try """
+            <?xml version="1.0"?>
+            <encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <EncryptedData xmlns="http://www.w3.org/2001/04/xmlenc#">
+                <EncryptionMethod Algorithm="http://ns.adobe.com/adept"/>
+              </EncryptedData>
+            </encryption>
+            """.write(to: metaInfDir.appendingPathComponent("encryption.xml"), atomically: true, encoding: .utf8)
+        }
 
         try """
         <?xml version="1.0"?>
@@ -161,6 +173,21 @@ final class EPUBParserTests: XCTestCase {
 
         XCTAssertThrowsError(try EPUBParser.parse(fileURL: epubURL)) { error in
             XCTAssertEqual(error as? EPUBParser.ParseError, .entryNotFound("META-INF/container.xml"))
+        }
+    }
+
+    /// A DRM-protected EPUB (Adobe ADEPT, LCP, …) must fail cleanly with `.drmProtected`
+    /// rather than being parsed as if its ciphertext spine items were plaintext XHTML —
+    /// the reported symptom was garbled/overlapping text instead of an honest error
+    /// (issue #351).
+    func testParseThrowsDrmProtectedWhenEncryptionXmlIsPresent() throws {
+        let epubURL = try makeFixtureEPUB(
+            chapterBodies: ["<h1>Chapter One</h1><p>Ciphertext masquerading as prose.</p>"],
+            includeEncryption: true
+        )
+
+        XCTAssertThrowsError(try EPUBParser.parse(fileURL: epubURL)) { error in
+            XCTAssertEqual(error as? EPUBParser.ParseError, .drmProtected)
         }
     }
 
