@@ -28,14 +28,18 @@ final class CreateEncryptedVaultViewModelTests: XCTestCase {
 
     func testProceedFromPinRejectsTooShort() {
         let vm = makeViewModel()
+        vm.displayName = "Personal"
+        vm.proceedFromName() // real wizard flow: step must reach .pin first
         vm.pin = "12"
         vm.proceedFromPin()
-        XCTAssertEqual(vm.step, .pin)
+        XCTAssertEqual(vm.step, .pin, "a rejected PIN must not advance the step")
         XCTAssertNotNil(vm.errorMessage)
     }
 
     func testProceedFromPinAdvancesOnValidLength() {
         let vm = makeViewModel()
+        vm.displayName = "Personal"
+        vm.proceedFromName()
         vm.pin = "1234"
         vm.proceedFromPin()
         XCTAssertEqual(vm.step, .confirmPin)
@@ -44,10 +48,12 @@ final class CreateEncryptedVaultViewModelTests: XCTestCase {
     func testProceedFromConfirmPinRejectsMismatch() async {
         let vm = makeViewModel()
         vm.displayName = "Personal"
+        vm.proceedFromName()
         vm.pin = "1234"
+        vm.proceedFromPin()
         vm.confirmPin = "5678"
         await vm.proceedFromConfirmPin()
-        XCTAssertEqual(vm.step, .confirmPin)
+        XCTAssertEqual(vm.step, .confirmPin, "a mismatched confirmation must not advance the step")
         XCTAssertNotNil(vm.errorMessage)
         XCTAssertEqual(vm.confirmPin, "", "mismatched confirmation should be cleared for retry")
     }
