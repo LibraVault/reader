@@ -138,25 +138,37 @@ quickly, never to answer for them.
      budget, workflow-file drift, or an infra/flakiness issue — NOT a
      real scoping question and NOT a repeated/persistent test failure.
      Check whether this item has already been retried once by a previous
-     sweep run (look for a comment from this same agent saying so — grep
-     the comment history for `human-merge-sweep-agent` retry text). If it
-     has NOT been retried yet: retry it once — remove `status:needs-info`
-     and re-add whichever label restarts the stage that actually crashed
-     (`status:ready-for-dev` for a triage crash, `status:needs-qa` for a
-     QA crash, `status:needs-review` for a principal-review crash/drift —
-     read `docs/agent-team-pipeline.md`'s state machine if you need to
-     confirm which), with a `gh issue comment`/`gh pr comment` explaining
-     you're retrying and why you judged it transient. Then append one row
-     to `docs/human-merge-sweep-log.md` recording the retry (same
-     commit-and-push-to-`dev` pattern as Part 1's merge logging), so a
-     human skimming the log sees it without digging through comment
-     history. If it has ALREADY been retried once and is back on
-     `status:needs-info` again: do not
-     retry a second time — this is now a real, persistent problem: treat
-     it like the "genuine human-decision-needed" case below instead
-     (leave for a human, but the tone of the summary should distinguish
-     "still failing after a retry" as more concerning than a first-time
-     question).
+     sweep run: search its comments (`gh issue view`/`gh pr view --json
+     comments`) for the exact literal marker `<!-- human-merge-sweep-retry
+     -->` — always include this HTML-comment marker, verbatim, as the
+     first line of your own retry comment below, specifically so this
+     check is an exact string match, not a fuzzy read of free-text
+     language that could miss or misfire. If the marker is NOT present:
+     retry it once —
+     - Remove `status:needs-info` and re-add whichever label restarts the
+       stage that actually crashed (`status:ready-for-dev` for a triage
+       crash, `status:needs-qa` for a QA crash, `status:needs-review` for
+       a principal-review crash/drift — read `docs/agent-team-pipeline.md`'s
+       state machine if you need to confirm which). This specific label
+       change must use `PIPELINE_APP_TOKEN`, not the default `GH_TOKEN`
+       (`GH_TOKEN="$PIPELINE_APP_TOKEN" gh issue edit ...` /
+       `gh pr edit ...`) — it needs to trigger the corresponding workflow,
+       which a plain `GITHUB_TOKEN`-authenticated action cannot do (see
+       `docs/agent-team-pipeline.md`'s "Cross-workflow triggering"
+       section). Every other command in this step keeps using the
+       default `GH_TOKEN`.
+     - Post a `gh issue comment`/`gh pr comment` starting with the
+       `<!-- human-merge-sweep-retry -->` marker on its own first line,
+       then explaining you're retrying and why you judged it transient.
+     - Append one row to `docs/human-merge-sweep-log.md` recording the
+       retry (same commit-and-push-to-`dev` pattern as Part 1's merge
+       logging), so a human skimming the log sees it without digging
+       through comment history.
+     If the marker IS already present: do not retry a second time — this
+     is now a real, persistent problem: treat it like the "genuine
+     human-decision-needed" case below instead (leave for a human, but
+     the tone of the summary should distinguish "still failing after a
+     retry" as more concerning than a first-time question).
    - **Genuine human-decision-needed** (default — assume this unless the
      transient-failure case above clearly applies): a real product/scope
      question, an ambiguous requirement, anything security-sensitive,

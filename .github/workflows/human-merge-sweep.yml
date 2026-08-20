@@ -15,12 +15,23 @@
 # even though the review technique it uses for Part 1 is deliberately the
 # same as principal-review.yml's.
 #
-# Auth: plain GITHUB_TOKEN, not the pipeline App token. Merging and
-# closing PRs — unlike *opening* one (see dev-agent.yml's own comment) —
-# isn't blocked by this repo's "Allow GitHub Actions to create and approve
-# pull requests" setting being off. principal-review.yml's own "Auto-merge
-# if approved" step already proves GITHUB_TOKEN can merge; the same is
-# true here, so there's no need for the extra App-token minting step.
+# Auth is split, deliberately, not uniformly one token or the other:
+# - Merging and closing PRs, and every Part 1/2 action — unlike *opening*
+#   a PR (see dev-agent.yml's own comment) — isn't blocked by this repo's
+#   "Allow GitHub Actions to create and approve pull requests" setting
+#   being off. principal-review.yml's own "Auto-merge if approved" step
+#   already proves plain GITHUB_TOKEN can merge, so that's what Parts 1/2
+#   use, same as that step.
+# - Part 3's retry action is different: it re-applies a label
+#   (status:ready-for-dev / status:needs-qa / status:needs-review) that
+#   must itself trigger dev-agent.yml/qa-agent.yml/principal-review.yml.
+#   GITHUB_TOKEN cannot do that — GitHub does not let actions taken with
+#   it trigger further workflow runs (see docs/agent-team-pipeline.md's
+#   "Cross-workflow triggering" section; pr-intake.yml mints the same App
+#   token for exactly this reason, applying status:needs-qa). The minted
+#   App token below is passed to the agent step as PIPELINE_APP_TOKEN
+#   specifically for that one action — every other action in this run
+#   keeps using GH_TOKEN (GITHUB_TOKEN).
 
 name: Human-Merge Sweep
 
@@ -33,6 +44,14 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  # claude-code-action requests an OIDC ID token as part of its own
+  # auth/telemetry setup. Without this, actions/core's OidcClient can't
+  # find ACTIONS_ID_TOKEN_REQUEST_URL in the environment and the agent
+  # step fails after 3 retries with "Could not fetch an OIDC token" —
+  # same failure already diagnosed for dev-agent.yml/qa-agent.yml/
+  # principal-review.yml (issue #158). continue-on-error below would
+  # swallow this silently without the permission fixing it at the source.
+  id-token: write
 
 concurrency:
   group: human-merge-sweep
@@ -47,6 +66,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Mint pipeline App token (Part 3 retries only)
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
       - name: Run human-merge sweep agent
         id: agent
         # Mirrors principal-review.yml's identical continue-on-error: a
@@ -56,6 +82,13 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Deliberately a second, distinctly-named var, not a second
+          # GH_TOKEN — the agent must choose per-action which one to pass
+          # to `gh`, per its persona's Part 3 instructions. Never the
+          # default for anything, since it's broader-scoped (a full App
+          # installation token) than a single-repo GITHUB_TOKEN needs to
+          # be for most of this run's actions.
+          PIPELINE_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -70,6 +103,17 @@ jobs:
             your complete operating persona for this run. There is no
             specific PR or issue number to start from; find your own work
             per Parts 1, 2, and 3 of that file.
+
+            Two GitHub tokens are available as environment variables:
+            GH_TOKEN (the default `gh` picks up automatically) for every
+            action except one, and PIPELINE_APP_TOKEN, which you must
+            pass explicitly (`GH_TOKEN="$PIPELINE_APP_TOKEN" gh ...`)
+            ONLY for Part 3's retry action — removing status:needs-info
+            and re-adding status:ready-for-dev/status:needs-qa/
+            status:needs-review. That specific label change needs to
+            trigger another workflow, which the default token cannot do.
+            Every other action in every part (merging, closing, editing
+            other labels, commenting) uses the default GH_TOKEN.
 
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run:
