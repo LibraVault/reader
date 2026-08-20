@@ -91,7 +91,7 @@ jobs:
 
       - store_artifacts:
           path: /tmp/artifacts
-          destination: lint-results
+          destination: reports
 
 workflows:
   version: 2
