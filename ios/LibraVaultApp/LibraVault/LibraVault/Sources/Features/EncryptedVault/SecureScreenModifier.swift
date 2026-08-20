@@ -76,9 +76,17 @@ final class ScreenCaptureMonitor: ObservableObject {
     }
 }
 
+@MainActor
 private struct SecureScreenModifier: ViewModifier {
     @StateObject private var monitor: ScreenCaptureMonitor
 
+    // `@MainActor` on the struct (not just `body`) is required here: the
+    // default argument `= ScreenCaptureMonitor()` below calls a
+    // `@MainActor`-isolated initializer, and default-argument expressions
+    // run in the isolation context of the initializer they're attached to
+    // — without this, CI's real build (not just a local guess) failed with
+    // "call to main actor-isolated initializer ... in a synchronous
+    // nonisolated context".
     init(monitor: @autoclosure @escaping () -> ScreenCaptureMonitor = ScreenCaptureMonitor()) {
         _monitor = StateObject(wrappedValue: monitor())
     }
