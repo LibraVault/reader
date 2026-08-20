@@ -1,0 +1,101 @@
+version: 2.1
+
+# Fallback CI: mirrors .github/workflows/jvm-tests.yml's test set. Exists so
+# we can still get a JVM-tests signal (and, if needed, trigger it manually)
+# when GitHub Actions minutes are exhausted or concurrency-capped — both have
+# happened, see the pipeline health-check routine. Not a full replacement for
+# the GitHub Actions suite (no Android instrumentation/iOS builds here) —
+# just the fast unit-test/lint path kept alive on a second provider.
+#
+# Gated behind a pipeline parameter (default false) rather than a plain
+# `workflows:` block, which CircleCI runs on *every* push by default — we
+# don't want to silently start double-billing every commit/PR before we've
+# decided to actually rely on this as a standing fallback rather than a
+# break-glass option. Trigger it explicitly with:
+#   POST /api/v2/project/<slug>/pipeline  body: {"parameters":{"run_jvm_tests":true}}
+# or via the dashboard's "Trigger Pipeline" button, setting run_jvm_tests=true.
+
+parameters:
+  run_jvm_tests:
+    type: boolean
+    default: false
+
+jobs:
+  jvm-tests:
+    docker:
+      - image: cimg/android:2026.08
+    # `large` (~8GB), not `medium` (~4GB): the first real run OOM'd mid-suite
+    # ("Gradle build daemon disappeared unexpectedly") during
+    # :core:database:testDebugUnitTest — Robolectric + a persistent Gradle
+    # daemon + Kotlin daemon + forked test JVMs all competing for RAM in a
+    # 4GB container. GitHub Actions' ubuntu-latest gives ~7GB, which is why
+    # jvm-tests.yml doesn't need this. See also --no-daemon below.
+    resource_class: large
+    environment:
+      JVM_OPTS: -Xmx3200m
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+            - gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+            - gradle-cache-
+
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+
+      # Same task list as jvm-tests.yml's "Run JVM tests" step — see that
+      # file's comment for why the flavor-specific tasks are named explicitly.
+      # --no-daemon: this container is single-use, so a persistent daemon
+      # buys nothing and is pure memory overhead (see resource_class comment).
+      - run:
+          name: Run JVM tests
+          command: |
+            ./gradlew --no-daemon testDebugUnitTest \
+              :feature:settings:testFdroidDebugUnitTest \
+              :feature:settings:testPlayDebugUnitTest \
+              :app:testFdroidDebugUnitTest \
+              :app:testPlayDebugUnitTest \
+              --continue
+
+      - run:
+          name: Run Lint
+          command: ./gradlew --no-daemon lint
+
+      - save_cache:
+          key: gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
+
+      # Each module's JUnit XML lands under its own build/test-results/ dir
+      # (e.g. core/domain/build/test-results/testDebugUnitTest/), not one
+      # top-level build/test-results — point at the repo root so CircleCI's
+      # recursive scan actually finds them.
+      - store_test_results:
+          path: .
+
+      # store_artifacts has no glob support (unlike GH Actions'
+      # upload-artifact), and each module has its own build/reports/ — so
+      # collect the scattered per-module report dirs into one place first.
+      # when: always so a failed test run still uploads whatever reports
+      # exist, same intent as jvm-tests.yml's `if: always()`.
+      - run:
+          name: Collect reports for upload
+          when: always
+          command: |
+            mkdir -p /tmp/artifacts
+            find . -path "*/build/reports/tests" -exec cp -r --parents {} /tmp/artifacts/ \;
+            find . -name "lint-results-debug.html" -exec cp --parents {} /tmp/artifacts/ \;
+
+      - store_artifacts:
+          path: /tmp/artifacts
+          destination: reports
+
+workflows:
+  version: 2
+  manual-jvm-tests:
+    when: << pipeline.parameters.run_jvm_tests >>
+    jobs:
+      - jvm-tests
