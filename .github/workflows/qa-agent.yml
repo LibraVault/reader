@@ -115,7 +115,17 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+        # `git reset --hard HEAD` after the checkout: see the matching
+        # comment in principal-review.yml (issue #386) — `gh pr checkout`
+        # was observed leaving unrelated files' working-tree content
+        # mismatched against HEAD despite reporting a clean switch. Here
+        # that's worse than a wrong diagnostic: the QA agent runs the real
+        # test suite against these working-tree files, so a stale tree
+        # means QA could pass/fail against the wrong code. Force it instead
+        # of assuming it.
+        run: |
+          gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+          git reset --hard HEAD
 
       - name: Check for workflow-file drift (GitHub OIDC self-check)
         # GitHub refuses to mint the OIDC token claude-code-action needs

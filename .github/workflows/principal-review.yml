@@ -136,7 +136,17 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+        # `git reset --hard HEAD` after the checkout is deliberate, not
+        # redundant: issue #386 caught `gh pr checkout` (run right after
+        # actions/checkout@v4's own merge-ref checkout above) reporting a
+        # clean switch while actually leaving 3 unrelated files' working-tree
+        # content mismatched against what's committed at HEAD — root cause
+        # unconfirmed, but every downstream step here (the workflow-drift
+        # check below, and the review agent itself) trusts the working tree
+        # to match HEAD. Force it, rather than assume it.
+        run: |
+          gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+          git reset --hard HEAD
 
       - name: Check for workflow-file drift (GitHub OIDC self-check)
         # GitHub refuses to mint the OIDC token claude-code-action needs
