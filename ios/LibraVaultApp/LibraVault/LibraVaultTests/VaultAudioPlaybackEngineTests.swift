@@ -17,9 +17,18 @@ final class VaultAudioPlaybackEngineTests: XCTestCase {
 
     /// A real, valid, silent WAV — same fixture-building approach as
     /// `AudioPlaybackEngineTests.makeFixtureWAV`, read back as `Data` since
-    /// this engine loads from memory, not a file URL.
+    /// this engine loads from memory, not a file URL. Deliberately writes
+    /// classic 16-bit integer PCM, not `AVAudioFormat`'s 32-bit float
+    /// "standard" format that the file-URL fixture uses: `AVAudioFile`
+    /// writes float-format WAV as `WAVE_FORMAT_EXTENSIBLE`, which
+    /// `AVAudioPlayer(contentsOf:)` (file-based, used by the non-vault
+    /// engine's own fixture) decodes fine but `AVAudioPlayer(data:fileTypeHint:)`
+    /// (this engine's Data-based path) does not — confirmed directly by a
+    /// real CI run (`testLoadReportsTheDatasRealDuration` failing with
+    /// duration 0 against a float-format fixture). Int16 PCM sidesteps the
+    /// extensible-header path entirely and is universally decodable.
     private func makeFixtureWAVData(seconds: Double) throws -> Data {
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 44100, channels: 1, interleaved: true)!
         let frameCount = AVAudioFrameCount(44100 * seconds)
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
         buffer.frameLength = frameCount
