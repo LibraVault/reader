@@ -239,4 +239,32 @@ final class CoverArtExtractorTests: XCTestCase {
 
         XCTAssertNil(result)
     }
+
+    // MARK: - extractRawCoverData (Encrypted Vault import's no-cache entry point)
+
+    func testExtractRawCoverDataReturnsBytesForACoverBearingEpub() async throws {
+        let epubURL = try makeFixtureEPUB(coverImageBytes: makeFixtureCoverImage(), declareCoverMeta: true)
+
+        let data = await CoverArtExtractor.extractRawCoverData(format: .epub, fileURL: epubURL)
+
+        XCTAssertNotNil(data)
+        XCTAssertNotNil(UIImage(data: data!))
+    }
+
+    /// The one property that matters for vault-import safety: unlike
+    /// `extractCoverPath`, this must never write anything the shared,
+    /// unencrypted `CoverArtCache` can later serve back out — vault content
+    /// (including its cover art) must never leak into a plaintext cache.
+    func testExtractRawCoverDataNeverWritesToTheSharedCache() async throws {
+        let epubURL = try makeFixtureEPUB(coverImageBytes: makeFixtureCoverImage(), declareCoverMeta: true)
+
+        _ = await CoverArtExtractor.extractRawCoverData(format: .epub, fileURL: epubURL)
+
+        XCTAssertNil(cache.getCachedPath(key: epubURL.path), "extractRawCoverData must not populate the plaintext cover-art cache")
+    }
+
+    func testExtractRawCoverDataReturnsNilForMarkdown() async {
+        let data = await CoverArtExtractor.extractRawCoverData(format: .markdown, fileURL: tempDir.appendingPathComponent("x.md"))
+        XCTAssertNil(data)
+    }
 }
