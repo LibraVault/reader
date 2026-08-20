@@ -24,20 +24,30 @@ enum CoverArtExtractor {
         let cacheKey = fileURL.path
         if let cached = cache.getCachedPath(key: cacheKey) { return cached }
 
-        let imageData: Data?
-        switch book.format {
-        case .epub:
-            imageData = extractEpubCover(fileURL: fileURL)
-        case .pdf:
-            imageData = extractPdfCover(fileURL: fileURL)
-        case .mp3, .m4b, .aac, .flac, .ogg, .opus:
-            imageData = await extractAudioCover(fileURL: fileURL)
-        case .markdown, .mobi, .cbz:
-            imageData = nil
-        }
-
-        guard let imageData else { return nil }
+        guard let imageData = await extractRawCoverData(format: book.format, fileURL: fileURL) else { return nil }
         return cache.save(key: cacheKey, imageData: imageData)
+    }
+
+    /// Same format-dispatch as `extractCoverPath`, but returns raw bytes and
+    /// never touches `CoverArtCache` — the entry point for Encrypted Vault
+    /// import (`EncryptedVaultContentsViewModel.importFiles`), which must
+    /// never let vault content's cover art land in the shared plaintext
+    /// cover-art cache. Mirrors Android's `MetadataExtractor
+    /// .extractWithoutCaching`, kept as its own deliberate name (not just
+    /// "the private helper `extractCoverPath` already has") specifically so
+    /// this leak-avoidance property is visible at every call site, not just
+    /// inferred from omitting a `cache:` parameter.
+    static func extractRawCoverData(format: MediaFormat, fileURL: URL) async -> Data? {
+        switch format {
+        case .epub:
+            return extractEpubCover(fileURL: fileURL)
+        case .pdf:
+            return extractPdfCover(fileURL: fileURL)
+        case .mp3, .m4b, .aac, .flac, .ogg, .opus:
+            return await extractAudioCover(fileURL: fileURL)
+        case .markdown, .mobi, .cbz:
+            return nil
+        }
     }
 
     // MARK: - EPUB (container.xml → OPF manifest → cover image entry)

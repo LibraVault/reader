@@ -1,11 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// An unlocked vault's contents — browse only for now; import lands in a
-/// follow-up PR (see `EncryptedVaultContentsViewModel`'s doc comment).
-/// Pushed from `EncryptedVaultListView` once a vault is created/unlocked.
+/// An unlocked vault's contents: browse, import, lock. Pushed from
+/// `EncryptedVaultListView` once a vault is created/unlocked.
 struct EncryptedVaultContentsView: View {
     @StateObject private var viewModel: EncryptedVaultContentsViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isPickingFiles = false
 
     init(vaultId: String, sessionManager: VaultSessionManager) {
         _viewModel = StateObject(wrappedValue: EncryptedVaultContentsViewModel(vaultId: vaultId, sessionManager: sessionManager))
@@ -31,6 +32,14 @@ struct EncryptedVaultContentsView: View {
         }
         .navigationTitle("Vault")
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    isPickingFiles = true
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .accessibilityLabel("Import files")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Lock") {
                     // dismiss() itself happens in onChange(of: isLocked) below
@@ -43,6 +52,29 @@ struct EncryptedVaultContentsView: View {
         .onChange(of: viewModel.isLocked) { _, isLocked in
             if isLocked { dismiss() }
         }
+        // .item, not a narrower UTType list: LibraVault reads several
+        // unrelated formats (EPUB/PDF/Markdown/several audio codecs) with no
+        // single UTType covering all of them — matches Folder scanning's own
+        // extension-based (not UTType-based) format detection in
+        // LibraryFileScanner, which is what actually decides what's
+        // importable, not this picker's filter.
+        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result {
+                Task { await viewModel.importFiles(urls: urls) }
+            }
+        }
+        .sheet(isPresented: importSheetBinding) {
+            ImportProgressSheet(items: viewModel.importItems, isImporting: viewModel.isImporting) {
+                viewModel.clearImportItems()
+            }
+        }
+    }
+
+    private var importSheetBinding: Binding<Bool> {
+        Binding(
+            get: { !viewModel.importItems.isEmpty },
+            set: { isPresented in if !isPresented { viewModel.clearImportItems() } }
+        )
     }
 
     private var emptyState: some View {
@@ -55,5 +87,57 @@ struct EncryptedVaultContentsView: View {
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Per-item import progress, shown as a modal sheet — mirrors Android's
+/// `ImportProgressSheet` (`VaultContentsScreen.kt`). Dismiss is blocked
+/// (no visible close action) while `isImporting` is true, so a batch can't
+/// be walked away from mid-import without realizing it's still running;
+/// once finished, "Done" clears the batch and dismisses.
+private struct ImportProgressSheet: View {
+    let items: [ImportItem]
+    let isImporting: Bool
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List(items) { item in
+                HStack {
+                    Text(item.displayName)
+                        .foregroundStyle(LibraVaultColor.onSurface)
+                    Spacer()
+                    statusView(for: item.status)
+                }
+            }
+            .navigationTitle("Importing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done", action: onDone)
+                        .disabled(isImporting)
+                }
+            }
+        }
+        .interactiveDismissDisabled(isImporting)
+    }
+
+    @ViewBuilder
+    private func statusView(for status: ImportItemStatus) -> some View {
+        switch status {
+        case .pending:
+            Text("Waiting")
+                .font(LibraVaultTypography.bodySmall)
+                .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+        case .importing:
+            ProgressView()
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(LibraVaultColor.secondary)
+        case .error(let message):
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+                .accessibilityLabel("Import failed: \(message)")
+        }
     }
 }
