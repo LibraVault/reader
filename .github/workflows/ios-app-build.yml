@@ -13,6 +13,14 @@ on:
     branches:
       - dev
       - feat/v3-ios-port
+    # ready_for_review added on top of the (otherwise implicit)
+    # opened/synchronize/reopened defaults — needed because dev-agent now
+    # opens its PRs as --draft and pushes several commits before marking
+    # one ready (see .claude/agents/dev-agent.md's "Open the PR early, as
+    # a checkpoint" section); without this, the *first* real CI signal
+    # for a draft-opened PR would only arrive on whatever push happens to
+    # land after `gh pr ready`, if any ever does.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ios-build-${{ github.ref }}
@@ -23,6 +31,14 @@ jobs:
     name: Build & Test iOS (Simulator)
     runs-on: macos-26
     timeout-minutes: 30
+    # Skip for draft PRs — see the `pull_request.types` comment above.
+    # iOS build minutes are this pipeline's scarcest CI resource; running
+    # a full ~10-15min simulator build+test on every intermediate commit
+    # of a still-in-progress draft is pure waste (cancel-in-progress
+    # avoids pileup, but each superseded run still spins up a runner and
+    # does real work first). `push` events have no `pull_request` context
+    # at all, so they're always allowed through unconditionally.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
 
     env:
       XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
@@ -167,6 +183,8 @@ jobs:
     name: iOS UI Tests (informational)
     runs-on: macos-26
     timeout-minutes: 45
+    # See build-ios-simulator's identical guard for why.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
 
     env:
       XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
@@ -229,6 +247,8 @@ jobs:
     name: Build Android App
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # See build-ios-simulator's identical guard for why.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -272,7 +292,13 @@ jobs:
     name: Report Build Status
     runs-on: ubuntu-24.04
     needs: [build-ios-simulator, build-android-app]
-    if: always()
+    # always() so this still runs (and can fail the check) when the two
+    # jobs above genuinely fail, not just when they succeed — but ANDed
+    # with the same draft guard those jobs use, so a draft-skipped run
+    # doesn't report a false "FAILED" (needs.*.result == 'skipped' would
+    # otherwise trip the "Fail if either build failed" step below) or post
+    # a misleading build-status comment for work that was never run.
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     timeout-minutes: 5
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

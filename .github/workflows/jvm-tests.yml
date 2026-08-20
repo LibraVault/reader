@@ -10,6 +10,11 @@ on:
     branches: [ dev, main ]
   pull_request:
     branches: [ "**" ]
+    # ready_for_review added on top of the (otherwise implicit)
+    # opened/synchronize/reopened defaults — see ios-app-build.yml's
+    # identical comment for why (dev-agent now opens draft PRs early and
+    # pushes several commits before marking one ready).
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: jvm-${{ github.ref }}
@@ -20,6 +25,9 @@ jobs:
     name: Unit & Integration Tests (JVM)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Skip for draft PRs — see ios-app-build.yml's identical guard for
+    # why. `push` events have no `pull_request` context, so always allowed.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
