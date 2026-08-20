@@ -7,6 +7,12 @@ struct EncryptedVaultContentsView: View {
     @StateObject private var viewModel: EncryptedVaultContentsViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var isPickingFiles = false
+    // Read once per screen appearance, not live-observed — matches
+    // Android's own `remember { VaultScreenSecurityPreference.isEnabled(context) }`
+    // (VaultContentsScreen.kt): toggling the setting in Settings takes
+    // effect the next time a vault content screen opens, not retroactively
+    // on one already on screen.
+    @State private var screenSecurityEnabled = VaultScreenSecurityPreference.isEnabled()
 
     init(vaultId: String, sessionManager: VaultSessionManager) {
         _viewModel = StateObject(wrappedValue: EncryptedVaultContentsViewModel(vaultId: vaultId, sessionManager: sessionManager))
@@ -51,6 +57,16 @@ struct EncryptedVaultContentsView: View {
         .task { await viewModel.refresh() }
         .onChange(of: viewModel.isLocked) { _, isLocked in
             if isLocked { dismiss() }
+        }
+        // #204: even just the list of titles/authors here is content someone
+        // encrypted a vault specifically to hide, matching Android's own
+        // reasoning for applying this to VaultContentsScreen (not just the
+        // reader/player) — see that screen's doc comment. Screen-recording
+        // detection auto-locks (`viewModel.lock()` already drives the
+        // `onChange(of: viewModel.isLocked)` dismiss above); app-switcher
+        // snapshot hiding needs no reaction, it's the overlay itself.
+        .vaultContentSecurity(enabled: screenSecurityEnabled) {
+            Task { await viewModel.lock() }
         }
         // .item, not a narrower UTType list: LibraVault reads several
         // unrelated formats (EPUB/PDF/Markdown/several audio codecs) with no
