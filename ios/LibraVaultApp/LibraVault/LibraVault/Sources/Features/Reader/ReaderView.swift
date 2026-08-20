@@ -544,6 +544,17 @@ struct ReaderView: View {
                             handlePaginatedTap(x: value.location.x, width: geometry.size.width)
                         }
                     )
+                    // Swipe-to-turn-page (issue #348 — Android's EpubNavigatorFragment
+                    // gets this for free from Readium; iOS's custom TextPaginator-based
+                    // pager only had the tap-zone half). .simultaneous for the same
+                    // reason as the tap gesture above — ReaderSwipeGesture.classify
+                    // requires a mostly-horizontal drag past a distance threshold, so a
+                    // vertical text-selection drag doesn't also register as a page turn.
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 20).onEnded { value in
+                            handlePaginatedSwipe(translation: value.translation)
+                        }
+                    )
                 }
                 // Repaginate whenever the measured layout area changes (first
                 // appearance, rotation, Split View / Slide Over resize on iPad) or the
@@ -620,6 +631,17 @@ struct ReaderView: View {
             goToNextPage()
         case .center:
             withAnimation { showToolbar.toggle() }
+        }
+    }
+
+    private func handlePaginatedSwipe(translation: CGSize) {
+        switch ReaderSwipeGesture.classify(translation: translation) {
+        case .previous:
+            goToPreviousPage()
+        case .next:
+            goToNextPage()
+        case .none:
+            break
         }
     }
 
