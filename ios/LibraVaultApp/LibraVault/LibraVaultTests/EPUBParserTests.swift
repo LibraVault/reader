@@ -72,7 +72,9 @@ final class EPUBParserTests: XCTestCase {
     /// Like `makeFixtureEPUB(chapterBodies:)`, but decouples the OPF href from the ZIP
     /// entry name so the resolution rules in `EPUBParser.resolveEntryPath` can be
     /// exercised against a genuinely-built archive rather than a stubbed lookup.
-    private func makeFixtureEPUB(items: [SpineItem]) throws -> URL {
+    /// `extraFiles` (archive-root-relative path -> bytes) drops non-XHTML entries into
+    /// the archive too, e.g. an image an `<img src>` references.
+    private func makeFixtureEPUB(items: [SpineItem], extraFiles: [String: Data] = [:]) throws -> URL {
         let sourceDir = tempDir.appendingPathComponent("source-\(UUID().uuidString)", isDirectory: true)
         let metaInfDir = sourceDir.appendingPathComponent("META-INF", isDirectory: true)
         let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
@@ -109,6 +111,15 @@ final class EPUBParserTests: XCTestCase {
                 withIntermediateDirectories: true
             )
             try item.body.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+
+        for (path, data) in extraFiles {
+            let fileURL = sourceDir.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: fileURL)
         }
 
         let epubURL = tempDir.appendingPathComponent("fixture-\(UUID().uuidString).epub")
@@ -478,5 +489,92 @@ final class EPUBParserTests: XCTestCase {
 
     func testParseBlocksReturnsEmptyForNoData() {
         XCTAssertEqual(EPUBParser.parseBlocks(fromHTML: Data()), [])
+    }
+
+    // MARK: - BookChapter blocks + resolved images (#357)
+
+    /// A 1x1 PNG — real bytes, not a placeholder, so an equality check against the
+    /// resolved dictionary is meaningful.
+    private static let onePixelPNG = Data([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+        0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+        0x44, 0xAE, 0x42, 0x60, 0x82,
+    ])
+
+    func testParseCarriesBlocksAndResolvesChapterImages() throws {
+        let epubURL = try makeFixtureEPUB(
+            items: [
+                SpineItem(
+                    href: "Text/chap0.xhtml",
+                    entryPath: "OEBPS/Text/chap0.xhtml",
+                    body: "<html><body><h1>Cover</h1><p><img src=\"images/cover.png\" alt=\"Cover art\"/></p></body></html>"
+                ),
+            ],
+            extraFiles: ["OEBPS/Text/images/cover.png": Self.onePixelPNG]
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertEqual(chapters[0].blocks, [
+            .heading(level: 1, text: [MarkdownInlineRun(text: "Cover", bold: false, italic: false, code: false)]),
+            .image(url: "images/cover.png", altText: "Cover art"),
+        ])
+        XCTAssertEqual(chapters[0].images["images/cover.png"], Self.onePixelPNG)
+    }
+
+    /// Plain-text-only EPUBs (the overwhelming majority today) must still load fine —
+    /// blocks present, image dict simply empty, not a load failure.
+    func testParsePlainTextOnlyEPUBHasBlocksAndEmptyImageDict() throws {
+        let epubURL = try makeFixtureEPUB(chapterBodies: [
+            "<h1>Chapter One</h1><p>No images here.</p>",
+        ])
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertFalse(chapters[0].blocks.isEmpty)
+        XCTAssertTrue(chapters[0].images.isEmpty)
+    }
+
+    /// An `<img src>` that doesn't resolve to any archive entry (moved/renamed asset)
+    /// is skipped, not a whole-chapter load failure — mirrors
+    /// `loadMarkdownImages`'s same per-image tolerance.
+    func testParseSkipsUnresolvableChapterImageWithoutFailingTheChapter() throws {
+        let epubURL = try makeFixtureEPUB(items: [
+            SpineItem(
+                href: "chap0.xhtml",
+                entryPath: "OEBPS/chap0.xhtml",
+                body: "<html><body><p><img src=\"missing.png\" alt=\"Gone\"/></p></body></html>"
+            ),
+        ])
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertEqual(chapters[0].blocks, [.image(url: "missing.png", altText: "Gone")])
+        XCTAssertTrue(chapters[0].images.isEmpty)
+    }
+
+    /// An image nested inside a list item must still resolve — a flat, top-level-only
+    /// scan of `blocks` would miss it.
+    func testParseResolvesImageNestedInsideList() throws {
+        let epubURL = try makeFixtureEPUB(
+            items: [
+                SpineItem(
+                    href: "chap0.xhtml",
+                    entryPath: "OEBPS/chap0.xhtml",
+                    body: "<html><body><ul><li><img src=\"icon.png\" alt=\"Icon\"/></li></ul></body></html>"
+                ),
+            ],
+            extraFiles: ["OEBPS/icon.png": Self.onePixelPNG]
+        )
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertEqual(chapters[0].images["icon.png"], Self.onePixelPNG)
     }
 }

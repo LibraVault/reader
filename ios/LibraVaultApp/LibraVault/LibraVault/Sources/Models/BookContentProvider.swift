@@ -4,6 +4,24 @@ import PDFKit
 struct BookChapter {
     let title: String
     let text: String
+    /// EPUB-only for now (#357) — the block-model parse of this chapter's XHTML (see
+    /// `EPUBParser.parseBlocks`), empty for PDF/Markdown chapters, which don't build
+    /// one. `text` is kept around alongside this rather than removed, since bookmarks/
+    /// TOC still resolve against it (#361 tracks migrating those).
+    let blocks: [MarkdownBlock]
+    /// Resolved bytes for every `.image` block in `blocks`, keyed by the raw
+    /// (unresolved) `src` exactly as referenced there — mirrors
+    /// `ReaderView.markdownImages`'s keying convention so a later EPUB renderer (#360)
+    /// can reuse the same lookup pattern Markdown's already uses. Empty when `blocks`
+    /// is empty or references no images.
+    let images: [String: Data]
+
+    init(title: String, text: String, blocks: [MarkdownBlock] = [], images: [String: Data] = [:]) {
+        self.title = title
+        self.text = text
+        self.blocks = blocks
+        self.images = images
+    }
 }
 
 /// Loads real chapter content for a book from its backing file — the only source of

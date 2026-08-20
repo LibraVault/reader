@@ -31,7 +31,9 @@ enum EPUBParser {
             let html = (try? extractSpineItem(href, from: archive)) ?? Data()
             let text = plainText(fromHTML: html)
             let title = chapterTitle(fromHTML: html, fallback: "Chapter \(index + 1)")
-            return BookChapter(title: title, text: text)
+            let blocks = parseBlocks(fromHTML: html)
+            let images = resolveImages(for: blocks, chapterHref: href, archive: archive)
+            return BookChapter(title: title, text: text, blocks: blocks, images: images)
         }
     }
 
@@ -384,6 +386,70 @@ enum EPUBParser {
         let text = strippingTags(from: data)
         guard !text.isEmpty else { return [] }
         return [.paragraph(text: [MarkdownInlineRun(text: text, bold: false, italic: false, code: false)])]
+    }
+
+    // MARK: - Chapter image resolution (#357)
+
+    /// Reads the bytes for every `.image` block's `src` in `blocks`, keyed by that raw
+    /// `src` — the EPUB counterpart of `ReaderView.loadMarkdownImages`/
+    /// `BookContentProvider.markdownAssetData`, but resolved eagerly here (at parse
+    /// time, against the already-open archive) rather than later against the
+    /// filesystem, since an EPUB's images live inside the ZIP, not beside it. A `src`
+    /// that can't be resolved to an archive entry is skipped, not treated as a
+    /// whole-chapter failure — mirrors `loadMarkdownImages`'s same per-image tolerance,
+    /// and `MarkdownBlockView` already renders a broken-image placeholder for any url
+    /// missing from the dictionary.
+    private static func resolveImages(for blocks: [MarkdownBlock], chapterHref: String, archive: Archive) -> [String: Data] {
+        var images: [String: Data] = [:]
+        for url in imageURLs(in: blocks) where images[url] == nil {
+            guard let archivePath = resolvedImagePath(url, relativeToHref: chapterHref) else { continue }
+            if let data = try? extractSpineItem(archivePath, from: archive) {
+                images[url] = data
+            }
+        }
+        return images
+    }
+
+    /// Every `.image` `src` referenced anywhere in `blocks`, including inside lists and
+    /// block quotes — an `<img>` under `<li>`/`<blockquote>` is common enough in real
+    /// EPUBs (figure captions, list-based galleries) that a top-level-only scan would
+    /// silently leave those unresolved.
+    private static func imageURLs(in blocks: [MarkdownBlock]) -> [String] {
+        var urls: [String] = []
+        for block in blocks {
+            switch block {
+            case let .image(url, _):
+                urls.append(url)
+            case let .blockQuote(nested):
+                urls.append(contentsOf: imageURLs(in: nested))
+            case let .unorderedList(items):
+                urls.append(contentsOf: items.flatMap { imageURLs(in: $0) })
+            case let .orderedList(items, _):
+                urls.append(contentsOf: items.flatMap { imageURLs(in: $0) })
+            default:
+                break
+            }
+        }
+        return urls
+    }
+
+    /// Resolves an `<img src>` (as written in the XHTML) to an archive-entry-lookup
+    /// path, relative to the chapter's own href the same way a browser would resolve it
+    /// relative to the document's URL — mirrors `markdownAssetData`'s refusal to
+    /// resolve absolute http(s) URLs (LibraVault is offline-first) and its `data:` URIs
+    /// have no archive entry to resolve to either. `extractSpineItem` (not a plain
+    /// archive lookup) does the actual read, so the same href-vs-entry-name tolerance
+    /// that protects spine items (#108) applies to images too.
+    private static func resolvedImagePath(_ src: String, relativeToHref href: String) -> String? {
+        let lower = src.lowercased()
+        guard !lower.hasPrefix("http://"), !lower.hasPrefix("https://"), !lower.hasPrefix("data:") else {
+            return nil
+        }
+        guard !src.isEmpty else { return nil }
+        if src.hasPrefix("/") { return String(src.dropFirst()) }
+
+        let chapterDirectory = (href as NSString).deletingLastPathComponent
+        return chapterDirectory.isEmpty ? src : "\(chapterDirectory)/\(src)"
     }
 
     private static func parseXHTMLBlocks(_ data: Data) -> [MarkdownBlock]? {
