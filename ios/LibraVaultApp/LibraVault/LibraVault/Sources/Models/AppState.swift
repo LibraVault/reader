@@ -201,13 +201,19 @@ final class AppState: ObservableObject {
         userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence(),
         audioEngine: AudioPlaybackEngineProtocol = AudioPlaybackEngine(),
         nowPlayingManager: NowPlayingManaging = SystemNowPlayingManager(),
-        billingManager: StoreKitBillingManager = StoreKitBillingManager()
+        // Optional + resolved in the body, not `= StoreKitBillingManager()` — a default
+        // argument expression that calls another @MainActor-isolated initializer is
+        // type-checked in a synthetic nonisolated context regardless of the caller, even
+        // though AppState itself is @MainActor (a known Swift concurrency-checking
+        // quirk). Resolving it inside the init body runs under AppState's own MainActor
+        // isolation instead, where constructing StoreKitBillingManager() is legal.
+        billingManager: StoreKitBillingManager? = nil
     ) {
         self.folderPersistence = folderPersistence
         self.userPreferencesPersistence = userPreferencesPersistence
         self.audioEngine = audioEngine
         self.nowPlayingManager = nowPlayingManager
-        self.billingManager = billingManager
+        self.billingManager = billingManager ?? StoreKitBillingManager()
         #if DEBUG
         UITestFixtures.ensureFolder(persistence: folderPersistence)
         #endif
