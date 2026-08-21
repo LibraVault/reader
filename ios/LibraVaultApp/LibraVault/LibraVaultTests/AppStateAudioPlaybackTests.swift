@@ -216,9 +216,17 @@ final class AppStateAudioPlaybackTests: XCTestCase {
         XCTAssertNotNil(state.nowPlayingBook, "sleep timer should pause, not fully tear down playback")
         XCTAssertEqual(engine.pauseCallCount, 0, "should still be fading, not paused yet")
 
-        let expectation = expectation(description: "sleep timer fade-out completes")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { expectation.fulfill() }
-        wait(for: [expectation], timeout: 5.0)
+        // Poll for completion instead of sleeping a fixed 3.5s: the fade is 30 real
+        // Timer firings over 3.0s of wall clock, and a loaded CI runner can add enough
+        // RunLoop scheduling jitter across those 30 firings to blow past a fixed
+        // 0.5s margin — this was flaky in CI (issue #391) even though it never
+        // reproduced locally. Waiting for the actual condition, with a generous
+        // timeout, keeps the test genuinely exercising the real timer without racing
+        // its wall-clock duration.
+        let deadline = Date().addingTimeInterval(10.0)
+        while engine.pauseCallCount == 0 && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
 
         XCTAssertEqual(engine.pauseCallCount, 1)
         XCTAssertEqual(engine.volume, 1.0, "volume should be restored after the fade, not left silent for the next resume")
