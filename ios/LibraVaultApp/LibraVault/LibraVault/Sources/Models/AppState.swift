@@ -1,14 +1,15 @@
 import SwiftUI
 import Foundation
+import Combine
 
 @MainActor
 final class AppState: ObservableObject {
     @Published var books: [BookItem] = []
     @Published var isLoading = false
     @Published var error: AppError?
-    // TODO: Wire to core:licensing once a Pro/Supporter state bridge exists (see
-    // DomainBridge.swift's Phase D TODOs) — always false until then, matching reality
-    // rather than showing a badge no license check backs.
+    /// Mirrors `billingManager.isSupporter` (StoreKit 2's `Transaction.currentEntitlements`
+    /// for the subscription product, broadened to include a one-time tip — see that
+    /// property's doc comment) via the Combine `sink` wiring in `init` below.
     @Published var isSupporter = false
 
     // MARK: - Settings (Reading / Playback defaults)
@@ -184,17 +185,29 @@ final class AppState: ObservableObject {
     /// displayed there, and wired below to route the system's play/pause/skip
     /// commands back into this instance's own playback controls.
     private let nowPlayingManager: NowPlayingManaging
+    /// The real StoreKit 2 signal behind `isSupporter` above — not `private`:
+    /// `SettingsView.supportSection` reaches through `appState.billingManager` to read
+    /// `productsAvailable`/`isSubscribed` and call `purchaseSubscription()`/
+    /// `purchaseOneTimeTip()` directly, rather than this class re-exposing every one of
+    /// the manager's members itself. `LibraVaultApp` constructs the single shared
+    /// instance and hands it to both this initializer and its own `.environmentObject`
+    /// injection, so `SettingsView`'s `@EnvironmentObject var billingManager` and this
+    /// property refer to the exact same object.
+    let billingManager: StoreKitBillingManager
+    private var cancellables = Set<AnyCancellable>()
 
     init(
         folderPersistence: FolderPersistence = FolderPersistence(),
         userPreferencesPersistence: UserPreferencesPersistence = UserPreferencesPersistence(),
         audioEngine: AudioPlaybackEngineProtocol = AudioPlaybackEngine(),
-        nowPlayingManager: NowPlayingManaging = SystemNowPlayingManager()
+        nowPlayingManager: NowPlayingManaging = SystemNowPlayingManager(),
+        billingManager: StoreKitBillingManager = StoreKitBillingManager()
     ) {
         self.folderPersistence = folderPersistence
         self.userPreferencesPersistence = userPreferencesPersistence
         self.audioEngine = audioEngine
         self.nowPlayingManager = nowPlayingManager
+        self.billingManager = billingManager
         #if DEBUG
         UITestFixtures.ensureFolder(persistence: folderPersistence)
         #endif
@@ -204,6 +217,10 @@ final class AppState: ObservableObject {
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
         ttsEngineType = userPreferencesPersistence.loadTTSEngineType()
         miniPlayerAutoHideEnabled = userPreferencesPersistence.loadMiniPlayerAutoHideEnabled()
+        billingManager.$isSupporter
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.isSupporter = $0 }
+            .store(in: &cancellables)
 
         audioEngine.onProgress = { [weak self] elapsed, duration in
             Task { @MainActor [weak self] in
