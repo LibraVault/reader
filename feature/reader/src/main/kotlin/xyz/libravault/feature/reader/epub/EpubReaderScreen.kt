@@ -9,6 +9,7 @@ import android.view.MenuItem
 import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -60,6 +61,7 @@ import org.readium.r2.shared.publication.Locator
 import xyz.libravault.core.domain.model.Bookmark
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.ui.theme.ReadingTheme
+import xyz.libravault.core.ui.theme.resolved
 import xyz.libravault.feature.reader.FontFamily
 import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.ScrollMode
@@ -183,6 +185,10 @@ private fun EpubNavigatorView(
     val context = LocalContext.current
     // Stable ID for the FragmentContainerView so we can look up the fragment later
     val containerId = remember { View.generateViewId() }
+    // Read once per composition so ReadingTheme.SYSTEM resolves consistently at both
+    // toEpubPreferences() call sites below; recomposes on its own if the OS appearance
+    // changes while this screen is open (isSystemInDarkTheme() reads LocalConfiguration).
+    val systemInDarkTheme = isSystemInDarkTheme()
 
     // Keep callbacks stable across recompositions so the listener closure
     // always invokes the latest lambda without recreating the fragment
@@ -299,7 +305,7 @@ private fun EpubNavigatorView(
         }
 
         // Preferences derived from current ReaderSettings
-        val preferences = settings.toEpubPreferences()
+        val preferences = settings.toEpubPreferences(systemInDarkTheme)
 
         val selectionCallback = object : ActionMode.Callback {
             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
@@ -398,12 +404,15 @@ private fun EpubNavigatorView(
     }
 
     // ── Settings hot-reload ──────────────────────────────────────────────────
-    // Push updated preferences to the navigator whenever settings or the navigator
-    // itself changes. Keying on both ensures preferences are applied immediately
-    // after the fragment is committed (navigator starts null and is set inside
-    // DisposableEffect, so LaunchedEffect(settings) alone would miss the first apply).
-    LaunchedEffect(settings, navigator) {
-        navigator?.submitPreferences(settings.toEpubPreferences())
+    // Push updated preferences to the navigator whenever settings, systemInDarkTheme, or
+    // the navigator itself changes. Keying on both settings and navigator ensures
+    // preferences are applied immediately after the fragment is committed (navigator
+    // starts null and is set inside DisposableEffect, so LaunchedEffect(settings) alone
+    // would miss the first apply); systemInDarkTheme is keyed separately so a
+    // ReadingTheme.SYSTEM selection re-resolves and re-applies live when the OS appearance
+    // changes while the reader is open (#370's "updates live" acceptance criterion).
+    LaunchedEffect(settings, systemInDarkTheme, navigator) {
+        navigator?.submitPreferences(settings.toEpubPreferences(systemInDarkTheme))
     }
 
     // ── Highlight decorations ────────────────────────────────────────────────
@@ -452,14 +461,19 @@ private fun EpubNavigatorView(
  *
  * Scroll mode: Readium's scroll mode maps to `overflow = SCROLLED` (continuous)
  * vs the default paginated layout.
+ *
+ * [systemInDarkTheme] resolves [ReadingTheme.SYSTEM] (#370) — pass the caller's
+ * `isSystemInDarkTheme()`; Readium's own [Theme] has no fourth "system" case, so this is
+ * one of the call sites that must resolve before converting (same shape as
+ * `mermaidThemeName` in the Mermaid package).
  */
 @OptIn(ExperimentalReadiumApi::class)
-private fun ReaderSettings.toEpubPreferences(): EpubPreferences {
+private fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
     return EpubPreferences(
-        theme = when (theme) {
-            ReadingTheme.DARK  -> Theme.DARK
-            ReadingTheme.LIGHT -> Theme.LIGHT
-            ReadingTheme.SEPIA -> Theme.SEPIA
+        theme = when (theme.resolved(systemInDarkTheme)) {
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK  -> Theme.DARK
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT -> Theme.LIGHT
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA -> Theme.SEPIA
         },
         // Disable publisher CSS so our font/size/spacing overrides take effect.
         publisherStyles = false,

@@ -74,4 +74,67 @@ class LibravaultThemeTest {
 
         assertTrue(isLightStatusBarIcons())
     }
+
+    // ── #349/#370: SYSTEM + the bug it uncovered ────────────────────────────────
+
+    @Test
+    fun `an explicit DARK pick wins over an ambient light system setting`() {
+        // Regression test for a latent bug this issue's resolution logic fixed: the old
+        // `when` here only special-cased SEPIA and otherwise fell straight through to the
+        // ambient darkTheme value, so an explicit DARK/LIGHT pick had no actual effect —
+        // only the system setting mattered. darkTheme = false (system light) deliberately,
+        // to prove DARK still wins.
+        composeTestRule.setContent {
+            LibravaultTheme(darkTheme = false, readingTheme = ReadingTheme.DARK) {}
+        }
+        composeTestRule.waitForIdle()
+
+        assertFalse(
+            "An explicit Dark pick must render dark regardless of the system's own " +
+                "light/dark setting",
+            isLightStatusBarIcons(),
+        )
+    }
+
+    @Test
+    fun `an explicit LIGHT pick wins over an ambient dark system setting`() {
+        // Mirror of the test above: darkTheme = true (system dark) deliberately, to prove
+        // LIGHT still wins.
+        composeTestRule.setContent {
+            LibravaultTheme(darkTheme = true, readingTheme = ReadingTheme.LIGHT) {}
+        }
+        composeTestRule.waitForIdle()
+
+        assertTrue(
+            "An explicit Light pick must render light regardless of the system's own " +
+                "light/dark setting",
+            isLightStatusBarIcons(),
+        )
+    }
+
+    @Test
+    fun `SYSTEM follows the ambient dark system setting`() {
+        composeTestRule.setContent {
+            LibravaultTheme(darkTheme = true, readingTheme = ReadingTheme.SYSTEM) {}
+        }
+        composeTestRule.waitForIdle()
+
+        assertFalse(
+            "SYSTEM with the OS in dark mode should render dark",
+            isLightStatusBarIcons(),
+        )
+    }
+
+    @Test
+    fun `SYSTEM follows the ambient light system setting`() {
+        composeTestRule.setContent {
+            LibravaultTheme(darkTheme = false, readingTheme = ReadingTheme.SYSTEM) {}
+        }
+        composeTestRule.waitForIdle()
+
+        assertTrue(
+            "SYSTEM with the OS in light mode should render light",
+            isLightStatusBarIcons(),
+        )
+    }
 }

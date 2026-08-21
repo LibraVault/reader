@@ -85,6 +85,32 @@ class VaultReaderSettingsSheetUiTest {
     }
 
     @Test
+    fun `System appears as a 4th theme chip and can be shown selected`() {
+        // #349/#370: ReadingTheme.entries.forEach in VaultReaderSettingsSheet is what
+        // makes this appear with no changes to the sheet itself — this test is the
+        // regression guard for that.
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultReaderSettingsSheet(
+                    settings = VaultReaderSettings(theme = ReadingTheme.SYSTEM),
+                    showFontControls = true,
+                    onThemeChanged = {},
+                    onFontSizeChanged = {},
+                    onFontFamilyChanged = {},
+                    onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("System").assertIsSelected()
+        composeTestRule.onNodeWithText("Dark").assertExists()
+        composeTestRule.onNodeWithText("Light").assertExists()
+        composeTestRule.onNodeWithText("Sepia").assertExists()
+    }
+
+    @Test
     fun `scroll mode row is shown even when font controls are hidden`() {
         composeTestRule.setContent {
             LibravaultTheme {

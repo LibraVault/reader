@@ -252,6 +252,17 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `theme change round-trips through ui state, including SYSTEM`() = runTest {
+        val vm = viewModel()
+
+        vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.SYSTEM)
+        assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.SYSTEM, vm.uiState.value.settings.theme)
+
+        vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA)
+        assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA, vm.uiState.value.settings.theme)
+    }
+
+    @Test
     fun `settings sheet shows and hides`() = runTest {
         val vm = viewModel()
         assertFalse(vm.uiState.value.showSettingsSheet)

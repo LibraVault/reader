@@ -17,7 +17,34 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import xyz.libravault.core.ui.findActivity
 
-enum class ReadingTheme { DARK, LIGHT, SEPIA }
+/**
+ * [SYSTEM] (#349/#370) follows the OS-level light/dark appearance setting instead of a
+ * fixed choice. It is never itself a renderable color scheme — every consumer that needs
+ * an actual scheme (this file's own [LibravaultTheme], Mermaid diagram theming, Readium's
+ * `EpubPreferences.theme`, …) must resolve it first via [resolved] into a
+ * [ConcreteReadingTheme]. This mirrors iOS's `ReadingTheme`/`ConcreteReadingTheme` split
+ * (#374): the compiler enforces resolution at every call site instead of risking a
+ * silently-wrong fallback in a non-exhaustive `when`.
+ */
+enum class ReadingTheme { DARK, LIGHT, SEPIA, SYSTEM }
+
+/** The concrete, renderable themes [ReadingTheme] can resolve to — i.e. [ReadingTheme]
+ * minus [ReadingTheme.SYSTEM]. See [ReadingTheme]'s doc for why this split exists. */
+enum class ConcreteReadingTheme { DARK, LIGHT, SEPIA }
+
+/**
+ * Resolves [ReadingTheme.SYSTEM] to [ConcreteReadingTheme.DARK] or
+ * [ConcreteReadingTheme.LIGHT] per [systemInDarkTheme] (pass `isSystemInDarkTheme()` from
+ * a `@Composable` call site — see [LibravaultTheme]). Dark/Light/Sepia pass through
+ * unchanged regardless of the system setting. Sepia is never a resolution target: it isn't
+ * one of the OS's two appearance choices, same call as iOS's `resolved(for colorScheme:)`.
+ */
+fun ReadingTheme.resolved(systemInDarkTheme: Boolean): ConcreteReadingTheme = when (this) {
+    ReadingTheme.DARK   -> ConcreteReadingTheme.DARK
+    ReadingTheme.LIGHT  -> ConcreteReadingTheme.LIGHT
+    ReadingTheme.SEPIA  -> ConcreteReadingTheme.SEPIA
+    ReadingTheme.SYSTEM -> if (systemInDarkTheme) ConcreteReadingTheme.DARK else ConcreteReadingTheme.LIGHT
+}
 
 val LocalReadingTheme = staticCompositionLocalOf { ReadingTheme.DARK }
 
@@ -81,6 +108,16 @@ fun LibravaultTheme(
     useDynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // readingTheme is resolved against darkTheme (default isSystemInDarkTheme(), i.e. the
+    // OS-level appearance) before anything below looks at it. This is also the fix for a
+    // latent bug: the old version of this `when` only special-cased SEPIA and otherwise
+    // fell straight through to the ambient `darkTheme` value, so an explicit DARK or LIGHT
+    // pick was silently overridden by whatever the system's own light/dark setting
+    // happened to be — the reading-theme selector had no actual effect for those two
+    // cases. Resolving first makes DARK/LIGHT/SEPIA always win regardless of the system
+    // setting, and makes SYSTEM the only case that still follows it.
+    val resolvedTheme = readingTheme.resolved(darkTheme)
+
     // Sepia and Light are both light backgrounds — only Dark (and dynamic-dark) call for
     // light-colored status bar icons. Tracked alongside colorScheme, rather than derived
     // from it after the fact, since dynamic color schemes don't cleanly say "I'm dark".
@@ -92,9 +129,9 @@ fun LibravaultTheme(
             isLightBackground = !darkTheme
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         }
-        readingTheme == ReadingTheme.SEPIA -> { isLightBackground = true; SepiaColorScheme }
-        darkTheme -> DarkColorScheme
-        else      -> { isLightBackground = true; LightColorScheme }
+        resolvedTheme == ConcreteReadingTheme.SEPIA -> { isLightBackground = true; SepiaColorScheme }
+        resolvedTheme == ConcreteReadingTheme.DARK  -> DarkColorScheme
+        else                                        -> { isLightBackground = true; LightColorScheme }
     }
 
     // Reactively matches the status bar's icon color to the resolved theme. Previously

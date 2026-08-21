@@ -63,6 +63,8 @@ class MainActivity : FragmentActivity() {
                         xyz.libravault.core.ui.theme.ReadingTheme.LIGHT
                     xyz.libravault.core.domain.model.AppReadingTheme.SEPIA ->
                         xyz.libravault.core.ui.theme.ReadingTheme.SEPIA
+                    xyz.libravault.core.domain.model.AppReadingTheme.SYSTEM ->
+                        xyz.libravault.core.ui.theme.ReadingTheme.SYSTEM
                 },
                 useDynamicColor = prefs.dynamicColorEnabled,
             ) {

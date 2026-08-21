@@ -26,7 +26,14 @@ data class UserPreferences(
     val screenSecurityEnabled: Boolean        = true,
 )
 
-enum class AppReadingTheme { DARK, LIGHT, SEPIA }
+/**
+ * [SYSTEM] (#349/#370) follows the OS-level light/dark appearance setting rather than a
+ * fixed choice; resolved to a concrete [xyz.libravault.core.ui.theme.ConcreteReadingTheme]
+ * at render time in core:ui (`ReadingTheme.resolved`), mirroring the UI-layer enum this one
+ * is intentionally duplicated from. Default for new installs stays [DARK], matching the
+ * iOS decision (#374) — System is an available choice, not the default.
+ */
+enum class AppReadingTheme { DARK, LIGHT, SEPIA, SYSTEM }
 
 // ── Playback speed helpers ───────────────────────────────────────────────────
 
