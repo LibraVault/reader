@@ -24,6 +24,7 @@ dependencies {
     api(project(":core:storage"))
     api(project(":core:logger"))
     api(project(":core:tts"))
+    api(project(":core:billing"))
     // hilt-android/hilt-android-compiler come from the libravault.android.hilt
     // convention plugin (applied via libravault.android.feature above) — declaring
     // them again here just duplicated a hardcoded version that drifted from it.
