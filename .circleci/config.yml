@@ -1,24 +1,70 @@
 version: 2.1
 
-# Fallback CI: mirrors .github/workflows/jvm-tests.yml's test set. Exists so
-# we can still get a JVM-tests signal (and, if needed, trigger it manually)
-# when GitHub Actions minutes are exhausted or concurrency-capped — both have
-# happened, see the pipeline health-check routine. Not a full replacement for
-# the GitHub Actions suite (no Android instrumentation/iOS builds here) —
-# just the fast unit-test/lint path kept alive on a second provider.
+# Fallback CI: mirrors the equivalent .github/workflows/*.yml jobs. Exists so
+# we can still get these signals (and, if needed, trigger them manually or
+# via the `circleci-job` PR label — see circleci-dispatch.yml) when GitHub
+# Actions minutes are exhausted or concurrency-capped — both have happened,
+# see the pipeline health-check routine. Not a full replacement for the
+# GitHub Actions suite (no release signing, no iOS, no agent-pipeline
+# orchestration — see issue #376 for the phased plan covering those) — just
+# the test signals kept alive on a second provider.
 #
-# Gated behind a pipeline parameter (default false) rather than a plain
-# `workflows:` block, which CircleCI runs on *every* push by default — we
-# don't want to silently start double-billing every commit/PR before we've
-# decided to actually rely on this as a standing fallback rather than a
-# break-glass option. Trigger it explicitly with:
-#   POST /api/v2/project/<slug>/pipeline  body: {"parameters":{"run_jvm_tests":true}}
-# or via the dashboard's "Trigger Pipeline" button, setting run_jvm_tests=true.
+# Every job here is gated behind its own pipeline parameter (default false)
+# rather than a plain `workflows:` block, which CircleCI runs on *every* push
+# by default — we don't want to silently start double-billing every
+# commit/PR before we've decided to actually rely on this as a standing
+# fallback rather than a break-glass option. Trigger a job explicitly with:
+#   POST /api/v2/project/<slug>/pipeline/run  body: {"definition_id": "...",
+#     "config": {"branch": "<branch>"}, "checkout": {"branch": "<branch>"},
+#     "parameters": {"run_jvm_tests": true}}
+# (this project is on CircleCI's GitHub App integration, which needs
+# /pipeline/run + a definition_id rather than the plain /pipeline endpoint —
+# see project_circleci_fallback_ci memory / issue #340 for the actual slug
+# and definition_id), or via the dashboard's "Trigger Pipeline" button, or by
+# applying the `circleci-job` label to a PR (circleci-dispatch.yml).
+
+orbs:
+  # Only used by the ui-tests job below, for its emulator machine executor +
+  # start-emulator-and-run-tests command. Pin verified against the orb
+  # registry at implementation time (2026-08) — bump deliberately, and check
+  # https://circleci.com/developer/orbs/orb/circleci/android for the current
+  # android-machine image tag before the first real trigger of that job, the
+  # same way the jvm-tests job below needed a resource-class bump on its
+  # first real run.
+  android: circleci/android@2.5.0
 
 parameters:
   run_jvm_tests:
     type: boolean
     default: false
+  # Mirrors .github/workflows/ui-tests.yml's Compose UI/instrumentation
+  # suite. See the ui-tests job below for why this is the least certain of
+  # the three new jobs to work unmodified on the first real trigger.
+  run_ui_tests:
+    type: boolean
+    default: false
+  # Mirrors .github/workflows/android-keystore-hardware-test.yml.
+  run_keystore_hw_test:
+    type: boolean
+    default: false
+  # Mirrors .github/workflows/android-tts-audio-test.yml.
+  run_tts_audio_test:
+    type: boolean
+    default: false
+  # Shared by both Firebase Test Lab jobs, same defaults/reasoning as the
+  # matching workflow_dispatch inputs on the GH Actions side: must be a
+  # PHYSICAL arm64 device (Test Lab's virtual devices are x86/x86_64 and
+  # would just skip/misreport, same trap documented at length in the GH
+  # workflow comments). Re-check availability with
+  #   gcloud firebase test android list-device-capacities
+  # before switching — a Low-capacity model can queue indefinitely on the
+  # free tier (see android-tts-audio-test.yml's history with this).
+  device_model:
+    type: string
+    default: "akita"
+  device_version:
+    type: string
+    default: "34"
 
 jobs:
   jvm-tests:
@@ -93,9 +139,209 @@ jobs:
           path: /tmp/artifacts
           destination: reports
 
+  # Mirrors .github/workflows/ui-tests.yml. Least certain of the three new
+  # jobs here: GH Actions gets emulator hardware acceleration via
+  # reactivecircus/android-emulator-runner + manually-enabled KVM on
+  # ubuntu-latest, which has no direct CircleCI equivalent. This uses
+  # CircleCI's own android-machine executor + the android orb's
+  # start-emulator-and-run-tests command instead (documented nested-KVM
+  # emulator path — see https://circleci.com/docs/android-machine-image and
+  # https://circleci.com/developer/orbs/orb/circleci/android), which is a
+  # different mechanism, not a line-for-line port. Treat the first real
+  # trigger of this job as a shakeout run, same as jvm-tests' first run
+  # above — verify the orb's current command/parameter names and the
+  # android-machine image tag before relying on this.
+  ui-tests:
+    executor:
+      name: android/android-machine
+      resource-class: large
+      tag: 2024.01.1
+    steps:
+      - checkout
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+      # Same single real test today as ui-tests.yml documents: feature:reader's
+      # ReadiumIntegrationTest. core:tts's PocketTtsAudioOutputTest self-skips
+      # on any x86_64 target (arm64-only sherpa-onnx AAR) — see the
+      # tts-audio-test job below for that one's real signal.
+      - android/start-emulator-and-run-tests:
+          system-image: system-images;android-34;google_apis;x86_64
+          post-emulator-launch-assemble-command: ""
+          test-command: "./gradlew connectedDebugAndroidTest --continue"
+      - store_test_results:
+          path: build/reports/androidTests
+      - store_artifacts:
+          path: build/reports/androidTests
+
+  # Mirrors .github/workflows/android-keystore-hardware-test.yml. Unlike
+  # ui-tests above, this doesn't need an emulator at all — it builds an
+  # instrumentation APK on any Linux host and dispatches it to a real
+  # Firebase Test Lab device, so it ports directly onto the same docker
+  # executor as jvm-tests.
+  keystore-hardware-test:
+    docker:
+      - image: cimg/android:2026.08
+    resource_class: medium
+    environment:
+      RESULTS_BUCKET: libravault-test-lab-results
+    steps:
+      - checkout
+
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+
+      # core:vaultstore is a library module, so this is the only APK
+      # produced: it is self-instrumenting (targetPackage == its own
+      # package), same as the GH Actions version.
+      - run:
+          name: Assemble instrumentation test APK
+          command: ./gradlew :core:vaultstore:assembleDebugAndroidTest
+
+      - run:
+          name: Locate test APK
+          command: |
+            APK=$(find core/vaultstore/build/outputs/apk/androidTest -name '*.apk' | head -1)
+            if [ -z "$APK" ]; then
+              echo "No androidTest APK was produced" >&2
+              exit 1
+            fi
+            echo "Built $APK ($(du -h "$APK" | cut -f1))"
+            echo "export APK_PATH=$APK" >> "$BASH_ENV"
+
+      # cimg/android doesn't ship the gcloud CLI — install it here rather
+      # than switching base images, so this job stays on the same cached
+      # image as jvm-tests/tts-audio-test.
+      - run:
+          name: Install gcloud CLI
+          command: |
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+              | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+            curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+              | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+            sudo apt-get update && sudo apt-get install -y google-cloud-cli
+
+      # Reuses the same GCP service account as the GH Actions version, held
+      # as a CircleCI project/context env var (see issue #377) rather than a
+      # GitHub secret — it additionally needs roles/cloudtestservice.testAdmin
+      # and roles/viewer on the project, plus the Cloud Testing and Cloud
+      # Tool Results APIs enabled, same prerequisites as the GH job.
+      - run:
+          name: Authenticate to Google Cloud
+          command: |
+            echo "$FIREBASE_SERVICE_ACCOUNT_JSON" | base64 --decode > /tmp/gcp-sa.json
+            gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+            echo "export GOOGLE_CLOUD_PROJECT=$(jq -r .project_id /tmp/gcp-sa.json)" >> "$BASH_ENV"
+
+      - run:
+          name: Run on Firebase Test Lab
+          command: |
+            gcloud firebase test android run \
+              --type instrumentation \
+              --project "$GOOGLE_CLOUD_PROJECT" \
+              --app "$APK_PATH" \
+              --test "$APK_PATH" \
+              --device "model=<< pipeline.parameters.device_model >>,version=<< pipeline.parameters.device_version >>,locale=en,orientation=portrait" \
+              --test-targets "class xyz.libravault.core.vaultstore.AndroidKeystoreHardwareKeyWrapHardwareBackedTest" \
+              --timeout 15m \
+              --results-bucket "$RESULTS_BUCKET" \
+              --results-dir "keystore-hardware-circleci-<< pipeline.number >>" \
+              --format json
+
+      - run:
+          name: Clean up credentials
+          when: always
+          command: rm -f /tmp/gcp-sa.json
+
+  # Mirrors .github/workflows/android-tts-audio-test.yml. Same shape as
+  # keystore-hardware-test above — no emulator needed, ports directly.
+  tts-audio-test:
+    docker:
+      - image: cimg/android:2026.08
+    resource_class: medium
+    environment:
+      RESULTS_BUCKET: libravault-test-lab-results
+    steps:
+      - checkout
+
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+
+      # core:tts is a library module, so this is the only APK produced: it
+      # is self-instrumenting and already contains the arm64 natives, the
+      # ONNX voice model and espeak-ng-data, same as the GH Actions version.
+      - run:
+          name: Assemble instrumentation test APK
+          command: ./gradlew :core:tts:assembleDebugAndroidTest
+
+      - run:
+          name: Locate test APK
+          command: |
+            APK=$(find core/tts/build/outputs/apk/androidTest -name '*.apk' | head -1)
+            if [ -z "$APK" ]; then
+              echo "No androidTest APK was produced" >&2
+              exit 1
+            fi
+            echo "Built $APK ($(du -h "$APK" | cut -f1))"
+            echo "export APK_PATH=$APK" >> "$BASH_ENV"
+
+      - run:
+          name: Install gcloud CLI
+          command: |
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+              | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+            curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+              | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+            sudo apt-get update && sudo apt-get install -y google-cloud-cli
+
+      - run:
+          name: Authenticate to Google Cloud
+          command: |
+            echo "$FIREBASE_SERVICE_ACCOUNT_JSON" | base64 --decode > /tmp/gcp-sa.json
+            gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+            echo "export GOOGLE_CLOUD_PROJECT=$(jq -r .project_id /tmp/gcp-sa.json)" >> "$BASH_ENV"
+
+      # --results-bucket is not optional here, despite gcloud defaulting it —
+      # see android-tts-audio-test.yml's note on why the Google-managed
+      # default bucket cannot work for this project. Same in-project bucket
+      # reused here.
+      - run:
+          name: Run on Firebase Test Lab
+          command: |
+            gcloud firebase test android run \
+              --type instrumentation \
+              --project "$GOOGLE_CLOUD_PROJECT" \
+              --app "$APK_PATH" \
+              --test "$APK_PATH" \
+              --device "model=<< pipeline.parameters.device_model >>,version=<< pipeline.parameters.device_version >>,locale=en,orientation=portrait" \
+              --test-targets "class xyz.libravault.core.tts.pocket.PocketTtsAudioOutputTest" \
+              --timeout 15m \
+              --results-bucket "$RESULTS_BUCKET" \
+              --results-dir "tts-audio-circleci-<< pipeline.number >>" \
+              --format json
+
+      - run:
+          name: Clean up credentials
+          when: always
+          command: rm -f /tmp/gcp-sa.json
+
 workflows:
   version: 2
   manual-jvm-tests:
     when: << pipeline.parameters.run_jvm_tests >>
     jobs:
       - jvm-tests
+  manual-ui-tests:
+    when: << pipeline.parameters.run_ui_tests >>
+    jobs:
+      - ui-tests
+  manual-keystore-hardware-test:
+    when: << pipeline.parameters.run_keystore_hw_test >>
+    jobs:
+      - keystore-hardware-test
+  manual-tts-audio-test:
+    when: << pipeline.parameters.run_tts_audio_test >>
+    jobs:
+      - tts-audio-test

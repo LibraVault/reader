@@ -1,0 +1,107 @@
+name: CircleCI Dispatch
+
+# Phase A of issue #376's CircleCI-parity plan (#377). Lets a human (or an
+# agent) get the CircleCI fallback signal (.circleci/config.yml) for a PR on
+# demand, without touching the CircleCI dashboard, by applying the
+# `circleci-job` label.
+#
+# PR-only, not issues: CircleCI needs a branch to check out, and a bare
+# issue has none — applying the label to a plain issue is a no-op (this
+# workflow simply doesn't fire, since it only listens for pull_request
+# events).
+#
+# Triggers every fallback job at once (jvm-tests, ui-tests,
+# keystore-hardware-test, tts-audio-test) rather than letting the label pick
+# one — the label is meant as "give me the full CircleCI signal for this
+# PR", not a per-job dispatch. Split into separate labels later if that
+# turns out to be too coarse in practice.
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: circleci-dispatch-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  pull-requests: write
+  # gh pr comment/gh pr edit --remove-label both go through the Issues API
+  # under the hood, same as qa-agent.yml's permissions block.
+  issues: write
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'circleci-job'
+    runs-on: ubuntu-latest
+    steps:
+      # Requires the CIRCLECI_TOKEN repo secret: a CircleCI Personal API
+      # Token (project tokens are rejected by /pipeline/run — see
+      # project_circleci_fallback_ci memory). Not present as of writing
+      # this workflow — must be created (CircleCI dashboard -> Personal API
+      # Tokens) and stored with
+      #   gh secret set CIRCLECI_TOKEN --repo LibraVault/reader
+      # before this workflow can succeed. This is also the PAT-rotation
+      # follow-up left outstanding by PR #340 — use a freshly-generated
+      # token here rather than reusing whatever was pasted in chat during
+      # that setup.
+      - name: Trigger CircleCI pipeline
+        id: trigger
+        env:
+          CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # Slug/definition_id are this project's fixed CircleCI identifiers
+          # (GitHub-App-integrated projects use /pipeline/run + a
+          # definition_id, not the plain /pipeline endpoint — see
+          # project_circleci_fallback_ci memory for how these were found).
+          SLUG="circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd"
+          DEFINITION_ID="8619f01a-79b6-437e-9377-c21f19afca8d"
+
+          RESPONSE=$(curl -sS -X POST "https://circleci.com/api/v2/project/$SLUG/pipeline/run" \
+            --header "Circle-Token: $CIRCLECI_TOKEN" \
+            --header "content-type: application/json" \
+            --data "{
+              \"definition_id\": \"$DEFINITION_ID\",
+              \"config\": {\"branch\": \"$BRANCH\"},
+              \"checkout\": {\"branch\": \"$BRANCH\"},
+              \"parameters\": {
+                \"run_jvm_tests\": true,
+                \"run_ui_tests\": true,
+                \"run_keystore_hw_test\": true,
+                \"run_tts_audio_test\": true
+              }
+            }")
+
+          echo "$RESPONSE"
+          NUMBER=$(echo "$RESPONSE" | jq -r '.number // empty')
+          if [ -z "$NUMBER" ]; then
+            echo "error=CircleCI did not return a pipeline number — see the response body above." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "pipeline_number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Comment with the run link
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PIPELINE_NUMBER: ${{ steps.trigger.outputs.pipeline_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "Triggered the CircleCI fallback pipeline for this branch (jvm-tests, ui-tests, keystore-hardware-test, tts-audio-test): https://app.circleci.com/pipelines/circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd/$PIPELINE_NUMBER"
+
+      - name: Comment on failure to trigger
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "Failed to trigger the CircleCI fallback pipeline — check that the CIRCLECI_TOKEN repo secret is set and valid, then re-apply the \`circleci-job\` label. See the workflow run log for details." || true
+
+      - name: Remove the triggering label
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR_NUMBER" --remove-label circleci-job || true
