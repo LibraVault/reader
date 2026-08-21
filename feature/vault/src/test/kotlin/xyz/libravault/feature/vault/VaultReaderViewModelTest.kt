@@ -119,6 +119,22 @@ class VaultReaderViewModelTest {
     }
 
     @Test
+    fun `an EPUB entry that is DRM-restricted surfaces a DrmProtected state`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("EPUB"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+        coEvery { readiumProvider.open(any(), fileIdHex) } returns
+            Result.failure(VaultDrmProtectedException("Adobe ADEPT"))
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertInstanceOf(VaultReaderState.DrmProtected::class.java, state)
+        assertEquals("Adobe ADEPT", (state as VaultReaderState.DrmProtected).schemeName)
+    }
+
+    @Test
     fun `an EPUB entry that opens successfully reaches EpubReady`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
         coEvery { vaultStore.listEntries() } returns listOf(entry("EPUB"))

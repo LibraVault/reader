@@ -112,6 +112,12 @@ fun VaultReaderScreen(
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.align(Alignment.Center).padding(32.dp),
                 )
+                is VaultReaderState.DrmProtected -> Text(
+                    "This book is protected and can't be opened" +
+                        (s.schemeName?.let { " (protected by $it)" } ?: ""),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                )
                 is VaultReaderState.WrongScreen -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 is VaultReaderState.EpubReady -> {
                     val fragmentManager = activity?.supportFragmentManager

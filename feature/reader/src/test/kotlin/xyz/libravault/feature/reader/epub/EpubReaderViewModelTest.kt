@@ -97,6 +97,19 @@ class EpubReaderViewModelTest {
     }
 
     @Test
+    fun `openPublication moves to DrmProtected state when the publication is DRM-restricted`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        coEvery { readiumProvider.open(uri) } returns Result.failure(DrmProtectedException("Adobe ADEPT"))
+
+        val vm = viewModel()
+        vm.openPublication(uri)
+
+        val state = vm.state.value
+        assertTrue(state is EpubPublicationState.DrmProtected, "expected DrmProtected, got $state")
+        assertEquals("Adobe ADEPT", (state as EpubPublicationState.DrmProtected).schemeName)
+    }
+
+    @Test
     fun `openPublication is a no-op when already Ready for the same uri`() = runTest {
         val uri = mockk<Uri>(relaxed = true)
         val publication = mockk<Publication>(relaxed = true)

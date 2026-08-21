@@ -97,9 +97,13 @@ class EpubReaderViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     logger.e(TAG, "Failed to open publication at $uri", error)
-                    _state.value = EpubPublicationState.Error(
-                        error.message ?: "Unknown error opening publication"
-                    )
+                    _state.value = if (error is DrmProtectedException) {
+                        EpubPublicationState.DrmProtected(error.schemeName)
+                    } else {
+                        EpubPublicationState.Error(
+                            error.message ?: "Unknown error opening publication"
+                        )
+                    }
                 }
         }
     }
@@ -250,4 +254,9 @@ sealed class EpubPublicationState {
 
     /** Non-recoverable error opening the publication. */
     data class Error(val message: String) : EpubPublicationState()
+
+    /** Publication is DRM-restricted (e.g. Adobe ADEPT, LCP) — Libravault has no
+     * decryption support, so it's surfaced distinctly from [Error] to show
+     * DRM-specific copy instead of a raw parser error message. */
+    data class DrmProtected(val schemeName: String?) : EpubPublicationState()
 }

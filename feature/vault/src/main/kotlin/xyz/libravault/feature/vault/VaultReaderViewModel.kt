@@ -21,6 +21,10 @@ import javax.inject.Inject
 sealed class VaultReaderState {
     object Loading : VaultReaderState()
     data class Error(val message: String) : VaultReaderState()
+    /** Publication is DRM-restricted (e.g. Adobe ADEPT, LCP) — Libravault has no
+     * decryption support, so it's surfaced distinctly from [Error] to show
+     * DRM-specific copy instead of a raw parser error message. */
+    data class DrmProtected(val schemeName: String?) : VaultReaderState()
     data class EpubReady(val title: String, val publication: Publication) : VaultReaderState()
     /** [reader] stays open for as long as this state is current — the PDF
      * screen reads from it directly (see [VaultReaderViewModel.pdfReader]),
@@ -116,7 +120,13 @@ class VaultReaderViewModel @Inject constructor(
             when (entry.format) {
                 "EPUB" -> readiumProvider.open(r, fileIdHex).fold(
                     onSuccess = { pub -> publication = pub; _state.value = VaultReaderState.EpubReady(entry.title, pub) },
-                    onFailure = { e -> _state.value = VaultReaderState.Error(e.message ?: "Could not open EPUB") },
+                    onFailure = { e ->
+                        _state.value = if (e is VaultDrmProtectedException) {
+                            VaultReaderState.DrmProtected(e.schemeName)
+                        } else {
+                            VaultReaderState.Error(e.message ?: "Could not open EPUB")
+                        }
+                    },
                 )
                 "PDF" -> _state.value = VaultReaderState.PdfReady(entry.title)
                 else -> _state.value = VaultReaderState.Error("Unsupported format: ${entry.format}")

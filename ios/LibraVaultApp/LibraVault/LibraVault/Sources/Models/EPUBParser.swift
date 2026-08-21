@@ -15,10 +15,22 @@ enum EPUBParser {
         case entryNotFound(String)
         case malformedContainer
         case malformedOPF
+        case drmProtected
     }
 
     static func parse(fileURL: URL) throws -> [BookChapter] {
         let archive = try openArchive(at: fileURL)
+
+        // `META-INF/encryption.xml` is the EPUB OCF spec's marker that some (or all)
+        // resources in the archive are encrypted by a Content Protection scheme (Adobe
+        // ADEPT, Apple FairPlay, Readium LCP, …) Libravault has no decryption support
+        // for — see KNOWN_LIMITATIONS.md. Left unchecked, only the (often unencrypted)
+        // cover page reads back cleanly and every other spine item's ciphertext gets
+        // force-decoded as UTF-8/Latin-1 text by the plainText fallback below, which
+        // renders as garbled glyph soup instead of a clean error (issue #351).
+        if archive["META-INF/encryption.xml"] != nil {
+            throw ParseError.drmProtected
+        }
 
         let containerData = try extract("META-INF/container.xml", from: archive)
         let opfPath = try parseContainer(containerData)

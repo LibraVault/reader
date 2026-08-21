@@ -135,6 +135,16 @@ fun EpubReaderScreen(
                 )
             }
 
+            is EpubPublicationState.DrmProtected -> {
+                Text(
+                    text  = "This book is protected and can't be opened" +
+                        (ps.schemeName?.let { " (protected by $it)" } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                )
+            }
+
             is EpubPublicationState.Ready -> {
                 EpubNavigatorView(
                     publication              = ps.publication,

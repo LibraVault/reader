@@ -66,6 +66,7 @@ struct ReaderView: View {
     private enum UnavailableReason {
         case unsupportedFormat
         case loadFailed
+        case drmProtected
     }
 
     @State private var readingTheme: ReadingTheme = .dark
@@ -300,6 +301,8 @@ struct ReaderView: View {
             if savedFraction > 0 { pendingRestoreFraction = savedFraction }
         } catch BookContentProvider.ContentError.unsupportedFormat {
             unavailableReason = .unsupportedFormat
+        } catch EPUBParser.ParseError.drmProtected {
+            unavailableReason = .drmProtected
         } catch {
             // A format with a real parser (EPUB) failed for some other reason —
             // malformed file, folder no longer resolvable, etc.
@@ -767,21 +770,41 @@ struct ReaderView: View {
 
     private func unavailableContent(reason: UnavailableReason) -> some View {
         VStack(spacing: LibraVaultSpacing.lg) {
-            Image(systemName: reason == .unsupportedFormat ? "doc.questionmark" : "exclamationmark.triangle")
+            Image(systemName: unavailableIconName(for: reason))
                 .font(.system(size: 48))
                 .foregroundStyle(colors.onSurfaceVariant)
-            Text(reason == .unsupportedFormat ? "Format Not Yet Supported" : "Couldn't Open This Book")
+            Text(unavailableTitle(for: reason))
                 .font(LibraVaultTypography.headlineSmall)
                 .foregroundStyle(colors.onBackground)
-            Text(
-                reason == .unsupportedFormat
-                    ? "This book's format can't be read here yet."
-                    : "The file couldn't be read. It may have been moved, deleted, or is corrupted."
-            )
-            .font(LibraVaultTypography.bodyMedium)
-            .foregroundStyle(colors.onSurfaceVariant)
+            Text(unavailableMessage(for: reason))
+                .font(LibraVaultTypography.bodyMedium)
+                .foregroundStyle(colors.onSurfaceVariant)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func unavailableIconName(for reason: UnavailableReason) -> String {
+        switch reason {
+        case .unsupportedFormat: return "doc.questionmark"
+        case .loadFailed: return "exclamationmark.triangle"
+        case .drmProtected: return "lock.doc"
+        }
+    }
+
+    private func unavailableTitle(for reason: UnavailableReason) -> String {
+        switch reason {
+        case .unsupportedFormat: return "Format Not Yet Supported"
+        case .loadFailed: return "Couldn't Open This Book"
+        case .drmProtected: return "This Book Is Protected"
+        }
+    }
+
+    private func unavailableMessage(for reason: UnavailableReason) -> String {
+        switch reason {
+        case .unsupportedFormat: return "This book's format can't be read here yet."
+        case .loadFailed: return "The file couldn't be read. It may have been moved, deleted, or is corrupted."
+        case .drmProtected: return "This book is protected and can't be opened."
+        }
     }
 
     private func updateProgress() {
