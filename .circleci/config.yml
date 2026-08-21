@@ -169,10 +169,29 @@ jobs:
           system-image: system-images;android-34;google_apis;x86_64
           post-emulator-launch-assemble-command: ""
           test-command: "./gradlew connectedDebugAndroidTest --continue"
+      # Same trap jvm-tests' own "Collect reports for upload" step documents:
+      # each module writes its own build/reports/androidTests and
+      # build/outputs/androidTest-results, never one top-level dir, and
+      # store_artifacts has no glob support — collect the scattered
+      # per-module dirs first. when: always so a --continue test failure
+      # (which still fails the step) doesn't skip the upload, same intent as
+      # jvm-tests' if: always().
+      - run:
+          name: Collect reports for upload
+          when: always
+          command: |
+            mkdir -p /tmp/artifacts
+            find . -path "*/build/reports/androidTests" -exec cp -r --parents {} /tmp/artifacts/ \;
       - store_test_results:
-          path: build/reports/androidTests
+          # Recursive scan from the repo root, same reasoning as jvm-tests'
+          # store_test_results below — picks up each module's
+          # build/outputs/androidTest-results/connected/*.xml.
+          path: .
+          when: always
       - store_artifacts:
-          path: build/reports/androidTests
+          path: /tmp/artifacts
+          destination: reports
+          when: always
 
   # Mirrors .github/workflows/android-keystore-hardware-test.yml. Unlike
   # ui-tests above, this doesn't need an emulator at all — it builds an
@@ -254,6 +273,18 @@ jobs:
           when: always
           command: rm -f /tmp/gcp-sa.json
 
+      # Matches the GH Actions job's "Upload test APK for local
+      # reproduction" step — only on failure, so a passing run doesn't pay
+      # the upload cost for nothing.
+      - run:
+          name: Copy test APK for local reproduction
+          when: on_fail
+          command: mkdir -p /tmp/artifacts && cp "$APK_PATH" /tmp/artifacts/
+      - store_artifacts:
+          path: /tmp/artifacts
+          destination: keystore-hardware-test-apk
+          when: on_fail
+
   # Mirrors .github/workflows/android-tts-audio-test.yml. Same shape as
   # keystore-hardware-test above — no emulator needed, ports directly.
   tts-audio-test:
@@ -326,6 +357,15 @@ jobs:
           name: Clean up credentials
           when: always
           command: rm -f /tmp/gcp-sa.json
+
+      - run:
+          name: Copy test APK for local reproduction
+          when: on_fail
+          command: mkdir -p /tmp/artifacts && cp "$APK_PATH" /tmp/artifacts/
+      - store_artifacts:
+          path: /tmp/artifacts
+          destination: tts-audio-test-apk
+          when: on_fail
 
 workflows:
   version: 2

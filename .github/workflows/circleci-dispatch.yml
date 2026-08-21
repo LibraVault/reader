@@ -15,6 +15,12 @@ name: CircleCI Dispatch
 # one — the label is meant as "give me the full CircleCI signal for this
 # PR", not a per-job dispatch. Split into separate labels later if that
 # turns out to be too coarse in practice.
+#
+# Known limitation, not a bug: GitHub withholds repo secrets from
+# pull_request-triggered runs whose head is a fork, regardless of who
+# applied the label — labeling a fork PR here will fail cleanly (empty
+# CIRCLECI_TOKEN -> 401 -> the "Comment on failure to trigger" step), not
+# leak anything. Fine for now since only collaborators can label PRs at all.
 
 on:
   pull_request:
@@ -76,7 +82,7 @@ jobs:
           echo "$RESPONSE"
           NUMBER=$(echo "$RESPONSE" | jq -r '.number // empty')
           if [ -z "$NUMBER" ]; then
-            echo "error=CircleCI did not return a pipeline number — see the response body above." >> "$GITHUB_OUTPUT"
+            echo "CircleCI did not return a pipeline number — see the response body above." >&2
             exit 1
           fi
           echo "pipeline_number=$NUMBER" >> "$GITHUB_OUTPUT"
