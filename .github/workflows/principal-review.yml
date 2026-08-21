@@ -151,16 +151,26 @@ jobs:
         # actionable signal. See issue #254 for the full diagnosis (a live
         # hit on PR #234, 14 commits behind dev, this exact pattern hitting
         # qa-agent.yml).
+        #
+        # classify_workflow_drift.sh (issue #401) further distinguishes
+        # *why* the file differs: "stale" (dev moved the file on since this
+        # branch's merge-base — rebasing fixes it, the ordinary case) from
+        # "self" (this PR's own commits modify the file directly — no
+        # rebase can ever fix that, since the diff to the file IS the
+        # point of the PR). The routing step below treats those two cases
+        # differently.
         id: workflow-drift
         if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           git fetch origin dev
-          if ! git diff --quiet origin/dev -- .github/workflows/principal-review.yml; then
-            echo "This workflow's own file (.github/workflows/principal-review.yml) differs between this PR branch and dev — the OIDC token exchange below would be refused. Skipping the agent step." >&2
-            echo "drift=true" >> "$GITHUB_OUTPUT"
-          else
+          CLASS=$(.github/scripts/classify_workflow_drift.sh .github/workflows/principal-review.yml origin/dev)
+          echo "class=$CLASS" >> "$GITHUB_OUTPUT"
+          if [ "$CLASS" = "none" ]; then
             echo "drift=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "This workflow's own file (.github/workflows/principal-review.yml) differs between this PR branch and dev ($CLASS) — the OIDC token exchange below would be refused. Skipping the agent step." >&2
+            echo "drift=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run principal review agent
@@ -284,6 +294,24 @@ jobs:
           # review verdict, so route to a human directly.
           if [ "${{ steps.workflow-drift.outputs.drift }}" = "true" ]; then
             echo "PR #$PR_NUMBER's branch has workflow-file drift from dev — GitHub's OIDC anti-tampering check would have silently no-opped the principal review agent step, so it was skipped instead. Routing to a human." >&2
+
+            if [ "${{ steps.workflow-drift.outputs.class }}" = "self" ]; then
+              # Issue #401: this PR's own diff touches
+              # .github/workflows/principal-review.yml directly, so the
+              # drift will reproduce identically on every retry no matter
+              # how current the branch is — "rebase and re-add
+              # status:needs-review" is a dead end, not a fix. This file is
+              # already a sensitive_path (risk:high, always ends at
+              # status:needs-human-merge anyway), so skip straight there
+              # instead of cycling through status:needs-info first.
+              gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
+              gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge || true
+              gh pr edit "$PR_NUMBER" --add-label status:needs-human-merge
+              gh pr comment "$PR_NUMBER" --body "This PR's own diff modifies \`.github/workflows/principal-review.yml\` — the exact workflow file this review run is. GitHub Actions refuses to mint the OIDC token \`claude-code-action\` needs when a \`pull_request\`-triggered, \`id-token: write\` workflow's own file doesn't byte-match the base branch (its own anti-tampering check), so the principal review agent step was skipped. Unlike ordinary branch staleness, **rebasing \`dev\` in will never fix this** — the PR's own diff to this file is the point of the PR, so it can never byte-match \`dev\`'s copy no matter how current the branch is (see issue #401). Routing straight to \`status:needs-human-merge\` — this needs direct human review, not another automated retry."
+              echo "verdict=self-drift" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
             gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
             gh pr edit "$PR_NUMBER" --remove-label status:approved-auto-merge || true
             gh pr edit "$PR_NUMBER" --remove-label status:needs-human-merge || true
