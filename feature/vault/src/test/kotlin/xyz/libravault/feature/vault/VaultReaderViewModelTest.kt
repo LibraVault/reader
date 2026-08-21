@@ -350,6 +350,19 @@ class VaultReaderViewModelTest {
     }
 
     @Test
+    fun `onThemeChanged accepts SYSTEM`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onThemeChanged(ReadingTheme.SYSTEM)
+
+        assertEquals(ReadingTheme.SYSTEM, vm.settings.value.theme)
+    }
+
+    @Test
     fun `onFontSizeChanged clamps to the 0_8 to 2_0 range`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
         coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))

@@ -8,6 +8,7 @@ import android.view.MenuItem
 import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,7 @@ import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import xyz.libravault.core.ui.theme.ReadingTheme
+import xyz.libravault.core.ui.theme.resolved
 import xyz.libravault.core.vaultstore.VaultHighlight
 
 private const val VAULT_EPUB_FRAGMENT_TAG = "vault_epub_navigator"
@@ -84,6 +86,10 @@ fun VaultEpubReaderScreen(
     modifier: Modifier = Modifier,
 ) {
     val containerId = remember { View.generateViewId() }
+    // Read once per composition so ReadingTheme.SYSTEM resolves consistently at both
+    // toVaultEpubPreferences() call sites below; recomposes on its own if the OS
+    // appearance changes while this screen is open.
+    val systemInDarkTheme = isSystemInDarkTheme()
     val currentOnCentreTap = rememberUpdatedState(onCentreTap)
     val currentOnPositionChanged = rememberUpdatedState(onPositionChanged)
     val currentOnAddHighlight = rememberUpdatedState(onAddHighlight)
@@ -184,7 +190,7 @@ fun VaultEpubReaderScreen(
 
         val factory = EpubNavigatorFactory(publication).createFragmentFactory(
             initialLocator     = null,
-            initialPreferences = settings.toVaultEpubPreferences(),
+            initialPreferences = settings.toVaultEpubPreferences(systemInDarkTheme),
             listener           = listener,
             configuration      = config,
         )
@@ -225,13 +231,14 @@ fun VaultEpubReaderScreen(
     }
 
     // ── Settings hot-reload ───────────────────────────────────────────────────
-    // Keyed on both settings and navigator: navigator starts null and is set
-    // inside DisposableEffect above, so LaunchedEffect(settings) alone would
-    // miss applying the very first settings change if it landed before the
-    // fragment finished committing (same reasoning feature:reader's
-    // EpubNavigatorView documents for its own identical effect).
-    LaunchedEffect(settings, navigator) {
-        navigator?.submitPreferences(settings.toVaultEpubPreferences())
+    // Keyed on settings, systemInDarkTheme, and navigator: navigator starts null and is
+    // set inside DisposableEffect above, so LaunchedEffect(settings) alone would miss
+    // applying the very first settings change if it landed before the fragment finished
+    // committing (same reasoning feature:reader's EpubNavigatorView documents for its own
+    // identical effect); systemInDarkTheme is keyed separately so ReadingTheme.SYSTEM
+    // re-resolves and re-applies live on an OS appearance change while the reader is open.
+    LaunchedEffect(settings, systemInDarkTheme, navigator) {
+        navigator?.submitPreferences(settings.toVaultEpubPreferences(systemInDarkTheme))
     }
 
     // ── Bookmark navigation ──────────────────────────────────────────────────
@@ -275,13 +282,16 @@ fun VaultEpubReaderScreen(
  * `feature:reader`'s private `ReaderSettings.toEpubPreferences()` uses (see
  * that function's doc for the font-size/percentage rationale); duplicated
  * here for the same "parallel, not shared" reason as the rest of this file.
+ *
+ * [systemInDarkTheme] resolves [ReadingTheme.SYSTEM] (#370) the same way — pass the
+ * caller's `isSystemInDarkTheme()`.
  */
 @OptIn(ExperimentalReadiumApi::class)
-private fun VaultReaderSettings.toVaultEpubPreferences(): EpubPreferences = EpubPreferences(
-    theme = when (theme) {
-        ReadingTheme.DARK  -> Theme.DARK
-        ReadingTheme.LIGHT -> Theme.LIGHT
-        ReadingTheme.SEPIA -> Theme.SEPIA
+private fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences = EpubPreferences(
+    theme = when (theme.resolved(systemInDarkTheme)) {
+        xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK  -> Theme.DARK
+        xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT -> Theme.LIGHT
+        xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA -> Theme.SEPIA
     },
     publisherStyles = false,
     fontSize   = fontSize.toDouble(),

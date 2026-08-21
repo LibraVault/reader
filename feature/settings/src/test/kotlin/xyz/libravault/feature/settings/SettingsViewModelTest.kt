@@ -149,6 +149,13 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `reading theme change persists SYSTEM`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onReadingThemeChanged(AppReadingTheme.SYSTEM)
+        verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.SYSTEM }) }
+    }
+
+    @Test
     fun `playback speed is clamped`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onPlaybackSpeedChanged(10.0f)

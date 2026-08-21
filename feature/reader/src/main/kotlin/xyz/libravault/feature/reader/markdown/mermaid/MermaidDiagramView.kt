@@ -8,6 +8,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,7 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import org.json.JSONObject
 import xyz.libravault.core.ui.theme.ReadingTheme
+import xyz.libravault.core.ui.theme.resolved
 
 /**
  * Renders Mermaid diagram [source] via a bundled, offline copy of mermaid.js in a
@@ -153,13 +155,22 @@ fun MermaidDiagramView(
         onDispose { webView.destroy() }
     }
 
+    // Resolved once per composition — isSystemInDarkTheme() reads LocalConfiguration, so
+    // this recomposes automatically when the OS appearance setting changes while SYSTEM is
+    // selected, same as LibravaultTheme's own resolution (#370's "updates live" acceptance
+    // criterion, extended to the Mermaid diagram theme).
+    val resolvedTheme = readingTheme.resolved(isSystemInDarkTheme())
+
     // rememberUpdatedState so a source/theme change picked up while a previous render
     // is still in flight doesn't re-fire this effect using a stale closure — LaunchedEffect
     // itself is still correctly keyed on the raw values below to trigger a fresh render.
     val currentSource by rememberUpdatedState(source)
-    val currentTheme by rememberUpdatedState(mermaidThemeName(readingTheme))
+    val currentTheme by rememberUpdatedState(mermaidThemeName(resolvedTheme))
 
-    LaunchedEffect(pageReady, source, readingTheme) {
+    // Keyed on resolvedTheme rather than the raw readingTheme: while SYSTEM is selected,
+    // only resolvedTheme actually changes when the OS appearance flips, so keying on the
+    // raw enum would miss re-rendering the diagram for that transition.
+    LaunchedEffect(pageReady, source, resolvedTheme) {
         if (!pageReady) return@LaunchedEffect
         renderError = null
         heightDp = null
