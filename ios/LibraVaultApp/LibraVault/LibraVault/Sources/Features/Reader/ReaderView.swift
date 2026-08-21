@@ -541,7 +541,7 @@ struct ReaderView: View {
                                             fontSize: fontSize,
                                             lineSpacing: lineSpacing,
                                             fontDesign: fontDesign,
-                                            readingTheme: readingTheme
+                                            readingTheme: effectiveReadingTheme
                                         )
                                     }
                                 }
@@ -638,7 +638,7 @@ struct ReaderView: View {
                                     fontSize: fontSize,
                                     lineSpacing: lineSpacing,
                                     fontDesign: fontDesign,
-                                    readingTheme: readingTheme
+                                    readingTheme: effectiveReadingTheme
                                 )
                             }
                         }
