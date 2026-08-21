@@ -23,18 +23,40 @@ final class LibraVaultDesignSystemTests: XCTestCase {
     }
 
     func testReadingThemeNextIsAFullCycleWithNoFixedPoint() {
-        // Every case should return to itself after exactly 3 steps, and never sooner —
-        // guards against a typo collapsing two cases onto the same next value.
-        for theme in ReadingTheme.allCases {
+        // Every case in the closed Dark/Light/Sepia cycle should return to itself
+        // after exactly 3 steps, and never sooner — guards against a typo collapsing
+        // two cases onto the same next value. `.system` is deliberately outside this
+        // cycle (see testReadingThemeSystemNextExitsToDark) so it's excluded here.
+        for theme: ReadingTheme in [.dark, .light, .sepia] {
             let afterThree = theme.next.next.next
             XCTAssertEqual(afterThree, theme)
             XCTAssertNotEqual(theme.next, theme)
         }
     }
 
+    func testReadingThemeSystemNextExitsToDark() {
+        // .system is a Settings-only choice, not part of the in-reader quick-cycle —
+        // tapping the cycle button while on System exits to Dark instead of looping
+        // back through System.
+        XCTAssertEqual(ReadingTheme.system.next, .dark)
+    }
+
     func testReadingThemeSystemImageNamesAreDistinct() {
         let names = Set(ReadingTheme.allCases.map(\.systemImageName))
         XCTAssertEqual(names.count, ReadingTheme.allCases.count)
+    }
+
+    func testReadingThemeSystemResolvesToDarkOrLightByColorScheme() {
+        XCTAssertEqual(ReadingTheme.system.resolved(for: .dark), .dark)
+        XCTAssertEqual(ReadingTheme.system.resolved(for: .light), .light)
+    }
+
+    func testReadingThemeConcreteCasesResolveToThemselvesRegardlessOfColorScheme() {
+        let expected: [ReadingTheme: ConcreteReadingTheme] = [.dark: .dark, .light: .light, .sepia: .sepia]
+        for (theme, concrete) in expected {
+            XCTAssertEqual(theme.resolved(for: .light), concrete)
+            XCTAssertEqual(theme.resolved(for: .dark), concrete)
+        }
     }
 
     // MARK: - LibraVaultColorScheme
@@ -51,6 +73,36 @@ final class LibraVaultDesignSystemTests: XCTestCase {
         XCTAssertEqual(
             rgbComponents(of: LibraVaultColorScheme.forReadingTheme(.sepia).background).0,
             rgbComponents(of: LibraVaultColorScheme.sepia.background).0
+        )
+    }
+
+    func testForReadingThemeWithResolvedSystemMatchesConcreteScheme() {
+        XCTAssertEqual(
+            rgbComponents(of: LibraVaultColorScheme.forReadingTheme(ReadingTheme.system.resolved(for: .dark)).background).0,
+            rgbComponents(of: LibraVaultColorScheme.dark.background).0
+        )
+        XCTAssertEqual(
+            rgbComponents(of: LibraVaultColorScheme.forReadingTheme(ReadingTheme.system.resolved(for: .light)).background).0,
+            rgbComponents(of: LibraVaultColorScheme.light.background).0
+        )
+    }
+
+    // MARK: - mermaidThemeName
+
+    func testMermaidThemeNameForConcreteThemes() {
+        XCTAssertEqual(mermaidThemeName(for: .light), "default")
+        XCTAssertEqual(mermaidThemeName(for: .dark), "dark")
+        XCTAssertEqual(mermaidThemeName(for: .sepia), "neutral")
+    }
+
+    func testMermaidThemeNameForResolvedSystemMatchesConcreteTheme() {
+        XCTAssertEqual(
+            mermaidThemeName(for: ReadingTheme.system.resolved(for: .dark)),
+            mermaidThemeName(for: .dark)
+        )
+        XCTAssertEqual(
+            mermaidThemeName(for: ReadingTheme.system.resolved(for: .light)),
+            mermaidThemeName(for: .light)
         )
     }
 

@@ -5,6 +5,12 @@ struct ReaderView: View {
     let book: BookItem
 
     @EnvironmentObject var appState: AppState
+    /// Resolves `readingTheme == .system` to a concrete light/dark choice — see
+    /// `ReadingTheme.resolved(for:)`. Live: SwiftUI re-invalidates `body` on a
+    /// trait-collection change, so `colors`/`effectiveReadingTheme` below pick up
+    /// an OS appearance change automatically while the reader is open, not just on
+    /// next resume.
+    @Environment(\.colorScheme) private var systemColorScheme
     /// 0-based chapter index, paired with `currentPageInChapter` below to locate the
     /// reader's exact on-screen page. Replaces the old 1-based `currentChapter`,
     /// which conflated "chapter" (one EPUB spine item) with "page" — see issue #331.
@@ -94,7 +100,8 @@ struct ReaderView: View {
 
     @ObservedObject private var bridge = LibravaultDomainBridge.shared
 
-    private var colors: LibraVaultColorScheme { .forReadingTheme(readingTheme) }
+    private var effectiveReadingTheme: ConcreteReadingTheme { readingTheme.resolved(for: systemColorScheme) }
+    private var colors: LibraVaultColorScheme { .forReadingTheme(effectiveReadingTheme) }
     private var hasBookmarks: Bool { !(bridge.bookmarks[book.id]?.isEmpty ?? true) }
     private var isCurrentlyPlayingThisBook: Bool { appState.nowPlayingBook?.id == book.id }
 
@@ -727,7 +734,7 @@ struct ReaderView: View {
             fontSize: fontSize,
             lineSpacing: lineSpacing,
             fontDesign: fontDesign,
-            readingTheme: readingTheme,
+            readingTheme: effectiveReadingTheme,
             initialScrollFraction: bridge.progress[book.id] ?? 0,
             onScrollFractionChanged: { markdownScrollFraction = $0 },
             scrollToBlockIndex: pendingTocBlockIndex,

@@ -106,7 +106,10 @@ struct LibraVaultColorScheme {
         outline: LibraVaultPalette.sepiaOutline
     )
 
-    static func forReadingTheme(_ theme: ReadingTheme) -> LibraVaultColorScheme {
+    /// Takes `ConcreteReadingTheme`, not `ReadingTheme` — callers resolve `.system`
+    /// against the environment's colorScheme first (see `ReadingTheme.resolved(for:)`),
+    /// so this switch never needs an arm for a case that has nothing to resolve it.
+    static func forReadingTheme(_ theme: ConcreteReadingTheme) -> LibraVaultColorScheme {
         switch theme {
         case .dark:  return .dark
         case .light: return .light
