@@ -64,10 +64,15 @@ contributors don't mistake them for gaps, and so users don't ask
 - The Play flavor's donation flow uses BTCPay (self-hosted). It's
   not a one-tap "Buy Pro" — it's a manual crypto transfer.
 - There is no Pro tier at all right now, on any flavor. No unlock, no
-  subscription, no monthly tier, no per-book purchase — every feature,
-  including Encrypted Vaults, is free and donation-funded. A subscription
-  is a possible future direction once there's a real install base to
-  justify it, not before.
+  in-app subscription, no per-book purchase — every feature, including
+  Encrypted Vaults, is free and donation-funded.
+- A $1/month recurring option exists via an external Buy Me a Coffee link
+  on the website's Support page (`support.html`) — the same page the in-app
+  "Support the Project" button already opens on both platforms. It's a
+  plain link hop, not an in-app purchase: no app code, no entitlement
+  tracking, no network calls added. A real in-app/store subscription (Play
+  Billing / StoreKit) is still a possible future direction once there's a
+  real install base to justify it, not before.
 
 ## Accessibility
 

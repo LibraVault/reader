@@ -75,6 +75,10 @@ can't silently drift out of sync between the two. Nothing here to threat-model
 beyond "is the URL still the literal we intend" — there's no server response
 to validate, no invoice state, no credential.
 
+The $1/month recurring option (Buy Me a Coffee) added to that same support
+page is the identical mechanism — an external link, not app code — so it
+doesn't change any of the above.
+
 ## Out of scope (explicit)
 
 - DRM / LCP-protected books — not supported; see v2 roadmap.
@@ -86,7 +90,7 @@ to validate, no invoice state, no credential.
 - OS-level vulnerabilities in the Android sandbox, or a rooted device with the Keystore itself compromised.
 - Side-channel attacks on TTS engine output (e.g., leaked speech-to-text content).
 - Multi-user/role-based access within one vault — single PIN, single user (matches the rest of the app).
-- No Pro/paid tier currently exists (the `core:licensing` module — Ed25519 key verification, Play Billing — was removed; all features, including Encrypted Vaults, are free on every flavor, donation-funded). A subscription is a possible future direction, not before there's a real install base to justify it.
+- No Pro/paid tier currently exists (the `core:licensing` module — Ed25519 key verification, Play Billing — was removed; all features, including Encrypted Vaults, are free on every flavor, donation-funded). The $1/month option on the website's Support page is a plain external link, not an in-app purchase — see "Support / donations" above. A real in-app/store subscription is still a possible future direction, not before there's a real install base to justify it.
 
 ## When to update this document
 
