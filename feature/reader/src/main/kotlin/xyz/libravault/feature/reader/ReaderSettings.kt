@@ -17,7 +17,19 @@ enum class FontFamily(val displayName: String) {
     SERIF("Serif"),
     SANS_SERIF("Sans-serif"),
     MONOSPACE("Monospace"),
+    // #423 — dyslexia-friendly typeface. See ReaderViewModel.onFontFamilyChanged
+    // for the paired line-spacing bump this selection applies automatically.
+    OPEN_DYSLEXIC("OpenDyslexic (dyslexia-friendly)"),
 }
+
+/**
+ * Line-spacing multiplier applied automatically when [FontFamily.OPEN_DYSLEXIC]
+ * is selected (#423) — dyslexia-friendly typography guidance recommends generous
+ * line-height alongside the typeface itself, not the font alone. Within the
+ * existing slider's 1.0–2.5 range; the user can still readjust afterward, which
+ * falls back to a plain custom value (no "locked" state).
+ */
+internal const val DYSLEXIA_FRIENDLY_LINE_SPACING = 1.8f
 
 enum class ScrollMode {
     PAGINATED,   // Page-turn animation
@@ -28,15 +40,17 @@ enum class ScrollMode {
  * compared against/set from a `ReadingPreset` without core:ui depending on
  * this feature-specific enum. Both enums share the same four cases 1:1. */
 fun FontFamily.toPresetFontFamily(): PresetFontFamily = when (this) {
-    FontFamily.SYSTEM     -> PresetFontFamily.SYSTEM
-    FontFamily.SERIF      -> PresetFontFamily.SERIF
-    FontFamily.SANS_SERIF -> PresetFontFamily.SANS_SERIF
-    FontFamily.MONOSPACE  -> PresetFontFamily.MONOSPACE
+    FontFamily.SYSTEM        -> PresetFontFamily.SYSTEM
+    FontFamily.SERIF         -> PresetFontFamily.SERIF
+    FontFamily.SANS_SERIF    -> PresetFontFamily.SANS_SERIF
+    FontFamily.MONOSPACE     -> PresetFontFamily.MONOSPACE
+    FontFamily.OPEN_DYSLEXIC -> PresetFontFamily.OPEN_DYSLEXIC
 }
 
 fun PresetFontFamily.toFontFamily(): FontFamily = when (this) {
-    PresetFontFamily.SYSTEM     -> FontFamily.SYSTEM
-    PresetFontFamily.SERIF      -> FontFamily.SERIF
-    PresetFontFamily.SANS_SERIF -> FontFamily.SANS_SERIF
-    PresetFontFamily.MONOSPACE  -> FontFamily.MONOSPACE
+    PresetFontFamily.SYSTEM        -> FontFamily.SYSTEM
+    PresetFontFamily.SERIF         -> FontFamily.SERIF
+    PresetFontFamily.SANS_SERIF    -> FontFamily.SANS_SERIF
+    PresetFontFamily.MONOSPACE     -> FontFamily.MONOSPACE
+    PresetFontFamily.OPEN_DYSLEXIC -> FontFamily.OPEN_DYSLEXIC
 }

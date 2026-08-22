@@ -422,6 +422,20 @@ class VaultReaderViewModelTest {
     }
 
     @Test
+    fun `selecting OpenDyslexic font bumps line spacing to the accessibility default`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onFontFamilyChanged(VaultReaderFontFamily.OPEN_DYSLEXIC)
+
+        assertEquals(VaultReaderFontFamily.OPEN_DYSLEXIC, vm.settings.value.fontFamily)
+        assertEquals(VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING, vm.settings.value.lineSpacing)
+    }
+
+    @Test
     fun `onScrollModeChanged updates only the scroll mode field`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
         coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))

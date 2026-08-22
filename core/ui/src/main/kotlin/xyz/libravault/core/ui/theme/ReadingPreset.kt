@@ -9,8 +9,10 @@ package xyz.libravault.core.ui.theme
  * exactly one shared home — core:ui, which both feature modules already
  * depend on for [ReadingTheme] — rather than two copies that could diverge.
  * Each feature maps its own font-family enum to/from this one at the call site.
+ *
+ * OPEN_DYSLEXIC added by #423 alongside the "Easy Read" built-in preset below.
  */
-enum class PresetFontFamily { SYSTEM, SERIF, SANS_SERIF, MONOSPACE }
+enum class PresetFontFamily { SYSTEM, SERIF, SANS_SERIF, MONOSPACE, OPEN_DYSLEXIC }
 
 /**
  * A curated one-tap combination of [theme] + [fontFamily] + [fontSize] +
@@ -79,6 +81,19 @@ object ReadingPresets {
             fontFamily  = PresetFontFamily.SYSTEM,
             fontSize    = 1.2f,
             lineSpacing = 1.6f,
+        ),
+        // #423 — dyslexia-friendly typeface + generous line spacing bundled
+        // together, per that issue's accessibility brief. Sepia background
+        // (not Light/Dark) follows the same "reduce harsh contrast" guidance
+        // as the typeface/spacing choice itself, and doubles as this app's
+        // own parchment branding rather than a stark white page.
+        ReadingPreset(
+            id          = "easy_read",
+            label       = "Easy Read",
+            theme       = ReadingTheme.SEPIA,
+            fontFamily  = PresetFontFamily.OPEN_DYSLEXIC,
+            fontSize    = 1.1f,
+            lineSpacing = 1.8f,
         ),
     )
 }

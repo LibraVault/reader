@@ -41,6 +41,30 @@ private val Lora = FontFamily(
 /** Default sans-serif — used for body text, labels, and UI chrome. */
 private val Sans = FontFamily.SansSerif
 
+/**
+ * OpenDyslexic — a dyslexia-friendly typeface with heavier-weighted letter
+ * bottoms intended to reduce the letter confusion/flipping some dyslexic
+ * readers experience. SIL Open Font License 1.1, same license family as
+ * [Lora] above; full license text and attribution at
+ * `core/ui/licenses/OpenDyslexic-OFL.txt`.
+ *
+ * Backs the "OpenDyslexic" reading-font option (#423,
+ * `feature.reader.FontFamily` / `feature.vault.VaultReaderFontFamily`) for
+ * Compose-rendered text (Markdown, in-app UI). Deliberately public — unlike
+ * [Lora]/[Sans] above, which only back [LibravaultTypography]'s own roles,
+ * this needs to be referenced directly by feature modules that resolve a
+ * user's font-family preference to a concrete [FontFamily].
+ *
+ * NOT used for EPUB rendering: Readium's own `readium-navigator` artifact
+ * already embeds OpenDyslexic internally
+ * (`org.readium.r2.navigator.preferences.FontFamily.OPEN_DYSLEXIC`), so the
+ * WebView-rendered EPUB path reuses that copy instead of this one.
+ */
+val OpenDyslexicFontFamily = FontFamily(
+    Font(resId = R.font.opendyslexic_regular, weight = FontWeight.Normal),
+    Font(resId = R.font.opendyslexic_bold, weight = FontWeight.Bold),
+)
+
 val LibravaultTypography = Typography(
     displayLarge   = TextStyle(fontFamily = Lora, fontWeight = FontWeight.Bold,     fontSize = 40.sp, lineHeight = 48.sp, letterSpacing = (-0.5).sp),
     displayMedium  = TextStyle(fontFamily = Lora, fontWeight = FontWeight.Bold,     fontSize = 32.sp, lineHeight = 40.sp, letterSpacing = (-0.25).sp),
