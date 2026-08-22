@@ -348,6 +348,12 @@ fun ReaderScreen(
                         onLineSpacingChanged = viewModel::onLineSpacingChanged,
                         onScrollModeChanged  = viewModel::onScrollModeChanged,
                         onDismiss            = viewModel::hideSettings,
+                        // Margins/justification/hyphenation (#421) — EPUB only, see
+                        // ReaderSettingsSheet.showEpubLayoutControls's doc.
+                        showEpubLayoutControls = item.format == MediaFormat.EPUB,
+                        onMarginScaleChanged   = viewModel::onMarginScaleChanged,
+                        onJustifyTextChanged   = viewModel::onJustifyTextChanged,
+                        onHyphenationChanged   = viewModel::onHyphenationChanged,
                         // Read Aloud — EPUB (#137) and Markdown (#276).
                         showReadAloud    = readAloudSupported(item.format),
                         readAloudActive  = showReadAloudBar,
