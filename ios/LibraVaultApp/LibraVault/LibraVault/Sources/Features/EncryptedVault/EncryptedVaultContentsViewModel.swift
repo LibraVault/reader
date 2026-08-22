@@ -60,6 +60,7 @@ final class EncryptedVaultContentsViewModel: ObservableObject {
         }
         do {
             entries = try await sessionManager.requireUnlocked(vaultId).listEntries()
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }

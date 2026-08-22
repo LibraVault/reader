@@ -24,21 +24,34 @@ struct EncryptedVaultContentsView: View {
     }
 
     var body: some View {
-        Group {
-            if viewModel.entries.isEmpty {
-                emptyState
-            } else {
-                List(viewModel.entries, id: \.fileId) { entry in
-                    NavigationLink {
-                        destination(for: entry)
-                    } label: {
-                        VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
-                            Text(entry.title)
-                                .foregroundStyle(LibraVaultColor.onSurface)
-                            if let author = entry.author {
-                                Text(author)
-                                    .font(LibraVaultTypography.bodySmall)
-                                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+        VStack(spacing: 0) {
+            // Matches CreateEncryptedVaultView/UnlockEncryptedVaultView's own
+            // inline error banner — a `refresh()` failure (e.g. after an
+            // import) must never silently fall back to `emptyState` with no
+            // explanation. See #417.
+            if let errorMessage = Self.errorBannerText(errorMessage: viewModel.errorMessage) {
+                Text(errorMessage)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(LibraVaultSpacing.md)
+            }
+            Group {
+                if viewModel.entries.isEmpty {
+                    emptyState
+                } else {
+                    List(viewModel.entries, id: \.fileId) { entry in
+                        NavigationLink {
+                            destination(for: entry)
+                        } label: {
+                            VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
+                                Text(entry.title)
+                                    .foregroundStyle(LibraVaultColor.onSurface)
+                                if let author = entry.author {
+                                    Text(author)
+                                        .font(LibraVaultTypography.bodySmall)
+                                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                                }
                             }
                         }
                     }
@@ -116,6 +129,21 @@ struct EncryptedVaultContentsView: View {
         )
     }
 
+    /// The exact banner text `body` renders above the list/empty-state for a given
+    /// `viewModel.errorMessage` — pulled out into a static, independently testable
+    /// function (mirrors `ReaderView.dispatchChapterPagination`'s pattern from #411
+    /// round 2) so #417's view-layer fix has *some* test coverage that lives with
+    /// the view itself, not only with `EncryptedVaultContentsViewModel`. This repo
+    /// has no ViewInspector/snapshot UI-testing infrastructure, so no test here can
+    /// prove SwiftUI's `body` actually renders this value on screen — `body`'s own
+    /// use of it is kept to the single one-line call above, so that unverifiable
+    /// surface is as small as it can be made without adding new test
+    /// infrastructure; verified by manual read, same as the rest of this PR on a
+    /// Linux runner with no Xcode.
+    static func errorBannerText(errorMessage: String?) -> String? {
+        errorMessage
+    }
+
     private var emptyState: some View {
         VStack(spacing: LibraVaultSpacing.md) {
             Image(systemName: "lock.shield")
@@ -134,7 +162,9 @@ struct EncryptedVaultContentsView: View {
 /// (no visible close action) while `isImporting` is true, so a batch can't
 /// be walked away from mid-import without realizing it's still running;
 /// once finished, "Done" clears the batch and dismisses.
-private struct ImportProgressSheet: View {
+// Not `private`: `errorDisplay(for:)` below needs to be reachable from
+// LibraVaultTests via `@testable import` (see that function's doc comment for why).
+struct ImportProgressSheet: View {
     let items: [ImportItem]
     let isImporting: Bool
     let onDone: () -> Void
@@ -173,10 +203,30 @@ private struct ImportProgressSheet: View {
         case .done:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(LibraVaultColor.secondary)
-        case .error(let message):
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .accessibilityLabel("Import failed: \(message)")
+        case .error:
+            if let display = Self.errorDisplay(for: status) {
+                HStack(spacing: LibraVaultSpacing.xs) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(display.text)
+                        .font(LibraVaultTypography.bodySmall)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.trailing)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(display.accessibilityLabel)
+            }
         }
+    }
+
+    /// The exact `(visible text, accessibility label)` pair `statusView(for:)` renders
+    /// for a `.error` item — extracted for the same reason as
+    /// `EncryptedVaultContentsView.errorBannerText` above (#417 QA round 1 gap): it
+    /// pulls the piece of the fix a test can actually call out of `body`'s
+    /// `@ViewBuilder` closure, which can't be unit-tested directly in this repo.
+    /// Returns `nil` for any non-`.error` status.
+    static func errorDisplay(for status: ImportItemStatus) -> (text: String, accessibilityLabel: String)? {
+        guard case .error(let message) = status else { return nil }
+        return (text: message, accessibilityLabel: "Import failed: \(message)")
     }
 }
