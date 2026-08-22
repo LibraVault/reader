@@ -25,24 +25,32 @@ import xyz.libravault.core.ui.findActivity
  * [ConcreteReadingTheme]. This mirrors iOS's `ReadingTheme`/`ConcreteReadingTheme` split
  * (#374): the compiler enforces resolution at every call site instead of risking a
  * silently-wrong fallback in a non-exhaustive `when`.
+ *
+ * [AMOLED] (#420) is a distinct 5th option, not a replacement for [DARK]: a true-black
+ * (#000000) page background for OLED/AMOLED screens, where [DARK]'s surface is a dark
+ * grey/brown (`DarkSurface0`) rather than actual black. Like [SEPIA], it is never a
+ * [SYSTEM] resolution target — the OS only ever expresses two appearances (light/dark),
+ * and [DARK] is the app's existing answer for "dark".
  */
-enum class ReadingTheme { DARK, LIGHT, SEPIA, SYSTEM }
+enum class ReadingTheme { DARK, LIGHT, SEPIA, AMOLED, SYSTEM }
 
 /** The concrete, renderable themes [ReadingTheme] can resolve to — i.e. [ReadingTheme]
  * minus [ReadingTheme.SYSTEM]. See [ReadingTheme]'s doc for why this split exists. */
-enum class ConcreteReadingTheme { DARK, LIGHT, SEPIA }
+enum class ConcreteReadingTheme { DARK, LIGHT, SEPIA, AMOLED }
 
 /**
  * Resolves [ReadingTheme.SYSTEM] to [ConcreteReadingTheme.DARK] or
  * [ConcreteReadingTheme.LIGHT] per [systemInDarkTheme] (pass `isSystemInDarkTheme()` from
- * a `@Composable` call site — see [LibravaultTheme]). Dark/Light/Sepia pass through
- * unchanged regardless of the system setting. Sepia is never a resolution target: it isn't
- * one of the OS's two appearance choices, same call as iOS's `resolved(for colorScheme:)`.
+ * a `@Composable` call site — see [LibravaultTheme]). Dark/Light/Sepia/Amoled pass through
+ * unchanged regardless of the system setting. Sepia and Amoled are never resolution
+ * targets: neither is one of the OS's two appearance choices, same call as iOS's
+ * `resolved(for colorScheme:)`.
  */
 fun ReadingTheme.resolved(systemInDarkTheme: Boolean): ConcreteReadingTheme = when (this) {
     ReadingTheme.DARK   -> ConcreteReadingTheme.DARK
     ReadingTheme.LIGHT  -> ConcreteReadingTheme.LIGHT
     ReadingTheme.SEPIA  -> ConcreteReadingTheme.SEPIA
+    ReadingTheme.AMOLED -> ConcreteReadingTheme.AMOLED
     ReadingTheme.SYSTEM -> if (systemInDarkTheme) ConcreteReadingTheme.DARK else ConcreteReadingTheme.LIGHT
 }
 
@@ -82,6 +90,31 @@ internal val LightColorScheme = lightColorScheme(
     outline             = WarmNeutral700,
 )
 
+/**
+ * True-black (#420) — same leather brand accents as [DarkColorScheme], but `background`
+ * and `surface` are pure black (`Color(0xFF000000)`) instead of `DarkSurface0`/1, the
+ * whole point of an OLED/AMOLED reading theme. `surfaceVariant` stays a hair off pure
+ * black ([AmoledSurfaceVariant]) purely for element hierarchy (cards/dividers still need
+ * to be visually distinguishable from the page) — it is not itself the "true black" claim;
+ * `background`, the actual page color, is.
+ */
+@PublishedApi
+internal val AmoledColorScheme = darkColorScheme(
+    primary             = LeatherLight,
+    onPrimary           = WarmNeutral900,
+    primaryContainer    = LeatherDark,
+    onPrimaryContainer  = LeatherLight,
+    secondary           = AgedBrass,
+    onSecondary         = WarmNeutral900,
+    background          = Color.Black,
+    onBackground        = WarmNeutral100,
+    surface             = Color.Black,
+    onSurface           = WarmNeutral100,
+    surfaceVariant      = AmoledSurfaceVariant,
+    onSurfaceVariant    = WarmGrey400,
+    outline             = WarmNeutral500,
+)
+
 @PublishedApi
 internal val SepiaColorScheme = lightColorScheme(
     primary             = LeatherBrown,
@@ -114,13 +147,14 @@ fun LibravaultTheme(
     // fell straight through to the ambient `darkTheme` value, so an explicit DARK or LIGHT
     // pick was silently overridden by whatever the system's own light/dark setting
     // happened to be — the reading-theme selector had no actual effect for those two
-    // cases. Resolving first makes DARK/LIGHT/SEPIA always win regardless of the system
-    // setting, and makes SYSTEM the only case that still follows it.
+    // cases. Resolving first makes DARK/LIGHT/SEPIA/AMOLED always win regardless of the
+    // system setting, and makes SYSTEM the only case that still follows it.
     val resolvedTheme = readingTheme.resolved(darkTheme)
 
-    // Sepia and Light are both light backgrounds — only Dark (and dynamic-dark) call for
-    // light-colored status bar icons. Tracked alongside colorScheme, rather than derived
-    // from it after the fact, since dynamic color schemes don't cleanly say "I'm dark".
+    // Sepia and Light are both light backgrounds — only Dark, Amoled (and dynamic-dark)
+    // call for light-colored status bar icons. Tracked alongside colorScheme, rather than
+    // derived from it after the fact, since dynamic color schemes don't cleanly say "I'm
+    // dark".
     var isLightBackground = false
     val colorScheme = when {
         // Dynamic color requires Android 12+ (API 31); fall through to leather palette on older devices
@@ -129,9 +163,10 @@ fun LibravaultTheme(
             isLightBackground = !darkTheme
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         }
-        resolvedTheme == ConcreteReadingTheme.SEPIA -> { isLightBackground = true; SepiaColorScheme }
-        resolvedTheme == ConcreteReadingTheme.DARK  -> DarkColorScheme
-        else                                        -> { isLightBackground = true; LightColorScheme }
+        resolvedTheme == ConcreteReadingTheme.SEPIA  -> { isLightBackground = true; SepiaColorScheme }
+        resolvedTheme == ConcreteReadingTheme.DARK   -> DarkColorScheme
+        resolvedTheme == ConcreteReadingTheme.AMOLED -> AmoledColorScheme
+        else                                         -> { isLightBackground = true; LightColorScheme }
     }
 
     // Reactively matches the status bar's icon color to the resolved theme. Previously

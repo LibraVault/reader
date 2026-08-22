@@ -298,6 +298,15 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `theme change round-trips through ui state for AMOLED`() = runTest {
+        // #420
+        val vm = viewModel()
+
+        vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED)
+        assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED, vm.uiState.value.settings.theme)
+    }
+
+    @Test
     fun `settings sheet shows and hides`() = runTest {
         val vm = viewModel()
         assertFalse(vm.uiState.value.showSettingsSheet)

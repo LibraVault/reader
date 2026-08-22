@@ -28,6 +28,29 @@ This document describes the unit test strategy, current coverage, deliberate gap
 - **Flow Testing**: Turbine (`flow.test { awaitItem() }`) for StateFlow/Flow assertions
 - **Dispatchers**: `Dispatchers.setMain(UnconfinedTestDispatcher())` in `@BeforeEach`, reset in `@AfterEach`
 - **Assertions**: JUnit 5 static imports (`assertEquals`, `assertTrue`, etc.), not AssertJ
+- **Compose click-interaction tests against `ModalBottomSheet` content**: use
+  `performSemanticsAction(SemanticsActions.OnClick)`, not
+  `performClick()`. `ModalBottomSheet` (and other Popup/Dialog-hosted
+  composables) renders its content in its own window — confirmed by dumping
+  the semantics tree, which shows two roots after composition, one
+  degenerate/empty for the host Activity and one for the sheet's own popup.
+  `performClick()`'s real coordinate-based touch gesture doesn't reliably
+  reach descendants of that second window under this repo's Robolectric
+  setup: the target node is found fine (so `onNodeWithText(...).assertExists()`
+  passes), but the click silently no-ops — no state change, no callback
+  fired — which reads exactly like an app bug and is easy to burn a large
+  number of turns chasing as one. Invoking the semantics action directly
+  sidesteps gesture dispatch entirely and is reliable. Minimal pattern:
+  ```kotlin
+  import androidx.compose.ui.semantics.SemanticsActions
+  import androidx.compose.ui.test.SemanticsNodeInteraction
+  import androidx.compose.ui.test.performSemanticsAction
+
+  private fun SemanticsNodeInteraction.click() = performSemanticsAction(SemanticsActions.OnClick)
+  ```
+  See `ReaderSettingsSheetUiTest.kt`/`VaultReaderSettingsSheetUiTest.kt` for
+  a full example (found and fixed while landing #419/PR #425 — the crashed
+  dev-agent run that opened that PR had hit exactly this wall).
 
 ### Running Tests
 

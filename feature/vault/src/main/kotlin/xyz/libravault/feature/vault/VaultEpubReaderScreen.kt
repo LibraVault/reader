@@ -46,6 +46,7 @@ import org.readium.r2.navigator.input.DragEvent as ReadiumDragEvent
 import org.readium.r2.navigator.input.InputListener as ReadiumInputListener
 import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
 import org.readium.r2.navigator.input.TapEvent
+import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
@@ -294,31 +295,41 @@ private const val VAULT_DYSLEXIA_FRIENDLY_LETTER_SPACING = 0.125
  * [systemInDarkTheme] resolves [ReadingTheme.SYSTEM] (#370) the same way — pass the
  * caller's `isSystemInDarkTheme()`.
  *
+ * AMOLED (#420): same true-black-via-backgroundColor/textColor-override approach as
+ * `feature:reader`'s `ReaderSettings.toEpubPreferences` — see that function's doc.
+ *
  * `internal` rather than `private` (AGENTS.md's pure-helper convention) so it's
  * directly unit-testable — see `VaultEpubPreferencesMappingTest`.
  */
 @OptIn(ExperimentalReadiumApi::class)
-internal fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences = EpubPreferences(
-    theme = when (theme.resolved(systemInDarkTheme)) {
-        xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK  -> Theme.DARK
-        xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT -> Theme.LIGHT
-        xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA -> Theme.SEPIA
-    },
-    publisherStyles = false,
-    fontSize   = fontSize.toDouble(),
-    lineHeight = lineSpacing.toDouble(),
-    fontFamily = when (fontFamily) {
-        VaultReaderFontFamily.SERIF         -> ReadiumFontFamily.SERIF
-        VaultReaderFontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF
-        VaultReaderFontFamily.MONOSPACE     -> ReadiumFontFamily.MONOSPACE
-        // Readium's EPUB navigator already embeds OpenDyslexic internally — see
-        // core/ui/licenses/README.md.
-        VaultReaderFontFamily.OPEN_DYSLEXIC -> ReadiumFontFamily.OPEN_DYSLEXIC
-        VaultReaderFontFamily.SYSTEM        -> null
-    },
-    letterSpacing = if (fontFamily == VaultReaderFontFamily.OPEN_DYSLEXIC) {
-        VAULT_DYSLEXIA_FRIENDLY_LETTER_SPACING
-    } else {
-        null
-    },
-)
+internal fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
+    val resolvedTheme = theme.resolved(systemInDarkTheme)
+    val isAmoled = resolvedTheme == xyz.libravault.core.ui.theme.ConcreteReadingTheme.AMOLED
+    return EpubPreferences(
+        theme = when (resolvedTheme) {
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK   -> Theme.DARK
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT  -> Theme.LIGHT
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA  -> Theme.SEPIA
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.AMOLED -> Theme.DARK
+        },
+        backgroundColor = if (isAmoled) ReadiumColor(0xFF000000.toInt()) else null,
+        textColor       = if (isAmoled) ReadiumColor(0xFFFFFFFF.toInt()) else null,
+        publisherStyles = false,
+        fontSize   = fontSize.toDouble(),
+        lineHeight = lineSpacing.toDouble(),
+        fontFamily = when (fontFamily) {
+            VaultReaderFontFamily.SERIF         -> ReadiumFontFamily.SERIF
+            VaultReaderFontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF
+            VaultReaderFontFamily.MONOSPACE     -> ReadiumFontFamily.MONOSPACE
+            // Readium's EPUB navigator already embeds OpenDyslexic internally — see
+            // core/ui/licenses/README.md.
+            VaultReaderFontFamily.OPEN_DYSLEXIC -> ReadiumFontFamily.OPEN_DYSLEXIC
+            VaultReaderFontFamily.SYSTEM        -> null
+        },
+        letterSpacing = if (fontFamily == VaultReaderFontFamily.OPEN_DYSLEXIC) {
+            VAULT_DYSLEXIA_FRIENDLY_LETTER_SPACING
+        } else {
+            null
+        },
+    )
+}
