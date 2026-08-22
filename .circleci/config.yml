@@ -5,9 +5,10 @@ version: 2.1
 # via the `circleci-job` PR label — see circleci-dispatch.yml) when GitHub
 # Actions minutes are exhausted or concurrency-capped — both have happened,
 # see the pipeline health-check routine. Not a full replacement for the
-# GitHub Actions suite (no release signing, no iOS, no agent-pipeline
-# orchestration — see issue #376 for the phased plan covering those) — just
-# the test signals kept alive on a second provider.
+# GitHub Actions suite (no iOS, no agent-pipeline orchestration — see issue
+# #376 for the phased plan covering those) — the test signals plus a signed
+# Android release build/Firebase distribution path kept alive on a second
+# provider.
 #
 # Every job here is gated behind its own pipeline parameter (default false)
 # rather than a plain `workflows:` block, which CircleCI runs on *every* push
@@ -65,6 +66,22 @@ parameters:
   device_version:
     type: string
     default: "34"
+  # Mirrors release.yml's signed-APK build. Deliberately does NOT mirror
+  # that workflow's "attach to a GitHub Release" step — see the
+  # release-build job below for why.
+  run_release:
+    type: boolean
+    default: false
+  # Mirrors android-firebase-distribution.yml.
+  run_firebase_distribution:
+    type: boolean
+    default: false
+  release_notes:
+    type: string
+    default: "Beta build via CircleCI"
+  tester_groups:
+    type: string
+    default: "libravault-alphabeta"
 
 jobs:
   jvm-tests:
@@ -367,6 +384,150 @@ jobs:
           destination: tts-audio-test-apk
           when: on_fail
 
+  # Mirrors release.yml's build-and-sign half only — NOT its "Upload APK to
+  # GitHub Release" step. That step authenticates with GH Actions' own
+  # auto-issued GITHUB_TOKEN, which CircleCI has no equivalent of; mirroring
+  # it here would mean minting and storing a new GitHub write credential
+  # (issue #378 didn't originally scope that). Deliberately not doing that:
+  # if GitHub Actions itself is down but github.com is reachable, a human
+  # can take this job's stored APK artifact and attach it to a GitHub
+  # Release by hand (gh release create/upload, or the web UI) — no CI
+  # provider can publish to github.com if github.com itself is the thing
+  # that's down, so a same-provider "publish" step wouldn't buy redundancy
+  # in that scenario anyway. Signing only, same as jvm-tests' pattern of
+  # staying in the docker executor.
+  release-build:
+    docker:
+      - image: cimg/android:2026.08
+    # large, not medium: jvm-tests above already needed this bump for
+    # *unit tests alone* ("Gradle build daemon disappeared unexpectedly").
+    # A release build adds R8 minification on top, which is typically
+    # heavier, not lighter — pre-empting the same failure rather than
+    # waiting to hit it on a real release-cutting run.
+    resource_class: large
+    steps:
+      - checkout
+
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+
+      # Same env vars as release.yml's "Set up signing" step, held as
+      # CircleCI project/context env vars rather than GitHub secrets — see
+      # issue #378 for the recommendation to use a restricted Context
+      # (Project Settings -> Contexts) rather than plain project env vars,
+      # given these are the keys that sign every release APK.
+      - run:
+          name: Set up signing
+          command: |
+            echo "$RELEASE_KEYSTORE" | base64 --decode > app/libravault-release.keystore
+            printf 'storeFile=libravault-release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" \
+              "$KEY_ALIAS" \
+              "$KEY_PASSWORD" \
+              > keystore.properties
+
+      - run:
+          name: Build release APK
+          command: ./gradlew assembleFdroidRelease
+
+      - run:
+          name: Clean up signing
+          when: always
+          command: |
+            rm -f app/libravault-release.keystore
+            rm -f keystore.properties
+
+      - store_artifacts:
+          path: app/build/outputs/apk/fdroid/release
+          destination: release-apk
+
+  # Mirrors android-firebase-distribution.yml. Reuses the FIREBASE_APP_ID
+  # and FIREBASE_SERVICE_ACCOUNT_JSON env vars (the latter already needed
+  # by keystore-hardware-test/tts-audio-test above, see issue #377) plus the
+  # signing env vars from release-build above.
+  firebase-distribution:
+    docker:
+      - image: cimg/android:2026.08
+    # large, not medium — same reasoning as release-build above
+    # (assemblePlayRelease also runs R8 minification).
+    resource_class: large
+    environment:
+      RELEASE_NOTES: << pipeline.parameters.release_notes >>
+      TESTER_GROUPS: << pipeline.parameters.tester_groups >>
+    steps:
+      - checkout
+
+      # Same script the GH Actions job uses (issue #290) — sourced straight
+      # from the checkout rather than duplicated, so the two providers can
+      # never drift on this check.
+      - run:
+          name: Validate release notes don't contain a bare version string
+          command: .github/scripts/validate_release_notes.sh
+
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+
+      - run:
+          name: Set up signing
+          command: |
+            echo "$RELEASE_KEYSTORE" | base64 --decode > app/libravault-release.keystore
+            printf 'storeFile=libravault-release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" \
+              "$KEY_ALIAS" \
+              "$KEY_PASSWORD" \
+              > keystore.properties
+
+      - run:
+          name: Build Play release APK
+          command: ./gradlew assemblePlayRelease
+
+      - run:
+          name: Set up Firebase credentials
+          command: echo "$FIREBASE_SERVICE_ACCOUNT_JSON" | base64 --decode > firebase-key.json
+
+      # cimg/android's Node (if any) is unpinned and not guaranteed present —
+      # install a known-good major version explicitly rather than assume,
+      # same reasoning as keystore-hardware-test's "cimg/android doesn't
+      # ship the gcloud CLI" step.
+      - run:
+          name: Install Node.js
+          command: |
+            if ! command -v npx >/dev/null; then
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+
+      - run:
+          name: Distribute to Firebase App Distribution
+          command: |
+            export GOOGLE_APPLICATION_CREDENTIALS="$PWD/firebase-key.json"
+            APK_PATH=$(find app/build/outputs/apk/play/release -name "*.apk" | head -1)
+            echo "Distributing $APK_PATH"
+
+            # Same pinned firebase-tools version as android-firebase-distribution.yml —
+            # deliberately kept identical rather than "latest", so the two
+            # providers can't silently diverge in behavior.
+            npx --yes firebase-tools@13.29.1 appdistribution:distribute "$APK_PATH" \
+              --app "$FIREBASE_APP_ID" \
+              --groups "$TESTER_GROUPS" \
+              --release-notes "$RELEASE_NOTES"
+
+            echo "Uploaded to Firebase App Distribution"
+
+      - run:
+          name: Clean up secrets
+          when: always
+          command: |
+            rm -f app/libravault-release.keystore
+            rm -f keystore.properties
+            rm -f firebase-key.json
+
+      - store_artifacts:
+          path: app/build/outputs/apk/play/release
+          destination: play-release-apk
+
 workflows:
   version: 2
   manual-jvm-tests:
@@ -385,3 +546,16 @@ workflows:
     when: << pipeline.parameters.run_tts_audio_test >>
     jobs:
       - tts-audio-test
+  # Deliberately NOT wired into circleci-dispatch.yml's `circleci-job` label
+  # (unlike the four workflows above) — a real signed Play/F-Droid build and
+  # a real distribution to testers shouldn't be one PR-label click away,
+  # matching android-firebase-distribution.yml's own workflow_dispatch-only
+  # design on the GH Actions side. Dashboard/API trigger only.
+  manual-release-build:
+    when: << pipeline.parameters.run_release >>
+    jobs:
+      - release-build
+  manual-firebase-distribution:
+    when: << pipeline.parameters.run_firebase_distribution >>
+    jobs:
+      - firebase-distribution
