@@ -50,6 +50,7 @@ import xyz.libravault.core.tts.TtsEngineProvider
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.SleepTimerState
 import java.time.Instant
 
 @ExtendWith(MockKExtension::class)
@@ -733,6 +734,175 @@ class ReaderViewModelTest {
 
         io.mockk.verify { fakeTtsEngine.stop() }
         io.mockk.verify { mockController.play() }
+    }
+
+    // ── Read Aloud Player screen (#138) ─────────────────────────────────────────
+
+    @Test
+    fun `showReadAloudPlayer and hideReadAloudPlayer round-trip through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.showReadAloudPlayer)
+        vm.showReadAloudPlayer()
+        assertTrue(vm.uiState.value.showReadAloudPlayer)
+        vm.hideReadAloudPlayer()
+        assertFalse(vm.uiState.value.showReadAloudPlayer)
+    }
+
+    @Test
+    fun `startReadAloud seeds readAloudPlayback with a duration estimate and chapter info`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(
+            getInitialText  = { "one two three four five six seven eight nine ten" },
+            getNextText     = { null },
+            chapterIndex    = { 2 },
+            chapterCount    = { 5 },
+        )
+        val playback = vm.readAloudPlayback.value
+        assertEquals(0L, playback.elapsedMs)
+        assertTrue(playback.durationMs > 0)
+        assertEquals(2, playback.chapterIndex)
+        assertEquals(5, playback.chapterCount)
+    }
+
+    @Test
+    fun `stopReadAloud resets readAloudPlayback and closes the player overlay`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { null })
+        vm.showReadAloudPlayer()
+
+        vm.stopReadAloud()
+
+        assertEquals(ReadAloudPlaybackState(), vm.readAloudPlayback.value)
+        assertFalse(vm.uiState.value.showReadAloudPlayer)
+    }
+
+    @Test
+    fun `nextReadAloudChapter speaks the next chapter and updates chapter index`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(
+            getInitialText = { "Chapter one." },
+            getNextText    = { "Chapter two." },
+            chapterIndex   = { 0 },
+            chapterCount   = { 2 },
+        )
+        vm.nextReadAloudChapter()
+        io.mockk.coVerify { fakeTtsEngine.speak("Chapter two.") }
+    }
+
+    @Test
+    fun `nextReadAloudChapter is a no-op at the end of the book`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Last chapter." }, getNextText = { null })
+        vm.nextReadAloudChapter()
+        // No stop, no crash — startReadAloud's initial speak is the only call.
+        io.mockk.coVerify(exactly = 1) { fakeTtsEngine.speak(any()) }
+        io.mockk.verify(exactly = 0) { fakeTtsEngine.stop() }
+    }
+
+    @Test
+    fun `previousReadAloudChapter speaks the previous chapter`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(
+            getInitialText  = { "Chapter two." },
+            getNextText     = { null },
+            getPreviousText = { "Chapter one." },
+        )
+        vm.previousReadAloudChapter()
+        io.mockk.coVerify { fakeTtsEngine.speak("Chapter one.") }
+    }
+
+    @Test
+    fun `previousReadAloudChapter is a no-op at the start of the book`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(
+            getInitialText  = { "Chapter one." },
+            getNextText     = { null },
+            getPreviousText = { null },
+        )
+        vm.previousReadAloudChapter()
+        io.mockk.coVerify(exactly = 1) { fakeTtsEngine.speak(any()) }
+    }
+
+    @Test
+    fun `seekReadAloud clamps to the current duration estimate`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "one two three four five" }, getNextText = { null })
+        val duration = vm.readAloudPlayback.value.durationMs
+
+        vm.seekReadAloud(duration + 999_999L)
+        assertEquals(duration, vm.readAloudPlayback.value.elapsedMs)
+
+        vm.seekReadAloud(-999_999L)
+        assertEquals(0L, vm.readAloudPlayback.value.elapsedMs)
+    }
+
+    @Test
+    fun `skipForwardReadAloud and skipBackwardReadAloud move elapsed by the given delta`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(
+            getInitialText = { (1..500).joinToString(" ") { "word" } }, // long chapter, big duration
+            getNextText    = { null },
+        )
+        vm.seekReadAloud(10_000L)
+        vm.skipForwardReadAloud(5_000L)
+        assertEquals(15_000L, vm.readAloudPlayback.value.elapsedMs)
+
+        vm.skipBackwardReadAloud(3_000L)
+        assertEquals(12_000L, vm.readAloudPlayback.value.elapsedMs)
+    }
+
+    @Test
+    fun `setReadAloudSpeed delegates to the engine and rescales duration proportionally`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(
+            getInitialText = { (1..500).joinToString(" ") { "word" } },
+            getNextText    = { null },
+        )
+        val before = vm.readAloudPlayback.value
+        vm.seekReadAloud(before.durationMs / 2)
+
+        vm.setReadAloudSpeed(2.0f)
+
+        io.mockk.verify { fakeTtsEngine.setSpeechRate(2.0f) }
+        val after = vm.readAloudPlayback.value
+        // Doubling speed halves the remaining/total duration; elapsed fraction preserved.
+        assertTrue(kotlin.math.abs(after.durationMs - before.durationMs / 2) <= 1L)
+        assertEquals(0.5f, after.elapsedMs.toFloat() / after.durationMs, 0.01f)
+    }
+
+    @Test
+    fun `sleep timer sheet shows and hides`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.showReadAloudSleepTimerSheet)
+        vm.showReadAloudSleepTimer()
+        assertTrue(vm.uiState.value.showReadAloudSleepTimerSheet)
+        vm.hideReadAloudSleepTimer()
+        assertFalse(vm.uiState.value.showReadAloudSleepTimerSheet)
+    }
+
+    @Test
+    fun `startReadAloudSleepTimer hides the sheet immediately`() = runTest {
+        // The timer's actual countdown/fire behaviour (including that firing pauses
+        // playback, with no volume fade) is covered directly and deterministically in
+        // ReadAloudSleepTimerTest, using a scope this test doesn't have virtual-time
+        // control over here (see mainDispatcher's doc above) — this only checks the
+        // synchronous sheet-dismissal side effect.
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { null })
+        vm.showReadAloudSleepTimer()
+
+        vm.startReadAloudSleepTimer(60_000L)
+
+        assertFalse(vm.uiState.value.showReadAloudSleepTimerSheet)
+        vm.cancelReadAloudSleepTimer() // Don't leave a real countdown running past this test.
+    }
+
+    @Test
+    fun `cancelReadAloudSleepTimer is safe when no timer is active`() = runTest {
+        val vm = viewModel()
+        vm.startReadAloud(getInitialText = { "Chapter one." }, getNextText = { null })
+        vm.cancelReadAloudSleepTimer() // Should not throw.
+        assertEquals(SleepTimerState.Inactive, vm.readAloudPlayback.value.sleepTimerState)
     }
 
     // ── Highlights ────────────────────────────────────────────────────────────

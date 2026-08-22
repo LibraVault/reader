@@ -44,9 +44,6 @@ import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
 import xyz.libravault.feature.player.service.SleepTimerState
 import xyz.libravault.feature.reader.readaloud.ReadAloudSleepTimer
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import java.time.Instant
 import javax.inject.Inject
 
@@ -146,8 +143,6 @@ class ReaderViewModel @Inject constructor(
     private var readAloudChapterIndexProvider: (() -> Int)? = null
     private var readAloudChapterCountProvider: (() -> Int)? = null
 
-    private var readAloudTickerJob: Job? = null
-
     // Fires by pausing the session — no volume fade, see ReadAloudSleepTimer's doc.
     private val readAloudSleepTimer = ReadAloudSleepTimer(onFire = ::pauseReadAloud)
 
@@ -200,7 +195,6 @@ class ReaderViewModel @Inject constructor(
                 readAloudPreviousChapterProvider = null
                 readAloudChapterIndexProvider = null
                 readAloudChapterCountProvider = null
-                stopReadAloudTicker()
             }
         }
         // Relays the sleep timer's own state into readAloudPlayback so the Player
@@ -534,8 +528,8 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun pauseReadAloud()  { ttsEngineProvider.engine.value.pause(); stopReadAloudTicker() }
-    fun resumeReadAloud() { ttsEngineProvider.engine.value.resume(); startReadAloudTicker() }
+    fun pauseReadAloud()  { ttsEngineProvider.engine.value.pause() }
+    fun resumeReadAloud() { ttsEngineProvider.engine.value.resume() }
 
     fun toggleReadAloudPlayPause() {
         when (readAloudState.value.status) {
@@ -550,7 +544,6 @@ class ReaderViewModel @Inject constructor(
         readAloudPreviousChapterProvider = null
         readAloudChapterIndexProvider = null
         readAloudChapterCountProvider = null
-        stopReadAloudTicker()
         readAloudSleepTimer.cancel()
         _readAloudPlayback.value = ReadAloudPlaybackState()
         _uiState.value = _uiState.value.copy(
@@ -593,7 +586,25 @@ class ReaderViewModel @Inject constructor(
             chapterIndex = readAloudChapterIndexProvider?.invoke() ?: 0,
             chapterCount = readAloudChapterCountProvider?.invoke() ?: 0,
         )
-        startReadAloudTicker()
+    }
+
+    /**
+     * Advances the elapsed estimate by [deltaMs] — driven by the reader UI's own
+     * ~1s ticker (see `ReaderScreen`'s `LaunchedEffect`) rather than a `delay()` loop
+     * living in this ViewModel. A ViewModel-internal ticker would keep running in
+     * [viewModelScope] for as long as the process lives, since only Android's real
+     * `onCleared()` lifecycle ever cancels it — [ReaderViewModelTest] doesn't
+     * exercise that lifecycle, so every test starting a session would leak a live
+     * `delay()`-based coroutine that fires after `Dispatchers.resetMain()` has
+     * already run in `tearDown()`, crashing a background thread against the
+     * now-unmocked Main dispatcher. Compose's `LaunchedEffect` doesn't have that
+     * problem — it's scoped to composition, which reader unit tests never enter.
+     */
+    fun advanceReadAloudElapsed(deltaMs: Long) {
+        val current = _readAloudPlayback.value
+        _readAloudPlayback.value = current.copy(
+            elapsedMs = (current.elapsedMs + deltaMs).coerceIn(0L, current.durationMs.coerceAtLeast(0L)),
+        )
     }
 
     /**
@@ -678,25 +689,6 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun cancelReadAloudSleepTimer() = readAloudSleepTimer.cancel()
-
-    private fun startReadAloudTicker() {
-        stopReadAloudTicker()
-        readAloudTickerJob = viewModelScope.launch {
-            while (isActive) {
-                delay(1_000L)
-                val current = _readAloudPlayback.value
-                val advanceMs = (1_000L * readAloudState.value.speechRate).toLong()
-                _readAloudPlayback.value = current.copy(
-                    elapsedMs = (current.elapsedMs + advanceMs).coerceAtMost(current.durationMs),
-                )
-            }
-        }
-    }
-
-    private fun stopReadAloudTicker() {
-        readAloudTickerJob?.cancel()
-        readAloudTickerJob = null
-    }
 
     override fun onCleared() {
         super.onCleared()

@@ -154,6 +154,25 @@ fun ReaderScreen(
     // it's actually relevant. selectReaderBottomBar() below resolves the precedence.
     val showReadAloudBar = readAloud.status == TtsStatus.PLAYING || readAloud.status == TtsStatus.PAUSED
 
+    // Drives readAloudPlayback's elapsed/duration estimate (#138) — deliberately a
+    // Compose-scoped LaunchedEffect rather than a delay() loop inside ReaderViewModel:
+    // see ReaderViewModel.advanceReadAloudElapsed's doc for why a ViewModel-internal
+    // ticker would leak past onCleared() in unit tests. showReadAloudBar as the key
+    // means Compose cancels this effect the instant the bar disappears (session
+    // stopped) and starts a fresh one when it reappears — same lifetime as the
+    // mini-bar/Player screen, so `while (true)` below only ever runs while one of
+    // those is actually showing.
+    if (showReadAloudBar) {
+        androidx.compose.runtime.LaunchedEffect(showReadAloudBar) {
+            while (true) {
+                kotlinx.coroutines.delay(1_000L)
+                if (readAloud.status == TtsStatus.PLAYING) {
+                    viewModel.advanceReadAloudElapsed((1_000L * readAloud.speechRate).toLong())
+                }
+            }
+        }
+    }
+
     // Wrap in the reading theme chosen by the user
     LibravaultTheme(readingTheme = state.settings.theme) {
         when {
