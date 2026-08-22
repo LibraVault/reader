@@ -561,6 +561,29 @@ jobs:
           fi
           echo "Merged #$PR_NUMBER."
 
+          # Explicitly close the linked issue instead of relying solely on
+          # GitHub's implicit close-on-merge, which has been observed to
+          # not fire reliably for PRs merged this way (issues #178, #314 —
+          # see issue #402). Best-effort: a failure here is logged but
+          # never fails the run, since the merge itself already succeeded.
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER" 2>/dev/null || echo "")
+          if [ -n "$ISSUE_NUMBER" ]; then
+            ISSUE_STATE=$(gh issue view "$ISSUE_NUMBER" --json state -q .state 2>/dev/null || echo "")
+            if [ "$ISSUE_STATE" = "OPEN" ]; then
+              echo "Issue #$ISSUE_NUMBER is still open after the merge — closing it explicitly and clearing stale pipeline labels." >&2
+              gh issue edit "$ISSUE_NUMBER" --remove-label status:triage || true
+              gh issue edit "$ISSUE_NUMBER" --remove-label status:ready-for-dev || true
+              gh issue edit "$ISSUE_NUMBER" --remove-label status:in-progress || true
+              gh issue edit "$ISSUE_NUMBER" --remove-label status:needs-info || true
+              gh issue close "$ISSUE_NUMBER" --comment "Closed automatically: PR #$PR_NUMBER, which resolves this issue, was merged." \
+                || echo "Failed to close issue #$ISSUE_NUMBER — non-fatal, continuing." >&2
+            elif [ -z "$ISSUE_STATE" ]; then
+              echo "Could not read issue #$ISSUE_NUMBER's state (deleted/transferred/inaccessible?) — skipping explicit close." >&2
+            else
+              echo "Issue #$ISSUE_NUMBER is already $ISSUE_STATE — GitHub's implicit close-on-merge got there first, nothing to do." >&2
+            fi
+          fi
+
           # Best-effort audit log (Phase 4 guardrail) — wrapped so a
           # failure here doesn't fail the run: the merge itself already
           # succeeded, which is what actually matters.
@@ -568,7 +591,6 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             PR_TITLE=$(gh pr view "$PR_NUMBER" --json title -q .title | sed 's/|/\\|/g')
-            ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER" 2>/dev/null || echo "")
             # Read the merge commit GitHub actually recorded for THIS PR,
             # not the current tip of dev after a fetch — another
             # principal-review run for a different PR isn't serialized
