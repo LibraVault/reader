@@ -399,7 +399,12 @@ jobs:
   release-build:
     docker:
       - image: cimg/android:2026.08
-    resource_class: medium
+    # large, not medium: jvm-tests above already needed this bump for
+    # *unit tests alone* ("Gradle build daemon disappeared unexpectedly").
+    # A release build adds R8 minification on top, which is typically
+    # heavier, not lighter — pre-empting the same failure rather than
+    # waiting to hit it on a real release-cutting run.
+    resource_class: large
     steps:
       - checkout
 
@@ -444,7 +449,12 @@ jobs:
   firebase-distribution:
     docker:
       - image: cimg/android:2026.08
-    resource_class: medium
+    # large, not medium — same reasoning as release-build above
+    # (assemblePlayRelease also runs R8 minification).
+    resource_class: large
+    environment:
+      RELEASE_NOTES: << pipeline.parameters.release_notes >>
+      TESTER_GROUPS: << pipeline.parameters.tester_groups >>
     steps:
       - checkout
 
@@ -453,8 +463,6 @@ jobs:
       # never drift on this check.
       - run:
           name: Validate release notes don't contain a bare version string
-          environment:
-            RELEASE_NOTES: << pipeline.parameters.release_notes >>
           command: .github/scripts/validate_release_notes.sh
 
       - run:
@@ -493,9 +501,6 @@ jobs:
 
       - run:
           name: Distribute to Firebase App Distribution
-          environment:
-            RELEASE_NOTES: << pipeline.parameters.release_notes >>
-            TESTER_GROUPS: << pipeline.parameters.tester_groups >>
           command: |
             export GOOGLE_APPLICATION_CREDENTIALS="$PWD/firebase-key.json"
             APK_PATH=$(find app/build/outputs/apk/play/release -name "*.apk" | head -1)
