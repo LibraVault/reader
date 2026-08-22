@@ -1,5 +1,6 @@
 package xyz.libravault.feature.vault
 
+import xyz.libravault.core.ui.theme.PresetFontFamily
 import xyz.libravault.core.ui.theme.ReadingTheme
 
 /**
@@ -47,4 +48,24 @@ internal const val VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING = 1.8f
 enum class VaultScrollMode {
     PAGINATED,   // Page-turn animation
     SCROLLING,   // Continuous vertical scroll
+}
+
+/** #419 — maps to/from core:ui's [PresetFontFamily] so [VaultReaderSettings]
+ * can be compared against/set from a `ReadingPreset` without core:ui
+ * depending on this feature-specific enum. Both enums share the same four
+ * cases 1:1. */
+fun VaultReaderFontFamily.toPresetFontFamily(): PresetFontFamily = when (this) {
+    VaultReaderFontFamily.SYSTEM        -> PresetFontFamily.SYSTEM
+    VaultReaderFontFamily.SERIF         -> PresetFontFamily.SERIF
+    VaultReaderFontFamily.SANS_SERIF    -> PresetFontFamily.SANS_SERIF
+    VaultReaderFontFamily.MONOSPACE     -> PresetFontFamily.MONOSPACE
+    VaultReaderFontFamily.OPEN_DYSLEXIC -> PresetFontFamily.OPEN_DYSLEXIC
+}
+
+fun PresetFontFamily.toVaultReaderFontFamily(): VaultReaderFontFamily = when (this) {
+    PresetFontFamily.SYSTEM        -> VaultReaderFontFamily.SYSTEM
+    PresetFontFamily.SERIF         -> VaultReaderFontFamily.SERIF
+    PresetFontFamily.SANS_SERIF    -> VaultReaderFontFamily.SANS_SERIF
+    PresetFontFamily.MONOSPACE     -> VaultReaderFontFamily.MONOSPACE
+    PresetFontFamily.OPEN_DYSLEXIC -> VaultReaderFontFamily.OPEN_DYSLEXIC
 }
