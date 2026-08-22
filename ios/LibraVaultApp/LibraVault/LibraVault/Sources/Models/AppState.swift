@@ -223,7 +223,10 @@ final class AppState: ObservableObject {
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
         ttsEngineType = userPreferencesPersistence.loadTTSEngineType()
         miniPlayerAutoHideEnabled = userPreferencesPersistence.loadMiniPlayerAutoHideEnabled()
-        billingManager.$isSupporter
+        // `self.` is required here, not just style — the bare parameter `billingManager`
+        // (now `StoreKitBillingManager?`, see the init signature above) shadows the
+        // non-optional `self.billingManager` property within this initializer's scope.
+        self.billingManager.$isSupporter
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.isSupporter = $0 }
             .store(in: &cancellables)
