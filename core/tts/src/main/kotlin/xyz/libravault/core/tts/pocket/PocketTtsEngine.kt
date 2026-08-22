@@ -25,6 +25,22 @@ import javax.inject.Singleton
 
 private const val TAG = "PocketTtsEngine"
 
+/**
+ * sherpa-onnx's own default (0.2) compresses inter-sentence pauses to 20% of
+ * what the VITS model itself predicts. That's barely noticeable for a short
+ * example sentence, but [speak] hands over an entire chapter in one
+ * synthesis call - see [generateChunks]'s KDoc - so every sentence boundary
+ * in the chapter gets that same rushed pause. Real TestFlight feedback
+ * described the resulting narration as "robotic"; 1.0 (the model's own
+ * predicted pause length, unscaled) reads as natural sentence-to-sentence
+ * pacing for long-form narration instead. Tune down if on-device listening
+ * finds full-length pauses too slow.
+ *
+ * Internal, not private, so [PocketTtsEngineTest] can pin this value the
+ * same way [PocketVoiceCatalogTest] pins the voice model choice.
+ */
+internal const val SILENCE_SCALE = 1.0f
+
 @Singleton
 class PocketTtsEngine @Inject constructor(
     private val modelManager: PocketModelManager,
@@ -111,6 +127,7 @@ class PocketTtsEngine @Inject constructor(
                 val config = GenerationConfig(
                     speed = _state.value.speechRate,
                     sid = PocketVoiceCatalog.DEFAULT_SPEAKER_ID,
+                    silenceScale = SILENCE_SCALE,
                 )
                 // Rate comes from the loaded model, never a constant - see
                 // PocketPlayback.play's KDoc for the mismatch this caused.

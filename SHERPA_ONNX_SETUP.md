@@ -32,7 +32,7 @@ prebuilt GitHub Release assets rather than compiled/trained locally:
 
 ## The voice model: what and why
 
-The bundled voice is **`vits-piper-en_US-ljspeech-medium` (int8)**, a
+The bundled voice is **`vits-piper-en_US-ljspeech-high` (int8)**, a
 single-speaker Piper VITS model. The URL/checksum live in two places that
 must be kept in sync: `third-party/sherpa-onnx/setup-android-model.sh` and
 `third-party/sherpa-onnx/setup-ios.sh` (each hardcodes its own copy, same as
@@ -40,6 +40,19 @@ they already do for engine binaries); `core/tts/build.gradle.kts`'s
 `POCKET_TTS_MODEL_SHA256` build config field keeps only the checksum, as the
 "which model version is this APK's bundled copy" marker `PocketModelManager`
 checks after copying from assets into app storage.
+
+Originally shipped as the `medium` tier of the same voice; swapped to `high`
+2026-08-22 after real TestFlight feedback described the on-device narration
+as "robotic" (see issue filed alongside this change). Same LJSpeech
+(public-domain) training data and license, same 22.05 kHz sample rate, no
+API-level change on either platform — a strictly bigger checkpoint. Trade-off:
+the committed Android asset directory grew from ~21MB to ~39MB (after the
+same non-English espeak-ng-data trim described below), and iOS's per-build
+fetch grew correspondingly. `PocketPlayback`'s
+`SILENCE_SCALE`/`silenceScale` generation-config constant was raised from
+sherpa-onnx's default of 0.2 to 1.0 in the same change, for the same
+"robotic" complaint — see that constant's doc comment on both platforms for
+why.
 
 This specific voice was a deliberate choice, not the first thing tried.
 LibraVault has no paid tier today — the Ed25519-license-key/Play Billing
@@ -102,7 +115,7 @@ then `./gradlew :core:tts:assembleDebug` to verify.
 ```
 
 Fetches (into gitignored local paths, not committed — see that script's own
-header comment for why, ~230MB combined):
+header comment for why, ~245MB combined):
 
 - `third-party/sherpa-onnx/ios/sherpa-onnx.xcframework` — sherpa-onnx itself
 - `third-party/sherpa-onnx/ios/onnxruntime.xcframework` — its onnxruntime
@@ -136,10 +149,11 @@ at app runtime — but where the extracted output lives differs:
 - **iOS**: `setup-ios.sh` extracts into a **gitignored** path and is re-run
   by CI on every build/TestFlight run (`ios-app-build.yml`,
   `ios-testflight.yml`), same as the two xcframeworks it also fetches. Those
-  frameworks push the total per-build fetch to ~230MB — too large to commit
+  frameworks push the total per-build fetch to ~245MB — too large to commit
   — so the model rides along with the same fetch-at-build-time mechanism for
-  consistency, even though on its own (~37MB) it wouldn't have forced that
-  choice.
+  consistency, even though on its own (~54MB, up from ~37MB when this was the
+  `medium` tier — the untrimmed espeak-ng-data dominates that number, see
+  below) it wouldn't have forced that choice.
 
 Either way, no network call happens when the app runs on a user's device —
 only during development/CI, fetching a public, checksum-verified asset.

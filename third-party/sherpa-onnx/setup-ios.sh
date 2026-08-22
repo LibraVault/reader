@@ -29,8 +29,8 @@ MODEL_DEST="${REPO_ROOT}/ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel"
 
 # Same voice as Android (core/tts/build.gradle.kts) - do not change without
 # re-reading SHERPA_ONNX_SETUP.md's licensing section first.
-MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2"
-MODEL_SHA256="24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b"
+MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-high-int8.tar.bz2"
+MODEL_SHA256="916b2526d4ea191f9710bd2753698ac97926ec38eade867408d3f5fd422ca285"
 
 verify_sha256() {
   local file="$1" expected="$2"
@@ -76,7 +76,7 @@ else
 fi
 
 if [ ! -d "${MODEL_DEST}" ] || [ -z "$(ls -A "${MODEL_DEST}" 2>/dev/null)" ]; then
-  echo "Downloading bundled voice model (vits-piper-en_US-ljspeech-medium, int8)..."
+  echo "Downloading bundled voice model (vits-piper-en_US-ljspeech-high, int8)..."
   curl -sL -o model.tar.bz2 "${MODEL_URL}"
   verify_sha256 model.tar.bz2 "${MODEL_SHA256}"
   rm -rf model-extract && mkdir model-extract
