@@ -1,5 +1,6 @@
 package xyz.libravault.feature.vault
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -55,6 +57,12 @@ fun VaultReaderSettingsSheet(
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (VaultScrollMode) -> Unit,
     onDismiss: () -> Unit,
+    // Margins/justification/hyphenation (#421) — EPUB only, same rationale as
+    // `feature:reader`'s `ReaderSettingsSheet.showEpubLayoutControls`.
+    showEpubLayoutControls: Boolean = false,
+    onMarginScaleChanged: (Float) -> Unit = {},
+    onJustifyTextChanged: (Boolean) -> Unit = {},
+    onHyphenationChanged: (Boolean) -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -174,6 +182,61 @@ fun VaultReaderSettingsSheet(
                                 label    = { Text(family.displayName) },
                             )
                         }
+                    }
+                }
+
+                if (showEpubLayoutControls) {
+                    HorizontalDivider()
+
+                    // ── Margins (#421) ────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Margins", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "${(settings.marginScale * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    Slider(
+                        value = settings.marginScale,
+                        onValueChange = onMarginScaleChanged,
+                        valueRange = 0.5f..2.0f,
+                        steps = 14,
+                    )
+
+                    HorizontalDivider()
+
+                    // ── Justify text (#421) ───────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJustifyTextChanged(!settings.justifyText) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Justify text", style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = settings.justifyText, onCheckedChange = null)
+                    }
+
+                    // ── Hyphenation (#421) ────────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onHyphenationChanged(!settings.hyphenation) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Hyphenation", style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = settings.hyphenation, onCheckedChange = null)
                     }
                 }
             }

@@ -306,6 +306,45 @@ class ReaderViewModelTest {
         assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED, vm.uiState.value.settings.theme)
     }
 
+    // ── Margins/justification/hyphenation (#421) ────────────────────────────────
+
+    @Test
+    fun `margin scale is clamped to the 0_5 to 2_0 range`() = runTest {
+        val vm = viewModel()
+        vm.onMarginScaleChanged(5.0f)
+        assertEquals(2.0f, vm.uiState.value.settings.marginScale)
+
+        vm.onMarginScaleChanged(-1.0f)
+        assertEquals(0.5f, vm.uiState.value.settings.marginScale)
+
+        vm.onMarginScaleChanged(1.25f)
+        assertEquals(1.25f, vm.uiState.value.settings.marginScale)
+    }
+
+    @Test
+    fun `justify text round-trips through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.justifyText)
+
+        vm.onJustifyTextChanged(true)
+        assertTrue(vm.uiState.value.settings.justifyText)
+
+        vm.onJustifyTextChanged(false)
+        assertFalse(vm.uiState.value.settings.justifyText)
+    }
+
+    @Test
+    fun `hyphenation round-trips through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.hyphenation)
+
+        vm.onHyphenationChanged(true)
+        assertTrue(vm.uiState.value.settings.hyphenation)
+
+        vm.onHyphenationChanged(false)
+        assertFalse(vm.uiState.value.settings.hyphenation)
+    }
+
     @Test
     fun `settings sheet shows and hides`() = runTest {
         val vm = viewModel()

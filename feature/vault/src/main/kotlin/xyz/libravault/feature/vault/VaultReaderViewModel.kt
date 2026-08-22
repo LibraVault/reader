@@ -170,6 +170,19 @@ class VaultReaderViewModel @Inject constructor(
         _settings.update { it.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f)) }
     }
 
+    // #421
+    fun onMarginScaleChanged(scale: Float) {
+        _settings.update { it.copy(marginScale = scale.coerceIn(0.5f, 2.0f)) }
+    }
+
+    fun onJustifyTextChanged(justify: Boolean) {
+        _settings.update { it.copy(justifyText = justify) }
+    }
+
+    fun onHyphenationChanged(hyphenation: Boolean) {
+        _settings.update { it.copy(hyphenation = hyphenation) }
+    }
+
     fun onScrollModeChanged(mode: VaultScrollMode) {
         _settings.update { it.copy(scrollMode = mode) }
     }

@@ -44,7 +44,14 @@ class ReaderSettingsSheetUiTest {
 
     private fun SemanticsNodeInteraction.click() = performSemanticsAction(SemanticsActions.OnClick)
 
-    private fun setSheet(settings: ReaderSettings = ReaderSettings(), showFontControls: Boolean = true) {
+    private fun setSheet(
+        settings: ReaderSettings = ReaderSettings(),
+        showFontControls: Boolean = true,
+        showEpubLayoutControls: Boolean = false,
+        onMarginScaleChanged: (Float) -> Unit = {},
+        onJustifyTextChanged: (Boolean) -> Unit = {},
+        onHyphenationChanged: (Boolean) -> Unit = {},
+    ) {
         composeTestRule.setContent {
             LibravaultTheme {
                 ReaderSettingsSheet(
@@ -56,6 +63,10 @@ class ReaderSettingsSheetUiTest {
                     onLineSpacingChanged = {},
                     onScrollModeChanged = {},
                     onDismiss = {},
+                    showEpubLayoutControls = showEpubLayoutControls,
+                    onMarginScaleChanged = onMarginScaleChanged,
+                    onJustifyTextChanged = onJustifyTextChanged,
+                    onHyphenationChanged = onHyphenationChanged,
                 )
             }
         }
@@ -145,6 +156,62 @@ class ReaderSettingsSheetUiTest {
         setSheet()
 
         composeTestRule.onNodeWithText("Mode").assertExists()
+    }
+
+    // ── Margins/justification/hyphenation (#421) ─────────────────────────────
+
+    @Test
+    fun `layout controls are hidden when showEpubLayoutControls is false, even with Customize expanded`() {
+        setSheet(showEpubLayoutControls = false)
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("Margins").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Justify text").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Hyphenation").assertDoesNotExist()
+    }
+
+    @Test
+    fun `layout controls appear once Customize is expanded when showEpubLayoutControls is true`() {
+        setSheet(showEpubLayoutControls = true)
+
+        composeTestRule.onNodeWithText("Margins").assertDoesNotExist()
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("Margins").assertExists()
+        composeTestRule.onNodeWithText("Justify text").assertExists()
+        composeTestRule.onNodeWithText("Hyphenation").assertExists()
+    }
+
+    @Test
+    fun `tapping the Justify text row invokes onJustifyTextChanged with the flipped value`() {
+        var applied: Boolean? = null
+        setSheet(
+            settings = ReaderSettings(justifyText = false),
+            showEpubLayoutControls = true,
+            onJustifyTextChanged = { applied = it },
+        )
+
+        composeTestRule.onNodeWithText("Customize").click()
+        composeTestRule.onNodeWithText("Justify text").click()
+
+        assert(applied == true)
+    }
+
+    @Test
+    fun `tapping the Hyphenation row invokes onHyphenationChanged with the flipped value`() {
+        var applied: Boolean? = null
+        setSheet(
+            settings = ReaderSettings(hyphenation = true),
+            showEpubLayoutControls = true,
+            onHyphenationChanged = { applied = it },
+        )
+
+        composeTestRule.onNodeWithText("Customize").click()
+        composeTestRule.onNodeWithText("Hyphenation").click()
+
+        assert(applied == false)
     }
 
     @Test
