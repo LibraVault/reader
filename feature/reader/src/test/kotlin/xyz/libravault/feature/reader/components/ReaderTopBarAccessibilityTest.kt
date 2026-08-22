@@ -119,6 +119,24 @@ class ReaderTopBarAccessibilityTest {
     }
 
     /**
+     * Regression guard for #424: the settings trigger's spoken name must come
+     * from its now-visible "Themes & Settings" label, not a leftover
+     * "Reader settings" `contentDescription` on the icon (which would make the
+     * icon itself a second, redundant accessible node under TalkBack).
+     */
+    @Test
+    fun settingsControlAnnouncesItsVisibleLabel() {
+        setTopBar()
+
+        val labels = composeTestRule.clickableLabels()
+
+        assertTrue(
+            "Expected the settings control's accessible name to be its visible label. Labels: $labels",
+            labels.any { it == "Themes & Settings" },
+        )
+    }
+
+    /**
      * The font controls are optional (`showFontControls = false` for formats
      * with no adjustable type). Hiding them must not strand an unlabelled
      * control, and the sweep must still find something to check.
