@@ -1,9 +1,12 @@
 package xyz.libravault.feature.vault
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.SavedStateHandle
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,10 +39,22 @@ class VaultReaderViewModelTest {
     private val fileId = ByteArray(16) { it.toByte() }
     private val fileIdHex = fileId.toHexString()
 
+    // #428 — the initial theme is read from (and in-reader changes written back to)
+    // SharedPreferences via this Context, see ReadingThemePreference.
+    private val sharedPrefs: SharedPreferences = mockk(relaxed = true)
+    private val sharedPrefsEditor: SharedPreferences.Editor = mockk(relaxed = true)
+    private val appContext: Context = mockk<Context>(relaxed = false)
+
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(StandardTestDispatcher())
         every { sessionManager.requireUnlocked("vault-1") } returns vaultStore
+
+        // No stored value by default, so read() falls back to its documented DARK.
+        every { appContext.getSharedPreferences(any(), any()) } returns sharedPrefs
+        every { sharedPrefs.getString(any(), any()) } returns null
+        every { sharedPrefs.edit() } returns sharedPrefsEditor
+        every { sharedPrefsEditor.putString(any(), any()) } returns sharedPrefsEditor
     }
 
     @AfterEach
@@ -50,6 +65,7 @@ class VaultReaderViewModelTest {
     private fun viewModel() = VaultReaderViewModel(
         sessionManager, readiumProvider,
         SavedStateHandle(mapOf("vaultId" to "vault-1", "fileId" to fileIdHex)),
+        appContext,
     )
 
     private fun entry(format: String) = VaultManifestEntry(
@@ -360,6 +376,38 @@ class VaultReaderViewModelTest {
         vm.onThemeChanged(ReadingTheme.SYSTEM)
 
         assertEquals(ReadingTheme.SYSTEM, vm.settings.value.theme)
+    }
+
+    @Test
+    fun `initial theme is seeded from the persisted global default, not a hardcoded DARK`() = runTest {
+        // Regression coverage for #428 — before this fix, VaultReaderSettings()'s
+        // own hardcoded DARK default was always used, regardless of what Settings
+        // has configured as defaultReadingTheme.
+        every { sharedPrefs.getString(any(), any()) } returns "SEPIA"
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(ReadingTheme.SEPIA, vm.settings.value.theme)
+    }
+
+    @Test
+    fun `onThemeChanged writes the new theme back to the persisted global default`() = runTest {
+        // Regression coverage for #428 — before this fix, an in-reader theme change
+        // lived only in the ViewModel's in-memory state and was lost on close.
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onThemeChanged(ReadingTheme.SEPIA)
+
+        verify { sharedPrefsEditor.putString("reading_theme", "SEPIA") }
+        verify { sharedPrefsEditor.apply() }
     }
 
     @Test

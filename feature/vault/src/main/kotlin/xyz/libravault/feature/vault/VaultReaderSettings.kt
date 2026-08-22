@@ -6,9 +6,12 @@ import xyz.libravault.core.ui.theme.ReadingTheme
  * Per-session reading settings for the vault-native EPUB reader — same shape
  * and defaults as `feature:reader`'s `ReaderSettings`, kept as a private
  * duplicate rather than a new cross-module dependency (same call
- * [VaultCoverPlaceholder]/[VaultBookmarksSheet] already made). Session-only,
- * matching `ReaderSettings`' own behavior exactly: nothing here is persisted,
- * it resets to these defaults every time a reader screen opens.
+ * [VaultCoverPlaceholder]/[VaultBookmarksSheet] already made). Font size,
+ * font family, line spacing and scroll mode are session-only, matching
+ * `ReaderSettings`' own behavior: nothing there is persisted, it resets to
+ * these defaults every time a reader screen opens. `theme` is the one
+ * exception (#428) — [VaultReaderViewModel] seeds and writes it through to
+ * the global default via `core:storage`'s `ReadingThemePreference`.
  *
  * `scrollMode` now has a paginated implementation to switch to on the PDF
  * side (see [VaultPdfReaderScreen]) — restored after having been dropped
