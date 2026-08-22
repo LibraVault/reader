@@ -298,6 +298,25 @@ class ReaderViewModel @Inject constructor(
         )
     }
 
+    // #421
+    fun onMarginScaleChanged(scale: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(marginScale = scale.coerceIn(0.5f, 2.0f))
+        )
+    }
+
+    fun onJustifyTextChanged(justify: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(justifyText = justify)
+        )
+    }
+
+    fun onHyphenationChanged(hyphenation: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(hyphenation = hyphenation)
+        )
+    }
+
     // ── Bookmarks ─────────────────────────────────────────────────────────────
 
     fun showBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = true) }

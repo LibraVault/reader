@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -192,6 +193,15 @@ fun ReaderSettingsSheet(
     showReadAloud: Boolean = false,
     readAloudActive: Boolean = false,
     onReadAloudClick: () -> Unit = {},
+    // Margins/justification/hyphenation (#421) — EPUB only. These map to native
+    // Readium EpubPreferences fields with no Markdown/PDF equivalent (Markdown's
+    // typography is Compose TextStyle, not Readium CSS; PDF pages here are
+    // pre-rendered bitmaps), so the caller gates this to `item.format == EPUB`
+    // rather than reusing [showFontControls] (true for Markdown too).
+    showEpubLayoutControls: Boolean = false,
+    onMarginScaleChanged: (Float) -> Unit = {},
+    onJustifyTextChanged: (Boolean) -> Unit = {},
+    onHyphenationChanged: (Boolean) -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -319,6 +329,53 @@ fun ReaderSettingsSheet(
                                 label    = { Text(family.displayName) },
                             )
                         }
+                    }
+                }
+
+                if (showEpubLayoutControls) {
+                    HorizontalDivider()
+
+                    // ── Margins (#421) ────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Margins", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.weight(1f))
+                        Text("${(settings.marginScale * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge)
+                    }
+                    Slider(
+                        value = settings.marginScale,
+                        onValueChange = onMarginScaleChanged,
+                        valueRange = 0.5f..2.0f,
+                        steps = 14,
+                    )
+
+                    HorizontalDivider()
+
+                    // ── Justify text (#421) ───────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJustifyTextChanged(!settings.justifyText) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Justify text", style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f))
+                        Switch(checked = settings.justifyText, onCheckedChange = null)
+                    }
+
+                    // ── Hyphenation (#421) ────────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onHyphenationChanged(!settings.hyphenation) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Hyphenation", style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f))
+                        Switch(checked = settings.hyphenation, onCheckedChange = null)
                     }
                 }
             }

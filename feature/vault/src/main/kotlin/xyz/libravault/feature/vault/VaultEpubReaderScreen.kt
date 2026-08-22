@@ -48,6 +48,7 @@ import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
@@ -298,8 +299,13 @@ private const val VAULT_DYSLEXIA_FRIENDLY_LETTER_SPACING = 0.125
  * AMOLED (#420): same true-black-via-backgroundColor/textColor-override approach as
  * `feature:reader`'s `ReaderSettings.toEpubPreferences` — see that function's doc.
  *
+ * Margins/justification/hyphenation (#421): same mapping as
+ * `feature:reader`'s `ReaderSettings.toEpubPreferences` — see that function's doc
+ * for why these three are native Readium preferences on this pinned navigator
+ * version, not hand-rolled CSS.
+ *
  * `internal` rather than `private` (AGENTS.md's pure-helper convention) so it's
- * directly unit-testable — see `VaultEpubPreferencesMappingTest`.
+ * directly unit-testable — see `VaultEpubPreferencesMappingTest`/`VaultEpubReaderScreenPreferencesTest`.
  */
 @OptIn(ExperimentalReadiumApi::class)
 internal fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
@@ -315,8 +321,11 @@ internal fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boole
         backgroundColor = if (isAmoled) ReadiumColor(0xFF000000.toInt()) else null,
         textColor       = if (isAmoled) ReadiumColor(0xFFFFFFFF.toInt()) else null,
         publisherStyles = false,
-        fontSize   = fontSize.toDouble(),
-        lineHeight = lineSpacing.toDouble(),
+        fontSize    = fontSize.toDouble(),
+        lineHeight  = lineSpacing.toDouble(),
+        pageMargins = marginScale.toDouble(),
+        textAlign   = if (justifyText) TextAlign.JUSTIFY else null,
+        hyphens     = hyphenation,
         fontFamily = when (fontFamily) {
             VaultReaderFontFamily.SERIF         -> ReadiumFontFamily.SERIF
             VaultReaderFontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF

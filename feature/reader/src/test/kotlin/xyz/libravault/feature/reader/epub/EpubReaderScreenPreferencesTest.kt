@@ -1,12 +1,15 @@
 package xyz.libravault.feature.reader.epub
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.navigator.preferences.Theme
 import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.feature.reader.ReaderSettings
@@ -78,5 +81,38 @@ class EpubReaderScreenPreferencesTest {
             ReaderSettings(theme = theme).toEpubPreferences(systemInDarkTheme = true)
             ReaderSettings(theme = theme).toEpubPreferences(systemInDarkTheme = false)
         }
+    }
+
+    // ── Margins/justification/hyphenation (#421) ────────────────────────────────
+
+    @Test
+    fun `default settings leave pageMargins at 1_0, textAlign unset, and hyphens false`() {
+        val prefs = ReaderSettings().toEpubPreferences(systemInDarkTheme = false)
+
+        assertEquals(1.0, prefs.pageMargins)
+        assertNull("Off by default — must not force a text alignment", prefs.textAlign)
+        assertEquals(false, prefs.hyphens)
+    }
+
+    @Test
+    fun `marginScale multiplier round-trips into pageMargins verbatim`() {
+        assertEquals(0.5, ReaderSettings(marginScale = 0.5f).toEpubPreferences(false).pageMargins)
+        assertEquals(1.6, ReaderSettings(marginScale = 1.6f).toEpubPreferences(false).pageMargins!!, 0.0001)
+        assertEquals(2.0, ReaderSettings(marginScale = 2.0f).toEpubPreferences(false).pageMargins)
+    }
+
+    @Test
+    fun `justifyText true maps to TextAlign JUSTIFY, false leaves textAlign unset`() {
+        assertEquals(
+            TextAlign.JUSTIFY,
+            ReaderSettings(justifyText = true).toEpubPreferences(false).textAlign,
+        )
+        assertNull(ReaderSettings(justifyText = false).toEpubPreferences(false).textAlign)
+    }
+
+    @Test
+    fun `hyphenation flag round-trips into hyphens verbatim`() {
+        assertTrue(ReaderSettings(hyphenation = true).toEpubPreferences(false).hyphens!!)
+        assertFalse(ReaderSettings(hyphenation = false).toEpubPreferences(false).hyphens!!)
     }
 }

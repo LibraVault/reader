@@ -56,6 +56,7 @@ import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
@@ -486,8 +487,17 @@ private const val DYSLEXIA_FRIENDLY_LETTER_SPACING = 0.125
  * color is effective", per Readium's own docs), so overriding them to pure black/white
  * only for AMOLED gets a real true-black page without needing a Readium-side theme.
  *
+ * Margins/justification/hyphenation (#421): all three are native Readium EPUB
+ * preferences on this pinned navigator version (confirmed via `EpubPreferences`'s
+ * constructor — `pageMargins: Double?`, `textAlign: TextAlign?`, `hyphens: Boolean?`),
+ * not hand-rolled CSS. [ReaderSettings.marginScale] maps straight to `pageMargins`
+ * (both are 1.0-default multipliers — Readium's own "100%, no scaling" value). Justify
+ * is offered as a single on/off control (matching the product ask) rather than exposing
+ * [TextAlign]'s full START/END/LEFT/RIGHT/CENTER/JUSTIFY set; off leaves `textAlign`
+ * unset so behaviour is unchanged until the user opts in.
+ *
  * `internal` rather than `private` (AGENTS.md's pure-helper convention) so it's
- * directly unit-testable — see `EpubPreferencesMappingTest`.
+ * directly unit-testable — see `EpubPreferencesMappingTest`/`EpubReaderScreenPreferencesTest`.
  */
 @OptIn(ExperimentalReadiumApi::class)
 internal fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
@@ -508,8 +518,11 @@ internal fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubP
         // toCss() implementation already multiplies by 100 to produce the % string.
         // Pass the raw multiplier (0.8–2.0); do NOT multiply by 100 here or the WebView
         // receives values like "10000%" which browsers silently ignore.
-        fontSize   = fontSize.toDouble(),
-        lineHeight = lineSpacing.toDouble(),
+        fontSize    = fontSize.toDouble(),
+        lineHeight  = lineSpacing.toDouble(),
+        pageMargins = marginScale.toDouble(),
+        textAlign   = if (justifyText) TextAlign.JUSTIFY else null,
+        hyphens     = hyphenation,
         fontFamily = when (fontFamily) {
             FontFamily.SERIF         -> ReadiumFontFamily.SERIF
             FontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF

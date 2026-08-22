@@ -8,7 +8,16 @@ data class ReaderSettings(
     val fontSize: Float       = 1.0f,     // Multiplier: 0.8 – 2.0
     val fontFamily: FontFamily = FontFamily.SYSTEM,
     val lineSpacing: Float    = 1.4f,
-    val marginScale: Float    = 1.0f,     // Multiplier for horizontal margins
+    // Multiplier for horizontal margins: 0.5 – 2.0. Wired to Readium's
+    // EpubPreferences.pageMargins (#421) — see EpubReaderScreen.toEpubPreferences.
+    // 1.0 is Readium's own "no scaling" default, so leaving this untouched is a
+    // genuine no-op, not an approximation.
+    val marginScale: Float    = 1.0f,
+    // Text justification (#421) — maps to Readium's EpubPreferences.textAlign
+    // (TextAlign.JUSTIFY) when true, left unset (current behaviour) when false.
+    val justifyText: Boolean  = false,
+    // Hyphenation (#421) — maps to Readium's EpubPreferences.hyphens.
+    val hyphenation: Boolean  = false,
     val scrollMode: ScrollMode = ScrollMode.PAGINATED,
     // Kobo/Kindle-style warmth / blue-light filter (#422), independent of [theme] — 0f
     // (off) .. 1f (maximum). Session-only, same lifecycle as [fontSize]/[lineSpacing]:

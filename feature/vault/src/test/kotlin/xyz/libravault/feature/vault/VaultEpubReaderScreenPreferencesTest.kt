@@ -1,12 +1,15 @@
 package xyz.libravault.feature.vault
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.navigator.preferences.Theme
 import xyz.libravault.core.ui.theme.ReadingTheme
 
@@ -58,5 +61,42 @@ class VaultEpubReaderScreenPreferencesTest {
             VaultReaderSettings(theme = theme).toVaultEpubPreferences(systemInDarkTheme = true)
             VaultReaderSettings(theme = theme).toVaultEpubPreferences(systemInDarkTheme = false)
         }
+    }
+
+    // ── Margins/justification/hyphenation (#421) ────────────────────────────────
+
+    @Test
+    fun `default settings leave pageMargins at 1_0, textAlign unset, and hyphens false`() {
+        val prefs = VaultReaderSettings().toVaultEpubPreferences(systemInDarkTheme = false)
+
+        assertEquals(1.0, prefs.pageMargins)
+        assertNull("Off by default — must not force a text alignment", prefs.textAlign)
+        assertEquals(false, prefs.hyphens)
+    }
+
+    @Test
+    fun `marginScale multiplier round-trips into pageMargins verbatim`() {
+        assertEquals(0.5, VaultReaderSettings(marginScale = 0.5f).toVaultEpubPreferences(false).pageMargins)
+        assertEquals(
+            1.6,
+            VaultReaderSettings(marginScale = 1.6f).toVaultEpubPreferences(false).pageMargins!!,
+            0.0001,
+        )
+        assertEquals(2.0, VaultReaderSettings(marginScale = 2.0f).toVaultEpubPreferences(false).pageMargins)
+    }
+
+    @Test
+    fun `justifyText true maps to TextAlign JUSTIFY, false leaves textAlign unset`() {
+        assertEquals(
+            TextAlign.JUSTIFY,
+            VaultReaderSettings(justifyText = true).toVaultEpubPreferences(false).textAlign,
+        )
+        assertNull(VaultReaderSettings(justifyText = false).toVaultEpubPreferences(false).textAlign)
+    }
+
+    @Test
+    fun `hyphenation flag round-trips into hyphens verbatim`() {
+        assertTrue(VaultReaderSettings(hyphenation = true).toVaultEpubPreferences(false).hyphens!!)
+        assertFalse(VaultReaderSettings(hyphenation = false).toVaultEpubPreferences(false).hyphens!!)
     }
 }

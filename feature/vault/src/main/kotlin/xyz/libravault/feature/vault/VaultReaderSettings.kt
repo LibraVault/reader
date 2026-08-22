@@ -13,15 +13,21 @@ import xyz.libravault.core.ui.theme.ReadingTheme
  *
  * `scrollMode` now has a paginated implementation to switch to on the PDF
  * side (see [VaultPdfReaderScreen]) — restored after having been dropped
- * when this type was introduced (Phase 5b had only continuous scroll). No
- * `marginScale` field though — `ReaderSettings` declares one but never wires
- * it to any UI control, a gap not worth carrying over.
+ * when this type was introduced (Phase 5b had only continuous scroll).
+ *
+ * `marginScale`/`justifyText`/`hyphenation` (#421) now mirror
+ * `ReaderSettings`' fields 1:1 — the "gap not worth carrying over" this doc
+ * used to describe (an unwired `marginScale`) is exactly what #421 wires up,
+ * for both readers at once.
  */
 data class VaultReaderSettings(
     val theme: ReadingTheme = ReadingTheme.DARK,
     val fontSize: Float = 1.0f, // Multiplier: 0.8 – 2.0
     val fontFamily: VaultReaderFontFamily = VaultReaderFontFamily.SYSTEM,
     val lineSpacing: Float = 1.4f, // 1.0 – 2.5
+    val marginScale: Float = 1.0f, // Multiplier for horizontal margins: 0.5 – 2.0
+    val justifyText: Boolean = false,
+    val hyphenation: Boolean = false,
     val scrollMode: VaultScrollMode = VaultScrollMode.PAGINATED,
     // Kobo/Kindle-style warmth / blue-light filter (#422), independent of [theme] — 0f
     // (off) .. 1f (maximum). Session-only, same lifecycle as [fontSize]/[lineSpacing]:

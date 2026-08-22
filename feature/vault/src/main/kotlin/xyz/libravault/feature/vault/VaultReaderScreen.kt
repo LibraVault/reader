@@ -170,6 +170,12 @@ fun VaultReaderScreen(
             onScrollModeChanged  = viewModel::onScrollModeChanged,
             onWarmthChanged      = viewModel::onWarmthChanged,
             onDismiss            = { showSettingsSheet = false },
+            // Margins/justification/hyphenation (#421) — EPUB only, see
+            // VaultReaderSettingsSheet.showEpubLayoutControls's doc.
+            showEpubLayoutControls = state is VaultReaderState.EpubReady,
+            onMarginScaleChanged   = viewModel::onMarginScaleChanged,
+            onJustifyTextChanged   = viewModel::onJustifyTextChanged,
+            onHyphenationChanged   = viewModel::onHyphenationChanged,
         )
     }
 }
