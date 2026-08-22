@@ -287,6 +287,38 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `warmth defaults to 0f`() = runTest {
+        // #422 — session-only, same lifecycle as fontSize/lineSpacing.
+        val vm = viewModel()
+        assertEquals(0f, vm.uiState.value.settings.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged clamps to the 0f to 1f range`() = runTest {
+        // #422
+        val vm = viewModel()
+
+        vm.onWarmthChanged(5.0f)
+        assertEquals(1.0f, vm.uiState.value.settings.warmth)
+
+        vm.onWarmthChanged(-1.0f)
+        assertEquals(0.0f, vm.uiState.value.settings.warmth)
+
+        vm.onWarmthChanged(0.5f)
+        assertEquals(0.5f, vm.uiState.value.settings.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged updates only the warmth field`() = runTest {
+        // #422
+        val vm = viewModel()
+        vm.onWarmthChanged(0.6f)
+
+        assertEquals(0.6f, vm.uiState.value.settings.warmth)
+        assertEquals(1.0f, vm.uiState.value.settings.fontSize)
+    }
+
+    @Test
     fun `theme change round-trips through ui state, including SYSTEM`() = runTest {
         val vm = viewModel()
 

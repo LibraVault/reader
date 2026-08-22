@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import xyz.libravault.core.ui.components.WarmthOverlay
 
 /**
  * Reads one vault file — EPUB ([VaultEpubReaderScreen]) or PDF
@@ -137,6 +138,11 @@ fun VaultReaderScreen(
                     onScrollConsumed = viewModel::clearPendingNavigation,
                 )
             }
+
+            // Warmth / blue-light overlay (#422) — screen-level tint drawn on top of
+            // whichever format just rendered above. See feature:reader's ReaderScreen
+            // for the full rationale (shared WarmthOverlay in core:ui).
+            WarmthOverlay(warmth = settings.warmth, modifier = Modifier.fillMaxSize())
         }
     }
 
@@ -162,6 +168,7 @@ fun VaultReaderScreen(
             onFontFamilyChanged  = viewModel::onFontFamilyChanged,
             onLineSpacingChanged = viewModel::onLineSpacingChanged,
             onScrollModeChanged  = viewModel::onScrollModeChanged,
+            onWarmthChanged      = viewModel::onWarmthChanged,
             onDismiss            = { showSettingsSheet = false },
             // Margins/justification/hyphenation (#421) — EPUB only, see
             // VaultReaderSettingsSheet.showEpubLayoutControls's doc.

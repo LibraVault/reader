@@ -170,6 +170,10 @@ class VaultReaderViewModel @Inject constructor(
         _settings.update { it.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f)) }
     }
 
+    fun onWarmthChanged(warmth: Float) {
+        _settings.update { it.copy(warmth = warmth.coerceIn(0f, 1f)) }
+    }
+
     // #421
     fun onMarginScaleChanged(scale: Float) {
         _settings.update { it.copy(marginScale = scale.coerceIn(0.5f, 2.0f)) }

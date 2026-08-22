@@ -292,6 +292,12 @@ class ReaderViewModel @Inject constructor(
         )
     }
 
+    fun onWarmthChanged(warmth: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(warmth = warmth.coerceIn(0f, 1f))
+        )
+    }
+
     // #421
     fun onMarginScaleChanged(scale: Float) {
         _uiState.value = _uiState.value.copy(

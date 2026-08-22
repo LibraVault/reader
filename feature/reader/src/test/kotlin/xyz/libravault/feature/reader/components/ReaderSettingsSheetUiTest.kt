@@ -62,6 +62,7 @@ class ReaderSettingsSheetUiTest {
                     onFontFamilyChanged = {},
                     onLineSpacingChanged = {},
                     onScrollModeChanged = {},
+                    onWarmthChanged = {},
                     onDismiss = {},
                     showEpubLayoutControls = showEpubLayoutControls,
                     onMarginScaleChanged = onMarginScaleChanged,
@@ -138,6 +139,7 @@ class ReaderSettingsSheetUiTest {
                     onFontFamilyChanged = { appliedFontFamily = it },
                     onLineSpacingChanged = { appliedLineSpacing = it },
                     onScrollModeChanged = {},
+                    onWarmthChanged = {},
                     onDismiss = {},
                 )
             }
@@ -247,6 +249,7 @@ class ReaderSettingsSheetUiTest {
                     onFontFamilyChanged = { appliedFontFamily = it },
                     onLineSpacingChanged = { appliedLineSpacing = it },
                     onScrollModeChanged = {},
+                    onWarmthChanged = {},
                     onDismiss = {},
                 )
             }
@@ -258,5 +261,39 @@ class ReaderSettingsSheetUiTest {
         assert(appliedFontFamily == FontFamily.OPEN_DYSLEXIC)
         assert(appliedFontSize == easyRead.fontSize)
         assert(appliedLineSpacing == easyRead.lineSpacing)
+    }
+
+    // ── Warmth (#422) ────────────────────────────────────────────────────────
+
+    @Test
+    fun `warmth control is shown once Customize is expanded, even for PDF (showFontControls = false)`() {
+        // Unlike font size/line spacing/font family — HTML CSS-driven, no hook for PDF —
+        // warmth is a screen-level overlay that applies to every format, so it must not
+        // be gated behind showFontControls the way those are.
+        setSheet(showFontControls = false)
+
+        composeTestRule.onNodeWithText("Warmth").assertDoesNotExist()
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("Warmth").assertExists()
+    }
+
+    @Test
+    fun `warmth percentage reflects the current setting`() {
+        setSheet(settings = ReaderSettings(warmth = 0.5f))
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("50%").assertExists()
+    }
+
+    @Test
+    fun `warmth defaults to 0 percent`() {
+        setSheet()
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("0%").assertExists()
     }
 }

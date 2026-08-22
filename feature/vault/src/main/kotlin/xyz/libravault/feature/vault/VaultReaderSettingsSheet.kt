@@ -56,6 +56,7 @@ fun VaultReaderSettingsSheet(
     onFontFamilyChanged: (VaultReaderFontFamily) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (VaultScrollMode) -> Unit,
+    onWarmthChanged: (Float) -> Unit,
     onDismiss: () -> Unit,
     // Margins/justification/hyphenation (#421) — EPUB only, same rationale as
     // `feature:reader`'s `ReaderSettingsSheet.showEpubLayoutControls`.
@@ -123,6 +124,29 @@ fun VaultReaderSettingsSheet(
                         )
                     }
                 }
+
+                HorizontalDivider()
+
+                // ── Warmth (#422) ──────────────────────────────────────────
+                // Shown regardless of showFontControls/format — see
+                // `feature:reader`'s ReaderSettingsSheet for why (the warmth overlay
+                // is a screen-level tint, unlike font size/line spacing/font family).
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Warmth", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "${(settings.warmth * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                Slider(
+                    value = settings.warmth,
+                    onValueChange = onWarmthChanged,
+                    valueRange = 0f..1f,
+                )
 
                 if (showFontControls) {
                     HorizontalDivider()
