@@ -204,4 +204,37 @@ class VaultReaderSettingsSheetUiTest {
         assert(appliedFontSize == daylight.fontSize)
         assert(appliedLineSpacing == daylight.lineSpacing)
     }
+
+    @Test
+    fun `tapping the Easy Read preset applies OpenDyslexic and its bundled spacing`() {
+        // #423 — "Easy Read" is the accessibility preset ReadingPresets.builtIns
+        // gained alongside the standalone OpenDyslexic font option.
+        val easyRead = ReadingPresets.builtIns.first { it.id == "easy_read" }
+        var appliedTheme: ReadingTheme? = null
+        var appliedFontFamily: VaultReaderFontFamily? = null
+        var appliedFontSize: Float? = null
+        var appliedLineSpacing: Float? = null
+
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultReaderSettingsSheet(
+                    settings = VaultReaderSettings(),
+                    showFontControls = true,
+                    onThemeChanged = { appliedTheme = it },
+                    onFontSizeChanged = { appliedFontSize = it },
+                    onFontFamilyChanged = { appliedFontFamily = it },
+                    onLineSpacingChanged = { appliedLineSpacing = it },
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(easyRead.label).click()
+
+        assert(appliedTheme == easyRead.theme)
+        assert(appliedFontFamily == VaultReaderFontFamily.OPEN_DYSLEXIC)
+        assert(appliedFontSize == easyRead.fontSize)
+        assert(appliedLineSpacing == easyRead.lineSpacing)
+    }
 }
