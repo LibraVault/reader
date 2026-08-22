@@ -55,6 +55,7 @@ import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.ui.components.BookmarkAddedToast
+import xyz.libravault.core.ui.components.WarmthOverlay
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.components.BookmarksSheet
@@ -321,6 +322,12 @@ fun ReaderScreen(
                                     ErrorScreen("This format opens in the player.", onBack)
                                 }
                             }
+
+                            // Warmth / blue-light overlay (#422) — screen-level tint drawn on
+                            // top of whichever format just rendered above. Always present in
+                            // the tree (renders nothing when warmth == 0f) rather than
+                            // conditionally composed, per WarmthOverlay's own doc.
+                            WarmthOverlay(warmth = state.settings.warmth, modifier = Modifier.fillMaxSize())
                         }
                     }
                 }
@@ -347,6 +354,7 @@ fun ReaderScreen(
                         onFontFamilyChanged  = viewModel::onFontFamilyChanged,
                         onLineSpacingChanged = viewModel::onLineSpacingChanged,
                         onScrollModeChanged  = viewModel::onScrollModeChanged,
+                        onWarmthChanged      = viewModel::onWarmthChanged,
                         onDismiss            = viewModel::hideSettings,
                         // Read Aloud — EPUB (#137) and Markdown (#276).
                         showReadAloud    = readAloudSupported(item.format),

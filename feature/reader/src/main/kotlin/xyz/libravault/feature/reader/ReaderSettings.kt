@@ -10,6 +10,12 @@ data class ReaderSettings(
     val lineSpacing: Float    = 1.4f,
     val marginScale: Float    = 1.0f,     // Multiplier for horizontal margins
     val scrollMode: ScrollMode = ScrollMode.PAGINATED,
+    // Kobo/Kindle-style warmth / blue-light filter (#422), independent of [theme] — 0f
+    // (off) .. 1f (maximum). Session-only, same lifecycle as [fontSize]/[lineSpacing]:
+    // resets to 0f every time the reader screen reopens, deliberately not persisted (see
+    // #422's "Product decision" — no new UserPreferences/SharedPreferences plumbing).
+    // See xyz.libravault.core.ui.components.WarmthOverlay for how this is rendered.
+    val warmth: Float         = 0f,
 )
 
 enum class FontFamily(val displayName: String) {

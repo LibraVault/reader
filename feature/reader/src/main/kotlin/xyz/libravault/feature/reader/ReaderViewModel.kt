@@ -292,6 +292,12 @@ class ReaderViewModel @Inject constructor(
         )
     }
 
+    fun onWarmthChanged(warmth: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(warmth = warmth.coerceIn(0f, 1f))
+        )
+    }
+
     // ── Bookmarks ─────────────────────────────────────────────────────────────
 
     fun showBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = true) }

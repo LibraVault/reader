@@ -182,6 +182,7 @@ fun ReaderSettingsSheet(
     onFontFamilyChanged: (FontFamily) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (ScrollMode) -> Unit,
+    onWarmthChanged: (Float) -> Unit,
     onDismiss: () -> Unit,
     // Read Aloud — EPUB (#137) and Markdown (#276), gated by the caller via
     // ReaderScreen's readAloudSupported(), the same way iOS's
@@ -247,6 +248,26 @@ fun ReaderSettingsSheet(
                         )
                     }
                 }
+
+                HorizontalDivider()
+
+                // ── Warmth (#422) ──────────────────────────────────────────
+                // Shown regardless of showFontControls/format — unlike font size/line
+                // spacing/font family (HTML/CSS-driven, PDF has no hook for them), the
+                // warmth overlay is a screen-level tint drawn on top of whatever the
+                // reader shows, so it works for PDF too. See WarmthOverlay's doc.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Warmth", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
+                    Text("${(settings.warmth * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                Slider(
+                    value = settings.warmth,
+                    onValueChange = onWarmthChanged,
+                    valueRange = 0f..1f,
+                )
 
                 if (showFontControls) {
                     HorizontalDivider()
