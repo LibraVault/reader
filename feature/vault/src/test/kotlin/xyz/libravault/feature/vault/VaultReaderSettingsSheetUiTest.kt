@@ -111,6 +111,32 @@ class VaultReaderSettingsSheetUiTest {
     }
 
     @Test
+    fun `Amoled appears as a 5th theme chip and can be shown selected`() {
+        // #420: same "ReadingTheme.entries.forEach needs no sheet changes" regression
+        // guard as the System test above, for the newest ReadingTheme case.
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultReaderSettingsSheet(
+                    settings = VaultReaderSettings(theme = ReadingTheme.AMOLED),
+                    showFontControls = true,
+                    onThemeChanged = {},
+                    onFontSizeChanged = {},
+                    onFontFamilyChanged = {},
+                    onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Amoled").assertIsSelected()
+        composeTestRule.onNodeWithText("Dark").assertExists()
+        composeTestRule.onNodeWithText("Light").assertExists()
+        composeTestRule.onNodeWithText("Sepia").assertExists()
+        composeTestRule.onNodeWithText("System").assertExists()
+    }
+
+    @Test
     fun `scroll mode row is shown even when font controls are hidden`() {
         composeTestRule.setContent {
             LibravaultTheme {
