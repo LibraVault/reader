@@ -219,6 +219,17 @@ jobs:
             yourself — the workflow applies whichever one matches your
             verdict, based on the verdict file you write below.
 
+            Start that PR comment/review body with a line of the exact
+            form `## Principal review — verdict: \`auto-merge\`` or
+            `## Principal review — verdict: \`human-merge\`` (matching
+            whichever you conclude). This is load-bearing, not cosmetic:
+            if you crash on a later turn before writing
+            `principal-verdict.txt` below (e.g. an API rate-limit hit
+            right after posting), the workflow's crash-recovery step
+            recovers your verdict by grepping your most recent PR
+            review/comment for exactly this line instead of discarding a
+            completed review to status:needs-info (see issue #426).
+
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run, so
             it never arrives and no verdict ever gets produced:
@@ -309,11 +320,34 @@ jobs:
           if [ "${{ steps.agent.outcome }}" = "failure" ]; then
             AGENT_CRASHED="true"
             CRASH_VERDICT=""
+            CRASH_VERDICT_SOURCE=""
             if [ -f principal-verdict.txt ]; then
               CRASH_VERDICT=$(tr -d '[:space:]' < principal-verdict.txt | tr '[:upper:]' '[:lower:]')
+              if [ "$CRASH_VERDICT" = "auto-merge" ] || [ "$CRASH_VERDICT" = "human-merge" ]; then
+                CRASH_VERDICT_SOURCE="verdict file"
+              fi
             fi
+
+            # No usable verdict file doesn't necessarily mean no usable
+            # verdict — the agent's actual review is posted to GitHub
+            # (`gh pr review` or `gh pr comment`, per the persona) *before*
+            # it writes principal-verdict.txt as its last action, so a crash
+            # on a later turn (e.g. the org's weekly rate cap, see issue
+            # #426, distinct from #297's turn-budget crash) can discard a
+            # fully valid, already-posted review. Fall back to the most
+            # recent PR comment/review whose body carries the agent's own
+            # `verdict: \`X\`` line before concluding there's nothing to
+            # recover.
             if [ "$CRASH_VERDICT" != "auto-merge" ] && [ "$CRASH_VERDICT" != "human-merge" ]; then
-              echo "Principal review run crashed for PR #$PR_NUMBER with no usable verdict file — routing to status:needs-info instead of a verdict." >&2
+              REVIEW_VERDICT=$(.github/scripts/extract_review_verdict.sh "$PR_NUMBER" 2>/dev/null || true)
+              if [ "$REVIEW_VERDICT" = "auto-merge" ] || [ "$REVIEW_VERDICT" = "human-merge" ]; then
+                CRASH_VERDICT="$REVIEW_VERDICT"
+                CRASH_VERDICT_SOURCE="an already-posted PR review/comment (verdict file was never written before the crash)"
+              fi
+            fi
+
+            if [ "$CRASH_VERDICT" != "auto-merge" ] && [ "$CRASH_VERDICT" != "human-merge" ]; then
+              echo "Principal review run crashed for PR #$PR_NUMBER with no usable verdict file and no recoverable verdict in its posted reviews/comments — routing to status:needs-info instead of a verdict." >&2
               gh pr edit "$PR_NUMBER" --remove-label status:needs-review || true
               # Also clear a stale outcome label left by an EARLIER review
               # round on this same PR (e.g. re-review after an
@@ -331,7 +365,7 @@ jobs:
               echo "verdict=crashed" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Principal review run crashed for PR #$PR_NUMBER (see the workflow run), but it had already written a valid verdict ($CRASH_VERDICT) before dying — using it instead of discarding to status:needs-info." >&2
+            echo "Principal review run crashed for PR #$PR_NUMBER (see the workflow run), but a valid verdict ($CRASH_VERDICT) was recovered from $CRASH_VERDICT_SOURCE — using it instead of discarding to status:needs-info." >&2
           fi
 
           VERDICT="human-merge"
@@ -375,7 +409,7 @@ jobs:
           fi
 
           if [ "$AGENT_CRASHED" = "true" ]; then
-            gh pr comment "$PR_NUMBER" --body "Note: the review agent's run itself reported a failure (likely exhausted its turn budget — see the [workflow run]($RUN_URL)), but it had already written verdict \`$VERDICT\` before that happened, so this PR is being routed on that verdict rather than discarded to \`status:needs-info\`. Worth a closer look given the crash."
+            gh pr comment "$PR_NUMBER" --body "Note: the review agent's run itself reported a failure (likely exhausted its turn budget or hit an API error — see the [workflow run]($RUN_URL)), but verdict \`$VERDICT\` was recovered from $CRASH_VERDICT_SOURCE, so this PR is being routed on that verdict rather than discarded to \`status:needs-info\`. Worth a closer look given the crash."
           fi
 
       - name: Auto-merge if approved
