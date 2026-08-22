@@ -407,6 +407,61 @@ class VaultReaderViewModelTest {
         assertEquals(1.0f, vm.settings.value.lineSpacing)
     }
 
+    // ── Margins/justification/hyphenation (#421) ─────────────────────────────
+
+    @Test
+    fun `onMarginScaleChanged clamps to the 0_5 to 2_0 range`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.onMarginScaleChanged(5.0f)
+        assertEquals(2.0f, vm.settings.value.marginScale)
+
+        vm.onMarginScaleChanged(-1.0f)
+        assertEquals(0.5f, vm.settings.value.marginScale)
+
+        vm.onMarginScaleChanged(1.25f)
+        assertEquals(1.25f, vm.settings.value.marginScale)
+    }
+
+    @Test
+    fun `onJustifyTextChanged round-trips through settings state`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertEquals(false, vm.settings.value.justifyText)
+
+        vm.onJustifyTextChanged(true)
+        assertTrue(vm.settings.value.justifyText)
+
+        vm.onJustifyTextChanged(false)
+        assertEquals(false, vm.settings.value.justifyText)
+    }
+
+    @Test
+    fun `onHyphenationChanged round-trips through settings state`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertEquals(false, vm.settings.value.hyphenation)
+
+        vm.onHyphenationChanged(true)
+        assertTrue(vm.settings.value.hyphenation)
+
+        vm.onHyphenationChanged(false)
+        assertEquals(false, vm.settings.value.hyphenation)
+    }
+
     @Test
     fun `onFontFamilyChanged updates only the font family field`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
