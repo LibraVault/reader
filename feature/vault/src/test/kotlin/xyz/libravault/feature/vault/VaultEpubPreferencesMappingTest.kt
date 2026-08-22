@@ -1,17 +1,26 @@
 package xyz.libravault.feature.vault
 
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+import org.junit.runner.RunWith
 import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import xyz.libravault.core.ui.theme.ReadingTheme
 
 /**
  * Covers [VaultReaderSettings.toVaultEpubPreferences]'s font-family/letter-spacing
  * mapping (#423) — same coverage as `feature:reader`'s `EpubPreferencesMappingTest`,
  * duplicated for the same "parallel, not shared" reason as the production code.
+ *
+ * Runs on Robolectric — see `EpubPreferencesMappingTest`'s doc for why plain
+ * JUnit5 doesn't work here (Readium's `EpubPreferences` companion types touch
+ * `android.graphics.Color.parseColor` in a static initializer).
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 @OptIn(ExperimentalReadiumApi::class)
 class VaultEpubPreferencesMappingTest {
 

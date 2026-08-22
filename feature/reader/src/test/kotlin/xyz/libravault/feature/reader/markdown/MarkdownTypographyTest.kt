@@ -48,6 +48,22 @@ class MarkdownTypographyTest {
         return captured
     }
 
+    /** setContent can only be called once per test (Compose UI test rule
+     * limitation) — this captures both typographies in a single composition
+     * for tests that need to compare two [ReaderSettings]. */
+    private fun typographiesFor(a: ReaderSettings, b: ReaderSettings): Pair<MarkdownTypography, MarkdownTypography> {
+        lateinit var capturedA: MarkdownTypography
+        lateinit var capturedB: MarkdownTypography
+        composeTestRule.setContent {
+            LibravaultTheme {
+                capturedA = rememberMarkdownTypography(a)
+                capturedB = rememberMarkdownTypography(b)
+            }
+        }
+        composeTestRule.waitForIdle()
+        return capturedA to capturedB
+    }
+
     @Test
     fun `OPEN_DYSLEXIC resolves body and heading text to the bundled OpenDyslexic font family`() {
         val typography = typographyFor(ReaderSettings(fontFamily = FontFamily.OPEN_DYSLEXIC))
@@ -65,8 +81,10 @@ class MarkdownTypographyTest {
 
     @Test
     fun `OPEN_DYSLEXIC gives body text a specified letter-spacing, unlike the default font`() {
-        val default = typographyFor(ReaderSettings(fontFamily = FontFamily.SYSTEM))
-        val dyslexic = typographyFor(ReaderSettings(fontFamily = FontFamily.OPEN_DYSLEXIC))
+        val (default, dyslexic) = typographiesFor(
+            ReaderSettings(fontFamily = FontFamily.SYSTEM),
+            ReaderSettings(fontFamily = FontFamily.OPEN_DYSLEXIC),
+        )
 
         assertFalse(default.paragraph.letterSpacing.isSpecified)
         assertTrue(dyslexic.paragraph.letterSpacing.isSpecified)
