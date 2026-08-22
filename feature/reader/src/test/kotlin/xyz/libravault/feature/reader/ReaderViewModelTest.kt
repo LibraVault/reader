@@ -1,6 +1,7 @@
 package xyz.libravault.feature.reader
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.SavedStateHandle
 import androidx.media3.session.MediaController
 import app.cash.turbine.test
@@ -95,8 +96,12 @@ class ReaderViewModelTest {
 
     // PR #11: skip-duration setting is read from SharedPreferences via this Context.
     // The unit tests in this file never call seekBackAudiobook/seekForwardAudiobook,
-    // so we only need a non-null Context placeholder. mockk<Context>(relaxed = false)
-    // instruments no methods — no SharedPreferences call is ever made.
+    // so that particular read never happens. #428: every test does now trigger a
+    // SharedPreferences read on init (ReaderViewModel's initial theme) and
+    // onThemeChanged tests trigger a write too (ReadingThemePreference) — both
+    // stubbed below with a relaxed fake prefs/editor pair.
+    private val sharedPrefs: SharedPreferences = mockk(relaxed = true)
+    private val sharedPrefsEditor: SharedPreferences.Editor = mockk(relaxed = true)
     private val appContext: Context = mockk<Context>(relaxed = false)
 
     // #137 — Read Aloud. A relaxed fake TtsEngine (real state/completionEvent flows
@@ -133,6 +138,13 @@ class ReaderViewModelTest {
         every { fakeTtsEngine.state }           returns ttsEngineStateFlow
         every { fakeTtsEngine.completionEvent } returns ttsCompletionEvent
         every { fakeTtsEngine.stopEvent }       returns ttsStopEvent
+
+        // #428 — ReadingThemePreference.read/write's SharedPreferences plumbing.
+        // No stored value by default, so read() falls back to its documented DARK.
+        every { appContext.getSharedPreferences(any(), any()) } returns sharedPrefs
+        every { sharedPrefs.getString(any(), any()) } returns null
+        every { sharedPrefs.edit() } returns sharedPrefsEditor
+        every { sharedPrefsEditor.putString(any(), any()) } returns sharedPrefsEditor
     }
 
     @AfterEach
@@ -252,6 +264,73 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `selecting OpenDyslexic font bumps line spacing to the accessibility default`() = runTest {
+        val vm = viewModel()
+        assertEquals(1.4f, vm.uiState.value.settings.lineSpacing) // sanity: default before selection
+
+        vm.onFontFamilyChanged(FontFamily.OPEN_DYSLEXIC)
+
+        assertEquals(FontFamily.OPEN_DYSLEXIC, vm.uiState.value.settings.fontFamily)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `selecting a non-accessibility font leaves line spacing untouched`() = runTest {
+        val vm = viewModel()
+        vm.onLineSpacingChanged(2.0f)
+
+        vm.onFontFamilyChanged(FontFamily.SERIF)
+
+        assertEquals(FontFamily.SERIF, vm.uiState.value.settings.fontFamily)
+        assertEquals(2.0f, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `switching away from OpenDyslexic keeps the bumped line spacing until user changes it`() = runTest {
+        val vm = viewModel()
+        vm.onFontFamilyChanged(FontFamily.OPEN_DYSLEXIC)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+
+        // Switching to a different family doesn't force spacing back down —
+        // only selecting OPEN_DYSLEXIC itself sets a value (see onFontFamilyChanged doc).
+        vm.onFontFamilyChanged(FontFamily.SANS_SERIF)
+        assertEquals(FontFamily.SANS_SERIF, vm.uiState.value.settings.fontFamily)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `warmth defaults to 0f`() = runTest {
+        // #422 — session-only, same lifecycle as fontSize/lineSpacing.
+        val vm = viewModel()
+        assertEquals(0f, vm.uiState.value.settings.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged clamps to the 0f to 1f range`() = runTest {
+        // #422
+        val vm = viewModel()
+
+        vm.onWarmthChanged(5.0f)
+        assertEquals(1.0f, vm.uiState.value.settings.warmth)
+
+        vm.onWarmthChanged(-1.0f)
+        assertEquals(0.0f, vm.uiState.value.settings.warmth)
+
+        vm.onWarmthChanged(0.5f)
+        assertEquals(0.5f, vm.uiState.value.settings.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged updates only the warmth field`() = runTest {
+        // #422
+        val vm = viewModel()
+        vm.onWarmthChanged(0.6f)
+
+        assertEquals(0.6f, vm.uiState.value.settings.warmth)
+        assertEquals(1.0f, vm.uiState.value.settings.fontSize)
+    }
+
+    @Test
     fun `theme change round-trips through ui state, including SYSTEM`() = runTest {
         val vm = viewModel()
 
@@ -260,6 +339,78 @@ class ReaderViewModelTest {
 
         vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA)
         assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA, vm.uiState.value.settings.theme)
+    }
+
+    @Test
+    fun `initial theme is seeded from the persisted global default, not a hardcoded DARK`() = runTest {
+        // Regression coverage for #428 — before this fix, ReaderUiState's settings
+        // always started from ReaderSettings()'s own hardcoded DARK default,
+        // regardless of what Settings has configured as defaultReadingTheme.
+        every { sharedPrefs.getString(any(), any()) } returns "SEPIA"
+
+        val vm = viewModel()
+
+        assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA, vm.uiState.value.settings.theme)
+    }
+
+    @Test
+    fun `onThemeChanged writes the new theme back to the persisted global default`() = runTest {
+        // Regression coverage for #428 — before this fix, an in-reader theme change
+        // lived only in the ViewModel's in-memory state and was lost on close.
+        val vm = viewModel()
+
+        vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA)
+
+        io.mockk.verify { sharedPrefsEditor.putString("reading_theme", "SEPIA") }
+        io.mockk.verify { sharedPrefsEditor.apply() }
+    }
+
+    @Test
+    fun `theme change round-trips through ui state for AMOLED`() = runTest {
+        // #420
+        val vm = viewModel()
+
+        vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED)
+        assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED, vm.uiState.value.settings.theme)
+    }
+
+    // ── Margins/justification/hyphenation (#421) ────────────────────────────────
+
+    @Test
+    fun `margin scale is clamped to the 0_5 to 2_0 range`() = runTest {
+        val vm = viewModel()
+        vm.onMarginScaleChanged(5.0f)
+        assertEquals(2.0f, vm.uiState.value.settings.marginScale)
+
+        vm.onMarginScaleChanged(-1.0f)
+        assertEquals(0.5f, vm.uiState.value.settings.marginScale)
+
+        vm.onMarginScaleChanged(1.25f)
+        assertEquals(1.25f, vm.uiState.value.settings.marginScale)
+    }
+
+    @Test
+    fun `justify text round-trips through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.justifyText)
+
+        vm.onJustifyTextChanged(true)
+        assertTrue(vm.uiState.value.settings.justifyText)
+
+        vm.onJustifyTextChanged(false)
+        assertFalse(vm.uiState.value.settings.justifyText)
+    }
+
+    @Test
+    fun `hyphenation round-trips through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.hyphenation)
+
+        vm.onHyphenationChanged(true)
+        assertTrue(vm.uiState.value.settings.hyphenation)
+
+        vm.onHyphenationChanged(false)
+        assertFalse(vm.uiState.value.settings.hyphenation)
     }
 
     @Test

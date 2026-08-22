@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.Bookmark
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.domain.model.LibraryItem
@@ -33,6 +34,7 @@ import xyz.libravault.core.domain.usecase.ObserveBookmarksUseCase
 import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.storage.ReadingThemePreference
 import xyz.libravault.core.tts.TtsEngineProvider
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
@@ -109,7 +111,11 @@ class ReaderViewModel @Inject constructor(
     // previews elsewhere) don't get misread as "advance the book".
     private var readAloudNextChapterProvider: (suspend () -> String?)? = null
 
-    private val _uiState = MutableStateFlow(ReaderUiState())
+    // #428 — seeded from the global default rather than ReaderSettings()'s own
+    // hardcoded DARK, so a book opens in whatever theme Settings has configured.
+    private val _uiState = MutableStateFlow(
+        ReaderUiState(settings = ReaderSettings(theme = ReadingThemePreference.read(appContext).toReadingTheme()))
+    )
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     val bookmarks: StateFlow<List<Bookmark>> = (itemId?.let { observeBookmarks(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
@@ -251,6 +257,9 @@ class ReaderViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             settings = _uiState.value.settings.copy(theme = theme)
         )
+        // #428 — write through so the choice survives closing the reader and
+        // matches whatever Settings shows as the default.
+        ReadingThemePreference.write(appContext, theme.toAppReadingTheme())
     }
 
     fun onFontSizeChanged(size: Float) {
@@ -263,8 +272,20 @@ class ReaderViewModel @Inject constructor(
     fun decreaseFontSize() = onFontSizeChanged(_uiState.value.settings.fontSize - 0.1f)
 
     fun onFontFamilyChanged(family: FontFamily) {
+        val current = _uiState.value.settings
         _uiState.value = _uiState.value.copy(
-            settings = _uiState.value.settings.copy(fontFamily = family)
+            settings = current.copy(
+                fontFamily = family,
+                // OpenDyslexic bundles a sensible line-spacing default with the
+                // font itself (#423) — dyslexia-friendly typography guidance
+                // recommends both together. Any other family leaves the user's
+                // current line spacing untouched.
+                lineSpacing = if (family == FontFamily.OPEN_DYSLEXIC) {
+                    DYSLEXIA_FRIENDLY_LINE_SPACING
+                } else {
+                    current.lineSpacing
+                },
+            )
         )
     }
 
@@ -277,6 +298,31 @@ class ReaderViewModel @Inject constructor(
     fun onLineSpacingChanged(spacing: Float) {
         _uiState.value = _uiState.value.copy(
             settings = _uiState.value.settings.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f))
+        )
+    }
+
+    fun onWarmthChanged(warmth: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(warmth = warmth.coerceIn(0f, 1f))
+        )
+    }
+
+    // #421
+    fun onMarginScaleChanged(scale: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(marginScale = scale.coerceIn(0.5f, 2.0f))
+        )
+    }
+
+    fun onJustifyTextChanged(justify: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(justifyText = justify)
+        )
+    }
+
+    fun onHyphenationChanged(hyphenation: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(hyphenation = hyphenation)
         )
     }
 
@@ -458,4 +504,26 @@ class ReaderViewModel @Inject constructor(
         // chapters — stop rather than let Read Aloud speak into a torn-down session.
         stopReadAloud()
     }
+}
+
+/**
+ * [AppReadingTheme] (`core:domain`, KMP-safe) <-> [xyz.libravault.core.ui.theme.ReadingTheme]
+ * (`core:ui`, this reader's own settings type) — duplicated per module rather than a new
+ * cross-module dependency, same rationale [VaultReaderSettings] documents for its own
+ * duplication of [ReaderSettings].
+ */
+private fun AppReadingTheme.toReadingTheme(): xyz.libravault.core.ui.theme.ReadingTheme = when (this) {
+    AppReadingTheme.DARK   -> xyz.libravault.core.ui.theme.ReadingTheme.DARK
+    AppReadingTheme.LIGHT  -> xyz.libravault.core.ui.theme.ReadingTheme.LIGHT
+    AppReadingTheme.SEPIA  -> xyz.libravault.core.ui.theme.ReadingTheme.SEPIA
+    AppReadingTheme.AMOLED -> xyz.libravault.core.ui.theme.ReadingTheme.AMOLED
+    AppReadingTheme.SYSTEM -> xyz.libravault.core.ui.theme.ReadingTheme.SYSTEM
+}
+
+private fun xyz.libravault.core.ui.theme.ReadingTheme.toAppReadingTheme(): AppReadingTheme = when (this) {
+    xyz.libravault.core.ui.theme.ReadingTheme.DARK   -> AppReadingTheme.DARK
+    xyz.libravault.core.ui.theme.ReadingTheme.LIGHT  -> AppReadingTheme.LIGHT
+    xyz.libravault.core.ui.theme.ReadingTheme.SEPIA  -> AppReadingTheme.SEPIA
+    xyz.libravault.core.ui.theme.ReadingTheme.AMOLED -> AppReadingTheme.AMOLED
+    xyz.libravault.core.ui.theme.ReadingTheme.SYSTEM -> AppReadingTheme.SYSTEM
 }

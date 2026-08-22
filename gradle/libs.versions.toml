@@ -28,6 +28,7 @@ mockk               = "1.13.11"
 turbine             = "1.1.0"
 compose-test        = "1.6.7"
 bouncycastle        = "1.84"
+billing             = "9.1.0"      # Play Billing (core:billing, play flavour only — see core/billing/build.gradle.kts)
 kover               = "0.9.1"      # JVM/Android line coverage — docs/TEST_COVERAGE_PRD.md Phase 1
 roborazzi           = "1.43.1"     # JVM screenshot baselines — docs/TEST_COVERAGE_PRD.md Phase 5
 kxml2               = "2.3.0"
@@ -115,6 +116,9 @@ material                        = { group = "com.google.android.material", name 
 
 # Cryptography
 bouncycastle-bcprov             = { group = "org.bouncycastle",           name = "bcprov-jdk18on",              version.ref = "bouncycastle" }
+
+# Billing (play flavour only)
+billing-ktx                     = { group = "com.android.billingclient",  name = "billing-ktx",                 version.ref = "billing" }
 
 # Testing — JVM
 junit                           = { group = "junit",                     name = "junit",                       version.ref = "junit" }

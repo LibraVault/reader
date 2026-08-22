@@ -54,7 +54,9 @@ import org.readium.r2.navigator.input.InputListener as ReadiumInputListener
 import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
+import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
@@ -453,6 +455,18 @@ private fun EpubNavigatorView(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
+ * Extra letter-spacing (in rem, Readium's [EpubPreferences.letterSpacing] unit)
+ * applied automatically alongside [FontFamily.OPEN_DYSLEXIC] (#423) — dyslexia-
+ * friendly typography guidance recommends generous letter-spacing alongside the
+ * typeface itself, not the font alone. 0.125rem sits within readium-css's own
+ * documented 0–0.5rem recommended range for `--USER__letterSpacing`
+ * (https://readium.org/css/docs/CSS19-api.html); Readium's `RangePreference`
+ * clamps to whatever the effective supported range actually is regardless, so
+ * this stays safe even if that differs from the doc.
+ */
+private const val DYSLEXIA_FRIENDLY_LETTER_SPACING = 0.125
+
+/**
  * Maps [ReaderSettings] to Readium's [EpubPreferences].
  *
  * Font size: [ReaderSettings.fontSize] is a multiplier (0.8–2.0) relative to
@@ -466,28 +480,63 @@ private fun EpubNavigatorView(
  * `isSystemInDarkTheme()`; Readium's own [Theme] has no fourth "system" case, so this is
  * one of the call sites that must resolve before converting (same shape as
  * `mermaidThemeName` in the Mermaid package).
+ *
+ * AMOLED (#420): Readium's [Theme] enum also has no true-black case, so it maps to
+ * [Theme.DARK] as its CSS base — but [EpubPreferences.backgroundColor]/[textColor] are
+ * *separate* preferences layered on top of [theme] (unset = "current theme's background
+ * color is effective", per Readium's own docs), so overriding them to pure black/white
+ * only for AMOLED gets a real true-black page without needing a Readium-side theme.
+ *
+ * Margins/justification/hyphenation (#421): all three are native Readium EPUB
+ * preferences on this pinned navigator version (confirmed via `EpubPreferences`'s
+ * constructor — `pageMargins: Double?`, `textAlign: TextAlign?`, `hyphens: Boolean?`),
+ * not hand-rolled CSS. [ReaderSettings.marginScale] maps straight to `pageMargins`
+ * (both are 1.0-default multipliers — Readium's own "100%, no scaling" value). Justify
+ * is offered as a single on/off control (matching the product ask) rather than exposing
+ * [TextAlign]'s full START/END/LEFT/RIGHT/CENTER/JUSTIFY set; off leaves `textAlign`
+ * unset so behaviour is unchanged until the user opts in.
+ *
+ * `internal` rather than `private` (AGENTS.md's pure-helper convention) so it's
+ * directly unit-testable — see `EpubPreferencesMappingTest`/`EpubReaderScreenPreferencesTest`.
  */
 @OptIn(ExperimentalReadiumApi::class)
-private fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
+internal fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
+    val resolvedTheme = theme.resolved(systemInDarkTheme)
+    val isAmoled = resolvedTheme == xyz.libravault.core.ui.theme.ConcreteReadingTheme.AMOLED
     return EpubPreferences(
-        theme = when (theme.resolved(systemInDarkTheme)) {
-            xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK  -> Theme.DARK
-            xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT -> Theme.LIGHT
-            xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA -> Theme.SEPIA
+        theme = when (resolvedTheme) {
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK   -> Theme.DARK
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT  -> Theme.LIGHT
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA  -> Theme.SEPIA
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.AMOLED -> Theme.DARK
         },
+        backgroundColor = if (isAmoled) ReadiumColor(0xFF000000.toInt()) else null,
+        textColor       = if (isAmoled) ReadiumColor(0xFFFFFFFF.toInt()) else null,
         // Disable publisher CSS so our font/size/spacing overrides take effect.
         publisherStyles = false,
         // Readium's EpubPreferences.fontSize is a ratio stored in Length.Percent, whose
         // toCss() implementation already multiplies by 100 to produce the % string.
         // Pass the raw multiplier (0.8–2.0); do NOT multiply by 100 here or the WebView
         // receives values like "10000%" which browsers silently ignore.
-        fontSize   = fontSize.toDouble(),
-        lineHeight = lineSpacing.toDouble(),
+        fontSize    = fontSize.toDouble(),
+        lineHeight  = lineSpacing.toDouble(),
+        pageMargins = marginScale.toDouble(),
+        textAlign   = if (justifyText) TextAlign.JUSTIFY else null,
+        hyphens     = hyphenation,
         fontFamily = when (fontFamily) {
-            FontFamily.SERIF      -> ReadiumFontFamily.SERIF
-            FontFamily.SANS_SERIF -> ReadiumFontFamily.SANS_SERIF
-            FontFamily.MONOSPACE  -> ReadiumFontFamily.MONOSPACE
-            FontFamily.SYSTEM     -> null
+            FontFamily.SERIF         -> ReadiumFontFamily.SERIF
+            FontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF
+            FontFamily.MONOSPACE     -> ReadiumFontFamily.MONOSPACE
+            // Readium's EPUB navigator already embeds OpenDyslexic internally — no
+            // FontFamilyDeclaration/servedAssets wiring needed, unlike a truly
+            // custom family. See core/ui/licenses/README.md for the full story.
+            FontFamily.OPEN_DYSLEXIC -> ReadiumFontFamily.OPEN_DYSLEXIC
+            FontFamily.SYSTEM        -> null
+        },
+        letterSpacing = if (fontFamily == FontFamily.OPEN_DYSLEXIC) {
+            DYSLEXIA_FRIENDLY_LETTER_SPACING
+        } else {
+            null
         },
         scroll = scrollMode == ScrollMode.SCROLLING,
     )

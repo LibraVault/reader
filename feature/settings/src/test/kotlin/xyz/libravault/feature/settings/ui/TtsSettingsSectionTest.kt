@@ -31,7 +31,7 @@ class TtsSettingsSectionTest {
     val composeTestRule = createComposeRule()
 
     private val pocketVoice = TtsVoiceInfo(
-        id = "en_US-ljspeech-medium",
+        id = "en_US-ljspeech-high",
         displayName = "Ljspeech",
         locale = "en-US",
     )
@@ -134,7 +134,7 @@ class TtsSettingsSectionTest {
 
         composeTestRule.onNodeWithText("Ljspeech (en-US)").performClick()
 
-        assertEquals("en_US-ljspeech-medium", selectedVoiceId)
+        assertEquals("en_US-ljspeech-high", selectedVoiceId)
     }
 
     @Test

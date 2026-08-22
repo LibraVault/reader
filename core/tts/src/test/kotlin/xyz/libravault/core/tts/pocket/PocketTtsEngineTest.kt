@@ -275,6 +275,16 @@ class PocketTtsEngineTest {
         assertEquals(1.5f, engine.state.value.speechRate)
     }
 
+    // ── Voice quality (real TestFlight "robotic" feedback, 2026-08-22) ─────
+
+    @Test
+    fun `SILENCE_SCALE uses the model's full predicted pause, not sherpa-onnx's rushed default`() {
+        // sherpa-onnx's own GenerationConfig default is 0.2 - see Tts.kt.
+        // Pinned at 1.0 so a future refactor can't silently drift this back
+        // toward the rushed-sounding default that prompted the change.
+        assertEquals(1.0f, SILENCE_SCALE)
+    }
+
     @Test
     fun `shutdown resets state and does not crash without a live tts instance`() = runTest(UnconfinedTestDispatcher()) {
         val engine = engine(mockk(relaxed = true))

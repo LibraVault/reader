@@ -1,5 +1,6 @@
 package xyz.libravault.feature.settings
 
+import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import xyz.libravault.core.billing.SupportBillingClient
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
@@ -64,6 +66,7 @@ class SettingsViewModel @Inject constructor(
     private val scanVaultsUseCase: ScanVaultUseCase,
     private val logger: LibravaultLogger,
     private val supporterRepository: SupporterRepository,
+    private val billingClient: SupportBillingClient,
     private val ttsEngineProvider: TtsEngineProvider,
     private val ttsPreferences: TtsPreferences,
     private val pocketModelManager: PocketModelManager,
@@ -96,6 +99,20 @@ class SettingsViewModel @Inject constructor(
      */
     val isSupporter: StateFlow<Boolean> = supporterRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), supporterRepository.isSupporter())
+
+    /** False on F-Droid — that flavour keeps the external-link "Support the Project" button unchanged. */
+    val isBillingSupported: Boolean = billingClient.isSupported
+
+    /**
+     * Whether both Play Billing products exist yet. False until the store side
+     * of setup (Play Console products + a testing track) is complete — this is
+     * the expected state right after this code ships, not an error.
+     */
+    val productsAvailable: StateFlow<Boolean> = billingClient.observeProductsAvailable()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val subscriptionActive: StateFlow<Boolean> = billingClient.observeSubscriptionActive()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
      * Model setup progress is exposed separately from [TtsEngineProvider.engine]'s own
@@ -267,6 +284,23 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // ── Billing ──────────────────────────────────────────────────────────────
+
+    /**
+     * Fire-and-forget from the UI's perspective — [productsAvailable] /
+     * [subscriptionActive] / [isSupporter] reflect the outcome reactively once
+     * Play reports it, there's no separate "purchase result" state to observe.
+     * Failures (including user cancellation) are silently dropped here rather
+     * than surfaced as an error: cancelling a purchase sheet isn't a bug.
+     */
+    fun purchaseSubscription(activity: Activity) {
+        viewModelScope.launch { billingClient.purchaseSubscription(activity) }
+    }
+
+    fun purchaseOneTimeTip(activity: Activity) {
+        viewModelScope.launch { billingClient.purchaseOneTimeTip(activity) }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -372,9 +372,10 @@ final class LibraVaultUITests: XCTestCase {
         let supportDevelopment = app.staticTexts["Support Development"]
         scrollDownUntilVisible(supportDevelopment, in: app)
         XCTAssertTrue(supportDevelopment.exists)
-        // Android's Support Development has a real BTCPay-verified donate flow; iOS
-        // has none yet, so there must be no button implying one — see
-        // SettingsView.swift's supportSection comment.
+        // Apple rejects apps that show crypto addresses/QR codes inside the app's own
+        // UI (unapproved tipping / IAP bypass) — support is native StoreKit purchases
+        // only now (see SettingsView.swift's supportSection / StoreKitBillingManager),
+        // so there must never be a button implying an in-app crypto donate flow.
         XCTAssertFalse(app.buttons["Donate BTC or XMR"].exists)
     }
 }

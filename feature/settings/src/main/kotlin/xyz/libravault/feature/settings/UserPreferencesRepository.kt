@@ -14,7 +14,6 @@ import xyz.libravault.core.storage.LibravaultPreferences
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val KEY_READING_THEME       = "reading_theme"
 private const val KEY_PLAYBACK_SPEED      = "playback_speed"
 private const val KEY_LOGGING_ENABLED     = "logging_enabled"
 private const val KEY_DYNAMIC_COLOR       = "dynamic_color"
@@ -37,7 +36,8 @@ class UserPreferencesRepository @Inject constructor(
 
     fun read(): UserPreferences = UserPreferences(
         defaultReadingTheme  = AppReadingTheme.valueOf(
-            prefs.getString(KEY_READING_THEME, AppReadingTheme.DARK.name) ?: AppReadingTheme.DARK.name
+            prefs.getString(LibravaultPreferences.KEY_READING_THEME, AppReadingTheme.DARK.name)
+                ?: AppReadingTheme.DARK.name
         ),
         defaultPlaybackSpeed = snapPlaybackSpeed(prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f)),
         defaultSkipDurationSec = prefs.getInt(LibravaultPreferences.KEY_SKIP_DURATION_SEC, 30),
@@ -48,7 +48,7 @@ class UserPreferencesRepository @Inject constructor(
 
     fun update(prefs: UserPreferences) {
         this.prefs.edit()
-            .putString(KEY_READING_THEME, prefs.defaultReadingTheme.name)
+            .putString(LibravaultPreferences.KEY_READING_THEME, prefs.defaultReadingTheme.name)
             .putFloat(KEY_PLAYBACK_SPEED, prefs.defaultPlaybackSpeed)
             .putInt(LibravaultPreferences.KEY_SKIP_DURATION_SEC, prefs.defaultSkipDurationSec)
             .putBoolean(KEY_LOGGING_ENABLED, prefs.loggingEnabled)

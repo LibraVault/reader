@@ -4,16 +4,16 @@ import XCTest
 @MainActor
 final class EncryptedVaultContentsViewModelTests: XCTestCase {
 
-    private func makeUnlockedVault() async throws -> (manager: VaultSessionManager, id: String) {
+    private func makeUnlockedVault() async throws -> (manager: VaultSessionManager, id: String, rootDir: URL) {
         let rootDir = FileManager.default.temporaryDirectory.appendingPathComponent("contents-vm-test-\(UUID().uuidString)")
         let manager = VaultSessionManager(rootDir: rootDir, keyWrapFactory: FakeHardwareKeyWrapFactory())
         let result = try await manager.createVault(displayName: "Personal", pin: Array("1234".utf8))
-        guard case .success(let id, _) = result else { XCTFail("expected .success"); return (manager, "") }
-        return (manager, id)
+        guard case .success(let id, _) = result else { XCTFail("expected .success"); return (manager, "", rootDir) }
+        return (manager, id, rootDir)
     }
 
     func testRefreshOnAnEmptyVaultProducesNoEntriesAndStaysUnlocked() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
         await vm.refresh()
         XCTAssertTrue(vm.entries.isEmpty)
@@ -22,7 +22,7 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
     }
 
     func testRefreshOnAnAlreadyLockedVaultSetsIsLockedWithoutThrowing() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         await manager.lock(id)
 
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
@@ -33,7 +33,7 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
     }
 
     func testLockFlipsIsLockedAndActuallyLocksTheUnderlyingVault() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
 
         await vm.lock()
@@ -54,7 +54,7 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
     }
 
     func testImportFilesRoundTripsARealFileIntoTheVaultManifest() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
         let fileURL = try makeTempFile(named: "notes.md")
 
@@ -68,7 +68,7 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
     }
 
     func testImportFilesOnALockedVaultSetsIsLockedWithoutAttemptingImport() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         await manager.lock(id)
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
         let fileURL = try makeTempFile(named: "notes.md")
@@ -80,7 +80,7 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
     }
 
     func testImportFilesWithAnUnsupportedExtensionMarksThatItemAsErrorButContinuesWithOthers() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
         let goodFile = try makeTempFile(named: "notes.md")
         let badFile = try makeTempFile(named: "unsupported.xyz")
@@ -88,17 +88,45 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
         await vm.importFiles(urls: [badFile, goodFile])
 
         XCTAssertEqual(vm.importItems.count, 2)
-        guard case .error = vm.importItems[0].status else {
-            XCTFail("expected the unsupported-extension file to be marked .error, got \(vm.importItems[0].status)")
-            return
-        }
+        // #417: assert the actual message, not just the .error case — that
+        // message is what ImportProgressSheet must now render as visible
+        // text (previously only a warning-triangle icon), so an unmissable
+        // regression would still pass a test that only checked the case.
+        XCTAssertEqual(vm.importItems[0].status, .error("unsupported.xyz isn't a format LibraVault reads."))
         XCTAssertEqual(vm.importItems[1].status, .done, "a failure on one item must not abort the rest of the batch")
         XCTAssertEqual(vm.entries.count, 1)
         XCTAssertEqual(vm.entries.first?.title, "notes")
     }
 
+    /// #417: a `listEntries()` failure must surface on `errorMessage`, not
+    /// silently look identical to a genuinely empty vault. A garbage
+    /// `manifest.enc` (too short to even contain a valid header) is a real
+    /// on-disk failure mode `VaultFileReader` throws `.truncated` for — not
+    /// a mock, per AGENTS.md's "real filesystem checks" rule.
+    func testRefreshSurfacesErrorMessageWhenTheManifestIsUnreadable() async throws {
+        let (manager, id, rootDir) = try await makeUnlockedVault()
+        let vaultDir = VaultRegistry.vaultDir(baseDir: rootDir, id: id)
+        let manifestPath = VaultManifest.manifestPath(vaultDir: vaultDir)
+        try Data("not a valid encrypted manifest".utf8).write(to: manifestPath)
+
+        let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
+        await vm.refresh()
+
+        XCTAssertTrue(vm.entries.isEmpty)
+        XCTAssertNotNil(vm.errorMessage, "a listEntries() failure must not look like an empty vault")
+
+        // And the stale error must not linger forever once the underlying
+        // problem is gone — otherwise the banner this issue wires up in
+        // EncryptedVaultContentsView would stay stuck even after a
+        // successful refresh.
+        try FileManager.default.removeItem(at: manifestPath)
+        await vm.refresh()
+
+        XCTAssertNil(vm.errorMessage)
+    }
+
     func testImportFilesWithEmptyArrayIsANoOp() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
 
         await vm.importFiles(urls: [])
@@ -108,7 +136,7 @@ final class EncryptedVaultContentsViewModelTests: XCTestCase {
     }
 
     func testClearImportItemsEmptiesTheList() async throws {
-        let (manager, id) = try await makeUnlockedVault()
+        let (manager, id, _) = try await makeUnlockedVault()
         let vm = EncryptedVaultContentsViewModel(vaultId: id, sessionManager: manager)
         let fileURL = try makeTempFile(named: "notes.md")
         await vm.importFiles(urls: [fileURL])

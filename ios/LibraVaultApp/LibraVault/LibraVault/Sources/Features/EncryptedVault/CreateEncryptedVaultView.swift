@@ -145,7 +145,7 @@ struct CreateEncryptedVaultView: View {
             .padding(LibraVaultSpacing.lg)
         }
         // Unconditional, independent of #204 — see SecureScreenModifier's doc comment.
-        .secureVaultScreen()
+        .secureVaultScreen(contentKind: .recoveryKey)
     }
 
     @ViewBuilder

@@ -24,10 +24,15 @@ class PocketVoiceCatalog @Inject constructor(
         if (modelManager.isModelValid()) listOf(DEFAULT_VOICE) else emptyList()
 
     companion object {
-        const val DEFAULT_VOICE_ID = "en_US-ljspeech-medium"
+        // "high" tier, not "medium" - swapped 2026-08-22 in response to real
+        // TestFlight feedback describing the voice as robotic. Same LJSpeech
+        // (public-domain) training data and license as medium, just a bigger
+        // checkpoint - see SHERPA_ONNX_SETUP.md's "Updating the voice model"
+        // section for how this was picked.
+        const val DEFAULT_VOICE_ID = "en_US-ljspeech-high"
 
         /** Filenames within [PocketModelManager]'s extracted model directory. */
-        const val MODEL_FILE_NAME = "en_US-ljspeech-medium.onnx"
+        const val MODEL_FILE_NAME = "en_US-ljspeech-high.onnx"
         const val TOKENS_FILE_NAME = "tokens.txt"
         const val DATA_DIR_NAME = "espeak-ng-data"
 
