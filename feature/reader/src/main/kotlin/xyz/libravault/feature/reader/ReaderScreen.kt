@@ -68,6 +68,7 @@ import xyz.libravault.feature.reader.markdown.MarkdownReaderScreen
 import xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
+import xyz.libravault.feature.reader.readaloud.ReadAloudPlayerScreen
 
 // Height reserved at the bottom of the reader content for the bottom bars.
 // The audiobook mini-player uses this constant so the
@@ -124,6 +125,7 @@ fun ReaderScreen(
     val highlights  by viewModel.highlights.collectAsState()
     val nowPlaying  by viewModel.nowPlaying.collectAsState()
     val readAloud   by viewModel.readAloudState.collectAsState()
+    val readAloudPlayback by viewModel.readAloudPlayback.collectAsState()
 
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     val pendingPdfPage = androidx.compose.runtime.remember {
@@ -229,6 +231,7 @@ fun ReaderScreen(
                             )
                             ReaderBottomBar.READ_ALOUD -> ReaderReadAloudMiniBar(
                                 isPlaying   = readAloud.status == TtsStatus.PLAYING,
+                                onExpand    = viewModel::showReadAloudPlayer,
                                 onPlayPause = viewModel::toggleReadAloudPlayPause,
                                 onStop      = viewModel::stopReadAloud,
                             )
@@ -371,8 +374,11 @@ fun ReaderScreen(
                             } else {
                                 when (item.format) {
                                     MediaFormat.EPUB -> viewModel.startReadAloud(
-                                        getInitialText = epubViewModel::getChapterTextFromProgression,
-                                        getNextText    = epubViewModel::getNextChapterText,
+                                        getInitialText  = epubViewModel::getChapterTextFromProgression,
+                                        getNextText     = epubViewModel::getNextChapterText,
+                                        getPreviousText = epubViewModel::getPreviousChapterText,
+                                        chapterIndex    = { epubViewModel.ttsChapterIndex },
+                                        chapterCount    = { epubViewModel.ttsChapterCount },
                                     )
                                     MediaFormat.MARKDOWN -> viewModel.startReadAloud(
                                         getInitialText = {
@@ -380,7 +386,10 @@ fun ReaderScreen(
                                                 state.progress?.markdownScrollFraction
                                             )
                                         },
-                                        getNextText = markdownViewModel::getNextChapterText,
+                                        getNextText     = markdownViewModel::getNextChapterText,
+                                        getPreviousText = markdownViewModel::getPreviousChapterText,
+                                        chapterIndex    = { markdownViewModel.ttsChapterIndex },
+                                        chapterCount    = { markdownViewModel.ttsChapterCount },
                                     )
                                     else -> {}
                                 }
@@ -419,6 +428,36 @@ fun ReaderScreen(
                         onBookmarkDelete = viewModel::removeBookmark,
                         onEditNote       = viewModel::updateBookmarkNote,
                         onDismiss        = viewModel::hideBookmarks,
+                    )
+                }
+
+                // ── Read Aloud Player screen (#138) ───────────────────────────
+                if (state.showReadAloudPlayer) {
+                    ReadAloudPlayerScreen(
+                        title               = item.title,
+                        author              = item.author,
+                        isPlaying           = readAloud.status == TtsStatus.PLAYING,
+                        elapsedMs           = readAloudPlayback.elapsedMs,
+                        durationMs          = readAloudPlayback.durationMs,
+                        speed               = readAloud.speechRate,
+                        chapterIndex        = readAloudPlayback.chapterIndex,
+                        chapterCount        = readAloudPlayback.chapterCount,
+                        sleepTimerState     = readAloudPlayback.sleepTimerState,
+                        showSleepTimerSheet = state.showReadAloudSleepTimerSheet,
+                        onBack              = viewModel::hideReadAloudPlayer,
+                        onPlayPause         = viewModel::toggleReadAloudPlayPause,
+                        onStop              = viewModel::stopReadAloud,
+                        onSeek                      = viewModel::seekReadAloud,
+                        onSkipBack                  = { viewModel.skipBackwardReadAloud() },
+                        onSkipForward               = { viewModel.skipForwardReadAloud() },
+                        onPreviousChapter           = viewModel::previousReadAloudChapter,
+                        onNextChapter               = viewModel::nextReadAloudChapter,
+                        onSpeedSelected             = viewModel::setReadAloudSpeed,
+                        onShowSleepTimer            = viewModel::showReadAloudSleepTimer,
+                        onHideSleepTimer            = viewModel::hideReadAloudSleepTimer,
+                        onSetSleepTimer             = viewModel::startReadAloudSleepTimer,
+                        onSetSleepTimerEndOfChapter = viewModel::startReadAloudSleepTimerEndOfChapter,
+                        onCancelSleepTimer          = viewModel::cancelReadAloudSleepTimer,
                     )
                 }
             }
@@ -532,15 +571,16 @@ private fun ReaderMiniPlayerBar(
 // ── Read Aloud mini bar (#137) ────────────────────────────────────────────────
 
 /**
- * Mini-bar for an active EPUB Read Aloud (TTS) session — visually and
+ * Mini-bar for an active EPUB/Markdown Read Aloud (TTS) session — visually and
  * interactionally consistent with [ReaderMiniPlayerBar]: same surface, elevation,
- * shape, icon sizing and position. No scrubber/speed control/tap-to-expand (see
- * #138 for full Player-screen parity); just play/pause and stop, matching the v1
- * scope in issue #137.
+ * shape, icon sizing and position. Tapping the icon or title expands the full
+ * Player screen (#138's [xyz.libravault.feature.reader.readaloud.ReadAloudPlayerScreen]),
+ * the same way [ReaderMiniPlayerBar]'s cover art/title do for the audiobook player.
  */
 @Composable
 private fun ReaderReadAloudMiniBar(
     isPlaying: Boolean,
+    onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -562,7 +602,8 @@ private fun ReaderReadAloudMiniBar(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surface),
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable(onClick = onExpand),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -580,7 +621,9 @@ private fun ReaderReadAloudMiniBar(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onExpand),
             )
 
             IconButton(onClick = onPlayPause, modifier = Modifier.size(40.dp)) {

@@ -35,12 +35,18 @@ import xyz.libravault.core.domain.usecase.ObserveHighlightsUseCase
 import xyz.libravault.core.domain.usecase.SaveReadingProgressUseCase
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.ReadingThemePreference
+import xyz.libravault.core.tts.TtsDurationEstimator
 import xyz.libravault.core.tts.TtsEngineProvider
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
+import xyz.libravault.feature.player.service.SleepTimerState
+import xyz.libravault.feature.reader.readaloud.ReadAloudSleepTimer
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.time.Instant
 import javax.inject.Inject
 
@@ -60,6 +66,24 @@ data class ReaderUiState(
      *  relative image references (see MarkdownAssetResolver). Null for items opened
      *  via an external intent (no vault association) or non-Markdown formats. */
     val vaultTreeUri: android.net.Uri? = null,
+    /** Full Player-screen overlay for an active Read Aloud session (#138), opened by
+     *  tapping the Read Aloud mini-bar. */
+    val showReadAloudPlayer: Boolean = false,
+    val showReadAloudSleepTimerSheet: Boolean = false,
+)
+
+/**
+ * Read Aloud (TTS) playback progress, driving the #138 Player screen's scrubber,
+ * chapter display, and sleep timer status. There's no real seekable audio stream
+ * for TTS (same as iOS's `AppState`) — [elapsedMs]/[durationMs] are a wall-clock/
+ * word-count estimate (see [TtsDurationEstimator]), not real playback position.
+ */
+data class ReadAloudPlaybackState(
+    val elapsedMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val chapterIndex: Int = 0,
+    val chapterCount: Int = 0,
+    val sleepTimerState: SleepTimerState = SleepTimerState.Inactive,
 )
 
 @HiltViewModel
@@ -111,6 +135,25 @@ class ReaderViewModel @Inject constructor(
     // previews elsewhere) don't get misread as "advance the book".
     private var readAloudNextChapterProvider: (suspend () -> String?)? = null
 
+    // Symmetric supplier for the Player screen's "previous chapter" control (#138).
+    // Same non-null-only-during-a-session contract as readAloudNextChapterProvider.
+    private var readAloudPreviousChapterProvider: (suspend () -> String?)? = null
+
+    // Read the chapter walker's current position synchronously (EpubReaderViewModel /
+    // MarkdownReaderViewModel already track this) so the Player screen's chapter
+    // display/nav can be refreshed the instant a chapter change is initiated, without
+    // waiting on a suspend round-trip.
+    private var readAloudChapterIndexProvider: (() -> Int)? = null
+    private var readAloudChapterCountProvider: (() -> Int)? = null
+
+    private var readAloudTickerJob: Job? = null
+
+    // Fires by pausing the session — no volume fade, see ReadAloudSleepTimer's doc.
+    private val readAloudSleepTimer = ReadAloudSleepTimer(onFire = ::pauseReadAloud)
+
+    private val _readAloudPlayback = MutableStateFlow(ReadAloudPlaybackState())
+    val readAloudPlayback: StateFlow<ReadAloudPlaybackState> = _readAloudPlayback.asStateFlow()
+
     // #428 — seeded from the global default rather than ReaderSettings()'s own
     // hardcoded DARK, so a book opens in whatever theme Settings has configured.
     private val _uiState = MutableStateFlow(
@@ -154,6 +197,18 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch {
             ttsEngineProvider.engine.flatMapLatest { it.stopEvent }.collect {
                 readAloudNextChapterProvider = null
+                readAloudPreviousChapterProvider = null
+                readAloudChapterIndexProvider = null
+                readAloudChapterCountProvider = null
+                stopReadAloudTicker()
+            }
+        }
+        // Relays the sleep timer's own state into readAloudPlayback so the Player
+        // screen can render it from one flow, the same way SleepTimerState already
+        // rides along PlayerUiState for the audiobook player.
+        viewModelScope.launch {
+            readAloudSleepTimer.state.collect { sleepState ->
+                _readAloudPlayback.value = _readAloudPlayback.value.copy(sleepTimerState = sleepState)
             }
         }
         viewModelScope.launch {
@@ -450,17 +505,28 @@ class ReaderViewModel @Inject constructor(
      * `getNextChapterText()`), and it is a sibling `hiltViewModel()` scoped to
      * [ReaderScreen], not something this ViewModel can inject. Markdown (#276)
      * reuses this same entry point with its own text supplier.
+     *
+     * [getPreviousText]/[chapterIndex]/[chapterCount] are optional (#138's Player
+     * screen chapter nav/display) so existing EPUB/Markdown call sites and the #137
+     * mini-bar-only tests above don't need to supply them.
      */
     fun startReadAloud(
         getInitialText: suspend () -> String?,
         getNextText: suspend () -> String?,
+        getPreviousText: suspend () -> String? = { null },
+        chapterIndex: () -> Int = { 0 },
+        chapterCount: () -> Int = { 0 },
     ) {
         // Mutual exclusion (#137): only one thing produces audio at a time.
         pauseAudiobook()
         readAloudNextChapterProvider = getNextText
+        readAloudPreviousChapterProvider = getPreviousText
+        readAloudChapterIndexProvider = chapterIndex
+        readAloudChapterCountProvider = chapterCount
         viewModelScope.launch {
             val text = getInitialText()
             if (text != null) {
+                beginReadAloudChapter(text)
                 ttsEngineProvider.engine.value.speak(text)
             } else {
                 stopReadAloud()
@@ -468,8 +534,8 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun pauseReadAloud()  { ttsEngineProvider.engine.value.pause() }
-    fun resumeReadAloud() { ttsEngineProvider.engine.value.resume() }
+    fun pauseReadAloud()  { ttsEngineProvider.engine.value.pause(); stopReadAloudTicker() }
+    fun resumeReadAloud() { ttsEngineProvider.engine.value.resume(); startReadAloudTicker() }
 
     fun toggleReadAloudPlayPause() {
         when (readAloudState.value.status) {
@@ -481,6 +547,16 @@ class ReaderViewModel @Inject constructor(
 
     fun stopReadAloud() {
         readAloudNextChapterProvider = null
+        readAloudPreviousChapterProvider = null
+        readAloudChapterIndexProvider = null
+        readAloudChapterCountProvider = null
+        stopReadAloudTicker()
+        readAloudSleepTimer.cancel()
+        _readAloudPlayback.value = ReadAloudPlaybackState()
+        _uiState.value = _uiState.value.copy(
+            showReadAloudPlayer = false,
+            showReadAloudSleepTimerSheet = false,
+        )
         ttsEngineProvider.engine.value.stop()
     }
 
@@ -490,11 +566,136 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch {
             val next = getNext()
             if (next != null) {
+                beginReadAloudChapter(next)
                 ttsEngineProvider.engine.value.speak(next)
             } else {
                 stopReadAloud()
             }
         }
+    }
+
+    // ── Read Aloud Player screen (#138) ─────────────────────────────────────────
+
+    fun showReadAloudPlayer() { _uiState.value = _uiState.value.copy(showReadAloudPlayer = true) }
+    fun hideReadAloudPlayer() { _uiState.value = _uiState.value.copy(showReadAloudPlayer = false) }
+
+    /**
+     * Resets [_readAloudPlayback] for a chapter that's about to start speaking —
+     * called from [startReadAloud], [advanceOnCompletion], and the manual chapter-nav
+     * functions below, so all three advance-into-a-chapter paths agree on the
+     * estimate/chapter bookkeeping instead of duplicating it.
+     */
+    private fun beginReadAloudChapter(text: String) {
+        val duration = TtsDurationEstimator.estimateDurationMs(text, readAloudState.value.speechRate)
+        _readAloudPlayback.value = _readAloudPlayback.value.copy(
+            elapsedMs    = 0L,
+            durationMs   = duration,
+            chapterIndex = readAloudChapterIndexProvider?.invoke() ?: 0,
+            chapterCount = readAloudChapterCountProvider?.invoke() ?: 0,
+        )
+        startReadAloudTicker()
+    }
+
+    /**
+     * Manual chapter navigation for the Player screen — mirrors iOS's
+     * `skipToChapter`'s clamped-at-the-boundary contract: at the start/end of the
+     * book, [readAloudPreviousChapterProvider]/[readAloudNextChapterProvider] return
+     * null and this is a no-op rather than stopping the session (unlike
+     * [advanceOnCompletion], where null legitimately means "book finished").
+     */
+    fun nextReadAloudChapter() {
+        val getNext = readAloudNextChapterProvider ?: return
+        viewModelScope.launch {
+            val next = getNext() ?: return@launch
+            beginReadAloudChapter(next)
+            ttsEngineProvider.engine.value.speak(next)
+        }
+    }
+
+    fun previousReadAloudChapter() {
+        val getPrevious = readAloudPreviousChapterProvider ?: return
+        viewModelScope.launch {
+            val previous = getPrevious() ?: return@launch
+            beginReadAloudChapter(previous)
+            ttsEngineProvider.engine.value.speak(previous)
+        }
+    }
+
+    /**
+     * Scrub-bar seeking. There's still no real audio stream to seek within (see
+     * [ReadAloudPlaybackState]'s doc) — this only moves the estimate, the same way
+     * iOS's `AppState.seek(to:)` does for its TTS/text books.
+     */
+    fun seekReadAloud(positionMs: Long) {
+        val current = _readAloudPlayback.value
+        _readAloudPlayback.value = current.copy(elapsedMs = positionMs.coerceIn(0L, current.durationMs))
+    }
+
+    fun skipForwardReadAloud(deltaMs: Long = 30_000L)  = seekReadAloud(_readAloudPlayback.value.elapsedMs + deltaMs)
+    fun skipBackwardReadAloud(deltaMs: Long = 30_000L) = seekReadAloud(_readAloudPlayback.value.elapsedMs - deltaMs)
+
+    /**
+     * Changing speed mid-chapter rescales the duration estimate (and elapsed
+     * position, proportionally) rather than leaving them stale — mirrors the intent
+     * of iOS's `playbackSpeed`'s `didSet`, which re-estimates duration from the full
+     * chapter text and rescales elapsed to preserve the listener's fraction through
+     * it. Android doesn't retain the chapter's full text here, so it scales the
+     * existing estimate by the old/new speed ratio directly instead of
+     * re-estimating from text — equivalent, since [TtsDurationEstimator] is linear
+     * in 1/speed.
+     */
+    fun setReadAloudSpeed(rate: Float) {
+        val oldSpeed = readAloudState.value.speechRate.takeIf { it > 0f } ?: 1f
+        ttsEngineProvider.engine.value.setSpeechRate(rate)
+        val current = _readAloudPlayback.value
+        if (current.durationMs <= 0L || rate <= 0f) return
+        val fraction   = current.elapsedMs.toFloat() / current.durationMs
+        val newDuration = (current.durationMs * (oldSpeed / rate)).toLong()
+        _readAloudPlayback.value = current.copy(
+            durationMs = newDuration,
+            elapsedMs  = (fraction * newDuration).toLong(),
+        )
+    }
+
+    // ── Read Aloud sleep timer (#138) ───────────────────────────────────────────
+    // Separate ReadAloudSleepTimer instance (see its doc) — just pauses on fire,
+    // no volume fade, since there's no ExoPlayer to fade.
+
+    fun showReadAloudSleepTimer() { _uiState.value = _uiState.value.copy(showReadAloudSleepTimerSheet = true) }
+    fun hideReadAloudSleepTimer() { _uiState.value = _uiState.value.copy(showReadAloudSleepTimerSheet = false) }
+
+    fun startReadAloudSleepTimer(durationMs: Long) {
+        readAloudSleepTimer.start(durationMs, viewModelScope)
+        hideReadAloudSleepTimer()
+    }
+
+    /** "End of chapter" preset — fires after however long is left in the current
+     *  chapter's estimate, rather than a fixed duration. */
+    fun startReadAloudSleepTimerEndOfChapter() {
+        val current = _readAloudPlayback.value
+        readAloudSleepTimer.start((current.durationMs - current.elapsedMs).coerceAtLeast(0L), viewModelScope)
+        hideReadAloudSleepTimer()
+    }
+
+    fun cancelReadAloudSleepTimer() = readAloudSleepTimer.cancel()
+
+    private fun startReadAloudTicker() {
+        stopReadAloudTicker()
+        readAloudTickerJob = viewModelScope.launch {
+            while (isActive) {
+                delay(1_000L)
+                val current = _readAloudPlayback.value
+                val advanceMs = (1_000L * readAloudState.value.speechRate).toLong()
+                _readAloudPlayback.value = current.copy(
+                    elapsedMs = (current.elapsedMs + advanceMs).coerceAtMost(current.durationMs),
+                )
+            }
+        }
+    }
+
+    private fun stopReadAloudTicker() {
+        readAloudTickerJob?.cancel()
+        readAloudTickerJob = null
     }
 
     override fun onCleared() {
