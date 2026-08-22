@@ -30,6 +30,9 @@ struct ReaderView: View {
     @State private var lastPaginationFontSize: Double?
     @State private var lastPaginationLineSpacing: Double?
     @State private var lastPaginationFontDesign: Font.Design?
+    /// Bumped on every `repaginate(for:)` call and captured into that call's detached
+    /// background task — see `repaginate(for:)`'s doc comment for why this exists.
+    @State private var paginationGeneration = 0
     /// A saved reading-progress fraction waiting to be resolved into a (chapter, page)
     /// once the first `repaginate(for:)` call has real page boundaries to resolve it
     /// against — mirrors PDF's `restoredIndex` in `loadContent()`, which can restore
@@ -479,6 +482,20 @@ struct ReaderView: View {
     /// `GeometryReader` re-evaluates its closure on every body pass, not just real
     /// resizes, and TextKit layout over a whole chapter isn't free.
     ///
+    /// The actual `BlockPaginator.paginate` loop runs on a detached background task —
+    /// issue #336 measured (via the TextPaginator-era predecessor of this function,
+    /// PR #339) a ~4.3s main-thread stall paginating a realistic ~900k-character,
+    /// 30-chapter book, on the very same TextKit (`NSLayoutManager`/`NSTextContainer`)
+    /// machinery `BlockPaginator.paginate` still uses per block. That's a single-trigger
+    /// freeze (one rotation, one Settings change), not merely a repeated-trigger cost, so
+    /// debouncing alone would not have fixed it — see `BlockPaginatorTests`'
+    /// `testRepaginatingARealisticallyLargeBookCompletesWithinARegressionBudget` for the
+    /// regression guard against this path specifically. `paginationGeneration` guards
+    /// against a call superseded by a newer one (e.g. two rotations in quick succession)
+    /// clobbering the newer result if it finishes later — mirrors the identical
+    /// `Task.detached(priority:) { ... await MainActor.run { ... } }` idiom already used
+    /// in `AppState.enrichCoverArt`.
+    ///
     /// Preserves the reader's visible position across the repagination — captures the
     /// current page's first block beforehand and re-locates the page containing that
     /// block afterward, rather than reusing the old page *index* blindly (indices
@@ -503,21 +520,45 @@ struct ReaderView: View {
         else { return }
 
         let anchor = isFirstPagination ? nil : currentBlockAnchor()
+        let restoreFraction = isFirstPagination ? pendingRestoreFraction : nil
 
-        let font = Self.uiFont(size: 16 * fontSize, design: fontDesign)
-        let newBlockPagination = chapters.map {
-            BlockPaginator.paginate(blocks: $0.blocks, images: $0.images, font: font, lineSpacing: 8 * lineSpacing, pageSize: pageSize)
-        }
+        paginationGeneration += 1
+        let generation = paginationGeneration
 
-        blockPagination = newBlockPagination
         lastPaginationSize = pageSize
         lastPaginationFontSize = fontSize
         lastPaginationLineSpacing = lineSpacing
         lastPaginationFontDesign = fontDesign
 
+        let font = Self.uiFont(size: 16 * fontSize, design: fontDesign)
+        let lineSpacingPoints = 8 * lineSpacing
+
+        Task.detached(priority: .userInitiated) {
+            let newBlockPagination = chapters.map {
+                BlockPaginator.paginate(blocks: $0.blocks, images: $0.images, font: font, lineSpacing: lineSpacingPoints, pageSize: pageSize)
+            }
+            await MainActor.run {
+                // A newer repaginate(for:) call already started (and possibly already
+                // finished) since this one was dispatched — applying this stale result
+                // now would clobber it with layout computed against inputs that no
+                // longer match `lastPagination*` above.
+                guard generation == paginationGeneration else { return }
+                applyPagination(newBlockPagination, anchor: anchor, restoreFraction: restoreFraction)
+            }
+        }
+    }
+
+    @MainActor
+    private func applyPagination(
+        _ newBlockPagination: [[[MarkdownBlock]]],
+        anchor: (chapterIndex: Int, blockIndex: Int)?,
+        restoreFraction: Double?
+    ) {
+        blockPagination = newBlockPagination
+
         if let anchor {
             locate(chapterIndex: anchor.chapterIndex, blockIndex: anchor.blockIndex, in: newBlockPagination)
-        } else if let fraction = pendingRestoreFraction {
+        } else if let fraction = restoreFraction {
             pendingRestoreFraction = nil
             locate(globalFraction: fraction, in: newBlockPagination)
         } else {
