@@ -17,6 +17,10 @@ enum VaultReaderState: Equatable {
     case error(String)
     case epubReady(title: String)
     case pdfReady(title: String)
+    /// `text` is the whole decoded document — v1 renders it as a single
+    /// scrollable document via `MarkdownReaderContent`, no TOC/mermaid/
+    /// relative-image parity with the non-vault reader yet (issue #442).
+    case markdownReady(title: String, text: String)
     /// Not a reading format — the caller should have routed audio to
     /// `VaultPlayerView` instead. Surfaced only as a defensive fallback if
     /// that dispatch is ever wrong, mirroring Android's identical
@@ -29,6 +33,7 @@ enum VaultReaderState: Equatable {
         case (.error(let a), .error(let b)): return a == b
         case (.epubReady(let a), .epubReady(let b)): return a == b
         case (.pdfReady(let a), .pdfReady(let b)): return a == b
+        case (.markdownReady(let at, let ax), .markdownReady(let bt, let bx)): return at == bt && ax == bx
         case (.wrongScreen(let a), .wrongScreen(let b)): return a == b
         default: return false
         }
@@ -61,6 +66,7 @@ final class VaultReaderViewModel: ObservableObject {
     @Published private(set) var state: VaultReaderState = .loading
     @Published private(set) var chapters: [BookChapter] = []
     @Published private(set) var pdfDocument: PDFDocument?
+    @Published private(set) var markdownBlocks: [MarkdownBlock] = []
     @Published private(set) var bookmarks: [VaultBookmark] = []
     @Published private(set) var highlights: [VaultHighlight] = []
     @Published var currentChapterIndex: Int = 0
@@ -113,6 +119,10 @@ final class VaultReaderViewModel: ObservableObject {
                 }
                 pdfDocument = document
                 state = .pdfReady(title: entry.title)
+            case "markdown":
+                let text = String(decoding: content, as: UTF8.self)
+                markdownBlocks = MarkdownDocumentParser.parse(text)
+                state = .markdownReady(title: entry.title, text: text)
             default:
                 state = .error("Unsupported format: \(entry.format)")
             }
