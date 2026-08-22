@@ -67,7 +67,7 @@ struct VaultReaderView: View {
                     onEditNote: { bookmark, note in Task { await viewModel.updateBookmarkNote(id: bookmark.id, note: note) } }
                 )
             }
-            .secureVaultScreen()
+            .secureVaultScreen(contentKind: .vaultContent)
     }
 
     private var isReady: Bool {
