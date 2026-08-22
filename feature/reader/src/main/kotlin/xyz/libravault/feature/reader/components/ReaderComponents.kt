@@ -140,8 +140,25 @@ fun ReaderTopBar(
             IconButton(onClick = onShowBookmarks, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
             }
-            IconButton(onClick = onSettings, modifier = Modifier.size(38.dp)) {
-                Icon(Icons.Default.Settings, contentDescription = "Reader settings")
+            // Unlike the icon-only buttons above, this one carries a persistent
+            // visible label: usability review (#424) found the bare gear icon
+            // wasn't discoverable without already knowing the "AA settings"
+            // convention. The icon becomes decorative (contentDescription =
+            // null) and the visible Text supplies the merged accessible name,
+            // same pattern as a TextButton anywhere else in the app.
+            TextButton(onClick = onSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Themes & Settings",
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
