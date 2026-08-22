@@ -56,6 +56,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
+import xyz.libravault.core.ui.findActivity
 import xyz.libravault.feature.settings.ui.TtsSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,8 +69,10 @@ fun SettingsScreen(
     val prefs by viewModel.preferences.collectAsState()
     val vaultState by viewModel.vaultState.collectAsState()
     val isSupporter by viewModel.isSupporter.collectAsState()
+    val productsAvailable by viewModel.productsAvailable.collectAsState()
     val ttsState by viewModel.ttsState.collectAsState()
     val context = LocalContext.current
+    val activity = context.findActivity()
 
     // SAF folder picker launcher
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -342,8 +345,13 @@ fun SettingsScreen(
             SettingLabel(
                 title    = "Permissions",
                 subtitle = "This app does not request location, contacts, camera, or broad " +
-                        "file access. It reads only folders you explicitly grant it, and " +
-                        "makes no network calls of any kind.",
+                        "file access. It reads only folders you explicitly grant it." +
+                        if (viewModel.isBillingSupported) {
+                            " The only network activity is Google Play Billing, used solely " +
+                                "for the optional purchases below."
+                        } else {
+                            " It makes no network calls of any kind."
+                        },
             )
 
             Divider()
@@ -368,15 +376,41 @@ fun SettingsScreen(
                         "donation addresses are on the website, not in this app.",
             )
 
-            OutlinedButton(
-                onClick = {
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_URL)))
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Support the Project")
+            if (!viewModel.isBillingSupported) {
+                // F-Droid: no billing backend exists there at all — unchanged external link.
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_URL)))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Support the Project")
+                }
+            } else if (productsAvailable) {
+                OutlinedButton(
+                    onClick = { activity?.let(viewModel::purchaseSubscription) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Subscribe — $1/mo")
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { activity?.let(viewModel::purchaseOneTimeTip) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Send a one-time tip")
+                }
+            } else {
+                // Play flavour, but the products haven't been created in Play Console
+                // yet — deliberately no external-link fallback here (that's the whole
+                // point of moving this flavour to native billing).
+                Text(
+                    text = "Support options are coming soon",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
             }
 
             Spacer(Modifier.height(32.dp))
