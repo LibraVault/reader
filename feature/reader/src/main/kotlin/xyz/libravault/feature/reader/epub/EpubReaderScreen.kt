@@ -54,6 +54,7 @@ import org.readium.r2.navigator.input.InputListener as ReadiumInputListener
 import org.readium.r2.navigator.input.KeyEvent as ReadiumKeyEvent
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
+import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily as ReadiumFontFamily
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
@@ -466,15 +467,26 @@ private fun EpubNavigatorView(
  * `isSystemInDarkTheme()`; Readium's own [Theme] has no fourth "system" case, so this is
  * one of the call sites that must resolve before converting (same shape as
  * `mermaidThemeName` in the Mermaid package).
+ *
+ * AMOLED (#420): Readium's [Theme] enum also has no true-black case, so it maps to
+ * [Theme.DARK] as its CSS base — but [EpubPreferences.backgroundColor]/[textColor] are
+ * *separate* preferences layered on top of [theme] (unset = "current theme's background
+ * color is effective", per Readium's own docs), so overriding them to pure black/white
+ * only for AMOLED gets a real true-black page without needing a Readium-side theme.
  */
 @OptIn(ExperimentalReadiumApi::class)
-private fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
+internal fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
+    val resolvedTheme = theme.resolved(systemInDarkTheme)
+    val isAmoled = resolvedTheme == xyz.libravault.core.ui.theme.ConcreteReadingTheme.AMOLED
     return EpubPreferences(
-        theme = when (theme.resolved(systemInDarkTheme)) {
-            xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK  -> Theme.DARK
-            xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT -> Theme.LIGHT
-            xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA -> Theme.SEPIA
+        theme = when (resolvedTheme) {
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK   -> Theme.DARK
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.LIGHT  -> Theme.LIGHT
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.SEPIA  -> Theme.SEPIA
+            xyz.libravault.core.ui.theme.ConcreteReadingTheme.AMOLED -> Theme.DARK
         },
+        backgroundColor = if (isAmoled) ReadiumColor(0xFF000000.toInt()) else null,
+        textColor       = if (isAmoled) ReadiumColor(0xFFFFFFFF.toInt()) else null,
         // Disable publisher CSS so our font/size/spacing overrides take effect.
         publisherStyles = false,
         // Readium's EpubPreferences.fontSize is a ratio stored in Length.Percent, whose

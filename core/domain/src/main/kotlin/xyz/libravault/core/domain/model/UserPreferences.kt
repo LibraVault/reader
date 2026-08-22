@@ -32,8 +32,13 @@ data class UserPreferences(
  * at render time in core:ui (`ReadingTheme.resolved`), mirroring the UI-layer enum this one
  * is intentionally duplicated from. Default for new installs stays [DARK], matching the
  * iOS decision (#374) — System is an available choice, not the default.
+ *
+ * [AMOLED] (#420) is a distinct 5th option — a true-black (#000000) page background for
+ * OLED/AMOLED screens, not a replacement for [DARK]. See
+ * [xyz.libravault.core.ui.theme.ReadingTheme]'s doc for the full rationale; duplicated
+ * here only because core:domain must stay free of Android/UI dependencies.
  */
-enum class AppReadingTheme { DARK, LIGHT, SEPIA, SYSTEM }
+enum class AppReadingTheme { DARK, LIGHT, SEPIA, AMOLED, SYSTEM }
 
 // ── Playback speed helpers ───────────────────────────────────────────────────
 

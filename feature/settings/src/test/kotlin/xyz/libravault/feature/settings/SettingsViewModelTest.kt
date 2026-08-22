@@ -156,6 +156,14 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `reading theme change persists AMOLED`() = runTest(mainDispatcher) {
+        // #420
+        val vm = viewModel()
+        vm.onReadingThemeChanged(AppReadingTheme.AMOLED)
+        verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.AMOLED }) }
+    }
+
+    @Test
     fun `playback speed is clamped`() = runTest(mainDispatcher) {
         val vm = viewModel()
         vm.onPlaybackSpeedChanged(10.0f)
