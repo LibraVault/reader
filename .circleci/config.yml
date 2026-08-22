@@ -82,6 +82,23 @@ parameters:
   tester_groups:
     type: string
     default: "libravault-alphabeta"
+  # Mirrors ios-app-build.yml's build-ios-simulator job only — not its
+  # separate, already-informational UI test job (build-ios-ui-tests), to
+  # keep this phase's macOS-minute cost down. See the ios-build job below.
+  run_ios_build:
+    type: boolean
+    default: false
+  # Mirrors ios-testflight.yml, with one deliberate behavior change — see
+  # the ios-testflight job below.
+  run_ios_testflight:
+    type: boolean
+    default: false
+  ios_build_number:
+    type: string
+    default: ""
+  ios_release_notes:
+    type: string
+    default: ""
 
 jobs:
   jvm-tests:
@@ -528,6 +545,256 @@ jobs:
           path: app/build/outputs/apk/play/release
           destination: play-release-apk
 
+  # Mirrors ios-app-build.yml's build-ios-simulator job (build + unit tests
+  # only — not its sibling build-ios-ui-tests, which is already marked
+  # informational/non-gating on the GH side, to keep this phase's real
+  # macOS-minute cost down; add it later if the build+test signal alone
+  # proves not enough).
+  #
+  # Least-verified job in this whole fallback setup: xcode-version '26.5'
+  # (what ios-app-build.yml pins) and the 'iPhone 17' simulator are what GH
+  # Actions' macos-26 runner happens to have preinstalled — CircleCI's own
+  # supported Xcode-per-resource-class list moves independently of that
+  # (m4pro is the resource class whose Xcode versions currently reach into
+  # the 26.x line at all; m2pro tops out around 16.x). Verify both the
+  # `xcode:` value below and simulator availability against CircleCI's
+  # current docs before the first real trigger — treat it as a shakeout
+  # run, same as the ui-tests job's own orb/image-tag caveat.
+  ios-build:
+    macos:
+      xcode: "26.5.0"
+    resource_class: m4pro.medium
+    environment:
+      XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
+      SCHEME: LibraVault
+    steps:
+      - checkout
+
+      # Same script + cache key as ios-app-build.yml's "Fetch/Cache Pocket
+      # TTS iOS dependencies" steps — sourced straight from the checkout,
+      # not duplicated.
+      - restore_cache:
+          keys:
+            - pocket-tts-ios-{{ checksum "third-party/sherpa-onnx/setup-ios.sh" }}
+      - run:
+          name: Fetch Pocket TTS iOS dependencies
+          command: ./third-party/sherpa-onnx/setup-ios.sh
+      - save_cache:
+          key: pocket-tts-ios-{{ checksum "third-party/sherpa-onnx/setup-ios.sh" }}
+          paths:
+            - third-party/sherpa-onnx/ios
+            - ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel
+
+      - run:
+          name: Build for Simulator
+          command: |
+            xcodebuild build \
+              -project "$XCODEPROJ" \
+              -scheme "$SCHEME" \
+              -configuration Debug \
+              -destination 'generic/platform=iOS Simulator' \
+              CODE_SIGNING_ALLOWED=NO
+
+      - run:
+          name: Boot Simulator
+          command: |
+            xcrun simctl boot "iPhone 17" 2>/dev/null || true
+            xcrun simctl bootstatus "iPhone 17"
+
+      - run:
+          name: Run Unit Tests
+          command: |
+            xcodebuild test \
+              -project "$XCODEPROJ" \
+              -scheme "$SCHEME" \
+              -configuration Debug \
+              -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+              -only-testing:LibraVaultTests \
+              -parallel-testing-enabled NO \
+              -resultBundlePath /tmp/unit-tests.xcresult \
+              CODE_SIGNING_ALLOWED=NO
+
+      # No store_test_results here — .xcresult isn't JUnit XML, and
+      # ios-app-build.yml itself only ever uploads the raw bundle too, never
+      # converts it. Matching that, not inventing a capability neither
+      # provider actually has.
+      - store_artifacts:
+          path: /tmp/unit-tests.xcresult
+          destination: unit-tests.xcresult
+          when: always
+
+  # Mirrors ios-testflight.yml's build-and-upload job, with one deliberate
+  # behavior change: does NOT wait for Apple's build-processing before
+  # returning (ios-testflight.yml's fastlane pilot upload call omits
+  # --skip_waiting_for_build_processing specifically so it waits and then
+  # assigns testers for real — see that step's long comment for why). Here,
+  # the wait is the expensive part: Apple's processing has taken "well over
+  # 2 hours" on a real build per that workflow's timeout-minutes comment,
+  # and CircleCI's macOS resource classes bill by the minute regardless of
+  # whether the job is doing anything (~180-330 credits/min at this writing
+  # vs. a shared 30,000 credits/month free allowance) — mirroring the wait
+  # literally could burn an entire month's free allowance on ONE fallback
+  # run. Trading that for --skip_waiting_for_build_processing: uploads
+  # promptly, but (same gap issue #83 originally hit on the GH side, before
+  # ios-testflight.yml removed this flag) the build sits unassigned to the
+  # testers group and nobody gets notified until a human manually assigns
+  # it in App Store Connect afterward. Deliberate trade for a rarely-used
+  # break-glass path — revisit if this job turns out to see real use.
+  ios-testflight:
+    macos:
+      xcode: "26.5.0"
+    resource_class: m4pro.medium
+    # Long enough for the build+archive+upload itself, NOT for Apple's
+    # processing (which this job doesn't wait for — see above). A few
+    # multiples of a normal ~15-20 min ios-testflight.yml build/archive/
+    # upload phase, well short of that workflow's 240.
+    environment:
+      XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
+      SCHEME: LibraVault
+    steps:
+      - checkout
+
+      - run:
+          name: Import Code Signing Certificate
+          command: |
+            echo "$APPLE_DISTRIBUTION_CERT_BASE64" | base64 --decode > cert.p12
+
+            security create-keychain -p "" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "" build.keychain
+            security set-keychain-settings -lut 21600 build.keychain
+            security import cert.p12 -k build.keychain -P "$APPLE_DISTRIBUTION_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/xcodebuild
+            security set-key-partition-list -S apple-tool:,apple:,codesign,xcodebuild -k "" build.keychain >/dev/null
+
+            rm -f cert.p12
+
+      - run:
+          name: Import Provisioning Profile
+          command: |
+            echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > profile.mobileprovision
+
+            UUID=$(security cms -D -i profile.mobileprovision | plutil -extract UUID xml1 -o - - | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p')
+
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
+            rm -f profile.mobileprovision
+
+            echo "export PROVISIONING_PROFILE_UUID=$UUID" >> "$BASH_ENV"
+
+      - run:
+          name: Determine Build Number
+          command: |
+            BUILD_NUMBER="<< pipeline.parameters.ios_build_number >>"
+            echo "export BUILD_NUMBER=${BUILD_NUMBER:-<< pipeline.number >>}" >> "$BASH_ENV"
+
+      - restore_cache:
+          keys:
+            - pocket-tts-ios-{{ checksum "third-party/sherpa-onnx/setup-ios.sh" }}
+      - run:
+          name: Fetch Pocket TTS iOS dependencies
+          command: ./third-party/sherpa-onnx/setup-ios.sh
+      - save_cache:
+          key: pocket-tts-ios-{{ checksum "third-party/sherpa-onnx/setup-ios.sh" }}
+          paths:
+            - third-party/sherpa-onnx/ios
+            - ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel
+
+      # Same reasoning as ios-testflight.yml's "Build & Archive" comment for
+      # not passing CODE_SIGN_STYLE/CODE_SIGN_IDENTITY/etc as CLI overrides —
+      # the project's own per-target settings already have these baked in.
+      - run:
+          name: Build & Archive
+          command: |
+            xcodebuild archive \
+              -project "$XCODEPROJ" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -archivePath build/LibraVault.xcarchive \
+              -destination 'generic/platform=iOS' \
+              CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - run:
+          name: Create Export Options
+          command: |
+            cat > ExportOptions.plist << EOF
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>method</key>
+                <string>app-store-connect</string>
+                <key>teamID</key>
+                <string>$APPLE_TEAM_ID</string>
+                <key>signingStyle</key>
+                <string>manual</string>
+                <key>signingCertificate</key>
+                <string>Apple Distribution</string>
+                <key>provisioningProfiles</key>
+                <dict>
+                    <key>$APPLE_BUNDLE_ID</key>
+                    <string>$PROVISIONING_PROFILE_UUID</string>
+                </dict>
+            </dict>
+            </plist>
+            EOF
+
+      - run:
+          name: Export IPA
+          command: |
+            xcodebuild -exportArchive \
+              -archivePath build/LibraVault.xcarchive \
+              -exportPath build/export \
+              -exportOptionsPlist ExportOptions.plist
+
+      - run:
+          name: Upload to TestFlight
+          environment:
+            RELEASE_NOTES: << pipeline.parameters.ios_release_notes >>
+          command: |
+            echo "$APP_STORE_CONNECT_PRIVATE_KEY" > AuthKey.p8
+
+            jq -n \
+              --arg key_id "$APP_STORE_CONNECT_KEY_ID" \
+              --arg issuer_id "$APP_STORE_CONNECT_ISSUER_ID" \
+              --rawfile key AuthKey.p8 \
+              '{key_id: $key_id, issuer_id: $issuer_id, key: $key, in_house: false}' \
+              > api_key.json
+
+            rm -f AuthKey.p8
+
+            IPA_PATH=$(find build/export -name "*.ipa" | head -1)
+            echo "Uploading $IPA_PATH to TestFlight..."
+
+            command -v fastlane >/dev/null || sudo gem install fastlane --no-document
+
+            echo "$RELEASE_NOTES" > changelog.txt
+
+            # --skip_waiting_for_build_processing: see this job's header
+            # comment for why this deliberately does NOT match
+            # ios-testflight.yml's behavior. Means --groups below does
+            # nothing (fastlane returns before the step that would assign
+            # it) — a human must assign the TestFlight group by hand in App
+            # Store Connect after Apple finishes processing this build.
+            fastlane pilot upload \
+              --api_key_path api_key.json \
+              --ipa "$IPA_PATH" \
+              --skip_waiting_for_build_processing \
+              --changelog "$(cat changelog.txt)"
+
+            rm -f AuthKey.p8 api_key.json changelog.txt
+
+      - run:
+          name: Clean up signing material
+          when: always
+          command: |
+            security delete-keychain build.keychain 2>/dev/null || true
+            rm -f cert.p12 profile.mobileprovision AuthKey.p8 api_key.json
+
+      - store_artifacts:
+          path: build/export
+          destination: ios-build
+          when: always
+
 workflows:
   version: 2
   manual-jvm-tests:
@@ -559,3 +826,14 @@ workflows:
     when: << pipeline.parameters.run_firebase_distribution >>
     jobs:
       - firebase-distribution
+  # Also deliberately not wired into circleci-dispatch.yml — same reasoning
+  # as manual-release-build above, plus real per-minute macOS cost (see the
+  # ios-build/ios-testflight job comments).
+  manual-ios-build:
+    when: << pipeline.parameters.run_ios_build >>
+    jobs:
+      - ios-build
+  manual-ios-testflight:
+    when: << pipeline.parameters.run_ios_testflight >>
+    jobs:
+      - ios-testflight
