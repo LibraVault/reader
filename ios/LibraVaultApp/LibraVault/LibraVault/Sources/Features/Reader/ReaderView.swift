@@ -533,17 +533,47 @@ struct ReaderView: View {
         let font = Self.uiFont(size: 16 * fontSize, design: fontDesign)
         let lineSpacingPoints = 8 * lineSpacing
 
-        Task.detached(priority: .userInitiated) {
-            let newBlockPagination = chapters.map {
-                BlockPaginator.paginate(blocks: $0.blocks, images: $0.images, font: font, lineSpacing: lineSpacingPoints, pageSize: pageSize)
-            }
-            await MainActor.run {
+        Self.dispatchChapterPagination(
+            chapters: chapters,
+            font: font,
+            lineSpacing: lineSpacingPoints,
+            pageSize: pageSize,
+            paginate: BlockPaginator.paginate,
+            apply: { newBlockPagination in
                 // A newer repaginate(for:) call already started (and possibly already
                 // finished) since this one was dispatched — applying this stale result
                 // now would clobber it with layout computed against inputs that no
                 // longer match `lastPagination*` above.
                 guard generation == paginationGeneration else { return }
                 applyPagination(newBlockPagination, anchor: anchor, restoreFraction: restoreFraction)
+            }
+        )
+    }
+
+    /// The actual off-main-thread dispatch mechanics `repaginate(for:)` relies on for
+    /// issue #336 — pulled out into a free function (rather than left inline in
+    /// `repaginate(for:)`) specifically so it's unit-testable independent of a live
+    /// SwiftUI view: `ReaderViewPaginationDispatchTests` calls this directly with a
+    /// `paginate` spy that records which thread it ran on, so a regression that puts
+    /// this work back on the caller's thread fails a real test instead of only
+    /// surfacing as on-device jank. `paginate` is injectable for that reason; real
+    /// callers always pass `BlockPaginator.paginate`. Runs `paginate` for every
+    /// chapter on a background task, then hands the result to `apply` back on the
+    /// main actor.
+    static func dispatchChapterPagination(
+        chapters: [BookChapter],
+        font: UIFont,
+        lineSpacing: CGFloat,
+        pageSize: CGSize,
+        paginate: @escaping (_ blocks: [MarkdownBlock], _ images: [String: Data], _ font: UIFont, _ lineSpacing: CGFloat, _ pageSize: CGSize) -> [[MarkdownBlock]],
+        apply: @escaping ([[[MarkdownBlock]]]) -> Void
+    ) {
+        Task.detached(priority: .userInitiated) {
+            let newBlockPagination = chapters.map {
+                paginate($0.blocks, $0.images, font, lineSpacing, pageSize)
+            }
+            await MainActor.run {
+                apply(newBlockPagination)
             }
         }
     }
