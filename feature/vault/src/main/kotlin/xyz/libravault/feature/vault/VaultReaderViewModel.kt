@@ -1,15 +1,19 @@
 package xyz.libravault.feature.vault
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.readium.r2.shared.publication.Publication
+import xyz.libravault.core.domain.model.AppReadingTheme
+import xyz.libravault.core.storage.ReadingThemePreference
 import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.core.vaultcrypto.VaultFileReader
 import xyz.libravault.core.vaultstore.VaultBookmark
@@ -48,15 +52,21 @@ sealed class VaultReaderState {
  * encrypted manifest, same as the rest of a vault entry's metadata.
  *
  * [settings] ([VaultReaderSettings]) is per-user reading preferences —
- * theme/font size/font family/line spacing — same session-only behavior as
- * `feature:reader`'s `ReaderSettings`: nothing here is persisted, it resets
- * to defaults every time the reader screen opens.
+ * theme/font size/font family/line spacing. Font size/family/line
+ * spacing/scroll mode stay session-only, same as `feature:reader`'s
+ * `ReaderSettings`: nothing there is persisted, it resets to defaults every
+ * time the reader screen opens. Theme is the one exception (#428): it's
+ * seeded from and written back to the global default in
+ * [xyz.libravault.feature.settings.UserPreferencesRepository] via
+ * [ReadingThemePreference], so it matches Settings and survives closing
+ * the reader.
  */
 @HiltViewModel
 class VaultReaderViewModel @Inject constructor(
     private val sessionManager: VaultSessionManager,
     private val readiumProvider: VaultReadiumProvider,
     savedStateHandle: SavedStateHandle,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     val vaultId: String = checkNotNull(savedStateHandle["vaultId"]) { "VaultReaderScreen requires a vaultId nav argument" }
@@ -66,7 +76,12 @@ class VaultReaderViewModel @Inject constructor(
     private val _state = MutableStateFlow<VaultReaderState>(VaultReaderState.Loading)
     val state: StateFlow<VaultReaderState> = _state.asStateFlow()
 
-    private val _settings = MutableStateFlow(VaultReaderSettings())
+    // #428 — seeded from the global default rather than VaultReaderSettings()'s
+    // own hardcoded DARK, so a vault file opens in whatever theme Settings has
+    // configured.
+    private val _settings = MutableStateFlow(
+        VaultReaderSettings(theme = ReadingThemePreference.read(appContext).toReadingTheme())
+    )
     val settings: StateFlow<VaultReaderSettings> = _settings.asStateFlow()
 
     private val _bookmarks = MutableStateFlow<List<VaultBookmark>>(emptyList())
@@ -143,6 +158,9 @@ class VaultReaderViewModel @Inject constructor(
 
     fun onThemeChanged(theme: ReadingTheme) {
         _settings.update { it.copy(theme = theme) }
+        // #428 — write through so the choice survives closing the reader and
+        // matches whatever Settings shows as the default.
+        ReadingThemePreference.write(appContext, theme.toAppReadingTheme())
     }
 
     fun onFontSizeChanged(size: Float) {
@@ -258,4 +276,26 @@ class VaultReaderViewModel @Inject constructor(
             _highlights.update { list -> list.filterNot { it.id == id } }
         }
     }
+}
+
+/**
+ * [AppReadingTheme] (`core:domain`, KMP-safe) <-> [ReadingTheme] (`core:ui`, this
+ * reader's own settings type) — duplicated per module rather than a new
+ * cross-module dependency, same rationale [VaultReaderSettings] documents for
+ * its own duplication of `feature:reader`'s `ReaderSettings`.
+ */
+private fun AppReadingTheme.toReadingTheme(): ReadingTheme = when (this) {
+    AppReadingTheme.DARK   -> ReadingTheme.DARK
+    AppReadingTheme.LIGHT  -> ReadingTheme.LIGHT
+    AppReadingTheme.SEPIA  -> ReadingTheme.SEPIA
+    AppReadingTheme.AMOLED -> ReadingTheme.AMOLED
+    AppReadingTheme.SYSTEM -> ReadingTheme.SYSTEM
+}
+
+private fun ReadingTheme.toAppReadingTheme(): AppReadingTheme = when (this) {
+    ReadingTheme.DARK   -> AppReadingTheme.DARK
+    ReadingTheme.LIGHT  -> AppReadingTheme.LIGHT
+    ReadingTheme.SEPIA  -> AppReadingTheme.SEPIA
+    ReadingTheme.AMOLED -> AppReadingTheme.AMOLED
+    ReadingTheme.SYSTEM -> AppReadingTheme.SYSTEM
 }
