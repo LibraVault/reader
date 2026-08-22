@@ -241,6 +241,19 @@ struct ReaderView: View {
             readingTheme = appState.defaultReadingTheme
             loadContent()
         }
+        // Issue #427: the toolbar cycle button and ReaderSettingsSheet's binding
+        // above both only ever mutated this local @State, so an in-reader theme
+        // change was silently discarded the moment a new BookItem (and therefore a
+        // new ReaderView instance) came along — e.g. re-importing an updated copy
+        // of the same document. Writing through to appState.defaultReadingTheme
+        // (which already persists via its own didSet, see AppState.swift) makes an
+        // in-reader change stick the same way a Settings-screen change does. Fires
+        // once (harmlessly, writing the same value back) right after .task seeds
+        // readingTheme from appState.defaultReadingTheme on first appearance, since
+        // onChange only triggers on an actual value change, not on initial state.
+        .onChange(of: readingTheme) { _, newValue in
+            appState.defaultReadingTheme = Self.persistedDefaultReadingTheme(afterInReaderChangeTo: newValue)
+        }
         .onDisappear {
             if book.format == .markdown {
                 updateMarkdownProgress()
@@ -548,6 +561,23 @@ struct ReaderView: View {
                 applyPagination(newBlockPagination, anchor: anchor, restoreFraction: restoreFraction)
             }
         )
+    }
+
+    /// The value the `onChange(of: readingTheme)` modifier above writes into
+    /// `appState.defaultReadingTheme` for a given in-reader theme change — pulled out
+    /// into a static, independently testable function for issue #427, mirroring the
+    /// pattern `dispatchChapterPagination` below established for #336/#411 and
+    /// `EncryptedVaultContentsView.errorBannerText` for #417/#418. This repo has no
+    /// ViewInspector/snapshot UI-testing infrastructure, so no test can prove
+    /// `body`'s `onChange` modifier actually fires and calls this on a real theme
+    /// change; keeping that call to the single line above keeps the unverifiable
+    /// surface as small as it can be made without new test infrastructure.
+    /// Currently a straight passthrough — kept as a named function rather than an
+    /// inlined value so this exact mapping (not some other transformation of
+    /// `newValue`) is what a test pins down and a future revert of #427 has to
+    /// explicitly break instead of silently drifting.
+    static func persistedDefaultReadingTheme(afterInReaderChangeTo newValue: ReadingTheme) -> ReadingTheme {
+        newValue
     }
 
     /// The actual off-main-thread dispatch mechanics `repaginate(for:)` relies on for

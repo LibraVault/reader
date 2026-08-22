@@ -75,6 +75,25 @@ class LibravaultThemeTest {
         assertTrue(isLightStatusBarIcons())
     }
 
+    // ── #420: AMOLED ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `amoled reading theme uses light (white) status bar icons, same as dark`() {
+        // darkTheme = false (system light) deliberately, same reasoning as the DARK-wins
+        // test below: proves the explicit AMOLED pick — a dark background — wins over an
+        // ambient light system setting, not just that it happens to agree with it.
+        composeTestRule.setContent {
+            LibravaultTheme(darkTheme = false, readingTheme = ReadingTheme.AMOLED) {}
+        }
+        composeTestRule.waitForIdle()
+
+        assertFalse(
+            "Amoled is a true-black background — status bar icons must be light/white " +
+                "for contrast, same as Dark",
+            isLightStatusBarIcons(),
+        )
+    }
+
     // ── #349/#370: SYSTEM + the bug it uncovered ────────────────────────────────
 
     @Test

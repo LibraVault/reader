@@ -82,3 +82,6 @@ DerivedData/
 /third-party/sherpa-onnx/ios/
 /third-party/sherpa-onnx/build-ios/
 /ios/LibraVaultApp/LibraVault/LibraVault/PocketTTSModel/
+
+# Personal permission overrides, not shared with the team.
+/.claude/settings.local.json

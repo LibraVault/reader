@@ -30,10 +30,30 @@ name: PR Intake
 # can never be satisfied. principal-review.yml already tolerates a missing
 # linked issue gracefully (see its own guard step's comment), which is why
 # that's the right landing spot instead.
+#
+# The `sweep-missing-status` job below covers a distinct, later-in-time gap
+# (issue #403): a PR can pick up a `risk:*` label (dev-agent.yml's own tail
+# step, or the `intake` job above) and then still end up with no `status:*`
+# label at all — e.g. dev-agent.yml's risk-classify call succeeds under
+# `GITHUB_TOKEN` but the very next call, handing off `status:needs-qa` under
+# the App token, fails separately (confirmed live: PR #339, App-token expiry
+# on a long-running triage job). `intake` above can't catch this: it only
+# fires on `pull_request: opened`/`reopened`, and a PR that already existed
+# when the status label went missing gets no further event to re-trigger it
+# on. `sweep-missing-status` runs on a schedule instead, re-scanning every
+# open PR for exactly this "risk present, status absent" combination — same
+# deterministic classify-and-label shape as `intake`, just triggered
+# differently. See issue #388 for the mirror-image gap (status present,
+# risk absent after a different crash-recovery path) — not handled here.
 
 on:
   pull_request:
     types: [opened, reopened]
+  schedule:
+    # Offset 15 minutes from human-merge-sweep.yml's own `0 */4 * * *` so
+    # the two scheduled jobs don't cluster on the same tick.
+    - cron: '15 */4 * * *'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -56,7 +76,14 @@ jobs:
     # dev-agent.yml's own tail before this event's job would even start;
     # re-running here would be redundant at best, and a real race at
     # worst (this job doesn't wait for that job to finish).
+    #
+    # Explicit event_name check (rather than relying on
+    # github.event.pull_request.* simply being empty on a schedule/
+    # workflow_dispatch run) so it's unambiguous this job only ever
+    # reacts to a real pull_request event — sweep-missing-status below is
+    # the only job those other two trigger.
     if: >-
+      github.event_name == 'pull_request' &&
       vars.AGENTS_PAUSED != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.login != 'libravault-pipeline-bot[bot]'
@@ -164,3 +191,104 @@ jobs:
             echo "Applied status:needs-review to #$PR_NUMBER."
             gh pr comment "$PR_NUMBER" --body "This PR was opened outside the automated pipeline (author isn't \`libravault-pipeline-bot[bot]\`) and doesn't link an issue (no \`Closes #N\`-style line in its body), so there's no acceptance criteria for \`qa-agent.yml\` to verify against — it would otherwise sit with no risk/status label and nothing downstream would pick it up (see issue #223's actual history, and issue #343 for this issue-less case specifically). This deterministic backstop (\`pr-intake.yml\`) classified its risk and applied \`status:needs-review\` to route it straight to principal review."
           fi
+
+  sweep-missing-status:
+    # See the top-of-file comment for why this is a separate, schedule-
+    # triggered job rather than something `intake` above also happens to
+    # catch: `intake` only reacts to a `pull_request` event on a single PR,
+    # so it can't find a PR that already existed when it silently lost its
+    # status label. This job re-scans every open PR instead.
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      vars.AGENTS_PAUSED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint pipeline App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - name: Find and label PRs carrying risk:* but no status:* label
+        env:
+          # Same split as `intake` above: read-only lookups and the
+          # explanatory comment stay on GITHUB_TOKEN; only the
+          # status:needs-qa/status:needs-review handoff itself needs the
+          # App token, since that's the one action that must trigger
+          # qa-agent.yml/principal-review.yml (see docs/agent-team-pipeline.md's
+          # "Cross-workflow triggering" section).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          ALL_PRS=$(gh pr list --state open --json number,labels --limit 200)
+          MATCHES=$(echo "$ALL_PRS" | jq -c '
+            [.[] | select(
+              (.labels | map(.name) | any(startswith("risk:"))) and
+              (.labels | map(.name) | any(startswith("status:")) | not)
+            ) | .number]
+          ')
+          COUNT=$(echo "$MATCHES" | jq 'length')
+          echo "Found $COUNT open PR(s) carrying risk:* but no status:* label."
+
+          if [ "$COUNT" -eq 0 ]; then
+            exit 0
+          fi
+
+          # Same "flag the volume, don't silently truncate" cap as
+          # human-merge-sweep-agent.md uses for its own per-part queries —
+          # this many PRs missing a status label is unusual and worth a
+          # human glance on its own, not something to churn through
+          # unattended.
+          if [ "$COUNT" -gt 15 ]; then
+            echo "::warning::$COUNT PRs are missing a status:* label despite carrying risk:* — capping this run at the first 15. That volume itself is unusual and worth a human look."
+          fi
+
+          process_pr() {
+            local PR_NUMBER="$1"
+            echo "Processing PR #$PR_NUMBER..."
+
+            local ISSUE_NUMBER
+            ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER") || {
+              echo "resolve_linked_issue.sh could not resolve a single linked issue for #$PR_NUMBER (none found, or ambiguous) — treating as issue-less for routing purposes." >&2
+              ISSUE_NUMBER=""
+            }
+
+            if [ -n "$ISSUE_NUMBER" ]; then
+              # Same blocked-issue guard as `intake`'s own guard step above —
+              # a human parked the linked issue, so leave this PR alone too.
+              local ISSUE_LABELS
+              ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null) || {
+                echo "Could not read issue #$ISSUE_NUMBER (deleted/transferred/inaccessible?) — treating as unblocked." >&2
+                ISSUE_LABELS=""
+              }
+              if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
+                echo "Issue #$ISSUE_NUMBER (linked from PR #$PR_NUMBER) carries status:blocked — skipping, not labeling." >&2
+                gh pr comment "$PR_NUMBER" --body "This PR carries a \`risk:*\` label but no \`status:*\` label at all — a scheduled sweep (\`pr-intake.yml\`'s \`sweep-missing-status\` job, see issue #403) found it, but its linked issue (#$ISSUE_NUMBER) carries \`status:blocked\`, so it's left unlabeled until that's cleared."
+                return 0
+              fi
+            fi
+
+            if [ -n "$ISSUE_NUMBER" ]; then
+              GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
+              echo "Applied status:needs-qa to #$PR_NUMBER (links issue #$ISSUE_NUMBER)."
+              gh pr comment "$PR_NUMBER" --body "This PR carried a \`risk:*\` label but no \`status:*\` label at all — nothing in the pipeline was driving it forward (see issue #403 for how this can happen, e.g. a crashed handoff step after risk classification already succeeded). A scheduled sweep (\`pr-intake.yml\`'s \`sweep-missing-status\` job) found it and applied \`status:needs-qa\`, since it links issue #$ISSUE_NUMBER."
+            else
+              GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-review
+              echo "Applied status:needs-review to #$PR_NUMBER (no linked issue resolved)."
+              gh pr comment "$PR_NUMBER" --body "This PR carried a \`risk:*\` label but no \`status:*\` label at all — nothing in the pipeline was driving it forward (see issue #403 for how this can happen). A scheduled sweep (\`pr-intake.yml\`'s \`sweep-missing-status\` job) found it and applied \`status:needs-review\` (no linked issue found, or the link was ambiguous)."
+            fi
+          }
+
+          # Each PR is handled in its own subshell so one flaky `gh` call
+          # (rate limit, transient 5xx) can't abort the whole batch under
+          # this script's `set -e` — it just gets flagged, and the next
+          # scheduled run picks it back up (it'll still match the filter
+          # above, since it's still missing a status:* label).
+          echo "$MATCHES" | jq -r '.[:15][]' | while IFS= read -r PR_NUMBER; do
+            ( process_pr "$PR_NUMBER" ) || echo "::warning::Failed to process PR #$PR_NUMBER this round — will retry on the next scheduled run." >&2
+          done

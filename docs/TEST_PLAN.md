@@ -28,6 +28,29 @@ This document describes the unit test strategy, current coverage, deliberate gap
 - **Flow Testing**: Turbine (`flow.test { awaitItem() }`) for StateFlow/Flow assertions
 - **Dispatchers**: `Dispatchers.setMain(UnconfinedTestDispatcher())` in `@BeforeEach`, reset in `@AfterEach`
 - **Assertions**: JUnit 5 static imports (`assertEquals`, `assertTrue`, etc.), not AssertJ
+- **Compose click-interaction tests against `ModalBottomSheet` content**: use
+  `performSemanticsAction(SemanticsActions.OnClick)`, not
+  `performClick()`. `ModalBottomSheet` (and other Popup/Dialog-hosted
+  composables) renders its content in its own window — confirmed by dumping
+  the semantics tree, which shows two roots after composition, one
+  degenerate/empty for the host Activity and one for the sheet's own popup.
+  `performClick()`'s real coordinate-based touch gesture doesn't reliably
+  reach descendants of that second window under this repo's Robolectric
+  setup: the target node is found fine (so `onNodeWithText(...).assertExists()`
+  passes), but the click silently no-ops — no state change, no callback
+  fired — which reads exactly like an app bug and is easy to burn a large
+  number of turns chasing as one. Invoking the semantics action directly
+  sidesteps gesture dispatch entirely and is reliable. Minimal pattern:
+  ```kotlin
+  import androidx.compose.ui.semantics.SemanticsActions
+  import androidx.compose.ui.test.SemanticsNodeInteraction
+  import androidx.compose.ui.test.performSemanticsAction
+
+  private fun SemanticsNodeInteraction.click() = performSemanticsAction(SemanticsActions.OnClick)
+  ```
+  See `ReaderSettingsSheetUiTest.kt`/`VaultReaderSettingsSheetUiTest.kt` for
+  a full example (found and fixed while landing #419/PR #425 — the crashed
+  dev-agent run that opened that PR had hit exactly this wall).
 
 ### Running Tests
 
@@ -242,12 +265,12 @@ As of 2026-08-18 (`dev` @ `efb1b89`) — **overall 41.6%** (3,723 / 8,943 lines)
 |---|---:|---|---|---:|
 | `core:logger` | 97.4% | | `feature:settings` | 47.2% |
 | `core:vaultcrypto` 🔒 | 91.3% | | `feature:player` | 44.3% |
-| `core:vaultstore` 🔒 | 83.4% | | `feature:vault` | 37.6% |
-| `core:ui` | 77.9% | | `feature:reader` | 26.8% |
-| `core:vaultcontent` 🔒 | 70.2% | | `feature:library` | 26.4% |
-| `core:database` | 67.4% | | `core:tts` | 24.9% |
-| `core:storage` | 50.1% | | `core:domain` | 17.2% |
-| | | | `feature:onboarding` | 15.9% |
+| `core:billing` | 85.7% | | `feature:vault` | 37.6% |
+| `core:vaultstore` 🔒 | 83.4% | | `feature:reader` | 26.8% |
+| `core:ui` | 77.9% | | `feature:library` | 26.4% |
+| `core:vaultcontent` 🔒 | 70.2% | | `core:tts` | 24.9% |
+| `core:database` | 67.4% | | `core:domain` | 17.2% |
+| `core:storage` | 50.1% | | `feature:onboarding` | 15.9% |
 | | | | `app` | 15.4% |
 
 Movement since the first measurement (2026-08-17, 40.1%) came from Phases 3–5:

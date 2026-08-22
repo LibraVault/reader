@@ -11,6 +11,9 @@ class MermaidThemeTest {
         assertEquals("default", mermaidThemeName(ConcreteReadingTheme.LIGHT))
         assertEquals("dark", mermaidThemeName(ConcreteReadingTheme.DARK))
         assertEquals("neutral", mermaidThemeName(ConcreteReadingTheme.SEPIA))
+        // #420: Mermaid has no true-black built-in — Amoled reuses "dark", same as the
+        // surrounding page, which already renders true black via LibravaultTheme.
+        assertEquals("dark", mermaidThemeName(ConcreteReadingTheme.AMOLED))
     }
 
     @Test

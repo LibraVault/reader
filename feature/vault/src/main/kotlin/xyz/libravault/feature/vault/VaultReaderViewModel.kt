@@ -168,11 +168,41 @@ class VaultReaderViewModel @Inject constructor(
     }
 
     fun onFontFamilyChanged(family: VaultReaderFontFamily) {
-        _settings.update { it.copy(fontFamily = family) }
+        _settings.update {
+            it.copy(
+                fontFamily = family,
+                // OpenDyslexic bundles a sensible line-spacing default with the
+                // font itself (#423) — dyslexia-friendly typography guidance
+                // recommends both together. Any other family leaves the user's
+                // current line spacing untouched.
+                lineSpacing = if (family == VaultReaderFontFamily.OPEN_DYSLEXIC) {
+                    VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING
+                } else {
+                    it.lineSpacing
+                },
+            )
+        }
     }
 
     fun onLineSpacingChanged(spacing: Float) {
         _settings.update { it.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f)) }
+    }
+
+    fun onWarmthChanged(warmth: Float) {
+        _settings.update { it.copy(warmth = warmth.coerceIn(0f, 1f)) }
+    }
+
+    // #421
+    fun onMarginScaleChanged(scale: Float) {
+        _settings.update { it.copy(marginScale = scale.coerceIn(0.5f, 2.0f)) }
+    }
+
+    fun onJustifyTextChanged(justify: Boolean) {
+        _settings.update { it.copy(justifyText = justify) }
+    }
+
+    fun onHyphenationChanged(hyphenation: Boolean) {
+        _settings.update { it.copy(hyphenation = hyphenation) }
     }
 
     fun onScrollModeChanged(mode: VaultScrollMode) {
@@ -258,6 +288,7 @@ private fun AppReadingTheme.toReadingTheme(): ReadingTheme = when (this) {
     AppReadingTheme.DARK   -> ReadingTheme.DARK
     AppReadingTheme.LIGHT  -> ReadingTheme.LIGHT
     AppReadingTheme.SEPIA  -> ReadingTheme.SEPIA
+    AppReadingTheme.AMOLED -> ReadingTheme.AMOLED
     AppReadingTheme.SYSTEM -> ReadingTheme.SYSTEM
 }
 
@@ -265,5 +296,6 @@ private fun ReadingTheme.toAppReadingTheme(): AppReadingTheme = when (this) {
     ReadingTheme.DARK   -> AppReadingTheme.DARK
     ReadingTheme.LIGHT  -> AppReadingTheme.LIGHT
     ReadingTheme.SEPIA  -> AppReadingTheme.SEPIA
+    ReadingTheme.AMOLED -> AppReadingTheme.AMOLED
     ReadingTheme.SYSTEM -> AppReadingTheme.SYSTEM
 }

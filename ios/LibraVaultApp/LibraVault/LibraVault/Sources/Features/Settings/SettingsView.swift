@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var encryptedVaultRuntime: EncryptedVaultRuntime
+    @EnvironmentObject var billingManager: StoreKitBillingManager
     @State private var isPickingFolder = false
     @State private var loggingEnabled: Bool
     @State private var screenSecurityEnabled: Bool
@@ -253,8 +254,8 @@ struct SettingsView: View {
     /// actually shipped, unlike Android's SettingsViewModel which already reads
     /// `versionName` from PackageManager at runtime. Falls back to "unknown" if
     /// the bundle info is somehow missing, which should never happen in practice.
-    /// `static` (matching `supportURL` below) so it's directly testable without
-    /// standing up the view — see SettingsAppVersionTests.
+    /// `static` so it's directly testable without standing up the view — see
+    /// SettingsAppVersionTests.
     static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
     }
@@ -282,8 +283,7 @@ struct SettingsView: View {
     /// Field feedback (issue #151): "Ik mis een help menu" — there was no in-app
     /// Help/FAQ anywhere. This is a plain static screen, not a support ticket
     /// system — LibraVault has no networking, so there's nothing honest to wire a
-    /// "contact us" form to (same reasoning as supportSection's missing donate
-    /// button).
+    /// "contact us" form to.
     private var helpSection: some View {
         Section {
             NavigationLink(destination: HelpView()) {
@@ -296,16 +296,15 @@ struct SettingsView: View {
 
     // MARK: - Support Development
 
-    /// Identical on every flavor and platform (Android Play, Android F-Droid,
-    /// iOS) — see feature:settings's `SUPPORT_URL` on the Android side (kept
-    /// in sync by hand, since Kotlin and Swift can't share a constant here).
-    /// Apple rejects apps that show crypto addresses/QR codes inside the app's
-    /// own UI (unapproved tipping / IAP bypass); the consistent answer, not
-    /// just the Apple-compliant one, is that no platform renders an address
-    /// in-app — this hands off to the website instead, which is free to show
-    /// BTC/XMR addresses since it isn't inside the app binary.
-    static let supportURL = URL(string: "https://libravault.xyz/support.html")!
-
+    /// Real Apple StoreKit 2 in-app purchases (`StoreKitBillingManager`) — the entire
+    /// native purchase path on iOS, replacing the external `Link` to
+    /// libravault.xyz/support.html this section used to render (Android's Play flavor
+    /// keeps an equivalent native Play Billing path via its own, separate concurrent
+    /// effort; Android's F-Droid flavor, which has no billing API to hang an IAP off,
+    /// is the one place that external link still makes sense — but iOS has no
+    /// F-Droid-style alternative distribution, so it always uses this native path).
+    /// Same "donation/subscription only, nothing feature-gated" product decision as
+    /// ever — see `StoreKitBillingManager`'s doc comment.
     private var supportSection: some View {
         Section {
             if appState.isSupporter {
@@ -313,11 +312,32 @@ struct SettingsView: View {
                     .font(LibraVaultTypography.bodyMedium.weight(.semibold))
                     .foregroundStyle(LibraVaultColor.secondary)
             }
-            Text("LibraVault is free — no ads, no tracking, no accounts. If this app brings you joy, consider supporting its development. BTC and XMR donation addresses are on the website, not in this app.")
+            Text("LibraVault is free — no ads, no tracking, no accounts. If this app brings you joy, consider supporting its development.")
                 .font(LibraVaultTypography.bodySmall)
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
-            Link(destination: Self.supportURL) {
-                Text("Support the Project")
+
+            if billingManager.productsAvailable {
+                Button {
+                    Task { await billingManager.purchaseSubscription() }
+                } label: {
+                    Text("Subscribe — \(billingManager.subscriptionProduct?.displayPrice ?? "$1")/mo")
+                }
+                .disabled(billingManager.isSubscribed)
+
+                Button {
+                    Task { await billingManager.purchaseOneTimeTip() }
+                } label: {
+                    Text("Send a one-time tip")
+                }
+            } else {
+                // Deliberately no external fallback link here — see the type doc
+                // comment above. App Store Connect has no product configured yet (no
+                // banking/tax agreement signed), so there is nothing purchasable to
+                // offer; this state resolves itself once that's set up, with no code
+                // change needed.
+                Text("Support options are coming soon.")
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
             }
         } header: {
             sectionHeader("Support Development")
@@ -535,4 +555,5 @@ struct BulletPoint: View {
     }
     .environmentObject(AppState())
     .environmentObject(EncryptedVaultRuntime())
+    .environmentObject(StoreKitBillingManager())
 }

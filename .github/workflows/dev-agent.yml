@@ -235,8 +235,16 @@ jobs:
         # clears any dev-agent-pr-number.txt that happens to already be
         # committed on this branch (e.g. leftover from an earlier round)
         # so the next step never reads stale scratch state.
+        #
+        # `git reset --hard HEAD` right after the checkout: see the matching
+        # comment in principal-review.yml (issue #386) — `gh pr checkout`
+        # was observed leaving unrelated files' working-tree content
+        # mismatched against HEAD despite reporting a clean switch. The
+        # workflow-drift check below and the agent itself both trust the
+        # working tree to match HEAD, so force it instead of assuming it.
         run: |
           gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+          git reset --hard HEAD
           rm -f dev-agent-pr-number.txt
 
       - name: Check for workflow-file drift (GitHub OIDC self-check, revise mode only)
@@ -254,16 +262,27 @@ jobs:
         # this file is always dev's own. See issue #254 for the full
         # diagnosis (a live hit on PR #234, 14 commits behind dev, with
         # this exact file among the 7 that had diverged).
+        #
+        # classify_workflow_drift.sh (issue #401) further distinguishes
+        # *why* the file differs: "stale" (dev moved the file on since this
+        # branch's merge-base — rebasing fixes it, the ordinary case) from
+        # "self" (this PR's own commits modify the file directly — no
+        # rebase can ever fix that, since the diff to the file IS the
+        # point of the PR, e.g. a PR raising this workflow's own turn
+        # budget). The routing step below treats those two cases
+        # differently.
         id: workflow-drift
         if: steps.guard.outputs.skip != 'true' && steps.guard.outputs.mode == 'revise'
         run: |
           set -euo pipefail
           git fetch origin dev
-          if ! git diff --quiet origin/dev -- .github/workflows/dev-agent.yml; then
-            echo "This workflow's own file (.github/workflows/dev-agent.yml) differs between this PR branch and dev — the OIDC token exchange below would be refused. Skipping the agent step." >&2
-            echo "drift=true" >> "$GITHUB_OUTPUT"
-          else
+          CLASS=$(.github/scripts/classify_workflow_drift.sh .github/workflows/dev-agent.yml origin/dev)
+          echo "class=$CLASS" >> "$GITHUB_OUTPUT"
+          if [ "$CLASS" = "none" ]; then
             echo "drift=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "This workflow's own file (.github/workflows/dev-agent.yml) differs between this PR branch and dev ($CLASS) — the OIDC token exchange below would be refused. Skipping the agent step." >&2
+            echo "drift=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Mint pipeline App token
@@ -438,7 +457,15 @@ jobs:
             next, so always write it, even if something went wrong earlier.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
-            --max-turns 90
+            # Raised 40->70->90->120 as issues keep getting more
+            # cross-cutting (e.g. #370: 9+ real call sites to touch).
+            # Issue #370 (2026-08-20) hit 90 after ~33 turns of legitimate
+            # recon and 23 real edit calls across 7 files, all before a
+            # single commit — see the persona's "Open the PR early" #370
+            # note. This bump buys headroom for genuinely wide changes;
+            # it does not fix a run that defers branching/committing to
+            # the end, which the persona change addresses separately.
+            --max-turns 120
 
       - name: Force-classify risk and advance to QA
         # !cancelled() rather than the implicit success()-only default: if
@@ -501,6 +528,23 @@ jobs:
             # stuck on status:in-progress forever with no actionable signal.
             if [ "${{ steps.workflow-drift.outputs.drift }}" = "true" ]; then
               echo "PR #$PR_NUMBER's branch has workflow-file drift from dev — GitHub's OIDC anti-tampering check would have silently no-opped the dev agent step, so it was skipped instead. Routing to a human." >&2
+
+              if [ "${{ steps.workflow-drift.outputs.class }}" = "self" ]; then
+                # Issue #401: this PR's own diff touches
+                # .github/workflows/dev-agent.yml directly (e.g. a PR
+                # raising this very workflow's turn budget), so the drift
+                # will reproduce identically on every retry no matter how
+                # current the branch is — "rebase and re-add
+                # status:in-progress" is a dead end, not a fix. This file
+                # is already a sensitive_path (risk:high, always ends at
+                # status:needs-human-merge anyway), so skip straight there
+                # instead of cycling through status:needs-info first.
+                gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
+                gh pr edit "$PR_NUMBER" --add-label status:needs-human-merge
+                gh pr comment "$PR_NUMBER" --body "This PR's own diff modifies \`.github/workflows/dev-agent.yml\` — the exact workflow file this revise run is. GitHub Actions refuses to mint the OIDC token \`claude-code-action\` needs when a \`pull_request\`-triggered, \`id-token: write\` workflow's own file doesn't byte-match the base branch (its own anti-tampering check), so the dev agent step was skipped. Unlike ordinary branch staleness, **rebasing \`dev\` in will never fix this** — the PR's own diff to this file is the point of the PR, so it can never byte-match \`dev\`'s copy no matter how current the branch is (see issue #401). Routing straight to \`status:needs-human-merge\` — this needs direct human review, not another automated retry."
+                exit 0
+              fi
+
               gh pr edit "$PR_NUMBER" --remove-label status:in-progress || true
               gh pr edit "$PR_NUMBER" --add-label status:needs-info
               gh pr comment "$PR_NUMBER" --body "This PR's branch is stale relative to \`dev\` — specifically, \`.github/workflows/dev-agent.yml\` differs between this branch and \`dev\`. GitHub Actions refuses to mint the OIDC token \`claude-code-action\` needs when a \`pull_request\`-triggered, \`id-token: write\` workflow's own file doesn't byte-match the base branch (its own anti-tampering check), so the dev agent step was skipped rather than silently no-opping (see issue #254 for the full diagnosis). Rebase/merge \`dev\` into this branch and re-add \`status:in-progress\` to retry."

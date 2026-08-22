@@ -4,6 +4,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import kotlin.math.pow
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
@@ -162,6 +163,25 @@ class ColorSchemeContrastTest {
     }
 
     /**
+     * The actual product claim of #420: Amoled's page background is *pure* black, not
+     * merely "a very dark colour". [allSchemesMeetContrastFloors] only proves the contrast
+     * ratio clears AA — a near-black like `DarkSurface0` (#1A1410, Dark's own background)
+     * would pass that just as easily, which would silently defeat the whole point of an
+     * OLED/AMOLED theme (per-pixel power-off) without any test here noticing.
+     */
+    @Test
+    fun `amoled background and surface are literally pure black, not just dark`() {
+        assertEquals(Color.Black, AmoledColorScheme.background) {
+            "Amoled background is ${AmoledColorScheme.background}, not Color.Black — " +
+                "defeats the point of a true-black OLED theme"
+        }
+        assertEquals(Color.Black, AmoledColorScheme.surface) {
+            "Amoled surface is ${AmoledColorScheme.surface}, not Color.Black — " +
+                "defeats the point of a true-black OLED theme"
+        }
+    }
+
+    /**
      * Guards [contrastRatio]'s compositing directly.
      *
      * Without this, a change that silently stopped compositing would leave the
@@ -209,6 +229,7 @@ class ColorSchemeContrastTest {
             "Dark" to DarkColorScheme,
             "Light" to LightColorScheme,
             "Sepia" to SepiaColorScheme,
+            "Amoled" to AmoledColorScheme,
         )
     }
 }

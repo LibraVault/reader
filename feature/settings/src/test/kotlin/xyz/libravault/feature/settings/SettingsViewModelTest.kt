@@ -1,5 +1,6 @@
 package xyz.libravault.feature.settings
 
+import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import xyz.libravault.core.billing.SupportBillingClient
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
@@ -74,6 +76,7 @@ class SettingsViewModelTest {
     private val scanVaultsUseCase = mockk<ScanVaultUseCase>()
     private val logger     = mockk<LibravaultLogger>(relaxed = true)
     private val supporterRepository = mockk<SupporterRepository>(relaxed = true)
+    private val billingClient = mockk<SupportBillingClient>()
     private val context = mockk<Context>()
     private val packageManager = mockk<PackageManager>()
 
@@ -111,6 +114,10 @@ class SettingsViewModelTest {
         every { context.packageName }    returns "xyz.libravault.app"
         every { packageManager.getPackageInfo("xyz.libravault.app", 0) } returns
             PackageInfo().apply { versionName = "9.9.9-test" }
+
+        every { billingClient.isSupported } returns true
+        every { billingClient.observeProductsAvailable() } returns flowOf(false)
+        every { billingClient.observeSubscriptionActive() } returns flowOf(false)
     }
 
     @AfterEach
@@ -124,7 +131,7 @@ class SettingsViewModelTest {
         return SettingsViewModel(
             prefsRepo, coverCache, libraryRepository, vaultManager,
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
-            supporterRepository,
+            supporterRepository, billingClient,
             ttsEngineProvider, ttsPreferences, pocketModelManager, pocketVoiceCatalog,
             context,
         )
@@ -153,6 +160,14 @@ class SettingsViewModelTest {
         val vm = viewModel()
         vm.onReadingThemeChanged(AppReadingTheme.SYSTEM)
         verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.SYSTEM }) }
+    }
+
+    @Test
+    fun `reading theme change persists AMOLED`() = runTest(mainDispatcher) {
+        // #420
+        val vm = viewModel()
+        vm.onReadingThemeChanged(AppReadingTheme.AMOLED)
+        verify { prefsRepo.update(match { it.defaultReadingTheme == AppReadingTheme.AMOLED }) }
     }
 
     @Test
@@ -449,5 +464,73 @@ class SettingsViewModelTest {
             // No donation/invoice flow exists anymore to call this — SupporterRepository
             // itself is still exercised in SupporterRepositoryTest.
             verify(exactly = 0) { supporterRepository.setSupporter(any()) }
+        }
+
+    // ── Billing ──────────────────────────────────────────────────────────────
+
+    @Test
+    fun `isBillingSupported reflects the fdroid no-op client`() = runTest(mainDispatcher) {
+        every { billingClient.isSupported } returns false
+
+        assertFalse(viewModel().isBillingSupported)
+    }
+
+    @Test
+    fun `isBillingSupported reflects the play client`() = runTest(mainDispatcher) {
+        every { billingClient.isSupported } returns true
+
+        assertTrue(viewModel().isBillingSupported)
+    }
+
+    @Test
+    fun `productsAvailable stays false while the store side isn't set up yet`() = runTest(mainDispatcher) {
+        every { billingClient.observeProductsAvailable() } returns flowOf(false)
+
+        viewModel().productsAvailable.test {
+            assertFalse(awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `productsAvailable reflects the billing client once products exist`() = runTest(mainDispatcher) {
+        every { billingClient.observeProductsAvailable() } returns flowOf(true)
+
+        viewModel().productsAvailable.test {
+            assertTrue(awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `subscriptionActive reflects the billing client`() = runTest(mainDispatcher) {
+        every { billingClient.observeSubscriptionActive() } returns flowOf(true)
+
+        viewModel().subscriptionActive.test {
+            assertTrue(awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `purchaseSubscription delegates to the billing client with the given activity`() =
+        runTest(mainDispatcher) {
+            val activity = mockk<Activity>()
+            coEvery { billingClient.purchaseSubscription(activity) } returns Result.success(Unit)
+
+            viewModel().purchaseSubscription(activity)
+
+            coVerify(exactly = 1) { billingClient.purchaseSubscription(activity) }
+        }
+
+    @Test
+    fun `purchaseOneTimeTip delegates to the billing client with the given activity`() =
+        runTest(mainDispatcher) {
+            val activity = mockk<Activity>()
+            coEvery { billingClient.purchaseOneTimeTip(activity) } returns Result.success(Unit)
+
+            viewModel().purchaseOneTimeTip(activity)
+
+            coVerify(exactly = 1) { billingClient.purchaseOneTimeTip(activity) }
         }
 }
