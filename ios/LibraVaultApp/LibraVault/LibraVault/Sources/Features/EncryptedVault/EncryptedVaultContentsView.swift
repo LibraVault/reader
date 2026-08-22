@@ -24,21 +24,34 @@ struct EncryptedVaultContentsView: View {
     }
 
     var body: some View {
-        Group {
-            if viewModel.entries.isEmpty {
-                emptyState
-            } else {
-                List(viewModel.entries, id: \.fileId) { entry in
-                    NavigationLink {
-                        destination(for: entry)
-                    } label: {
-                        VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
-                            Text(entry.title)
-                                .foregroundStyle(LibraVaultColor.onSurface)
-                            if let author = entry.author {
-                                Text(author)
-                                    .font(LibraVaultTypography.bodySmall)
-                                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+        VStack(spacing: 0) {
+            // Matches CreateEncryptedVaultView/UnlockEncryptedVaultView's own
+            // inline error banner — a `refresh()` failure (e.g. after an
+            // import) must never silently fall back to `emptyState` with no
+            // explanation. See #417.
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(LibraVaultSpacing.md)
+            }
+            Group {
+                if viewModel.entries.isEmpty {
+                    emptyState
+                } else {
+                    List(viewModel.entries, id: \.fileId) { entry in
+                        NavigationLink {
+                            destination(for: entry)
+                        } label: {
+                            VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
+                                Text(entry.title)
+                                    .foregroundStyle(LibraVaultColor.onSurface)
+                                if let author = entry.author {
+                                    Text(author)
+                                        .font(LibraVaultTypography.bodySmall)
+                                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                                }
                             }
                         }
                     }
@@ -174,9 +187,16 @@ private struct ImportProgressSheet: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(LibraVaultColor.secondary)
         case .error(let message):
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .accessibilityLabel("Import failed: \(message)")
+            HStack(spacing: LibraVaultSpacing.xs) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(LibraVaultTypography.bodySmall)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.trailing)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Import failed: \(message)")
         }
     }
 }
