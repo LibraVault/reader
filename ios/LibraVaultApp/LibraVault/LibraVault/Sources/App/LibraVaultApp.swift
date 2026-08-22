@@ -2,13 +2,29 @@ import SwiftUI
 
 @main
 struct LibraVaultApp: App {
-    @StateObject private var appState = AppState()
+    @StateObject private var appState: AppState
+    @StateObject private var billingManager: StoreKitBillingManager
     @StateObject private var encryptedVaultRuntime = EncryptedVaultRuntime()
+
+    /// Custom init (rather than each `@StateObject`'s usual bare `= Type()` default)
+    /// so `appState` and `billingManager` share the exact same
+    /// `StoreKitBillingManager` instance — `SettingsView` reads purchase state via
+    /// `@EnvironmentObject var billingManager` for its own view-update subscription,
+    /// while `AppState.isSupporter` mirrors that same instance's `$isSupporter`
+    /// publisher (see `AppState.init`). Two independently-constructed managers would
+    /// each run their own StoreKit product load/entitlement refresh and silently
+    /// diverge from one another.
+    init() {
+        let billing = StoreKitBillingManager()
+        _billingManager = StateObject(wrappedValue: billing)
+        _appState = StateObject(wrappedValue: AppState(billingManager: billing))
+    }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .environmentObject(billingManager)
                 .environmentObject(encryptedVaultRuntime)
                 // Fires when the OS hands LibraVault a file via "Open In"/"Copy to
                 // LibraVault" from another app's share sheet (see Info.plist's

@@ -62,13 +62,34 @@ jobs:
     # `changes` job above (a docs-only PR, say) — same reasoning as
     # ios-app-build.yml's build-android-app. `push` events have no
     # `pull_request` context, so always allowed.
+    #
+    # `|| needs.changes.result != 'success'` (issue #416): unlike
+    # ios-app-build.yml, this job IS the required check GitHub branch
+    # protection looks at directly — there's no separate report-status
+    # job downstream to catch a `changes` failure. Without this clause, a
+    # `changes` error would make `needs.changes.outputs.android` read
+    # empty, this job would land on 'skipped', and a skipped required
+    # check reads as passing — the exact gap #416 describes, but with no
+    # gate left to catch it. So when `changes` didn't succeed, run this
+    # job anyway; its first step below fails it explicitly instead of
+    # silently skipping.
     if: |
       github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft == false && needs.changes.outputs.android == 'true')
+      (github.event.pull_request.draft == false &&
+        (needs.changes.outputs.android == 'true' || needs.changes.result != 'success'))
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      - name: Fail if the changes/paths-filter job itself didn't succeed
+        # See the `if:` comment above — this only ever runs when
+        # `changes` errored (a legitimate docs-only skip never reaches
+        # this job at all), so it's always a hard failure, not a check.
+        if: needs.changes.result != 'success'
+        run: |
+          echo "The 'changes' (paths-filter) job did not succeed (result: ${{ needs.changes.result }}) — failing closed instead of trusting its (unset) outputs. See issue #416." >&2
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -100,7 +121,10 @@ jobs:
       # despite having real, passing-when-run-directly tests. Call out their
       # flavor-specific debug tasks explicitly so this can't recur silently.
       # (core:licensing used to be listed here too — deleted, no Pro tier for
-      # now, see the Encrypted Vaults Phase 6 cleanup.)
+      # now, see the Encrypted Vaults Phase 6 cleanup. core:billing replaces
+      # it as a flavored module, real Play Billing on `play` / no-op on
+      # `fdroid` — same trap applies, hit it once already: its tests silently
+      # never ran here until this line was added.)
       - name: Run JVM tests
         run: |
           ./gradlew testDebugUnitTest \
@@ -108,6 +132,8 @@ jobs:
             :feature:settings:testPlayDebugUnitTest \
             :app:testFdroidDebugUnitTest \
             :app:testPlayDebugUnitTest \
+            :core:billing:testFdroidDebugUnitTest \
+            :core:billing:testPlayDebugUnitTest \
             --continue
 
       - name: Upload test results
@@ -138,7 +164,9 @@ jobs:
           ./gradlew koverXmlReportDebug koverHtmlReportDebug \
             :app:koverXmlReportFdroidDebug :app:koverHtmlReportFdroidDebug \
             :feature:settings:koverXmlReportFdroidDebug \
-            :feature:settings:koverHtmlReportFdroidDebug
+            :feature:settings:koverHtmlReportFdroidDebug \
+            :core:billing:koverXmlReportFdroidDebug \
+            :core:billing:koverHtmlReportFdroidDebug
 
       # Prints the per-module table to the run summary, then enforces the gate.
       # Only the core:vault* modules are gated; everything else is report-only,

@@ -2,8 +2,11 @@ package xyz.libravault.feature.vault
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
@@ -16,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import xyz.libravault.core.ui.components.WarmthOverlay
 
 /**
  * Reads one vault file — EPUB ([VaultEpubReaderScreen]) or PDF
@@ -82,24 +87,12 @@ fun VaultReaderScreen(
     Scaffold(
         topBar = {
             if (showToolbar) {
-                TopAppBar(
-                    title = { Text(titleFor(state)) },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { viewModel.addBookmark() }) {
-                            Icon(Icons.Default.BookmarkAdd, contentDescription = "Add bookmark")
-                        }
-                        IconButton(onClick = { showBookmarksSheet = true }) {
-                            Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
-                        }
-                        IconButton(onClick = { showSettingsSheet = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Reader settings")
-                        }
-                    },
+                VaultReaderTopBar(
+                    title = titleFor(state),
+                    onBack = onBack,
+                    onAddBookmark = { viewModel.addBookmark() },
+                    onShowBookmarks = { showBookmarksSheet = true },
+                    onSettings = { showSettingsSheet = true },
                 )
             }
         },
@@ -145,6 +138,11 @@ fun VaultReaderScreen(
                     onScrollConsumed = viewModel::clearPendingNavigation,
                 )
             }
+
+            // Warmth / blue-light overlay (#422) — screen-level tint drawn on top of
+            // whichever format just rendered above. See feature:reader's ReaderScreen
+            // for the full rationale (shared WarmthOverlay in core:ui).
+            WarmthOverlay(warmth = settings.warmth, modifier = Modifier.fillMaxSize())
         }
     }
 
@@ -170,7 +168,14 @@ fun VaultReaderScreen(
             onFontFamilyChanged  = viewModel::onFontFamilyChanged,
             onLineSpacingChanged = viewModel::onLineSpacingChanged,
             onScrollModeChanged  = viewModel::onScrollModeChanged,
+            onWarmthChanged      = viewModel::onWarmthChanged,
             onDismiss            = { showSettingsSheet = false },
+            // Margins/justification/hyphenation (#421) — EPUB only, see
+            // VaultReaderSettingsSheet.showEpubLayoutControls's doc.
+            showEpubLayoutControls = state is VaultReaderState.EpubReady,
+            onMarginScaleChanged   = viewModel::onMarginScaleChanged,
+            onJustifyTextChanged   = viewModel::onJustifyTextChanged,
+            onHyphenationChanged   = viewModel::onHyphenationChanged,
         )
     }
 }
@@ -179,4 +184,58 @@ private fun titleFor(state: VaultReaderState): String = when (state) {
     is VaultReaderState.EpubReady -> state.title
     is VaultReaderState.PdfReady -> state.title
     else -> "Vault"
+}
+
+/**
+ * Extracted from [VaultReaderScreen] so it can be unit-tested without a
+ * [VaultReaderViewModel] — same rationale as `feature:reader`'s
+ * `ReaderTopBar`. Deliberately not shared with that composable: this module
+ * doesn't depend on `feature:reader` (see e.g. this file's own
+ * `toVaultEpubPreferences` duplicating `feature:reader`'s private mapper),
+ * so a near-identical top bar exists independently in each module rather
+ * than adding a cross-module dependency for one composable.
+ *
+ * The settings action carries a persistent visible label rather than a bare
+ * icon (#424) — the icon becomes decorative (`contentDescription = null`)
+ * and the visible [Text] supplies the merged accessible name. Every other
+ * action (back, add bookmark, bookmarks) is unchanged.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VaultReaderTopBar(
+    title: String,
+    onBack: () -> Unit,
+    onAddBookmark: () -> Unit,
+    onShowBookmarks: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        },
+        actions = {
+            IconButton(onClick = onAddBookmark) {
+                Icon(Icons.Default.BookmarkAdd, contentDescription = "Add bookmark")
+            }
+            IconButton(onClick = onShowBookmarks) {
+                Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
+            }
+            TextButton(onClick = onSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Themes & Settings",
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                )
+            }
+        },
+    )
 }

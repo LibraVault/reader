@@ -79,9 +79,18 @@ jobs:
     # this job could possibly turn up a different result. `push` events
     # have no `pull_request` context and no path filter applied to them at
     # all, so they're always allowed through unconditionally, same as before.
+    #
+    # `|| needs.changes.result != 'success'` (issue #416): this job's name
+    # is itself a required status check in branch protection — if
+    # `changes` errors, its outputs are never set,
+    # `needs.changes.outputs.ios == 'true'` reads false either way, and
+    # without this clause the job would land on 'skipped', which GitHub
+    # treats as a passing required check. Run anyway in that case so the
+    # guard step below can fail it explicitly instead of silently passing.
     if: |
       github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft == false && needs.changes.outputs.ios == 'true')
+      (github.event.pull_request.draft == false &&
+        (needs.changes.outputs.ios == 'true' || needs.changes.result != 'success'))
 
     env:
       XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
@@ -89,6 +98,15 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      - name: Fail if the changes/paths-filter job itself didn't succeed
+        # See the `if:` comment above — this only ever runs when
+        # `changes` errored (a legitimate ios-untouched skip never
+        # reaches this job at all), so it's always a hard failure.
+        if: needs.changes.result != 'success'
+        run: |
+          echo "The 'changes' (paths-filter) job did not succeed (result: ${{ needs.changes.result }}) — failing closed instead of trusting its (unset) outputs. See issue #416." >&2
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -295,14 +313,24 @@ jobs:
     timeout-minutes: 60
     needs: changes
     # See build-ios-simulator's identical guard for why (draft + path filter,
-    # `android` output instead of `ios`).
+    # `android` output instead of `ios`, plus the `|| needs.changes.result
+    # != 'success'` fail-closed clause for issue #416 — this job's name is
+    # also a required status check).
     if: |
       github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft == false && needs.changes.outputs.android == 'true')
+      (github.event.pull_request.draft == false &&
+        (needs.changes.outputs.android == 'true' || needs.changes.result != 'success'))
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      - name: Fail if the changes/paths-filter job itself didn't succeed
+        # See build-ios-simulator's identical guard step for why.
+        if: needs.changes.result != 'success'
+        run: |
+          echo "The 'changes' (paths-filter) job did not succeed (result: ${{ needs.changes.result }}) — failing closed instead of trusting its (unset) outputs. See issue #416." >&2
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -341,13 +369,25 @@ jobs:
   report-status:
     name: Report Build Status
     runs-on: ubuntu-24.04
-    needs: [build-ios-simulator, build-android-app]
+    needs: [changes, build-ios-simulator, build-android-app]
     # always() so this still runs (and can fail the check) when the two
     # jobs above genuinely fail, not just when they succeed — but ANDed
     # with the same draft guard those jobs use, so a draft-skipped run
     # doesn't report a false "FAILED" (needs.*.result == 'skipped' would
     # otherwise trip the "Fail if either build failed" step below) or post
     # a misleading build-status comment for work that was never run.
+    #
+    # `changes` is listed in `needs:` here (not just transitively through
+    # build-ios-simulator/build-android-app) so this job's own steps can
+    # read `needs.changes.result` directly — see issue #416: if `changes`
+    # itself errors (not "ran and found nothing", but actually failed),
+    # its outputs are never set, `needs.changes.outputs.ios == 'true'`
+    # reads false either way, and both build jobs land on 'skipped' —
+    # indistinguishable, to the "Fail if either build failed" step below,
+    # from a legitimate "this diff doesn't touch iOS/Android" skip. That
+    # would let a required check report green with no build having run at
+    # all. The failure step below checks `needs.changes.result` explicitly
+    # to close that gap.
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     timeout-minutes: 5
     env:
@@ -405,11 +445,21 @@ jobs:
       # "draft PR, everything below skipped identically too". Only an
       # actual non-success, non-skipped result (failure, cancelled, ...)
       # should fail this check.
+      #
+      # `changes` itself must have actually succeeded, though (issue
+      # #416) — a 'skipped' build result is only trustworthy as "not
+      # relevant to this diff" when the job that made that call ran
+      # cleanly. `changes` has no `if:` guard of its own, so it always
+      # runs (never legitimately 'skipped'); if it errored instead, fail
+      # closed rather than let two path-filter-derived skips read as a
+      # pass.
       - name: Fail if either build failed
         if: |
+          needs.changes.result != 'success' ||
           (needs.build-ios-simulator.result != 'success' && needs.build-ios-simulator.result != 'skipped') ||
           (needs.build-android-app.result != 'success' && needs.build-android-app.result != 'skipped')
         run: |
+          echo "changes: ${{ needs.changes.result }}" >&2
           echo "build-ios-simulator: ${{ needs.build-ios-simulator.result }}" >&2
           echo "build-android-app: ${{ needs.build-android-app.result }}" >&2
           exit 1

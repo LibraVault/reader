@@ -252,6 +252,73 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `selecting OpenDyslexic font bumps line spacing to the accessibility default`() = runTest {
+        val vm = viewModel()
+        assertEquals(1.4f, vm.uiState.value.settings.lineSpacing) // sanity: default before selection
+
+        vm.onFontFamilyChanged(FontFamily.OPEN_DYSLEXIC)
+
+        assertEquals(FontFamily.OPEN_DYSLEXIC, vm.uiState.value.settings.fontFamily)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `selecting a non-accessibility font leaves line spacing untouched`() = runTest {
+        val vm = viewModel()
+        vm.onLineSpacingChanged(2.0f)
+
+        vm.onFontFamilyChanged(FontFamily.SERIF)
+
+        assertEquals(FontFamily.SERIF, vm.uiState.value.settings.fontFamily)
+        assertEquals(2.0f, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `switching away from OpenDyslexic keeps the bumped line spacing until user changes it`() = runTest {
+        val vm = viewModel()
+        vm.onFontFamilyChanged(FontFamily.OPEN_DYSLEXIC)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+
+        // Switching to a different family doesn't force spacing back down —
+        // only selecting OPEN_DYSLEXIC itself sets a value (see onFontFamilyChanged doc).
+        vm.onFontFamilyChanged(FontFamily.SANS_SERIF)
+        assertEquals(FontFamily.SANS_SERIF, vm.uiState.value.settings.fontFamily)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `warmth defaults to 0f`() = runTest {
+        // #422 — session-only, same lifecycle as fontSize/lineSpacing.
+        val vm = viewModel()
+        assertEquals(0f, vm.uiState.value.settings.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged clamps to the 0f to 1f range`() = runTest {
+        // #422
+        val vm = viewModel()
+
+        vm.onWarmthChanged(5.0f)
+        assertEquals(1.0f, vm.uiState.value.settings.warmth)
+
+        vm.onWarmthChanged(-1.0f)
+        assertEquals(0.0f, vm.uiState.value.settings.warmth)
+
+        vm.onWarmthChanged(0.5f)
+        assertEquals(0.5f, vm.uiState.value.settings.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged updates only the warmth field`() = runTest {
+        // #422
+        val vm = viewModel()
+        vm.onWarmthChanged(0.6f)
+
+        assertEquals(0.6f, vm.uiState.value.settings.warmth)
+        assertEquals(1.0f, vm.uiState.value.settings.fontSize)
+    }
+
+    @Test
     fun `theme change round-trips through ui state, including SYSTEM`() = runTest {
         val vm = viewModel()
 
@@ -260,6 +327,54 @@ class ReaderViewModelTest {
 
         vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA)
         assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.SEPIA, vm.uiState.value.settings.theme)
+    }
+
+    @Test
+    fun `theme change round-trips through ui state for AMOLED`() = runTest {
+        // #420
+        val vm = viewModel()
+
+        vm.onThemeChanged(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED)
+        assertEquals(xyz.libravault.core.ui.theme.ReadingTheme.AMOLED, vm.uiState.value.settings.theme)
+    }
+
+    // ── Margins/justification/hyphenation (#421) ────────────────────────────────
+
+    @Test
+    fun `margin scale is clamped to the 0_5 to 2_0 range`() = runTest {
+        val vm = viewModel()
+        vm.onMarginScaleChanged(5.0f)
+        assertEquals(2.0f, vm.uiState.value.settings.marginScale)
+
+        vm.onMarginScaleChanged(-1.0f)
+        assertEquals(0.5f, vm.uiState.value.settings.marginScale)
+
+        vm.onMarginScaleChanged(1.25f)
+        assertEquals(1.25f, vm.uiState.value.settings.marginScale)
+    }
+
+    @Test
+    fun `justify text round-trips through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.justifyText)
+
+        vm.onJustifyTextChanged(true)
+        assertTrue(vm.uiState.value.settings.justifyText)
+
+        vm.onJustifyTextChanged(false)
+        assertFalse(vm.uiState.value.settings.justifyText)
+    }
+
+    @Test
+    fun `hyphenation round-trips through ui state`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.hyphenation)
+
+        vm.onHyphenationChanged(true)
+        assertTrue(vm.uiState.value.settings.hyphenation)
+
+        vm.onHyphenationChanged(false)
+        assertFalse(vm.uiState.value.settings.hyphenation)
     }
 
     @Test

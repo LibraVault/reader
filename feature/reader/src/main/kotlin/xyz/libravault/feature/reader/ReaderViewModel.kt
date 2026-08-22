@@ -263,8 +263,20 @@ class ReaderViewModel @Inject constructor(
     fun decreaseFontSize() = onFontSizeChanged(_uiState.value.settings.fontSize - 0.1f)
 
     fun onFontFamilyChanged(family: FontFamily) {
+        val current = _uiState.value.settings
         _uiState.value = _uiState.value.copy(
-            settings = _uiState.value.settings.copy(fontFamily = family)
+            settings = current.copy(
+                fontFamily = family,
+                // OpenDyslexic bundles a sensible line-spacing default with the
+                // font itself (#423) — dyslexia-friendly typography guidance
+                // recommends both together. Any other family leaves the user's
+                // current line spacing untouched.
+                lineSpacing = if (family == FontFamily.OPEN_DYSLEXIC) {
+                    DYSLEXIA_FRIENDLY_LINE_SPACING
+                } else {
+                    current.lineSpacing
+                },
+            )
         )
     }
 
@@ -277,6 +289,31 @@ class ReaderViewModel @Inject constructor(
     fun onLineSpacingChanged(spacing: Float) {
         _uiState.value = _uiState.value.copy(
             settings = _uiState.value.settings.copy(lineSpacing = spacing.coerceIn(1.0f, 2.5f))
+        )
+    }
+
+    fun onWarmthChanged(warmth: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(warmth = warmth.coerceIn(0f, 1f))
+        )
+    }
+
+    // #421
+    fun onMarginScaleChanged(scale: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(marginScale = scale.coerceIn(0.5f, 2.0f))
+        )
+    }
+
+    fun onJustifyTextChanged(justify: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(justifyText = justify)
+        )
+    }
+
+    fun onHyphenationChanged(hyphenation: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(hyphenation = hyphenation)
         )
     }
 

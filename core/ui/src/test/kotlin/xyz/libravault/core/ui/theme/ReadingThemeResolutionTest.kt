@@ -11,11 +11,12 @@ import org.junit.jupiter.api.Test
 class ReadingThemeResolutionTest {
 
     @Test
-    fun `DARK LIGHT and SEPIA pass through unchanged regardless of the system setting`() {
+    fun `DARK LIGHT SEPIA and AMOLED pass through unchanged regardless of the system setting`() {
         for (systemInDarkTheme in listOf(true, false)) {
             assertEquals(ConcreteReadingTheme.DARK, ReadingTheme.DARK.resolved(systemInDarkTheme))
             assertEquals(ConcreteReadingTheme.LIGHT, ReadingTheme.LIGHT.resolved(systemInDarkTheme))
             assertEquals(ConcreteReadingTheme.SEPIA, ReadingTheme.SEPIA.resolved(systemInDarkTheme))
+            assertEquals(ConcreteReadingTheme.AMOLED, ReadingTheme.AMOLED.resolved(systemInDarkTheme))
         }
     }
 
@@ -33,6 +34,14 @@ class ReadingThemeResolutionTest {
     fun `SYSTEM never resolves to SEPIA`() {
         // Sepia isn't one of the OS's two appearance choices — System can only ever
         // land on Dark or Light, for either value of the ambient setting.
+        assertEquals(ConcreteReadingTheme.DARK, ReadingTheme.SYSTEM.resolved(true))
+        assertEquals(ConcreteReadingTheme.LIGHT, ReadingTheme.SYSTEM.resolved(false))
+    }
+
+    @Test
+    fun `SYSTEM never resolves to AMOLED`() {
+        // Same reasoning as the Sepia case above (#420): true-black isn't one of the OS's
+        // two appearance choices either — System can only ever land on Dark or Light.
         assertEquals(ConcreteReadingTheme.DARK, ReadingTheme.SYSTEM.resolved(true))
         assertEquals(ConcreteReadingTheme.LIGHT, ReadingTheme.SYSTEM.resolved(false))
     }

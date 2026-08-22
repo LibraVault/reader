@@ -58,9 +58,19 @@ final class PocketTTSEngineTests: XCTestCase {
     /// without the other should fail this test instead of silently
     /// producing a model that fails to load at runtime.
     func testModelFilenamesMatchSetupScriptAndAndroidCatalog() {
-        XCTAssertEqual(PocketTTSEngine.modelFileName, "en_US-ljspeech-medium.onnx")
+        XCTAssertEqual(PocketTTSEngine.modelFileName, "en_US-ljspeech-high.onnx")
         XCTAssertEqual(PocketTTSEngine.tokensFileName, "tokens.txt")
         XCTAssertEqual(PocketTTSEngine.dataDirName, "espeak-ng-data")
+    }
+
+    // MARK: - Voice quality (real TestFlight "robotic" feedback, 2026-08-22)
+
+    /// sherpa-onnx's own GenerationConfig default is 0.2 - see
+    /// SherpaOnnxGenerationConfigSwift. Pinned at 1.0 so a future refactor
+    /// can't silently drift this back toward the rushed-sounding default
+    /// that prompted the change. Mirrors Android's PocketTtsEngineTest.
+    func testSilenceScaleUsesTheModelsFullPredictedPauseNotSherpaOnnxsRushedDefault() {
+        XCTAssertEqual(PocketTTSEngine.silenceScale, 1.0)
     }
 
     // MARK: - modelNotBundled reachability

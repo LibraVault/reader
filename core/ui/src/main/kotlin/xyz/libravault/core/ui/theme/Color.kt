@@ -40,3 +40,16 @@ val SepiaTextMuted    = Color(0xFF60543F)
 val DarkSurface0      = Color(0xFF1A1410)   // background — deepest leather
 val DarkSurface1      = Color(0xFF241B14)   // surface — cover brown
 val DarkSurface2      = Color(0xFF2E231A)   // surfaceVariant — lifted card
+
+// ── AMOLED (#420) — true-black reading theme ─────────────────────────────────
+// background/surface are Color.Black itself (0xFF000000), not a named token here —
+// see AmoledColorScheme's doc in Theme.kt for why. This is only the one step off pure
+// black needed for card/divider hierarchy on top of it.
+val AmoledSurfaceVariant = Color(0xFF141008)
+
+// ── Warmth overlay (#422) — Kobo/Kindle-style blue-light filter ─────────────
+// A deep amber, layered as a *translucent overlay* on top of whichever
+// ConcreteReadingTheme is already resolved, rather than swapped into the theme
+// itself — see WarmthOverlay.kt for the mechanism and WarmthOverlayContrastTest
+// for why WARMTH_MAX_ALPHA is capped where it is.
+val WarmthOverlayColor = Color(0xFFFF7F11)

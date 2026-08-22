@@ -34,8 +34,8 @@ class PocketVoiceCatalogTest {
     }
 
     @Test
-    fun `default voice id is en_US-ljspeech-medium`() {
-        assertEquals("en_US-ljspeech-medium", PocketVoiceCatalog.DEFAULT_VOICE_ID)
+    fun `default voice id is en_US-ljspeech-high`() {
+        assertEquals("en_US-ljspeech-high", PocketVoiceCatalog.DEFAULT_VOICE_ID)
     }
 
     @Test
