@@ -25,9 +25,27 @@ final class PocketTTSEngine: TTSEngineProtocol {
     /// Internal (not private), per AGENTS.md's "pure helpers should be
     /// internal" convention, so PocketTTSEngineTests can pin these against
     /// setup-ios.sh/PocketVoiceCatalog drifting apart.
-    static let modelFileName = "en_US-ljspeech-medium.onnx"
+    // "high" tier, not "medium" - swapped 2026-08-22 in response to real
+    // TestFlight feedback describing the voice as robotic. Same LJSpeech
+    // (public-domain) training data/license as medium, just a bigger
+    // checkpoint - see SHERPA_ONNX_SETUP.md's "Updating the voice model".
+    static let modelFileName = "en_US-ljspeech-high.onnx"
     static let tokensFileName = "tokens.txt"
     static let dataDirName = "espeak-ng-data"
+
+    /// sherpa-onnx's own default (0.2) compresses inter-sentence pauses to
+    /// 20% of what the VITS model itself predicts. That's barely noticeable
+    /// for a short example sentence, but `speak` hands over an entire
+    /// chapter in one synthesis call, so every sentence boundary in the
+    /// chapter gets that same rushed pause. Real TestFlight feedback
+    /// described the resulting narration as "robotic"; 1.0 (the model's own
+    /// predicted pause length, unscaled) reads as natural sentence-to-
+    /// sentence pacing for long-form narration instead. Mirrors Android's
+    /// PocketTtsEngine.SILENCE_SCALE. Tune down if on-device listening finds
+    /// full-length pauses too slow. Internal, not private, so
+    /// PocketTTSEngineTests can pin this value the same way it pins the
+    /// model filenames above.
+    static let silenceScale: Float = 1.0
 
     /// `xcodebuild test`'s CI Simulator has no real audio hardware and hangs
     /// on AVAudioSession/AVFoundation activation - see TTSEngineBridge's
@@ -103,6 +121,7 @@ final class PocketTTSEngine: TTSEngineProtocol {
         var genConfig = SherpaOnnxGenerationConfigSwift()
         genConfig.speed = Float(rate)
         genConfig.sid = 0
+        genConfig.silenceScale = Self.silenceScale
 
         // generateWithConfig blocks the calling thread until synthesis
         // finishes, invoking the callback per chunk along the way - run it

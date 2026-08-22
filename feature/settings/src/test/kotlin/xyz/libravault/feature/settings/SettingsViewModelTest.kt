@@ -374,9 +374,9 @@ class SettingsViewModelTest {
     @Test
     fun `tts state reflects engine type, engine state, and model status`() = runTest(mainDispatcher) {
         ttsEngineTypeFlow.value = TtsEngineType.POCKET_TTS
-        ttsEngineStateFlow.value = TtsState(speechRate = 1.5f, selectedVoiceId = "en_US-ljspeech-medium")
+        ttsEngineStateFlow.value = TtsState(speechRate = 1.5f, selectedVoiceId = "en_US-ljspeech-high")
         every { pocketVoiceCatalog.availableVoices() } returns listOf(
-            TtsVoiceInfo(id = "en_US-ljspeech-medium", displayName = "Ljspeech", locale = "en-US"),
+            TtsVoiceInfo(id = "en_US-ljspeech-high", displayName = "Ljspeech", locale = "en-US"),
         )
         every { pocketModelManager.ensureModelAvailable() } returns flowOf(ModelStatus.Ready("/path"))
 
@@ -385,7 +385,7 @@ class SettingsViewModelTest {
             val state = awaitItem()
             assertEquals(TtsEngineType.POCKET_TTS, state.engineType)
             assertEquals(1.5f, state.speechRate)
-            assertEquals("en_US-ljspeech-medium", state.selectedVoiceId)
+            assertEquals("en_US-ljspeech-high", state.selectedVoiceId)
             assertEquals(1, state.availableVoices.size)
             assertEquals(ModelStatus.Ready("/path"), state.modelStatus)
             cancelAndIgnoreRemainingEvents()
@@ -420,8 +420,8 @@ class SettingsViewModelTest {
     @Test
     fun `voice selection persists to preferences`() = runTest(mainDispatcher) {
         val vm = viewModel()
-        vm.onTtsVoiceSelected("en_US-ljspeech-medium")
-        coVerify { ttsPreferences.setSelectedVoice("en_US-ljspeech-medium") }
+        vm.onTtsVoiceSelected("en_US-ljspeech-high")
+        coVerify { ttsPreferences.setSelectedVoice("en_US-ljspeech-high") }
     }
 
     @Test

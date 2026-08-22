@@ -59,7 +59,7 @@ class PocketPlaybackTest {
     @Test
     fun `bundled voice model still declares the 22_05 kHz sample rate`() {
         // Gradle runs unit tests with the module directory as CWD.
-        val modelJson = File("src/main/assets/pocket-tts-model/en_US-ljspeech-medium.onnx.json")
+        val modelJson = File("src/main/assets/pocket-tts-model/en_US-ljspeech-high.onnx.json")
         assertTrue(modelJson.isFile, "Bundled model config missing at ${modelJson.absolutePath}")
 
         // Deliberately a narrow regex rather than a JSON dependency - this
