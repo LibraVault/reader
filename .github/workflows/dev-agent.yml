@@ -235,8 +235,16 @@ jobs:
         # clears any dev-agent-pr-number.txt that happens to already be
         # committed on this branch (e.g. leftover from an earlier round)
         # so the next step never reads stale scratch state.
+        #
+        # `git reset --hard HEAD` right after the checkout: see the matching
+        # comment in principal-review.yml (issue #386) — `gh pr checkout`
+        # was observed leaving unrelated files' working-tree content
+        # mismatched against HEAD despite reporting a clean switch. The
+        # workflow-drift check below and the agent itself both trust the
+        # working tree to match HEAD, so force it instead of assuming it.
         run: |
           gh pr checkout "${{ steps.guard.outputs.pr_number }}"
+          git reset --hard HEAD
           rm -f dev-agent-pr-number.txt
 
       - name: Check for workflow-file drift (GitHub OIDC self-check, revise mode only)
