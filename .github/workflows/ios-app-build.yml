@@ -27,18 +27,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Cheap (~10s) path filter so a docs-only PR (README, docs/**, issue
+  # templates, ...) doesn't pay for a ~10-15min iOS simulator build or an
+  # Android core-modules build it can't possibly affect — PR #414 was a
+  # single-commit, non-draft, docs-only PR that still ran both full builds,
+  # which is what prompted this. Runs unconditionally (no draft/event-type
+  # guard) so it's always available as a `needs` dependency without the
+  # guard cascading into a skip for jobs that shouldn't be skipped — see
+  # each job below.
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-24.04
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ios:
+              - 'ios/**'
+              - 'third-party/sherpa-onnx/**'
+              - '.github/workflows/ios-app-build.yml'
+            android:
+              - 'app/**'
+              - 'core/**'
+              - 'feature/**'
+              - 'build-logic/**'
+              - 'gradle/**'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - 'gradle.properties'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - 'third-party/sherpa-onnx/**'
+              - '.github/workflows/ios-app-build.yml'
+
   build-ios-simulator:
     name: Build & Test iOS (Simulator)
     runs-on: macos-26
     timeout-minutes: 30
+    needs: changes
     # Skip for draft PRs — see the `pull_request.types` comment above.
     # iOS build minutes are this pipeline's scarcest CI resource; running
     # a full ~10-15min simulator build+test on every intermediate commit
     # of a still-in-progress draft is pure waste (cancel-in-progress
     # avoids pileup, but each superseded run still spins up a runner and
-    # does real work first). `push` events have no `pull_request` context
-    # at all, so they're always allowed through unconditionally.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # does real work first). Also skip when the PR's diff doesn't touch
+    # `ios` per the `changes` job above (a docs-only PR, say) — nothing in
+    # this job could possibly turn up a different result. `push` events
+    # have no `pull_request` context and no path filter applied to them at
+    # all, so they're always allowed through unconditionally, same as before.
+    if: |
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false && needs.changes.outputs.ios == 'true')
 
     env:
       XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
@@ -183,8 +226,11 @@ jobs:
     name: iOS UI Tests (informational)
     runs-on: macos-26
     timeout-minutes: 45
-    # See build-ios-simulator's identical guard for why.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    # See build-ios-simulator's identical guard for why (draft + path filter).
+    if: |
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false && needs.changes.outputs.ios == 'true')
 
     env:
       XCODEPROJ: ios/LibraVaultApp/LibraVault/LibraVault.xcodeproj
@@ -247,8 +293,12 @@ jobs:
     name: Build Android App
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # See build-ios-simulator's identical guard for why.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    # See build-ios-simulator's identical guard for why (draft + path filter,
+    # `android` output instead of `ios`).
+    if: |
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false && needs.changes.outputs.android == 'true')
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -311,8 +361,22 @@ jobs:
           script: |
             const iosResult = '${{ needs.build-ios-simulator.result }}';
             const androidResult = '${{ needs.build-android-app.result }}';
+
+            // Both skipped means the `changes` job found nothing in the diff
+            // that could affect either build (a docs-only PR, say) — nothing
+            // ran, so there's nothing to report. Stay quiet instead of
+            // posting a comment that just says "PASSED" for work that never
+            // happened.
+            if (iosResult === 'skipped' && androidResult === 'skipped') {
+              return;
+            }
+
             const icon = (r) => r === 'success' ? '✅' : r === 'skipped' ? '⏭️' : '❌';
-            const overall = (iosResult === 'success' && androidResult === 'success') ? 'PASSED' : 'FAILED';
+            // 'skipped' counts as passing here too — the `changes` job already
+            // decided that build wasn't relevant to this diff, same as a
+            // draft-PR skip always has.
+            const passed = (r) => r === 'success' || r === 'skipped';
+            const overall = (passed(iosResult) && passed(androidResult)) ? 'PASSED' : 'FAILED';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -334,8 +398,17 @@ jobs:
       # exited non-zero, so a real build failure never blocked a PR that
       # required this check. Fail explicitly instead of relying on the
       # comment being read. See issue #245.
+      #
+      # 'skipped' is explicitly excluded from the failure condition here —
+      # a build can now be 'skipped' for a real, path-filter-verified
+      # reason (see the `changes` job) rather than only ever meaning
+      # "draft PR, everything below skipped identically too". Only an
+      # actual non-success, non-skipped result (failure, cancelled, ...)
+      # should fail this check.
       - name: Fail if either build failed
-        if: needs.build-ios-simulator.result != 'success' || needs.build-android-app.result != 'success'
+        if: |
+          (needs.build-ios-simulator.result != 'success' && needs.build-ios-simulator.result != 'skipped') ||
+          (needs.build-android-app.result != 'success' && needs.build-android-app.result != 'skipped')
         run: |
           echo "build-ios-simulator: ${{ needs.build-ios-simulator.result }}" >&2
           echo "build-android-app: ${{ needs.build-android-app.result }}" >&2

@@ -21,13 +21,50 @@ concurrency:
   cancel-in-progress: true  # Cancel superseded runs on the same branch
 
 jobs:
+  # See ios-app-build.yml's identical `changes` job for why — same
+  # docs-only-PR waste, same fix. `android` here covers everything this
+  # workflow's own steps touch: the Gradle modules/build files plus
+  # scripts/** (coverage-summary.py and check-test-plan-modules.py, which
+  # this job runs directly — a change to just those scripts must still
+  # trigger a real run).
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - 'app/**'
+              - 'core/**'
+              - 'feature/**'
+              - 'build-logic/**'
+              - 'gradle/**'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - 'gradle.properties'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - 'third-party/sherpa-onnx/**'
+              - 'scripts/**'
+              - '.github/workflows/jvm-tests.yml'
+
   test:
     name: Unit & Integration Tests (JVM)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
     # Skip for draft PRs — see ios-app-build.yml's identical guard for
-    # why. `push` events have no `pull_request` context, so always allowed.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # why. Also skip when the PR's diff doesn't touch `android` per the
+    # `changes` job above (a docs-only PR, say) — same reasoning as
+    # ios-app-build.yml's build-android-app. `push` events have no
+    # `pull_request` context, so always allowed.
+    if: |
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false && needs.changes.outputs.android == 'true')
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
