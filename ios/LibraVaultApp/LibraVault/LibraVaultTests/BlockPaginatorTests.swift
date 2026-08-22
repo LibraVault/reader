@@ -252,4 +252,89 @@ final class BlockPaginatorTests: XCTestCase {
 
         XCTAssertEqual(pages.flatMap { $0 }, blocks)
     }
+
+    // MARK: - Large-book regression guard (issue #336)
+
+    /// `ReaderView.repaginate(for:)` calls this once per chapter — on a background
+    /// task since this issue, see `ReaderView.swift` and the off-main-thread test
+    /// below — on every rotation/Split-View resize and on every Reading Settings
+    /// change (font size, line spacing, font design). This times that exact
+    /// per-chapter loop against a synthetic book sized like a long novel/omnibus
+    /// (~30 chapters, ~840k characters total across realistic-length paragraph
+    /// blocks per chapter, not one giant block per chapter) so a future change that
+    /// makes pagination accidentally quadratic (or otherwise much more expensive)
+    /// fails CI instead of only surfacing as on-device jank.
+    ///
+    /// Issue #336's predecessor test (`TextPaginatorTests`, obsoleted by #369's move
+    /// to the block model) measured ~4.3s for a book this size laid out as flat
+    /// per-chapter strings via `TextPaginator`. `BlockPaginator` instead lays out one
+    /// `NSTextStorage`/`NSLayoutManager`/`NSTextContainer` graph per *block* (see
+    /// `textHeight`), a different cost shape (more, smaller TextKit graphs instead of
+    /// fewer, larger ones) — the budget below is deliberately looser than that
+    /// measurement to leave headroom for that difference rather than assuming it's
+    /// identical. The actual elapsed time is printed either way so a real CI run's
+    /// number is visible without needing a failure to see it.
+    func testRepaginatingARealisticallyLargeBookCompletesWithinARegressionBudget() {
+        let sentenceUnit = "The quick brown fox jumps over the lazy dog, again and again, across a very long chapter. "
+        let paragraphText = String(repeating: sentenceUnit, count: 6) // ~560 chars: one realistic paragraph
+        let paragraphsPerChapter = 50
+        let chapterBlocks = (0..<paragraphsPerChapter).map { _ in run(text: paragraphText) }
+        let charsPerChapter = paragraphText.count * paragraphsPerChapter
+        XCTAssertGreaterThan(charsPerChapter, 20_000, "test needs a realistically long chapter to be meaningful")
+
+        let chapterCount = 30
+        let chapters = Array(repeating: chapterBlocks, count: chapterCount)
+        let totalChars = charsPerChapter * chapterCount
+        XCTAssertGreaterThan(totalChars, 500_000, "test needs a realistically large book to be meaningful")
+
+        let bookFont = UIFont.systemFont(ofSize: 16) // matches ReaderView's default fontSize (1.0 -> 16pt)
+        let pageSize = CGSize(width: 350, height: 650) // representative of a phone screen after ReaderView's padding
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let pagination = chapters.map {
+            BlockPaginator.paginate(blocks: $0, images: [:], font: bookFont, lineSpacing: 11.2, pageSize: pageSize)
+        }
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+        print("BlockPaginator large-book regression guard: \(elapsed)s for \(totalChars) characters across \(chapterCount) chapters")
+
+        XCTAssertFalse(pagination.contains { $0.isEmpty }, "every chapter of a realistic book should produce at least one page")
+        // Generous regression budget, not a tight perf target — see this test's doc
+        // comment for why 20s rather than the ~4.3s TextPaginator measured for a
+        // similarly-sized book.
+        XCTAssertLessThan(
+            elapsed, 20.0,
+            "repaginating a ~\(totalChars)-character, \(chapterCount)-chapter book took \(elapsed)s on this runner — investigate for a regression (issue #336)"
+        )
+    }
+
+    // MARK: - Off-main-thread pagination safety (issue #336)
+
+    /// `ReaderView.repaginate(for:)` runs `BlockPaginator.paginate` on a background
+    /// `Task.detached` rather than inline on the main thread (issue #336, to stop the
+    /// multi-second main-thread freeze the regression guard above measures from ever
+    /// reaching the UI). `BlockPaginator.paginate` and its private `textHeight`
+    /// helper only ever build their own local TextKit graph per block — never one
+    /// attached to a live view — so laying it out off the main thread is safe. This
+    /// confirms that assumption holds: identical input laid out on a background
+    /// queue must produce exactly the same pages as laid out on the main thread — a
+    /// divergence here would mean the background path is unsafe.
+    func testPaginatingOffTheMainThreadProducesTheSameResultAsOnTheMainThread() {
+        let blocks = (0..<80).map { run(text: "Background-thread pagination must match the main thread exactly, block \($0). ") }
+        let bgFont = UIFont.systemFont(ofSize: 18)
+        let pageSize = CGSize(width: 320, height: 480)
+
+        let mainThreadPages = BlockPaginator.paginate(blocks: blocks, images: [:], font: bgFont, lineSpacing: 6, pageSize: pageSize)
+        XCTAssertGreaterThan(mainThreadPages.count, 1, "test needs multiple pages to be meaningful")
+
+        let backgroundPaginationDone = expectation(description: "background pagination completes")
+        var backgroundThreadPages: [[MarkdownBlock]] = []
+        DispatchQueue.global(qos: .userInitiated).async {
+            backgroundThreadPages = BlockPaginator.paginate(blocks: blocks, images: [:], font: bgFont, lineSpacing: 6, pageSize: pageSize)
+            backgroundPaginationDone.fulfill()
+        }
+        wait(for: [backgroundPaginationDone], timeout: 10)
+
+        XCTAssertEqual(backgroundThreadPages.count, mainThreadPages.count)
+        XCTAssertEqual(backgroundThreadPages, mainThreadPages)
+    }
 }
