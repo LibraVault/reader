@@ -116,6 +116,19 @@ class VaultReaderSettingsSheetUiTest {
     }
 
     @Test
+    fun `OpenDyslexic appears as a font chip and can be shown selected once Customize is expanded`() {
+        // #423 — VaultReaderFontFamily.entries.forEach in VaultReaderSettingsSheet is
+        // what makes this appear with no changes to the sheet itself, same regression-
+        // guard shape as the theme SYSTEM chip test above.
+        setSheet(settings = VaultReaderSettings(fontFamily = VaultReaderFontFamily.OPEN_DYSLEXIC))
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("OpenDyslexic (dyslexia-friendly)").assertIsSelected()
+        composeTestRule.onNodeWithText("System Default").assertExists()
+    }
+
+    @Test
     fun `Amoled appears as a 5th theme chip and can be shown selected`() {
         // #420: same "ReadingTheme.entries.forEach needs no sheet changes" regression
         // guard as the System test above, for the newest ReadingTheme case.
@@ -272,5 +285,38 @@ class VaultReaderSettingsSheetUiTest {
         composeTestRule.onNodeWithText("Hyphenation").click()
 
         assert(applied == false)
+    }
+
+    @Test
+    fun `tapping the Easy Read preset applies OpenDyslexic and its bundled spacing`() {
+        // #423 — "Easy Read" is the accessibility preset ReadingPresets.builtIns
+        // gained alongside the standalone OpenDyslexic font option.
+        val easyRead = ReadingPresets.builtIns.first { it.id == "easy_read" }
+        var appliedTheme: ReadingTheme? = null
+        var appliedFontFamily: VaultReaderFontFamily? = null
+        var appliedFontSize: Float? = null
+        var appliedLineSpacing: Float? = null
+
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultReaderSettingsSheet(
+                    settings = VaultReaderSettings(),
+                    showFontControls = true,
+                    onThemeChanged = { appliedTheme = it },
+                    onFontSizeChanged = { appliedFontSize = it },
+                    onFontFamilyChanged = { appliedFontFamily = it },
+                    onLineSpacingChanged = { appliedLineSpacing = it },
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(easyRead.label).click()
+
+        assert(appliedTheme == easyRead.theme)
+        assert(appliedFontFamily == VaultReaderFontFamily.OPEN_DYSLEXIC)
+        assert(appliedFontSize == easyRead.fontSize)
+        assert(appliedLineSpacing == easyRead.lineSpacing)
     }
 }

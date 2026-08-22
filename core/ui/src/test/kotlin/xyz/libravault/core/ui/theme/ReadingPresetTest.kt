@@ -9,8 +9,12 @@ import org.junit.jupiter.api.Test
 class ReadingPresetTest {
 
     @Test
-    fun `there are between 3 and 4 built-in presets`() {
-        assertTrue(ReadingPresets.builtIns.size in 3..4)
+    fun `there are between 3 and 5 built-in presets`() {
+        // Widened from 3..4 to 3..5 by #423, which adds "Easy Read" (the
+        // dyslexia-friendly typeface + generous spacing accessibility preset)
+        // as a 5th curated combo — a deliberate, issue-tracked addition to the
+        // curated set, not scope creep past #419's "small, curated" intent.
+        assertTrue(ReadingPresets.builtIns.size in 3..5)
     }
 
     @Test

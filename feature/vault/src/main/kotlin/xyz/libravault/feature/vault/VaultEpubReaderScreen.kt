@@ -280,8 +280,16 @@ fun VaultEpubReaderScreen(
 }
 
 /**
+ * Extra letter-spacing bundled with [VaultReaderFontFamily.OPEN_DYSLEXIC] (#423) —
+ * same value and rationale as `feature:reader`'s
+ * `DYSLEXIA_FRIENDLY_LETTER_SPACING`, duplicated for the same "parallel, not
+ * shared" reason as the rest of this file.
+ */
+private const val VAULT_DYSLEXIA_FRIENDLY_LETTER_SPACING = 0.125
+
+/**
  * Maps [VaultReaderSettings] to Readium's [EpubPreferences] — same mapping
- * `feature:reader`'s private `ReaderSettings.toEpubPreferences()` uses (see
+ * `feature:reader`'s internal `ReaderSettings.toEpubPreferences()` uses (see
  * that function's doc for the font-size/percentage rationale); duplicated
  * here for the same "parallel, not shared" reason as the rest of this file.
  *
@@ -295,6 +303,9 @@ fun VaultEpubReaderScreen(
  * `feature:reader`'s `ReaderSettings.toEpubPreferences` — see that function's doc
  * for why these three are native Readium preferences on this pinned navigator
  * version, not hand-rolled CSS.
+ *
+ * `internal` rather than `private` (AGENTS.md's pure-helper convention) so it's
+ * directly unit-testable — see `VaultEpubPreferencesMappingTest`/`VaultEpubReaderScreenPreferencesTest`.
  */
 @OptIn(ExperimentalReadiumApi::class)
 internal fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
@@ -316,10 +327,18 @@ internal fun VaultReaderSettings.toVaultEpubPreferences(systemInDarkTheme: Boole
         textAlign   = if (justifyText) TextAlign.JUSTIFY else null,
         hyphens     = hyphenation,
         fontFamily = when (fontFamily) {
-            VaultReaderFontFamily.SERIF      -> ReadiumFontFamily.SERIF
-            VaultReaderFontFamily.SANS_SERIF -> ReadiumFontFamily.SANS_SERIF
-            VaultReaderFontFamily.MONOSPACE  -> ReadiumFontFamily.MONOSPACE
-            VaultReaderFontFamily.SYSTEM     -> null
+            VaultReaderFontFamily.SERIF         -> ReadiumFontFamily.SERIF
+            VaultReaderFontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF
+            VaultReaderFontFamily.MONOSPACE     -> ReadiumFontFamily.MONOSPACE
+            // Readium's EPUB navigator already embeds OpenDyslexic internally — see
+            // core/ui/licenses/README.md.
+            VaultReaderFontFamily.OPEN_DYSLEXIC -> ReadiumFontFamily.OPEN_DYSLEXIC
+            VaultReaderFontFamily.SYSTEM        -> null
+        },
+        letterSpacing = if (fontFamily == VaultReaderFontFamily.OPEN_DYSLEXIC) {
+            VAULT_DYSLEXIA_FRIENDLY_LETTER_SPACING
+        } else {
+            null
         },
     )
 }

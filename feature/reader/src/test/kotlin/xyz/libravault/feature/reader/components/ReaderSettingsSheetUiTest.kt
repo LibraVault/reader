@@ -213,4 +213,50 @@ class ReaderSettingsSheetUiTest {
 
         assert(applied == false)
     }
+
+    @Test
+    fun `OpenDyslexic appears as a font chip and can be shown selected once Customize is expanded`() {
+        // #423 — FontFamily.entries.forEach in ReaderSettingsSheet is what makes
+        // this appear with no changes to the sheet itself, same regression-guard
+        // shape as `VaultReaderSettingsSheetUiTest`'s equivalent case.
+        setSheet(settings = ReaderSettings(fontFamily = FontFamily.OPEN_DYSLEXIC))
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("OpenDyslexic (dyslexia-friendly)").assertIsSelected()
+        composeTestRule.onNodeWithText("System Default").assertExists()
+    }
+
+    @Test
+    fun `tapping the Easy Read preset applies OpenDyslexic and its bundled spacing`() {
+        // #423 — "Easy Read" is the accessibility preset ReadingPresets.builtIns
+        // gained alongside the standalone OpenDyslexic font option.
+        val easyRead = ReadingPresets.builtIns.first { it.id == "easy_read" }
+        var appliedTheme: ReadingTheme? = null
+        var appliedFontFamily: FontFamily? = null
+        var appliedFontSize: Float? = null
+        var appliedLineSpacing: Float? = null
+
+        composeTestRule.setContent {
+            LibravaultTheme {
+                ReaderSettingsSheet(
+                    settings = ReaderSettings(),
+                    showFontControls = true,
+                    onThemeChanged = { appliedTheme = it },
+                    onFontSizeChanged = { appliedFontSize = it },
+                    onFontFamilyChanged = { appliedFontFamily = it },
+                    onLineSpacingChanged = { appliedLineSpacing = it },
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(easyRead.label).click()
+
+        assert(appliedTheme == easyRead.theme)
+        assert(appliedFontFamily == FontFamily.OPEN_DYSLEXIC)
+        assert(appliedFontSize == easyRead.fontSize)
+        assert(appliedLineSpacing == easyRead.lineSpacing)
+    }
 }
