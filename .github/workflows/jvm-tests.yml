@@ -63,7 +63,10 @@ jobs:
       # despite having real, passing-when-run-directly tests. Call out their
       # flavor-specific debug tasks explicitly so this can't recur silently.
       # (core:licensing used to be listed here too — deleted, no Pro tier for
-      # now, see the Encrypted Vaults Phase 6 cleanup.)
+      # now, see the Encrypted Vaults Phase 6 cleanup. core:billing replaces
+      # it as a flavored module, real Play Billing on `play` / no-op on
+      # `fdroid` — same trap applies, hit it once already: its tests silently
+      # never ran here until this line was added.)
       - name: Run JVM tests
         run: |
           ./gradlew testDebugUnitTest \
@@ -71,6 +74,8 @@ jobs:
             :feature:settings:testPlayDebugUnitTest \
             :app:testFdroidDebugUnitTest \
             :app:testPlayDebugUnitTest \
+            :core:billing:testFdroidDebugUnitTest \
+            :core:billing:testPlayDebugUnitTest \
             --continue
 
       - name: Upload test results
@@ -101,7 +106,9 @@ jobs:
           ./gradlew koverXmlReportDebug koverHtmlReportDebug \
             :app:koverXmlReportFdroidDebug :app:koverHtmlReportFdroidDebug \
             :feature:settings:koverXmlReportFdroidDebug \
-            :feature:settings:koverHtmlReportFdroidDebug
+            :feature:settings:koverHtmlReportFdroidDebug \
+            :core:billing:koverXmlReportFdroidDebug \
+            :core:billing:koverHtmlReportFdroidDebug
 
       # Prints the per-module table to the run summary, then enforces the gate.
       # Only the core:vault* modules are gated; everything else is report-only,

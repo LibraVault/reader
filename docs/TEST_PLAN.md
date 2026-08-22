@@ -242,12 +242,12 @@ As of 2026-08-18 (`dev` @ `efb1b89`) — **overall 41.6%** (3,723 / 8,943 lines)
 |---|---:|---|---|---:|
 | `core:logger` | 97.4% | | `feature:settings` | 47.2% |
 | `core:vaultcrypto` 🔒 | 91.3% | | `feature:player` | 44.3% |
-| `core:vaultstore` 🔒 | 83.4% | | `feature:vault` | 37.6% |
-| `core:ui` | 77.9% | | `feature:reader` | 26.8% |
-| `core:vaultcontent` 🔒 | 70.2% | | `feature:library` | 26.4% |
-| `core:database` | 67.4% | | `core:tts` | 24.9% |
-| `core:storage` | 50.1% | | `core:domain` | 17.2% |
-| | | | `feature:onboarding` | 15.9% |
+| `core:billing` | 85.7% | | `feature:vault` | 37.6% |
+| `core:vaultstore` 🔒 | 83.4% | | `feature:reader` | 26.8% |
+| `core:ui` | 77.9% | | `feature:library` | 26.4% |
+| `core:vaultcontent` 🔒 | 70.2% | | `core:tts` | 24.9% |
+| `core:database` | 67.4% | | `core:domain` | 17.2% |
+| `core:storage` | 50.1% | | `feature:onboarding` | 15.9% |
 | | | | `app` | 15.4% |
 
 Movement since the first measurement (2026-08-17, 40.1%) came from Phases 3–5:
