@@ -45,6 +45,21 @@ class PocketTtsEngine @Inject constructor(
     private var tts: OfflineTts? = null
     private var selectedVoiceId: String? = null
 
+    companion object {
+        /**
+         * Overrides sherpa-onnx's library default (0.2) for inter-sentence
+         * pauses. The app has no sentence segmenter - whole chapters go
+         * through [speak] in a single call - so 0.2 compressed every
+         * sentence boundary in a chapter to a rushed 20% of what the VITS
+         * model itself predicts, a meaningful contributor to narration
+         * reading as robotic. 1.0 is the full, unscaled model-predicted
+         * pause; if that reads as too slow for long-form narration, try
+         * tuning down toward ~0.5-0.7 before reverting to the library
+         * default.
+         */
+        const val SILENCE_SCALE = 1.0f
+    }
+
     override fun initialize() {
         val status = _state.value.status
         if (status != TtsStatus.UNINITIALIZED && status != TtsStatus.ERROR) return
@@ -111,6 +126,7 @@ class PocketTtsEngine @Inject constructor(
                 val config = GenerationConfig(
                     speed = _state.value.speechRate,
                     sid = PocketVoiceCatalog.DEFAULT_SPEAKER_ID,
+                    silenceScale = SILENCE_SCALE,
                 )
                 // Rate comes from the loaded model, never a constant - see
                 // PocketPlayback.play's KDoc for the mismatch this caused.

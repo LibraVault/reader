@@ -29,6 +29,13 @@ final class PocketTTSEngine: TTSEngineProtocol {
     static let tokensFileName = "tokens.txt"
     static let dataDirName = "espeak-ng-data"
 
+    /// Overrides sherpa-onnx's library default (0.2) for inter-sentence
+    /// pauses - mirrors Android's `PocketTtsEngine.SILENCE_SCALE`. See that
+    /// constant's doc comment for the full rationale (no app-level sentence
+    /// segmenter, whole chapters synthesized in one call) and what to try if
+    /// 1.0 reads as too slow for long-form narration.
+    static let silenceScale: Float = 1.0
+
     /// `xcodebuild test`'s CI Simulator has no real audio hardware and hangs
     /// on AVAudioSession/AVFoundation activation - see TTSEngineBridge's
     /// identical guard in DomainBridge.swift for the full story (two
@@ -103,6 +110,7 @@ final class PocketTTSEngine: TTSEngineProtocol {
         var genConfig = SherpaOnnxGenerationConfigSwift()
         genConfig.speed = Float(rate)
         genConfig.sid = 0
+        genConfig.silenceScale = Self.silenceScale
 
         // generateWithConfig blocks the calling thread until synthesis
         // finishes, invoking the callback per chunk along the way - run it

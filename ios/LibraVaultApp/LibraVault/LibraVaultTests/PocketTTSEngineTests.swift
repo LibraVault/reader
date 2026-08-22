@@ -63,6 +63,18 @@ final class PocketTTSEngineTests: XCTestCase {
         XCTAssertEqual(PocketTTSEngine.dataDirName, "espeak-ng-data")
     }
 
+    // MARK: - silenceScale (#443 - robotic-sounding narration)
+
+    /// Pins the fix for #443: sherpa-onnx's own library default (0.2)
+    /// compresses every sentence-boundary pause to 20% of what the VITS
+    /// model predicts, since this app has no sentence segmenter and
+    /// synthesizes a whole chapter per speak() call. 1.0 is the full,
+    /// unscaled model-predicted pause. Mirrors Android's
+    /// `PocketTtsEngine.SILENCE_SCALE` pin.
+    func testSilenceScaleOverridesSherpaOnnxsRushedDefault() {
+        XCTAssertEqual(PocketTTSEngine.silenceScale, 1.0)
+    }
+
     // MARK: - modelNotBundled reachability
 
     func testInitializeThrowsModelNotBundledWhenModelDirectoryIsMissing() async {

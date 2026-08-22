@@ -286,4 +286,16 @@ class PocketTtsEngineTest {
         assertEquals(1.0f, engine.state.value.speechRate, "shutdown() replaces state with a fresh TtsState()")
         assertTrue(engine.state.value.availableVoices.isEmpty())
     }
+
+    // ── silenceScale (#443 - robotic-sounding narration) ───────────────────
+
+    @Test
+    fun `SILENCE_SCALE overrides sherpa-onnx's rushed 0_2 default`() {
+        // Pins the fix for #443: sherpa-onnx's own library default (0.2)
+        // compresses every sentence-boundary pause in a chapter to 20% of
+        // what the VITS model predicts, since this app has no sentence
+        // segmenter and synthesizes a whole chapter per speak() call. 1.0 is
+        // the full, unscaled model-predicted pause.
+        assertEquals(1.0f, PocketTtsEngine.SILENCE_SCALE)
+    }
 }
