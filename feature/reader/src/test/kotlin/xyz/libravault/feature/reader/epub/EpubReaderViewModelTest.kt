@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
 import xyz.libravault.core.logger.LibravaultLogger
 
@@ -121,5 +122,91 @@ class EpubReaderViewModelTest {
         vm.openPublication(uri)
 
         coVerify(exactly = 1) { readiumProvider.open(uri) }
+    }
+
+    // ── Chapter index/count + previous-chapter nav (#138) ──────────────────────
+    //
+    // These stub Publication.get(link) to return null so fetchAndClean() short-
+    // circuits to null immediately — that decouples "did the TTS cursor move
+    // correctly" from chapter text extraction (already untested above the
+    // stripHtml layer; see the class-level comment on why a real Link/Locator/Url
+    // isn't safely mockable here), while still exercising the real cursor
+    // arithmetic in getNextChapterText/getPreviousChapterText.
+
+    @Test
+    fun `ttsChapterIndex and ttsChapterCount are 0 before any publication is open`() {
+        val vm = viewModel()
+
+        assertEquals(0, vm.ttsChapterIndex)
+        assertEquals(0, vm.ttsChapterCount)
+    }
+
+    @Test
+    fun `ttsChapterCount reflects the reading order once the publication is ready`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        val publication = mockk<Publication>(relaxed = true)
+        every { publication.metadata.title } returns "Test Book"
+        every { publication.readingOrder } returns listOf(
+            mockk<Link>(relaxed = true), mockk<Link>(relaxed = true), mockk<Link>(relaxed = true),
+        )
+        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+
+        val vm = viewModel()
+        vm.openPublication(uri)
+
+        assertEquals(3, vm.ttsChapterCount)
+        assertEquals(0, vm.ttsChapterIndex)
+    }
+
+    @Test
+    fun `getNextChapterText then getPreviousChapterText returns the cursor to where it started`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        val publication = mockk<Publication>(relaxed = true)
+        every { publication.metadata.title } returns "Test Book"
+        every { publication.readingOrder } returns listOf(
+            mockk<Link>(relaxed = true), mockk<Link>(relaxed = true),
+        )
+        every { publication.get(any<Link>()) } returns null
+        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+
+        val vm = viewModel()
+        vm.openPublication(uri)
+
+        vm.getNextChapterText() // ttsSpineIndex: -1 -> 0
+        assertEquals(0, vm.ttsChapterIndex)
+
+        vm.getNextChapterText() // 0 -> 1
+        assertEquals(1, vm.ttsChapterIndex)
+
+        vm.getPreviousChapterText() // 1 -> 0
+        assertEquals(0, vm.ttsChapterIndex)
+    }
+
+    @Test
+    fun `getPreviousChapterText returns null and leaves the cursor unmoved at the start of the book`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        val publication = mockk<Publication>(relaxed = true)
+        every { publication.metadata.title } returns "Test Book"
+        every { publication.readingOrder } returns listOf(
+            mockk<Link>(relaxed = true), mockk<Link>(relaxed = true),
+        )
+        every { publication.get(any<Link>()) } returns null
+        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+
+        val vm = viewModel()
+        vm.openPublication(uri)
+        vm.getNextChapterText() // anchors at chapter 0
+
+        val previous = vm.getPreviousChapterText()
+
+        assertNull(previous)
+        assertEquals(0, vm.ttsChapterIndex)
+    }
+
+    @Test
+    fun `getPreviousChapterText returns null when no publication is open`() = runTest {
+        val vm = viewModel()
+
+        assertNull(vm.getPreviousChapterText())
     }
 }

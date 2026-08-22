@@ -209,4 +209,56 @@ class MarkdownReaderViewModelTest {
 
         assertNull(vm.getNextChapterText())
     }
+
+    // ── Chapter index/count + previous-chapter nav (#138) ──────────────────────
+
+    @Test
+    fun `ttsChapterIndex and ttsChapterCount are 0 before any Read Aloud session`() {
+        val vm = viewModel()
+
+        assertEquals(0, vm.ttsChapterIndex)
+        assertEquals(0, vm.ttsChapterCount)
+    }
+
+    @Test
+    fun `ttsChapterCount reflects the narratable chapter count once anchored`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+
+        vm.getChapterTextFromProgression(null)
+
+        assertEquals(3, vm.ttsChapterCount)
+        assertEquals(0, vm.ttsChapterIndex)
+    }
+
+    @Test
+    fun `getPreviousChapterText walks back and updates ttsChapterIndex`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+        vm.getChapterTextFromProgression(0.99) // anchors at chapter 2 (Chapter Three)
+        assertEquals(2, vm.ttsChapterIndex)
+
+        val previous = vm.getPreviousChapterText()
+
+        assertTrue(previous!!.contains("Second chapter text"), "expected chapter two text, got: $previous")
+        assertEquals(1, vm.ttsChapterIndex)
+    }
+
+    @Test
+    fun `getPreviousChapterText returns null and leaves the cursor unmoved at the start`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        val vm = viewModel()
+        vm.load(uri).join()
+        vm.getChapterTextFromProgression(null) // anchors at chapter 0
+
+        val previous = vm.getPreviousChapterText()
+
+        assertNull(previous)
+        assertEquals(0, vm.ttsChapterIndex)
+    }
 }
