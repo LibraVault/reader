@@ -408,6 +408,55 @@ class VaultReaderViewModelTest {
     }
 
     @Test
+    fun `settings default to warmth 0f`() = runTest {
+        // #422 — session-only, same lifecycle as fontSize/lineSpacing above.
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(0f, vm.settings.value.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged clamps to the 0f to 1f range`() = runTest {
+        // #422
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.onWarmthChanged(5.0f)
+        assertEquals(1.0f, vm.settings.value.warmth)
+
+        vm.onWarmthChanged(-1.0f)
+        assertEquals(0.0f, vm.settings.value.warmth)
+
+        vm.onWarmthChanged(0.5f)
+        assertEquals(0.5f, vm.settings.value.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged updates only the warmth field`() = runTest {
+        // #422
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onWarmthChanged(0.6f)
+
+        assertEquals(0.6f, vm.settings.value.warmth)
+        assertEquals(ReadingTheme.DARK, vm.settings.value.theme)
+        assertEquals(1.0f, vm.settings.value.fontSize)
+    }
+
+    @Test
     fun `onFontFamilyChanged updates only the font family field`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
         coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))

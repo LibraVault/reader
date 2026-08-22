@@ -52,6 +52,7 @@ class VaultReaderSettingsSheetUiTest {
                     onFontFamilyChanged = {},
                     onLineSpacingChanged = {},
                     onScrollModeChanged = {},
+                    onWarmthChanged = {},
                     onDismiss = {},
                 )
             }
@@ -132,6 +133,30 @@ class VaultReaderSettingsSheetUiTest {
         composeTestRule.onNodeWithText("System").assertExists()
     }
 
+    // ── Warmth (#422) ────────────────────────────────────────────────────────
+
+    @Test
+    fun `warmth control is shown once Customize is expanded, even for PDF (showFontControls = false)`() {
+        // Same rationale as feature:reader's ReaderSettingsSheet — warmth is a
+        // screen-level overlay, unlike font size/line spacing/font family.
+        setSheet(showFontControls = false)
+
+        composeTestRule.onNodeWithText("Warmth").assertDoesNotExist()
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("Warmth").assertExists()
+    }
+
+    @Test
+    fun `warmth percentage reflects the current setting`() {
+        setSheet(settings = VaultReaderSettings(warmth = 0.5f))
+
+        composeTestRule.onNodeWithText("Customize").click()
+
+        composeTestRule.onNodeWithText("50%").assertExists()
+    }
+
     @Test
     fun `scroll mode row is shown even when font controls are hidden and Customize is collapsed`() {
         setSheet(settings = VaultReaderSettings(scrollMode = VaultScrollMode.SCROLLING), showFontControls = false)
@@ -207,6 +232,7 @@ class VaultReaderSettingsSheetUiTest {
                     onFontFamilyChanged = { appliedFontFamily = it },
                     onLineSpacingChanged = { appliedLineSpacing = it },
                     onScrollModeChanged = {},
+                    onWarmthChanged = {},
                     onDismiss = {},
                 )
             }
@@ -240,6 +266,7 @@ class VaultReaderSettingsSheetUiTest {
                     onFontFamilyChanged = { appliedFontFamily = it },
                     onLineSpacingChanged = { appliedLineSpacing = it },
                     onScrollModeChanged = {},
+                    onWarmthChanged = {},
                     onDismiss = {},
                 )
             }
