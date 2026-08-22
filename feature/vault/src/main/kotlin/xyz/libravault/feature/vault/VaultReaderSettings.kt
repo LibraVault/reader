@@ -29,7 +29,18 @@ enum class VaultReaderFontFamily(val displayName: String) {
     SERIF("Serif"),
     SANS_SERIF("Sans-serif"),
     MONOSPACE("Monospace"),
+    // #423 — dyslexia-friendly typeface. See VaultReaderViewModel.onFontFamilyChanged
+    // for the paired line-spacing bump this selection applies automatically.
+    OPEN_DYSLEXIC("OpenDyslexic (dyslexia-friendly)"),
 }
+
+/**
+ * Line-spacing multiplier applied automatically when [VaultReaderFontFamily.OPEN_DYSLEXIC]
+ * is selected (#423) — same rationale as `feature:reader`'s
+ * `DYSLEXIA_FRIENDLY_LINE_SPACING`, duplicated rather than shared for the same
+ * "parallel, not shared" reason as the rest of this file.
+ */
+internal const val VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING = 1.8f
 
 /** Same two modes as `feature:reader`'s `ScrollMode` — duplicated rather than
  * shared, same rationale as [VaultReaderFontFamily] vs. `FontFamily`. */

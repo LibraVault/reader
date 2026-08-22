@@ -453,6 +453,18 @@ private fun EpubNavigatorView(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
+ * Extra letter-spacing (in rem, Readium's [EpubPreferences.letterSpacing] unit)
+ * applied automatically alongside [FontFamily.OPEN_DYSLEXIC] (#423) — dyslexia-
+ * friendly typography guidance recommends generous letter-spacing alongside the
+ * typeface itself, not the font alone. 0.125rem sits within readium-css's own
+ * documented 0–0.5rem recommended range for `--USER__letterSpacing`
+ * (https://readium.org/css/docs/CSS19-api.html); Readium's `RangePreference`
+ * clamps to whatever the effective supported range actually is regardless, so
+ * this stays safe even if that differs from the doc.
+ */
+private const val DYSLEXIA_FRIENDLY_LETTER_SPACING = 0.125
+
+/**
  * Maps [ReaderSettings] to Readium's [EpubPreferences].
  *
  * Font size: [ReaderSettings.fontSize] is a multiplier (0.8–2.0) relative to
@@ -466,9 +478,12 @@ private fun EpubNavigatorView(
  * `isSystemInDarkTheme()`; Readium's own [Theme] has no fourth "system" case, so this is
  * one of the call sites that must resolve before converting (same shape as
  * `mermaidThemeName` in the Mermaid package).
+ *
+ * `internal` rather than `private` (AGENTS.md's pure-helper convention) so it's
+ * directly unit-testable — see `EpubPreferencesMappingTest`.
  */
 @OptIn(ExperimentalReadiumApi::class)
-private fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
+internal fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPreferences {
     return EpubPreferences(
         theme = when (theme.resolved(systemInDarkTheme)) {
             xyz.libravault.core.ui.theme.ConcreteReadingTheme.DARK  -> Theme.DARK
@@ -484,10 +499,19 @@ private fun ReaderSettings.toEpubPreferences(systemInDarkTheme: Boolean): EpubPr
         fontSize   = fontSize.toDouble(),
         lineHeight = lineSpacing.toDouble(),
         fontFamily = when (fontFamily) {
-            FontFamily.SERIF      -> ReadiumFontFamily.SERIF
-            FontFamily.SANS_SERIF -> ReadiumFontFamily.SANS_SERIF
-            FontFamily.MONOSPACE  -> ReadiumFontFamily.MONOSPACE
-            FontFamily.SYSTEM     -> null
+            FontFamily.SERIF         -> ReadiumFontFamily.SERIF
+            FontFamily.SANS_SERIF    -> ReadiumFontFamily.SANS_SERIF
+            FontFamily.MONOSPACE     -> ReadiumFontFamily.MONOSPACE
+            // Readium's EPUB navigator already embeds OpenDyslexic internally — no
+            // FontFamilyDeclaration/servedAssets wiring needed, unlike a truly
+            // custom family. See core/ui/licenses/README.md for the full story.
+            FontFamily.OPEN_DYSLEXIC -> ReadiumFontFamily.OPEN_DYSLEXIC
+            FontFamily.SYSTEM        -> null
+        },
+        letterSpacing = if (fontFamily == FontFamily.OPEN_DYSLEXIC) {
+            DYSLEXIA_FRIENDLY_LETTER_SPACING
+        } else {
+            null
         },
         scroll = scrollMode == ScrollMode.SCROLLING,
     )

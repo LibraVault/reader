@@ -16,7 +16,19 @@ enum class FontFamily(val displayName: String) {
     SERIF("Serif"),
     SANS_SERIF("Sans-serif"),
     MONOSPACE("Monospace"),
+    // #423 — dyslexia-friendly typeface. See ReaderViewModel.onFontFamilyChanged
+    // for the paired line-spacing bump this selection applies automatically.
+    OPEN_DYSLEXIC("OpenDyslexic (dyslexia-friendly)"),
 }
+
+/**
+ * Line-spacing multiplier applied automatically when [FontFamily.OPEN_DYSLEXIC]
+ * is selected (#423) — dyslexia-friendly typography guidance recommends generous
+ * line-height alongside the typeface itself, not the font alone. Within the
+ * existing slider's 1.0–2.5 range; the user can still readjust afterward, which
+ * falls back to a plain custom value (no "locked" state).
+ */
+internal const val DYSLEXIA_FRIENDLY_LINE_SPACING = 1.8f
 
 enum class ScrollMode {
     PAGINATED,   // Page-turn animation

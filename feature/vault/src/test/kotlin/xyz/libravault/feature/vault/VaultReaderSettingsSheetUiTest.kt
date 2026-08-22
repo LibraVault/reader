@@ -111,6 +111,30 @@ class VaultReaderSettingsSheetUiTest {
     }
 
     @Test
+    fun `OpenDyslexic appears as a font chip and can be shown selected`() {
+        // #423 — VaultReaderFontFamily.entries.forEach in VaultReaderSettingsSheet is
+        // what makes this appear with no changes to the sheet itself, same regression-
+        // guard shape as the theme SYSTEM chip test above.
+        composeTestRule.setContent {
+            LibravaultTheme {
+                VaultReaderSettingsSheet(
+                    settings = VaultReaderSettings(fontFamily = VaultReaderFontFamily.OPEN_DYSLEXIC),
+                    showFontControls = true,
+                    onThemeChanged = {},
+                    onFontSizeChanged = {},
+                    onFontFamilyChanged = {},
+                    onLineSpacingChanged = {},
+                    onScrollModeChanged = {},
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("OpenDyslexic (dyslexia-friendly)").assertIsSelected()
+        composeTestRule.onNodeWithText("System Default").assertExists()
+    }
+
+    @Test
     fun `scroll mode row is shown even when font controls are hidden`() {
         composeTestRule.setContent {
             LibravaultTheme {

@@ -252,6 +252,41 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `selecting OpenDyslexic font bumps line spacing to the accessibility default`() = runTest {
+        val vm = viewModel()
+        assertEquals(1.4f, vm.uiState.value.settings.lineSpacing) // sanity: default before selection
+
+        vm.onFontFamilyChanged(FontFamily.OPEN_DYSLEXIC)
+
+        assertEquals(FontFamily.OPEN_DYSLEXIC, vm.uiState.value.settings.fontFamily)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `selecting a non-accessibility font leaves line spacing untouched`() = runTest {
+        val vm = viewModel()
+        vm.onLineSpacingChanged(2.0f)
+
+        vm.onFontFamilyChanged(FontFamily.SERIF)
+
+        assertEquals(FontFamily.SERIF, vm.uiState.value.settings.fontFamily)
+        assertEquals(2.0f, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
+    fun `switching away from OpenDyslexic keeps the bumped line spacing until user changes it`() = runTest {
+        val vm = viewModel()
+        vm.onFontFamilyChanged(FontFamily.OPEN_DYSLEXIC)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+
+        // Switching to a different family doesn't force spacing back down —
+        // only selecting OPEN_DYSLEXIC itself sets a value (see onFontFamilyChanged doc).
+        vm.onFontFamilyChanged(FontFamily.SANS_SERIF)
+        assertEquals(FontFamily.SANS_SERIF, vm.uiState.value.settings.fontFamily)
+        assertEquals(DYSLEXIA_FRIENDLY_LINE_SPACING, vm.uiState.value.settings.lineSpacing)
+    }
+
+    @Test
     fun `theme change round-trips through ui state, including SYSTEM`() = runTest {
         val vm = viewModel()
 

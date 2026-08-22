@@ -263,8 +263,20 @@ class ReaderViewModel @Inject constructor(
     fun decreaseFontSize() = onFontSizeChanged(_uiState.value.settings.fontSize - 0.1f)
 
     fun onFontFamilyChanged(family: FontFamily) {
+        val current = _uiState.value.settings
         _uiState.value = _uiState.value.copy(
-            settings = _uiState.value.settings.copy(fontFamily = family)
+            settings = current.copy(
+                fontFamily = family,
+                // OpenDyslexic bundles a sensible line-spacing default with the
+                // font itself (#423) — dyslexia-friendly typography guidance
+                // recommends both together. Any other family leaves the user's
+                // current line spacing untouched.
+                lineSpacing = if (family == FontFamily.OPEN_DYSLEXIC) {
+                    DYSLEXIA_FRIENDLY_LINE_SPACING
+                } else {
+                    current.lineSpacing
+                },
+            )
         )
     }
 

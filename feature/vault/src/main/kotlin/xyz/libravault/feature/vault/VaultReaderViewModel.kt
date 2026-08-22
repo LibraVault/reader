@@ -150,7 +150,20 @@ class VaultReaderViewModel @Inject constructor(
     }
 
     fun onFontFamilyChanged(family: VaultReaderFontFamily) {
-        _settings.update { it.copy(fontFamily = family) }
+        _settings.update {
+            it.copy(
+                fontFamily = family,
+                // OpenDyslexic bundles a sensible line-spacing default with the
+                // font itself (#423) — dyslexia-friendly typography guidance
+                // recommends both together. Any other family leaves the user's
+                // current line spacing untouched.
+                lineSpacing = if (family == VaultReaderFontFamily.OPEN_DYSLEXIC) {
+                    VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING
+                } else {
+                    it.lineSpacing
+                },
+            )
+        }
     }
 
     fun onLineSpacingChanged(spacing: Float) {
