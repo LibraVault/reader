@@ -268,6 +268,28 @@ links an issue:
 
 It runs no agent — this is a pure backstop, not a fourth triage path.
 
+**`sweep-missing-status` (same workflow file, schedule-triggered)** closes a
+distinct, later-in-time version of the same gap
+([#403](https://github.com/LibraVault/reader/issues/403)): a PR can pick up
+`risk:*` correctly and then still end up with no `status:*` label at all —
+e.g. `dev-agent.yml`'s risk-classify call succeeds under `GITHUB_TOKEN` but
+the very next call, handing off `status:needs-qa` under the App token, fails
+on its own (confirmed live: PR #339, an expired App token on a
+longer-than-60-minute triage run — App installation tokens are only valid
+for about an hour, and the token is minted once, before the agent step, not
+refreshed after it). `intake`'s `pull_request: opened`/`reopened` trigger
+can't catch this after the fact — there's no new event to re-fire it for a
+PR that already existed when the label went missing. `sweep-missing-status`
+runs on a schedule instead (`15 */4 * * *`, offset 15 minutes from
+`human-merge-sweep.yml`'s own `0 */4 * * *` so the two don't cluster on the
+same tick), re-scanning every open PR
+for the same "risk present, status absent" combination and applying
+`status:needs-qa`/`status:needs-review` with the exact same linked-issue
+logic as `intake` above. Also a pure deterministic backstop, no agent
+involved. See issue [#388](https://github.com/LibraVault/reader/issues/388)
+for the mirror-image gap (status present, risk missing, via a different
+crash-recovery path) — not handled by this job.
+
 ## `claude-code-action` gotchas
 
 Read this before adding a fourth pipeline workflow, or any other workflow
