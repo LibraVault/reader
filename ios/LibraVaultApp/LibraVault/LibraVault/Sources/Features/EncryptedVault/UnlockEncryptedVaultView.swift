@@ -109,7 +109,7 @@ struct UnlockEncryptedVaultView: View {
         }
         // Unconditional, independent of #204 — entering a recovery key is as
         // sensitive as displaying one.
-        .secureVaultScreen()
+        .secureVaultScreen(contentKind: .recoveryKey)
     }
 
     @ViewBuilder
