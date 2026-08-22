@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -63,11 +64,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.ui.components.ReadingPresetPicker
+import xyz.libravault.core.ui.theme.ReadingPresets
 import xyz.libravault.core.ui.theme.ReadingTheme
+import xyz.libravault.core.ui.theme.matching
 import xyz.libravault.feature.reader.FontFamily
 import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.ScrollMode
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
+import xyz.libravault.feature.reader.toPresetFontFamily
+import xyz.libravault.feature.reader.toFontFamily
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,8 +146,25 @@ fun ReaderTopBar(
             IconButton(onClick = onShowBookmarks, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks")
             }
-            IconButton(onClick = onSettings, modifier = Modifier.size(38.dp)) {
-                Icon(Icons.Default.Settings, contentDescription = "Reader settings")
+            // Unlike the icon-only buttons above, this one carries a persistent
+            // visible label: usability review (#424) found the bare gear icon
+            // wasn't discoverable without already knowing the "AA settings"
+            // convention. The icon becomes decorative (contentDescription =
+            // null) and the visible Text supplies the merged accessible name,
+            // same pattern as a TextButton anywhere else in the app.
+            TextButton(onClick = onSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Themes & Settings",
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -160,6 +183,7 @@ fun ReaderSettingsSheet(
     onFontFamilyChanged: (FontFamily) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (ScrollMode) -> Unit,
+    onWarmthChanged: (Float) -> Unit,
     onDismiss: () -> Unit,
     // Read Aloud — EPUB (#137) and Markdown (#276), gated by the caller via
     // ReaderScreen's readAloudSupported(), the same way iOS's
@@ -169,11 +193,30 @@ fun ReaderSettingsSheet(
     showReadAloud: Boolean = false,
     readAloudActive: Boolean = false,
     onReadAloudClick: () -> Unit = {},
+    // Margins/justification/hyphenation (#421) — EPUB only. These map to native
+    // Readium EpubPreferences fields with no Markdown/PDF equivalent (Markdown's
+    // typography is Compose TextStyle, not Readium CSS; PDF pages here are
+    // pre-rendered bitmaps), so the caller gates this to `item.format == EPUB`
+    // rather than reusing [showFontControls] (true for Markdown too).
+    showEpubLayoutControls: Boolean = false,
+    onMarginScaleChanged: (Float) -> Unit = {},
+    onJustifyTextChanged: (Boolean) -> Unit = {},
+    onHyphenationChanged: (Boolean) -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
+        var customizeExpanded by remember { mutableStateOf(false) }
+        val activePreset = remember(settings.theme, settings.fontFamily, settings.fontSize, settings.lineSpacing) {
+            ReadingPresets.builtIns.matching(
+                theme       = settings.theme,
+                fontFamily  = settings.fontFamily.toPresetFontFamily(),
+                fontSize    = settings.fontSize,
+                lineSpacing = settings.lineSpacing,
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -182,68 +225,157 @@ fun ReaderSettingsSheet(
         ) {
             Text("Reading settings", style = MaterialTheme.typography.headlineSmall)
 
-            // ── Theme ──────────────────────────────────────────────────────
-            Text("Theme", style = MaterialTheme.typography.labelLarge,
+            // ── Presets (#419) ─────────────────────────────────────────────
+            Text("Presets", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReadingTheme.entries.forEach { theme ->
-                    FilterChip(
-                        selected = settings.theme == theme,
-                        onClick  = { onThemeChanged(theme) },
-                        label    = { Text(theme.name.lowercase().replaceFirstChar { it.uppercase() }) },
-                    )
-                }
+            ReadingPresetPicker(
+                presets = ReadingPresets.builtIns,
+                activePreset = activePreset,
+                onPresetSelected = { preset ->
+                    onThemeChanged(preset.theme)
+                    onFontFamilyChanged(preset.fontFamily.toFontFamily())
+                    onFontSizeChanged(preset.fontSize)
+                    onLineSpacingChanged(preset.lineSpacing)
+                },
+            )
+
+            TextButton(onClick = { customizeExpanded = !customizeExpanded }) {
+                Text(if (customizeExpanded) "Hide customization" else "Customize")
             }
 
-            if (showFontControls) {
+            if (customizeExpanded) {
                 HorizontalDivider()
 
-                // ── Font size ──────────────────────────────────────────────
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.TextFields, contentDescription = "Text formatting", modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.weight(1f))
-                    Text("${(settings.fontSize * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelLarge)
+                // ── Theme ──────────────────────────────────────────────────
+                Text("Theme", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReadingTheme.entries.forEach { theme ->
+                        FilterChip(
+                            selected = settings.theme == theme,
+                            onClick  = { onThemeChanged(theme) },
+                            label    = { Text(theme.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
                 }
-                Slider(
-                    value = settings.fontSize,
-                    onValueChange = onFontSizeChanged,
-                    valueRange = 0.8f..2.0f,
-                    steps = 11,
-                )
 
                 HorizontalDivider()
 
-                // ── Line spacing ───────────────────────────────────────────
+                // ── Warmth (#422) ──────────────────────────────────────────
+                // Shown regardless of showFontControls/format — unlike font size/line
+                // spacing/font family (HTML/CSS-driven, PDF has no hook for them), the
+                // warmth overlay is a screen-level tint drawn on top of whatever the
+                // reader shows, so it works for PDF too. See WarmthOverlay's doc.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Line spacing", style = MaterialTheme.typography.labelLarge,
+                    Text("Warmth", style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
-                    Text("%.1f×".format(settings.lineSpacing),
+                    Text("${(settings.warmth * 100).toInt()}%",
                         style = MaterialTheme.typography.labelLarge)
                 }
                 Slider(
-                    value = settings.lineSpacing,
-                    onValueChange = onLineSpacingChanged,
-                    valueRange = 1.0f..2.5f,
-                    steps = 14,
+                    value = settings.warmth,
+                    onValueChange = onWarmthChanged,
+                    valueRange = 0f..1f,
                 )
 
-                HorizontalDivider()
+                if (showFontControls) {
+                    HorizontalDivider()
 
-                // ── Font family ────────────────────────────────────────────
-                Text("Font", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                ) {
-                    FontFamily.entries.forEach { family ->
-                        FilterChip(
-                            selected = settings.fontFamily == family,
-                            onClick  = { onFontFamilyChanged(family) },
-                            label    = { Text(family.displayName) },
-                        )
+                    // ── Font size ──────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.TextFields, contentDescription = "Text formatting", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.weight(1f))
+                        Text("${(settings.fontSize * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge)
+                    }
+                    Slider(
+                        value = settings.fontSize,
+                        onValueChange = onFontSizeChanged,
+                        valueRange = 0.8f..2.0f,
+                        steps = 11,
+                    )
+
+                    HorizontalDivider()
+
+                    // ── Line spacing ─────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Line spacing", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.weight(1f))
+                        Text("%.1f×".format(settings.lineSpacing),
+                            style = MaterialTheme.typography.labelLarge)
+                    }
+                    Slider(
+                        value = settings.lineSpacing,
+                        onValueChange = onLineSpacingChanged,
+                        valueRange = 1.0f..2.5f,
+                        steps = 14,
+                    )
+
+                    HorizontalDivider()
+
+                    // ── Font family ──────────────────────────────────────────
+                    Text("Font", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    ) {
+                        FontFamily.entries.forEach { family ->
+                            FilterChip(
+                                selected = settings.fontFamily == family,
+                                onClick  = { onFontFamilyChanged(family) },
+                                label    = { Text(family.displayName) },
+                            )
+                        }
+                    }
+                }
+
+                if (showEpubLayoutControls) {
+                    HorizontalDivider()
+
+                    // ── Margins (#421) ────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Margins", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.weight(1f))
+                        Text("${(settings.marginScale * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge)
+                    }
+                    Slider(
+                        value = settings.marginScale,
+                        onValueChange = onMarginScaleChanged,
+                        valueRange = 0.5f..2.0f,
+                        steps = 14,
+                    )
+
+                    HorizontalDivider()
+
+                    // ── Justify text (#421) ───────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJustifyTextChanged(!settings.justifyText) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Justify text", style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f))
+                        Switch(checked = settings.justifyText, onCheckedChange = null)
+                    }
+
+                    // ── Hyphenation (#421) ────────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onHyphenationChanged(!settings.hyphenation) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Hyphenation", style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f))
+                        Switch(checked = settings.hyphenation, onCheckedChange = null)
                     }
                 }
             }

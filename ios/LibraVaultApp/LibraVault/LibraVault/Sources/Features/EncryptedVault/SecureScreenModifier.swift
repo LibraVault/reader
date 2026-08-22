@@ -3,6 +3,26 @@ import SwiftUI
 import UIKit
 #endif
 
+/// What kind of sensitive material a `.secureVaultScreen()` screen is
+/// protecting — selects the screenshot-detected alert's wording, since
+/// "recovery key" is only accurate on the two recovery-key screens and is
+/// misleading (falsely reassuring) on the vault content reader/player, where
+/// a screenshot might instead have captured a passage, filename, or other
+/// vault metadata.
+enum SecureScreenContentKind {
+    case recoveryKey
+    case vaultContent
+
+    var screenshotAlertMessage: String {
+        switch self {
+        case .recoveryKey:
+            return "A screenshot was just taken. If it captured your recovery key, delete it from Photos."
+        case .vaultContent:
+            return "A screenshot was just taken. If it captured something sensitive, delete it from Photos."
+        }
+    }
+}
+
 #if canImport(UIKit)
 /// Tracks screen-recording/AirPlay-mirroring state and completed-screenshot
 /// events for `SecureScreenModifier`. A separate, plain `ObservableObject`
@@ -89,6 +109,7 @@ private struct SecureScreenModifier: ViewModifier {
     // way a plain stored-property default initializer does. A synthesized
     // `init()` with a `@MainActor`-isolated default property value is the
     // simpler, actually-correct shape.
+    let contentKind: SecureScreenContentKind
     @StateObject private var monitor = ScreenCaptureMonitor()
 
     func body(content: Content) -> some View {
@@ -116,18 +137,20 @@ private struct SecureScreenModifier: ViewModifier {
             )) {
                 Button("OK", role: .cancel) { monitor.acknowledgeScreenshotWarning() }
             } message: {
-                Text("A screenshot was just taken. If it captured your recovery key, delete it from Photos.")
+                Text(contentKind.screenshotAlertMessage)
             }
     }
 }
 
 extension View {
     /// Unconditional recording-blank + screenshot-detection for a screen
-    /// showing recovery-key material — applied on `CreateEncryptedVaultView`'s
-    /// recovery-key step and `UnlockEncryptedVaultView`'s recovery-key entry
-    /// step, independent of #204's general (toggle-gated) Screen Security
-    /// spike. See `ScreenCaptureMonitor`'s doc comment for exactly what this
-    /// does and doesn't prevent.
+    /// showing sensitive material — applied on `CreateEncryptedVaultView`'s
+    /// recovery-key step, `UnlockEncryptedVaultView`'s recovery-key entry
+    /// step, and `VaultReaderView`/`VaultPlayerView`'s vault content,
+    /// independent of #204's general (toggle-gated) Screen Security spike.
+    /// `contentKind` selects the screenshot alert's wording — see
+    /// `SecureScreenContentKind`. See `ScreenCaptureMonitor`'s doc comment
+    /// for exactly what this does and doesn't prevent.
     ///
     /// `@MainActor` explicitly: `SecureScreenModifier` is `@MainActor`
     /// (needed so its `@StateObject` default, `ScreenCaptureMonitor()`, can
@@ -136,12 +159,12 @@ extension View {
     /// reason — plain `View` extension methods aren't implicitly
     /// MainActor-isolated just because every real caller happens to be one.
     @MainActor
-    func secureVaultScreen() -> some View {
-        modifier(SecureScreenModifier())
+    func secureVaultScreen(contentKind: SecureScreenContentKind) -> some View {
+        modifier(SecureScreenModifier(contentKind: contentKind))
     }
 }
 #else
 extension View {
-    func secureVaultScreen() -> some View { self }
+    func secureVaultScreen(contentKind: SecureScreenContentKind) -> some View { self }
 }
 #endif

@@ -46,6 +46,7 @@ include(":core:vaultcontent")
 include(":core:ui")
 include(":core:logger")
 include(":core:tts")
+include(":core:billing")
 
 // Feature modules
 include(":feature:onboarding")

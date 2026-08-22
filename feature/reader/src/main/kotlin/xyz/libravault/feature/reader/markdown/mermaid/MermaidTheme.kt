@@ -17,9 +17,15 @@ import xyz.libravault.core.ui.theme.ConcreteReadingTheme
  * match for LibraVault's actual sepia palette (LibraVaultColorScheme.forReadingTheme).
  * A closer match is possible via themeVariables (Mermaid's per-colour override API) but
  * is deliberately deferred — not needed to prove the rendering pipeline itself works.
+ *
+ * AMOLED (#420) maps to Mermaid's own `dark` theme too, same as DARK: Mermaid has no
+ * true-black built-in, and the surrounding page (this WebView's own background is
+ * transparent, see MermaidDiagramView) already renders the actual #000000 — this only
+ * needs to keep the diagram itself legible on that background, which `dark` already does.
  */
 internal fun mermaidThemeName(readingTheme: ConcreteReadingTheme): String = when (readingTheme) {
     ConcreteReadingTheme.LIGHT -> "default"
     ConcreteReadingTheme.DARK -> "dark"
     ConcreteReadingTheme.SEPIA -> "neutral"
+    ConcreteReadingTheme.AMOLED -> "dark"
 }

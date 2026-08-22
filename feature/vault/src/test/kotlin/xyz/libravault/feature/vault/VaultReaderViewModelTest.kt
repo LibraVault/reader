@@ -1,9 +1,12 @@
 package xyz.libravault.feature.vault
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.SavedStateHandle
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,10 +39,22 @@ class VaultReaderViewModelTest {
     private val fileId = ByteArray(16) { it.toByte() }
     private val fileIdHex = fileId.toHexString()
 
+    // #428 — the initial theme is read from (and in-reader changes written back to)
+    // SharedPreferences via this Context, see ReadingThemePreference.
+    private val sharedPrefs: SharedPreferences = mockk(relaxed = true)
+    private val sharedPrefsEditor: SharedPreferences.Editor = mockk(relaxed = true)
+    private val appContext: Context = mockk<Context>(relaxed = false)
+
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(StandardTestDispatcher())
         every { sessionManager.requireUnlocked("vault-1") } returns vaultStore
+
+        // No stored value by default, so read() falls back to its documented DARK.
+        every { appContext.getSharedPreferences(any(), any()) } returns sharedPrefs
+        every { sharedPrefs.getString(any(), any()) } returns null
+        every { sharedPrefs.edit() } returns sharedPrefsEditor
+        every { sharedPrefsEditor.putString(any(), any()) } returns sharedPrefsEditor
     }
 
     @AfterEach
@@ -50,6 +65,7 @@ class VaultReaderViewModelTest {
     private fun viewModel() = VaultReaderViewModel(
         sessionManager, readiumProvider,
         SavedStateHandle(mapOf("vaultId" to "vault-1", "fileId" to fileIdHex)),
+        appContext,
     )
 
     private fun entry(format: String) = VaultManifestEntry(
@@ -363,6 +379,51 @@ class VaultReaderViewModelTest {
     }
 
     @Test
+    fun `initial theme is seeded from the persisted global default, not a hardcoded DARK`() = runTest {
+        // Regression coverage for #428 — before this fix, VaultReaderSettings()'s
+        // own hardcoded DARK default was always used, regardless of what Settings
+        // has configured as defaultReadingTheme.
+        every { sharedPrefs.getString(any(), any()) } returns "SEPIA"
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(ReadingTheme.SEPIA, vm.settings.value.theme)
+    }
+
+    @Test
+    fun `onThemeChanged writes the new theme back to the persisted global default`() = runTest {
+        // Regression coverage for #428 — before this fix, an in-reader theme change
+        // lived only in the ViewModel's in-memory state and was lost on close.
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onThemeChanged(ReadingTheme.SEPIA)
+
+        verify { sharedPrefsEditor.putString("reading_theme", "SEPIA") }
+        verify { sharedPrefsEditor.apply() }
+    }
+
+    @Test
+    fun `onThemeChanged accepts AMOLED`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onThemeChanged(ReadingTheme.AMOLED)
+
+        assertEquals(ReadingTheme.AMOLED, vm.settings.value.theme)
+    }
+
+    @Test
     fun `onFontSizeChanged clamps to the 0_8 to 2_0 range`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
         coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
@@ -394,6 +455,110 @@ class VaultReaderViewModelTest {
         assertEquals(1.0f, vm.settings.value.lineSpacing)
     }
 
+    // ── Margins/justification/hyphenation (#421) ─────────────────────────────
+
+    @Test
+    fun `onMarginScaleChanged clamps to the 0_5 to 2_0 range`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.onMarginScaleChanged(5.0f)
+        assertEquals(2.0f, vm.settings.value.marginScale)
+
+        vm.onMarginScaleChanged(-1.0f)
+        assertEquals(0.5f, vm.settings.value.marginScale)
+
+        vm.onMarginScaleChanged(1.25f)
+        assertEquals(1.25f, vm.settings.value.marginScale)
+    }
+
+    @Test
+    fun `onJustifyTextChanged round-trips through settings state`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertEquals(false, vm.settings.value.justifyText)
+
+        vm.onJustifyTextChanged(true)
+        assertTrue(vm.settings.value.justifyText)
+
+        vm.onJustifyTextChanged(false)
+        assertEquals(false, vm.settings.value.justifyText)
+    }
+
+    @Test
+    fun `onHyphenationChanged round-trips through settings state`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertEquals(false, vm.settings.value.hyphenation)
+
+        vm.onHyphenationChanged(true)
+        assertTrue(vm.settings.value.hyphenation)
+
+        vm.onHyphenationChanged(false)
+        assertEquals(false, vm.settings.value.hyphenation)
+    }
+
+    @Test
+    fun `settings default to warmth 0f`() = runTest {
+        // #422 — session-only, same lifecycle as fontSize/lineSpacing above.
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(0f, vm.settings.value.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged clamps to the 0f to 1f range`() = runTest {
+        // #422
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.onWarmthChanged(5.0f)
+        assertEquals(1.0f, vm.settings.value.warmth)
+
+        vm.onWarmthChanged(-1.0f)
+        assertEquals(0.0f, vm.settings.value.warmth)
+
+        vm.onWarmthChanged(0.5f)
+        assertEquals(0.5f, vm.settings.value.warmth)
+    }
+
+    @Test
+    fun `onWarmthChanged updates only the warmth field`() = runTest {
+        // #422
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onWarmthChanged(0.6f)
+
+        assertEquals(0.6f, vm.settings.value.warmth)
+        assertEquals(ReadingTheme.DARK, vm.settings.value.theme)
+        assertEquals(1.0f, vm.settings.value.fontSize)
+    }
+
     @Test
     fun `onFontFamilyChanged updates only the font family field`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
@@ -406,6 +571,20 @@ class VaultReaderViewModelTest {
 
         assertEquals(VaultReaderFontFamily.SERIF, vm.settings.value.fontFamily)
         assertEquals(1.4f, vm.settings.value.lineSpacing)
+    }
+
+    @Test
+    fun `selecting OpenDyslexic font bumps line spacing to the accessibility default`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.onFontFamilyChanged(VaultReaderFontFamily.OPEN_DYSLEXIC)
+
+        assertEquals(VaultReaderFontFamily.OPEN_DYSLEXIC, vm.settings.value.fontFamily)
+        assertEquals(VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING, vm.settings.value.lineSpacing)
     }
 
     @Test

@@ -12,6 +12,7 @@ package xyz.libravault.core.storage
  * @see xyz.libravault.feature.settings.UserPreferencesRepository
  * @see xyz.libravault.feature.player.service.SkipDurationPreference
  * @see xyz.libravault.feature.vault.VaultScreenSecurityPreference
+ * @see ReadingThemePreference
  */
 object LibravaultPreferences {
     /** SharedPreferences file name. */
@@ -19,6 +20,10 @@ object LibravaultPreferences {
 
     /** Skip-duration preference key. Integer seconds, 5–120. */
     const val KEY_SKIP_DURATION_SEC = "skip_duration_sec"
+
+    /** Default reading-theme preference key (#428). String, one of
+     * [xyz.libravault.core.domain.model.AppReadingTheme]'s names, default "DARK". */
+    const val KEY_READING_THEME = "reading_theme"
 
     /** Screen Security preference key (PRD §7.3) — whether `FLAG_SECURE` is
      * applied while rendering decrypted Encrypted Vault content. Boolean,

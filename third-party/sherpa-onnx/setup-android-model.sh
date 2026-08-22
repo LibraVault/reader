@@ -20,8 +20,8 @@ set -e
 # core/tts/build.gradle.kts - do not change without re-reading
 # SHERPA_ONNX_SETUP.md's licensing section first.
 
-MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2"
-MODEL_SHA256="24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b"
+MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-high-int8.tar.bz2"
+MODEL_SHA256="916b2526d4ea191f9710bd2753698ac97926ec38eade867408d3f5fd422ca285"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "${SCRIPT_DIR}/../.." && pwd )"

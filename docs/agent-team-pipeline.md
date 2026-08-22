@@ -94,6 +94,12 @@ what a human would do with both backlogs:
   to catch). It never touches `.github/workflows/**`,
   `.github/agent-policy.yml`, or `.claude/agents/**` regardless of how
   clean those look — that class of change always needs a human directly.
+  A PR that modifies the exact workflow file its own dev/QA/review stage
+  is running from lands here directly rather than cycling through
+  `status:needs-info` first, since no amount of rebasing can ever clear
+  that stage's OIDC self-check (issue #401) — the sweep's blanket
+  workflow-file exclusion above already means it was always going to end
+  up needing a human regardless.
 - **`status:needs-info`** — a genuinely different task: most items here
   are a real question only a human can answer (scope, product intent,
   anything security-sensitive), and the sweep never guesses at those. It
@@ -225,9 +231,19 @@ agent's own step always keeps the safe default token):
 
 | Workflow | Safe (`GITHUB_TOKEN`) | Crosses phases (App token) |
 |---|---|---|
-| `dev-agent.yml` | `status:ready-for-dev`, `status:in-progress` (issue), `status:needs-info`, comments | `status:needs-qa` (→ qa-agent.yml) |
-| `qa-agent.yml` | `status:needs-info`, comments | `status:needs-review` (→ principal-review.yml), `status:in-progress` on the PR (→ dev-agent.yml) |
+| `dev-agent.yml` | `status:ready-for-dev`, `status:in-progress` (issue), `status:needs-info`, `status:needs-human-merge`, comments | `status:needs-qa` (→ qa-agent.yml) |
+| `qa-agent.yml` | `status:needs-info`, comments | `status:needs-review` (→ principal-review.yml), `status:in-progress` on the PR (→ dev-agent.yml), `status:needs-human-merge` |
 | `principal-review.yml` | everything — both outcomes are terminal (auto-merge happens inline in the same job; human-merge waits for a person) | *(none needed)* |
+
+`status:needs-human-merge` never actually triggers another workflow run
+(`human-merge-sweep.yml` wakes up on a schedule, not a `labeled` event —
+see below), so it doesn't strictly need the App token either way. Each
+workflow just applies it with whichever token that step was already
+using for its neighboring label edits (issue #401's self-referential
+workflow-drift routing) — `qa-agent.yml`'s drift-routing block already
+used the App token uniformly for every label it applies there, so it
+kept doing so; `dev-agent.yml`'s used the safe default there, so it did
+too.
 
 ## PR intake backstop (manually-opened PRs)
 
@@ -267,6 +283,28 @@ links an issue:
   (closes [#343](https://github.com/LibraVault/reader/issues/343)).
 
 It runs no agent — this is a pure backstop, not a fourth triage path.
+
+**`sweep-missing-status` (same workflow file, schedule-triggered)** closes a
+distinct, later-in-time version of the same gap
+([#403](https://github.com/LibraVault/reader/issues/403)): a PR can pick up
+`risk:*` correctly and then still end up with no `status:*` label at all —
+e.g. `dev-agent.yml`'s risk-classify call succeeds under `GITHUB_TOKEN` but
+the very next call, handing off `status:needs-qa` under the App token, fails
+on its own (confirmed live: PR #339, an expired App token on a
+longer-than-60-minute triage run — App installation tokens are only valid
+for about an hour, and the token is minted once, before the agent step, not
+refreshed after it). `intake`'s `pull_request: opened`/`reopened` trigger
+can't catch this after the fact — there's no new event to re-fire it for a
+PR that already existed when the label went missing. `sweep-missing-status`
+runs on a schedule instead (`15 */4 * * *`, offset 15 minutes from
+`human-merge-sweep.yml`'s own `0 */4 * * *` so the two don't cluster on the
+same tick), re-scanning every open PR
+for the same "risk present, status absent" combination and applying
+`status:needs-qa`/`status:needs-review` with the exact same linked-issue
+logic as `intake` above. Also a pure deterministic backstop, no agent
+involved. See issue [#388](https://github.com/LibraVault/reader/issues/388)
+for the mirror-image gap (status present, risk missing, via a different
+crash-recovery path) — not handled by this job.
 
 ## `claude-code-action` gotchas
 

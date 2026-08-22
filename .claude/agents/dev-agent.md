@@ -42,8 +42,12 @@ job.
 
 ## Implementation
 
-- Branch off `dev`: `fix/<slug>` for bugs, `feature/<slug>` for new
-  behaviour — per `AGENTS.md`. Never commit to `dev` directly.
+- Branch off `dev` **as your first action here, before editing any file** —
+  `fix/<slug>` for bugs, `feature/<slug>` for new behaviour — per
+  `AGENTS.md`. Never commit to `dev` directly, and never edit working-tree
+  files while `dev` (or any branch that isn't yours) is still checked out,
+  even temporarily "to get started" — see the #370 note below for what
+  that costs you.
 - Follow every rule in `AGENTS.md`: unit tests for non-trivial changes
   (JUnit 5 + MockK + Turbine, see its "Test conventions" section), no
   hardcoded dependency versions (use the version catalog), Conventional
@@ -61,12 +65,14 @@ job.
 
 ### Open the PR early, as a checkpoint — not as your last step
 
-Open a **draft** PR against `dev` as soon as you have one coherent,
-committed piece of progress — typically your first real commit, well
-before the change is finished or locally verified. Keep pushing further
-commits to that same branch/PR as you continue, and mark it ready for
-review (`gh pr ready <PR-number>`) as one of your last actions, once
-tests pass locally or you've explained why they don't.
+Commit and push after your **very first** file edit — don't wait to
+accumulate several files' worth of changes first. "One coherent piece of
+progress" means one real edit that compiles/makes sense on its own, not
+"the whole feature." Then open a **draft** PR against `dev` off that
+first commit, well before the change is finished or locally verified.
+Keep pushing further commits to that same branch/PR as you continue, and
+mark it ready for review (`gh pr ready <PR-number>`) as one of your last
+actions, once tests pass locally or you've explained why they don't.
 
 This isn't optional ceremony: a live run on issue #203 exhausted its
 90-turn budget one call short of `gh pr create`, having already
@@ -79,6 +85,20 @@ correctly routes to `status:needs-info` instead — so opening early costs
 nothing on the success path and loses nothing extra on a crash either.
 The only failure mode early-open fixes is "no PR exists anywhere," which
 crash-recovery can't do anything about after the fact.
+
+A later run on issue #370 was worse, and is why the paragraph above now
+spells out "after your very first edit" explicitly instead of "one
+coherent piece of progress": it edited 7 files across ~23 tool calls
+implementing the whole change *before* even
+creating a branch or making one commit — it was still working directly
+against whatever was checked out when the workflow started. It only
+noticed via `git status`/`git branch --show-current` near the very end,
+branched at that point (which happened to preserve the uncommitted
+changes), then ran out of turns before a single `git add`/`commit`/
+`push`. Unlike #203, nothing had ever reached `origin`, so all of it
+was lost outright with the runner. Branching first and committing after
+edit #1, not after the last one, is what makes a mid-run turn-budget
+exhaustion recoverable instead of a total loss.
 
 Opening early cannot trigger QA or review prematurely: `qa-agent.yml`
 and `principal-review.yml` both trigger only on `pull_request: labeled`,

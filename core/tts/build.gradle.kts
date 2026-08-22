@@ -46,7 +46,7 @@ android {
     // (same URL/checksum as iOS's setup-ios.sh - not re-read from here).
     // This SHA256 is only kept as the on-disk "which model version is this"
     // marker PocketModelManager compares against after copying from assets.
-    val pocketTtsModelSha256 = "\"24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b\""
+    val pocketTtsModelSha256 = "\"916b2526d4ea191f9710bd2753698ac97926ec38eade867408d3f5fd422ca285\""
 
     buildTypes {
         debug {
