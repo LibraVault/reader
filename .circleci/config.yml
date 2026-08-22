@@ -771,10 +771,12 @@ jobs:
 
             # --skip_waiting_for_build_processing: see this job's header
             # comment for why this deliberately does NOT match
-            # ios-testflight.yml's behavior. Means --groups below does
-            # nothing (fastlane returns before the step that would assign
-            # it) — a human must assign the TestFlight group by hand in App
-            # Store Connect after Apple finishes processing this build.
+            # ios-testflight.yml's behavior. No --groups flag (unlike that
+            # workflow) — passing one here would be dead weight: fastlane
+            # only assigns the group when it stays and waits for
+            # processing, which this deliberately skips. A human must
+            # assign the TestFlight group by hand in App Store Connect
+            # after Apple finishes processing this build.
             fastlane pilot upload \
               --api_key_path api_key.json \
               --ipa "$IPA_PATH" \
@@ -792,7 +794,7 @@ jobs:
 
       - store_artifacts:
           path: build/export
-          destination: ios-build
+          destination: testflight-export
           when: always
 
 workflows:
