@@ -1,10 +1,13 @@
 package xyz.libravault.feature.reader.components
 
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,13 +21,28 @@ import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.toFontFamily
 
 /** Robolectric/Compose coverage for [ReaderSettingsSheet]'s preset picker (#419) —
- * same setup as [ReaderTopBarUiTest]/`VaultReaderSettingsSheetUiTest`. */
+ * same setup as [ReaderTopBarUiTest]/`VaultReaderSettingsSheetUiTest`.
+ *
+ * Uses [createAndroidComposeRule] (real Activity host), same as
+ * `SecureScreenEffectTest`/`LibravaultThemeTest`. Interactions use [click]
+ * (invoking the `OnClick` semantics action directly) rather than
+ * [androidx.compose.ui.test.performClick] (a real coordinate-based touch
+ * gesture) — [ReaderSettingsSheet] renders inside a `ModalBottomSheet`, which
+ * hosts its content in its own Popup/Dialog window, and gesture-based clicks
+ * on descendants of that second window don't reliably register in this
+ * Robolectric setup (confirmed empirically while adding these tests — the
+ * pre-existing sheet tests never exercised a click, only direct-state
+ * assertions, so this gap was latent). Invoking the semantics action
+ * directly sidesteps the gesture dispatch path entirely and is reliable
+ * here. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ReaderSettingsSheetUiTest {
 
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun SemanticsNodeInteraction.click() = performSemanticsAction(SemanticsActions.OnClick)
 
     private fun setSheet(settings: ReaderSettings = ReaderSettings(), showFontControls: Boolean = true) {
         composeTestRule.setContent {
@@ -59,7 +77,7 @@ class ReaderSettingsSheetUiTest {
         composeTestRule.onNodeWithText("Theme").assertDoesNotExist()
         composeTestRule.onNodeWithText("Line spacing").assertDoesNotExist()
 
-        composeTestRule.onNodeWithText("Customize").performClick()
+        composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("Theme").assertExists()
         composeTestRule.onNodeWithText("Line spacing").assertExists()
@@ -114,7 +132,7 @@ class ReaderSettingsSheetUiTest {
             }
         }
 
-        composeTestRule.onNodeWithText(parchment.label).performClick()
+        composeTestRule.onNodeWithText(parchment.label).click()
 
         assert(appliedTheme == parchment.theme)
         assert(appliedFontFamily == parchment.fontFamily.toFontFamily())

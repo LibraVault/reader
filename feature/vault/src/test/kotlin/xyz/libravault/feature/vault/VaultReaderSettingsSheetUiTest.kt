@@ -1,10 +1,13 @@
 package xyz.libravault.feature.vault
 
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,13 +18,28 @@ import xyz.libravault.core.ui.theme.ReadingPresets
 import xyz.libravault.core.ui.theme.ReadingTheme
 
 /** Robolectric/Compose coverage for [VaultReaderSettingsSheet] — same setup
- * as `VaultBookmarksSheetUiTest`/`VaultCoverPlaceholderUiTest`. */
+ * as `VaultBookmarksSheetUiTest`/`VaultCoverPlaceholderUiTest`.
+ *
+ * Uses [createAndroidComposeRule] (real Activity host), same as
+ * `SecureScreenEffectTest`/`LibravaultThemeTest`. Interactions use
+ * [click] (invoking the `OnClick` semantics action directly) rather than
+ * [androidx.compose.ui.test.performClick] (a real coordinate-based touch
+ * gesture) — [VaultReaderSettingsSheet] renders inside a `ModalBottomSheet`,
+ * which hosts its content in its own Popup/Dialog window, and gesture-based
+ * clicks on descendants of that second window don't reliably register in
+ * this Robolectric setup (confirmed empirically while adding the #419
+ * preset/Customize click-interaction tests below — the pre-existing tests
+ * never exercised a click, only direct-state assertions, so this gap was
+ * latent). Invoking the semantics action directly sidesteps the gesture
+ * dispatch path entirely and is reliable here. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class VaultReaderSettingsSheetUiTest {
 
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun SemanticsNodeInteraction.click() = performSemanticsAction(SemanticsActions.OnClick)
 
     private fun setSheet(settings: VaultReaderSettings = VaultReaderSettings(), showFontControls: Boolean = true) {
         composeTestRule.setContent {
@@ -44,7 +62,7 @@ class VaultReaderSettingsSheetUiTest {
     fun `font controls are shown when showFontControls is true and Customize is expanded`() {
         setSheet(showFontControls = true)
 
-        composeTestRule.onNodeWithText("Customize").performClick()
+        composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("Line spacing").assertExists()
         composeTestRule.onNodeWithText("Font").assertExists()
@@ -54,7 +72,7 @@ class VaultReaderSettingsSheetUiTest {
     fun `font controls are hidden for PDF (showFontControls = false) even with Customize expanded`() {
         setSheet(showFontControls = false)
 
-        composeTestRule.onNodeWithText("Customize").performClick()
+        composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("Line spacing").assertDoesNotExist()
         composeTestRule.onNodeWithText("Font").assertDoesNotExist()
@@ -66,7 +84,7 @@ class VaultReaderSettingsSheetUiTest {
     fun `the current theme chip is shown selected once Customize is expanded`() {
         setSheet(settings = VaultReaderSettings(theme = ReadingTheme.SEPIA))
 
-        composeTestRule.onNodeWithText("Customize").performClick()
+        composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("Sepia").assertIsSelected()
     }
@@ -78,7 +96,7 @@ class VaultReaderSettingsSheetUiTest {
         // regression guard for that.
         setSheet(settings = VaultReaderSettings(theme = ReadingTheme.SYSTEM))
 
-        composeTestRule.onNodeWithText("Customize").performClick()
+        composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("System").assertIsSelected()
         composeTestRule.onNodeWithText("Dark").assertExists()
@@ -112,7 +130,7 @@ class VaultReaderSettingsSheetUiTest {
 
         composeTestRule.onNodeWithText("Theme").assertDoesNotExist()
 
-        composeTestRule.onNodeWithText("Customize").performClick()
+        composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("Theme").assertExists()
     }
@@ -166,7 +184,7 @@ class VaultReaderSettingsSheetUiTest {
             }
         }
 
-        composeTestRule.onNodeWithText(daylight.label).performClick()
+        composeTestRule.onNodeWithText(daylight.label).click()
 
         assert(appliedTheme == daylight.theme)
         assert(appliedFontFamily == daylight.fontFamily.toVaultReaderFontFamily())
