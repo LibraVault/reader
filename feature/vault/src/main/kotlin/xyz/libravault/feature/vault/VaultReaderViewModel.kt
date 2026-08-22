@@ -35,6 +35,11 @@ sealed class VaultReaderState {
      * unlike EPUB where Readium owns the read lifecycle once [Publication]
      * exists. */
     data class PdfReady(val title: String) : VaultReaderState()
+    /** [text] is the whole decoded document — v1 renders it as a single
+     * scrollable document (see [VaultMarkdownReaderScreen]), no TOC/mermaid/
+     * relative-image parity with `feature:reader`'s non-vault Markdown
+     * reader yet (issue #442). */
+    data class MarkdownReady(val title: String, val text: String) : VaultReaderState()
     /** Not a reading format — the caller should have routed audio to
      * [VaultPlayerScreen] instead; surfaced here only as a defensive
      * fallback if that dispatch is ever wrong. */
@@ -144,6 +149,10 @@ class VaultReaderViewModel @Inject constructor(
                     },
                 )
                 "PDF" -> _state.value = VaultReaderState.PdfReady(entry.title)
+                "MARKDOWN" -> {
+                    val bytes = r.readAt(0L, r.plainSize.toInt())
+                    _state.value = VaultReaderState.MarkdownReady(entry.title, bytes.toString(Charsets.UTF_8))
+                }
                 else -> _state.value = VaultReaderState.Error("Unsupported format: ${entry.format}")
             }
         }

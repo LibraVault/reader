@@ -65,6 +65,15 @@ dependencies {
     // uses for donation-address QR codes (DonateScreen.kt), pinned via the
     // catalog here rather than repeating that module's inline version string.
     implementation("com.google.zxing:core:${libs.versions.zxing.get()}")
+    // Markdown rendering for vault content (#442) — same external renderer
+    // feature:reader uses (com.mikepenz.markdown.m3.Markdown), added directly
+    // here rather than depending on feature:reader itself, same
+    // EPUB/PDF-precedent split as the Readium artifacts just below: pull the
+    // third-party library in independently per module, don't take on
+    // feature:reader's much heavier dependency set (Readium x3, pdf-viewer,
+    // jsoup, webkit, room, tts) for one composable. See
+    // VaultMarkdownReaderScreen.kt for the (deliberately v1-scoped) renderer.
+    implementation(libs.markdown.renderer.m3)
     // EPUB rendering for vault content — same Readium artifacts/versions as
     // feature:reader, pinned via the catalog rather than feature:reader's own
     // hardcoded version strings (not fixed here, out of scope for this PR).

@@ -137,6 +137,11 @@ fun VaultReaderScreen(
                     scrollToPage     = pendingPdfPage,
                     onScrollConsumed = viewModel::clearPendingNavigation,
                 )
+                is VaultReaderState.MarkdownReady -> VaultMarkdownReaderScreen(
+                    text     = s.text,
+                    settings = settings,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
 
             // Warmth / blue-light overlay (#422) — screen-level tint drawn on top of
@@ -183,6 +188,7 @@ fun VaultReaderScreen(
 private fun titleFor(state: VaultReaderState): String = when (state) {
     is VaultReaderState.EpubReady -> state.title
     is VaultReaderState.PdfReady -> state.title
+    is VaultReaderState.MarkdownReady -> state.title
     else -> "Vault"
 }
 

@@ -15,6 +15,7 @@ import SwiftUI
 struct VaultReaderView: View {
     @StateObject private var viewModel: VaultReaderViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showBookmarksSheet = false
 
     init(vaultId: String, fileId: Data, sessionManager: VaultSessionManager) {
@@ -79,6 +80,7 @@ struct VaultReaderView: View {
     private var title: String {
         switch viewModel.state {
         case .epubReady(let title), .pdfReady(let title): return title
+        case .markdownReady(let title, _): return title
         default: return "Vault"
         }
     }
@@ -108,6 +110,8 @@ struct VaultReaderView: View {
             epubContent
         case .pdfReady:
             pdfContent
+        case .markdownReady:
+            markdownContent
         }
     }
 
@@ -164,5 +168,32 @@ struct VaultReaderView: View {
                 )
             }
         }
+    }
+
+    /// v1-scoped, matching what's documented as out of scope on #442: no
+    /// per-user theme/font-size/line-spacing controls exist for the Vault
+    /// reader at all yet (unlike Android's `VaultReaderSettingsSheet`) — this
+    /// resolves colors from the system color scheme the same way `epubContent`
+    /// implicitly does via `LibraVaultColor.onSurface`, and uses fixed
+    /// typography defaults matching `ReaderView`'s own (fontSize: 1.0,
+    /// lineSpacing: 1.4, fontDesign: .default). No image loading (`images: [:]`
+    /// — no vault equivalent of the security-scoped folder access
+    /// `ReaderView.markdownImages` resolves relative references against), no
+    /// TOC navigation, and reading position isn't persisted (`initialScrollFraction:
+    /// 0`, `onScrollFractionChanged` a no-op) — bookmarks/highlights stay
+    /// disabled for this state (see `isReady`) for the same reason.
+    private var markdownContent: some View {
+        let theme: ConcreteReadingTheme = colorScheme == .dark ? .dark : .light
+        return MarkdownReaderContent(
+            blocks: viewModel.markdownBlocks,
+            images: [:],
+            colors: LibraVaultColorScheme.forReadingTheme(theme),
+            fontSize: 1.0,
+            lineSpacing: 1.4,
+            fontDesign: .default,
+            readingTheme: theme,
+            initialScrollFraction: 0,
+            onScrollFractionChanged: { _ in }
+        )
     }
 }

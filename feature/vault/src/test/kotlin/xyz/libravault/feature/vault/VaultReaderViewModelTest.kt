@@ -169,13 +169,36 @@ class VaultReaderViewModelTest {
     @Test
     fun `an unsupported format surfaces an Error state`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
-        coEvery { vaultStore.listEntries() } returns listOf(entry("MARKDOWN"))
+        // Not a real MediaFormat case — this is standing in for "some future or
+        // corrupted manifest entry this build doesn't understand", to keep the
+        // `else` branch under test now that MARKDOWN is a handled format (#442).
+        coEvery { vaultStore.listEntries() } returns listOf(entry("MOBI"))
         every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
 
         val vm = viewModel()
         advanceUntilIdle()
 
         assertInstanceOf(VaultReaderState.Error::class.java, vm.state.value)
+    }
+
+    @Test
+    fun `a MARKDOWN entry opens a reader and decodes the text into MarkdownReady`() = runTest {
+        val markdownText = "# Heading\n\nSome body text."
+        val bytes = markdownText.toByteArray(Charsets.UTF_8)
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("MARKDOWN"))
+        val reader = mockk<VaultFileReader>(relaxed = true)
+        every { reader.plainSize } returns bytes.size.toLong()
+        every { reader.readAt(0L, bytes.size) } returns bytes
+        every { vaultStore.openReader(fileId) } returns reader
+
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertInstanceOf(VaultReaderState.MarkdownReady::class.java, state)
+        assertEquals("Title", (state as VaultReaderState.MarkdownReady).title)
+        assertEquals(markdownText, state.text)
     }
 
     // ── Bookmarks & highlights ───────────────────────────────────────────────

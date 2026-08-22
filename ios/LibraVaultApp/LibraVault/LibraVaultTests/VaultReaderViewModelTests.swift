@@ -74,6 +74,16 @@ final class VaultReaderViewModelTests: XCTestCase {
         return entry.fileId
     }
 
+    private func importFixtureMarkdown(into manager: VaultSessionManager, vaultId: String, text: String) async throws -> Data {
+        let data = Data(text.utf8)
+        let store = await manager.requireUnlocked(vaultId)
+        let input = InputStream(data: data)
+        input.open()
+        let entry = try store.importFile(input: input, declaredSize: Int64(data.count), title: "My Notes", author: nil, format: "markdown")
+        input.close()
+        return entry.fileId
+    }
+
     /// Regression coverage for the QA gap this file originally shipped
     /// with: nothing exercised `VaultReaderViewModel.load()`'s
     /// `PDFDocument(data:)` success branch through to `.pdfReady` — every
@@ -150,6 +160,20 @@ final class VaultReaderViewModelTests: XCTestCase {
             XCTFail("expected .wrongScreen, got \(vm.state)")
             return
         }
+    }
+
+    /// #442 — a "markdown" entry used to fall through to the `default` branch
+    /// and surface "Unsupported format: markdown" instead of opening.
+    func testLoadMarkdownReadyExposesTheDecodedTextAndParsedBlocks() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let markdownText = "# Heading\n\nSome body text."
+        let fileId = try await importFixtureMarkdown(into: manager, vaultId: id, text: markdownText)
+
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+
+        XCTAssertEqual(vm.state, .markdownReady(title: "My Notes", text: markdownText))
+        XCTAssertEqual(vm.markdownBlocks.count, 2)
     }
 
     /// Round-trips a bookmark through the encrypted manifest — #203's
