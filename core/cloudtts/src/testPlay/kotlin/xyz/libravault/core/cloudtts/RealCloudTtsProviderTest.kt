@@ -1,8 +1,8 @@
 package xyz.libravault.core.cloudtts
 
 import kotlinx.coroutines.test.runTest
-import mockwebserver3.MockResponse
-import mockwebserver3.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -39,22 +39,22 @@ class RealCloudTtsProviderTest {
 
     @AfterEach
     fun tearDown() {
-        server.close()
+        server.shutdown()
     }
 
     @Test
     fun `dispatches ELEVENLABS to the ElevenLabs adapter`() = runTest {
-        server.enqueue(MockResponse(code = 200, body = "audio"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("audio"))
         val result = provider.synthesize(CloudProviderId.ELEVENLABS, "hi", "voice", mapOf(CloudCredentialFields.API_KEY to "k"))
         assertTrue(result.isSuccess)
-        assertTrue(server.takeRequest().target.contains("text-to-speech"))
+        assertTrue(server.takeRequest().path!!.contains("text-to-speech"))
     }
 
     @Test
     fun `dispatches OPENAI to the OpenAI adapter`() = runTest {
-        server.enqueue(MockResponse(code = 200, body = "audio"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("audio"))
         val result = provider.synthesize(CloudProviderId.OPENAI, "hi", "alloy", mapOf(CloudCredentialFields.API_KEY to "k"))
         assertTrue(result.isSuccess)
-        assertTrue(server.takeRequest().target.contains("audio/speech"))
+        assertTrue(server.takeRequest().path!!.contains("audio/speech"))
     }
 }

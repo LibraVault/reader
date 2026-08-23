@@ -11,10 +11,18 @@ contributors don't mistake them for gaps, and so users don't ask
   on-device. Backup/restore via Android's device-transfer mechanism is
   supported (see `app/src/main/res/xml/data_extraction_rules.xml`) but
   not via Drive / iCloud / a LibraVault server.
-- **Zero outbound network calls, on every flavor, not just F-Droid.** No
-  source set declares the `INTERNET` permission — not `app/src/main`,
-  and there's no `app/src/fdroid` or `app/src/play` override, because
-  neither exists. "Support the Project" hands off to an external
+- **Zero outbound network calls on F-Droid, and on `play` unless you
+  explicitly opt into Premium Cloud TTS Voices.** `app/src/main` still
+  declares no `INTERNET` permission, and F-Droid still has no
+  `app/src/fdroid` override adding one — that build stays exactly as
+  offline as before. The `play` flavor now does: `app/src/play/AndroidManifest.xml`
+  adds `INTERNET`, needed for `core:cloudtts`'s vendor TTS HTTP adapters
+  (Play Billing itself, #397/#398, never needed this — it talks to the
+  Play Store app via IPC, not a raw socket). Reaching the network at all
+  still requires an active subscription AND a separate, off-by-default
+  consent toggle — see `docs/cloud-tts-premium-prd.md` and
+  `docs/threat-model.md`'s "Cloud TTS sends reader text to a third-party
+  vendor" row. "Support the Project" still hands off to an external
   webpage via `Intent.ACTION_VIEW` rather than collecting BTC/XMR
   addresses in-app; see `feature/settings/.../SupportLink.kt`, which
   also notes the BTCPay invoice flow this replaced is gone outright,

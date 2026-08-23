@@ -56,7 +56,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.domain.model.formatPlaybackSpeed
+import xyz.libravault.core.cloudtts.CloudProviderId
+import xyz.libravault.core.tts.TtsEngineType
 import xyz.libravault.core.ui.findActivity
+import xyz.libravault.feature.settings.ui.CloudVoicesSection
 import xyz.libravault.feature.settings.ui.TtsSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,7 +73,12 @@ fun SettingsScreen(
     val vaultState by viewModel.vaultState.collectAsState()
     val isSupporter by viewModel.isSupporter.collectAsState()
     val productsAvailable by viewModel.productsAvailable.collectAsState()
+    val subscriptionActive by viewModel.subscriptionActive.collectAsState()
     val ttsState by viewModel.ttsState.collectAsState()
+    val cloudVoicesConsent by viewModel.cloudVoicesConsent.collectAsState()
+    val selectedCloudProvider by viewModel.selectedCloudProvider.collectAsState()
+    val configuredCloudProviders by viewModel.configuredCloudProviders.collectAsState()
+    val isCloudEngineActive = ttsState.engineType == TtsEngineType.CLOUD
     val context = LocalContext.current
     val activity = context.findActivity()
 
@@ -255,6 +263,28 @@ fun SettingsScreen(
                 onSpeechRateChanged = viewModel::onTtsSpeechRateChanged,
             )
 
+            // Only ever rendered when subscriptionActive — the real signal
+            // (#397/#398), no mock/stub (PRD §8: safely inert until a real
+            // Play Console product exists). The consent toggle inside stays
+            // independently off by default regardless.
+            if (subscriptionActive) {
+                Divider()
+                CloudVoicesSection(
+                    consentEnabled = cloudVoicesConsent,
+                    selectedProvider = selectedCloudProvider,
+                    configuredProviders = configuredCloudProviders,
+                    selectedVoiceId = ttsState.selectedVoiceId,
+                    isCloudEngineActive = isCloudEngineActive,
+                    onConsentAccepted = viewModel::onCloudVoicesConsentAccepted,
+                    onConsentDisabled = viewModel::onCloudVoicesConsentDisabled,
+                    onProviderSelected = viewModel::onCloudProviderSelected,
+                    onVoiceIdChanged = viewModel::onCloudVoiceIdChanged,
+                    onValidateAndSaveKey = viewModel::onValidateAndSaveCloudKey,
+                    onClearKey = viewModel::onClearCloudKey,
+                    onUseCloudEngineToggled = viewModel::onUseCloudEngineToggled,
+                )
+            }
+
             Divider()
 
             // ── Appearance ────────────────────────────────────────────────────
@@ -346,12 +376,16 @@ fun SettingsScreen(
                 title    = "Permissions",
                 subtitle = "This app does not request location, contacts, camera, or broad " +
                         "file access. It reads only folders you explicitly grant it." +
-                        if (viewModel.isBillingSupported) {
-                            " The only network activity is Google Play Billing, used solely " +
-                                "for the optional purchases below."
-                        } else {
-                            " It makes no network calls of any kind."
-                        },
+                        privacySubtitleSuffix(
+                            isBillingSupported = viewModel.isBillingSupported,
+                            // Real network risk requires all three — subscribed
+                            // AND consented AND actually the active Read Aloud
+                            // engine, matching CloudTtsGate's own AND — not
+                            // just the consent flag alone (found in review: the
+                            // consent toggle can outlive a lapsed subscription
+                            // that already hid the section it was set from).
+                            cloudVoicesActuallySending = subscriptionActive && cloudVoicesConsent && isCloudEngineActive,
+                        ),
             )
 
             Divider()
@@ -478,6 +512,23 @@ private fun VaultRow(
 }
 
 // ── Sub-composables ───────────────────────────────────────────────────────────
+
+/** Extracted from an inline 3-way string-concatenation conditional (found in
+ * review) — the "Permissions" card's description of what network activity
+ * exists on this build. [cloudVoicesActuallySending] should already be the
+ * full AND (subscribed && consented && actually the active engine), not
+ * just the consent flag alone — see the call site. */
+private fun privacySubtitleSuffix(isBillingSupported: Boolean, cloudVoicesActuallySending: Boolean): String {
+    if (!isBillingSupported) return " It makes no network calls of any kind."
+    val billing = " Google Play Billing handles the optional purchases below."
+    val cloudVoices = if (cloudVoicesActuallySending) {
+        " Cloud Voices is on: text you choose to read aloud is sent to the cloud TTS vendor you configured below."
+    } else {
+        " Cloud Voices (optional, off by default, in Text-to-Speech above once subscribed) is the only other " +
+            "network activity this app can ever have, and only sends text to a vendor you explicitly configure."
+    }
+    return billing + cloudVoices
+}
 
 @Composable
 private fun SectionHeader(title: String) {

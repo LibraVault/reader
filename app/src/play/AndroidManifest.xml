@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        First real socket-level network permission this app has ever
+        requested. Play Billing (#397/#398) didn't need this — it talks to
+        the Play Store app via IPC, never a raw socket. Premium Cloud TTS
+        Voices (BYOK, docs/cloud-tts-premium-prd.md) is different: the five
+        vendor adapters in core:cloudtts (play flavor only) make real OkHttp
+        calls directly from this process. Scoped to app/src/play so F-Droid
+        (app/src/main has no INTERNET permission, and app/src/fdroid doesn't
+        add one) stays exactly as offline as before — see
+        KNOWN_LIMITATIONS.md's "Networking" section, updated alongside this.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+</manifest>

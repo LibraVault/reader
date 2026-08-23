@@ -6,11 +6,17 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Donation/subscription purchasing, flavour-agnostic.
  *
- * This is donation-only — nothing in the app is feature-gated by it, matching
- * the standing "no Pro tier" product decision (see core:licensing's deletion,
- * PR #172). A successful purchase of either product just flips
- * `SupporterRepository.setSupporter(true)` so the existing "★ Supporter"
- * badge in Settings lights up.
+ * The one-time tip stays donation-only, unconditionally ungated, exactly as
+ * shipped: a successful purchase just flips `SupporterRepository.setSupporter(true)`
+ * so the existing "★ Supporter" badge in Settings lights up.
+ *
+ * [observeSubscriptionActive] is now also a real feature gate: Premium Cloud
+ * TTS Voices (BYOK — docs/cloud-tts-premium-prd.md) is the first LibraVault
+ * feature actually conditioned on it (`core:cloudtts`'s `CloudTtsGate`),
+ * reversing the standing "no Pro tier" decision (PR #172) — see governance
+ * sign-off #449 and issue #400 (this doc previously claimed "nothing in the
+ * app is feature-gated by it," which was true when written but is no longer
+ * accurate; don't trust an interface's own comment over its real callers).
  *
  * Platform-specific implementations:
  *   Android/play   → [xyz.libravault.core.billing.PlayBillingClientImpl] (Google Play Billing)

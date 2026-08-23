@@ -1,8 +1,8 @@
 package xyz.libravault.core.cloudtts.vendor
 
 import kotlinx.coroutines.test.runTest
-import mockwebserver3.MockResponse
-import mockwebserver3.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -25,13 +25,13 @@ class OpenAiAdapterTest {
 
     @AfterEach
     fun tearDown() {
-        server.close()
+        server.shutdown()
     }
 
     @Test
     fun `synthesize sends a bearer token and model+input+voice body, returns raw audio bytes`() = runTest {
         val fakeAudio = byteArrayOf(9, 8, 7)
-        server.enqueue(MockResponse.Builder().code(200).body(okio.Buffer().write(fakeAudio)).build())
+        server.enqueue(MockResponse().setResponseCode(200).setBody(okio.Buffer().write(fakeAudio)))
 
         val result = adapter.synthesize("hello", "alloy", mapOf(CloudCredentialFields.API_KEY to "sk-test"))
 
@@ -39,13 +39,15 @@ class OpenAiAdapterTest {
         assertTrue(result.getOrThrow().contentEquals(fakeAudio))
         val recorded = server.takeRequest()
         assertEquals("Bearer sk-test", recorded.headers["Authorization"])
-        assertTrue(recorded.body!!.utf8().contains("\"voice\":\"alloy\""))
-        assertTrue(recorded.body!!.utf8().contains("\"input\":\"hello\""))
+        // Buffer.readUtf8() drains the buffer — read once, assert twice.
+        val requestBody = recorded.body.readUtf8()
+        assertTrue(requestBody.contains("\"voice\":\"alloy\""))
+        assertTrue(requestBody.contains("\"input\":\"hello\""))
     }
 
     @Test
     fun `synthesize fails closed on a non-2xx response`() = runTest {
-        server.enqueue(MockResponse(code = 429))
+        server.enqueue(MockResponse().setResponseCode(429))
         assertTrue(adapter.synthesize("text", "alloy", mapOf(CloudCredentialFields.API_KEY to "sk-test")).isFailure)
     }
 
@@ -56,11 +58,11 @@ class OpenAiAdapterTest {
 
     @Test
     fun `validateKey calls GET v1 models with a bearer token`() = runTest {
-        server.enqueue(MockResponse(code = 200))
+        server.enqueue(MockResponse().setResponseCode(200))
         val result = adapter.validateKey(mapOf(CloudCredentialFields.API_KEY to "sk-test"))
         assertTrue(result.isSuccess)
         val recorded = server.takeRequest()
-        assertTrue(recorded.target.contains("v1/models"))
+        assertTrue(recorded.path!!.contains("v1/models"))
         assertEquals("Bearer sk-test", recorded.headers["Authorization"])
     }
 }

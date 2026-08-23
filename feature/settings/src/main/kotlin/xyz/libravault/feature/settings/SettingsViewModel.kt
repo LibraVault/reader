@@ -7,16 +7,25 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.libravault.core.billing.SupportBillingClient
+import xyz.libravault.core.cloudtts.CloudApiKeyStore
+import xyz.libravault.core.cloudtts.CloudProviderId
+import xyz.libravault.core.cloudtts.CloudTtsGate
+import xyz.libravault.core.cloudtts.CloudTtsProvider
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
@@ -71,6 +80,9 @@ class SettingsViewModel @Inject constructor(
     private val ttsPreferences: TtsPreferences,
     private val pocketModelManager: PocketModelManager,
     private val pocketVoiceCatalog: PocketVoiceCatalog,
+    private val cloudApiKeyStore: CloudApiKeyStore,
+    private val cloudTtsProvider: CloudTtsProvider,
+    private val cloudTtsGate: CloudTtsGate,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -92,8 +104,13 @@ class SettingsViewModel @Inject constructor(
     }.getOrNull() ?: "unknown"
 
     /**
-     * Reflects whatever's already stored — this app makes no network calls of any
-     * kind (see [SUPPORT_URL]), so nothing can flip this to `true` going forward.
+     * Reflects whatever's already stored — nothing in *this* purchase flow
+     * (see [SUPPORT_URL]) can flip it to `true` going forward. (The play
+     * flavor does make real network calls elsewhere now, for Premium Cloud
+     * TTS Voices — see [subscriptionActive]/[cloudVoicesConsent] below —
+     * but that's unrelated to how this particular flag gets set; flagging
+     * explicitly since this comment used to claim the app made no network
+     * calls "of any kind," which stopped being true once Cloud TTS shipped.)
      * Kept read-only rather than deleted so donors who earned the badge before
      * the in-app BTCPay flow was removed keep seeing it.
      */
@@ -194,6 +211,109 @@ class SettingsViewModel @Inject constructor(
 
     fun onTtsSpeechRateChanged(rate: Float) {
         ttsEngineProvider.engine.value.setSpeechRate(rate)
+    }
+
+    // ── Cloud Voices (Premium, BYOK) ─────────────────────────────────────────
+    // PRD docs/cloud-tts-premium-prd.md §6. This section is only ever shown by
+    // SettingsScreen when `subscriptionActive` is true, but `cloudVoicesConsent`
+    // stays independently off by default — see CloudTtsGate's class doc.
+
+    val cloudVoicesConsent: StateFlow<Boolean> = ttsPreferences.cloudVoicesConsentFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val selectedCloudProvider: StateFlow<CloudProviderId?> = ttsPreferences.selectedCloudProviderFlow
+        .map { name -> name?.let { runCatching { CloudProviderId.valueOf(it) }.getOrNull() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** No reactive API on [CloudApiKeyStore] (it's a plain suspend interface,
+     * matching `HardwareKeyWrap`'s shape) — refreshed explicitly after every
+     * save/clear rather than polled, since credential changes only ever
+     * happen through this ViewModel's own actions below. */
+    private val _configuredCloudProviders = MutableStateFlow<Set<CloudProviderId>>(emptySet())
+    val configuredCloudProviders: StateFlow<Set<CloudProviderId>> = _configuredCloudProviders.asStateFlow()
+
+    init {
+        viewModelScope.launch { refreshConfiguredCloudProviders() }
+    }
+
+    /** Checks all five providers concurrently, not sequentially — each
+     * [CloudApiKeyStore.loadCredentials] call does a DataStore read plus a
+     * hardware Keystore lookup (and, if a key exists, a StrongBox/TEE
+     * unwrap); on real hardware those can each take tens of ms, so five in
+     * a row turned "should be instant" into a serialized chain (found in
+     * review). */
+    private suspend fun refreshConfiguredCloudProviders() {
+        _configuredCloudProviders.value = coroutineScope {
+            CloudProviderId.entries
+                .map { provider -> async { provider to (cloudApiKeyStore.loadCredentials(provider) != null) } }
+                .awaitAll()
+                .filter { (_, configured) -> configured }
+                .map { (provider, _) -> provider }
+                .toSet()
+        }
+    }
+
+    fun onCloudVoicesConsentAccepted() {
+        viewModelScope.launch { ttsPreferences.setCloudVoicesConsent(true) }
+    }
+
+    fun onCloudVoicesConsentDisabled() {
+        viewModelScope.launch { ttsPreferences.setCloudVoicesConsent(false) }
+    }
+
+    /** Also clears the shared voice-id preference — [TtsPreferences.selectedVoiceFlow]'s
+     * own doc explains why: it's shared across all three [TtsEngineType]s,
+     * and a stale voice id from a previous engine/provider must never
+     * silently carry over into a cloud synthesis call (found in review). */
+    fun onCloudProviderSelected(provider: CloudProviderId) {
+        viewModelScope.launch {
+            ttsPreferences.setSelectedCloudProvider(provider.name)
+            ttsPreferences.setSelectedVoice(null)
+        }
+    }
+
+    fun onCloudVoiceIdChanged(voiceId: String) {
+        viewModelScope.launch { ttsPreferences.setSelectedVoice(voiceId.ifBlank { null }) }
+    }
+
+    /** Only actually switches [TtsEngineType.CLOUD] on when [enabled] and the
+     * gate is genuinely open right now — [CloudVoicesSection] already only
+     * enables its own toggle when a provider/voice are configured, but this
+     * is the ViewModel-level backstop, not just a UI-affordance check. */
+    fun onUseCloudEngineToggled(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled && !cloudTtsGate.observeCanUseCloudTts().first()) return@launch
+            ttsPreferences.setEngineType(if (enabled) TtsEngineType.CLOUD else TtsEngineType.ANDROID)
+        }
+    }
+
+    /**
+     * Validates BEFORE saving (PRD §6: "key is validated with a single
+     * cheap test call, then stored") — a failed validation never reaches
+     * [CloudApiKeyStore] at all.
+     *
+     * Explicitly re-checks [CloudTtsGate] here too, not just relying on
+     * [CloudVoicesSection] only being reachable from the UI when
+     * subscribed+consented — [CloudTtsProvider]'s own class doc requires
+     * every caller to check the gate immediately before every call, and a
+     * future UI change (a shortcut, a deep link) could otherwise reach this
+     * method without going through that gated section (found in review).
+     */
+    suspend fun onValidateAndSaveCloudKey(provider: CloudProviderId, credentials: Map<String, String>): Result<Unit> {
+        if (!cloudTtsGate.observeCanUseCloudTts().first()) {
+            return Result.failure(IllegalStateException("Cloud Voices is not currently enabled (subscription/consent)"))
+        }
+        val validation = cloudTtsProvider.validateKey(provider, credentials)
+        if (validation.isFailure) return validation
+        return runCatching { cloudApiKeyStore.saveCredentials(provider, credentials) }
+            .onSuccess { refreshConfiguredCloudProviders() }
+    }
+
+    fun onClearCloudKey(provider: CloudProviderId) {
+        viewModelScope.launch {
+            cloudApiKeyStore.clearCredentials(provider)
+            refreshConfiguredCloudProviders()
+        }
     }
 
     /**
