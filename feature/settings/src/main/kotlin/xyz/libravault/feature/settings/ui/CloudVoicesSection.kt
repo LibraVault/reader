@@ -45,11 +45,15 @@ fun CloudVoicesSection(
     consentEnabled: Boolean,
     selectedProvider: CloudProviderId?,
     configuredProviders: Set<CloudProviderId>,
+    selectedVoiceId: String?,
+    isCloudEngineActive: Boolean,
     onConsentAccepted: () -> Unit,
     onConsentDisabled: () -> Unit,
     onProviderSelected: (CloudProviderId) -> Unit,
+    onVoiceIdChanged: (String) -> Unit,
     onValidateAndSaveKey: suspend (CloudProviderId, Map<String, String>) -> Result<Unit>,
     onClearKey: (CloudProviderId) -> Unit,
+    onUseCloudEngineToggled: (Boolean) -> Unit,
 ) {
     var showDisclosure by remember { mutableStateOf(false) }
     var keyEntryProvider by remember { mutableStateOf<CloudProviderId?>(null) }
@@ -95,6 +99,63 @@ fun CloudVoicesSection(
                     onConfigure = { keyEntryProvider = provider },
                     onClear = { onClearKey(provider) },
                 )
+            }
+
+            // Shown once a provider is merely selected, not gated on it being
+            // configured yet: the toggle row below stays disabled (with an
+            // explanation) until it actually is, but hiding this whole block
+            // until then means a user picking a provider for the first time
+            // never sees the voice ID field or the switch exists at all —
+            // no path to discover them (found via a test written from the
+            // intended UX, not the implementation).
+            if (selectedProvider != null) {
+                HorizontalDivider()
+                // Free-text, not a hardcoded picker: real vendor voice IDs
+                // (ElevenLabs' opaque per-voice hashes, Polly's/Azure's/
+                // Google's named voices) are looked up in each vendor's own
+                // dashboard/docs and can change or be custom per account —
+                // guessing at a fixed catalog here risked shipping stale or
+                // wrong IDs. The field is cleared automatically whenever the
+                // selected provider changes (see SettingsViewModel.onCloudProviderSelected)
+                // so a voice ID from a different provider/engine can never
+                // leak through unnoticed.
+                OutlinedTextField(
+                    value = selectedVoiceId ?: "",
+                    onValueChange = onVoiceIdChanged,
+                    label = { Text("Voice ID") },
+                    supportingText = { Text("From ${selectedProvider.displayName()}'s own voice list/dashboard") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                val canUseCloud = selectedProvider in configuredProviders && !selectedVoiceId.isNullOrBlank()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = isCloudEngineActive,
+                            enabled = canUseCloud || isCloudEngineActive,
+                            onValueChange = onUseCloudEngineToggled,
+                        ),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text(text = "Use Cloud Voices for Read Aloud", style = MaterialTheme.typography.bodyMedium)
+                        if (!canUseCloud && !isCloudEngineActive) {
+                            Text(
+                                text = "Configure a provider and voice ID above first",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isCloudEngineActive,
+                        enabled = canUseCloud || isCloudEngineActive,
+                        onCheckedChange = onUseCloudEngineToggled,
+                    )
+                }
             }
         }
     }
@@ -210,13 +271,22 @@ private fun CloudVoicesKeyEntryDialog(
     onSave: suspend (Map<String, String>) -> Result<Unit>,
     onSaved: () -> Unit,
 ) {
-    val requiredFields = remember(provider) { CloudCredentialFields.requiredFields(provider).toList() }
+    // Sorted, not the raw Set: CloudCredentialFields.requiredFields() only
+    // promises Set<String> in its declared contract — relying on incidental
+    // LinkedHashSet iteration order for stable form-field ordering would be
+    // a silent trap for a future change to that function (found in review).
+    val requiredFields = remember(provider) { CloudCredentialFields.requiredFields(provider).sorted() }
     val fieldValues = remember(provider) { requiredFields.associateWith { mutableStateOf("") } }
     var status by remember(provider) { mutableStateOf<KeyEntryStatus>(KeyEntryStatus.Idle) }
+    val isValidating = status is KeyEntryStatus.Validating
     val scope = rememberCoroutineScope()
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // While a real network validation call is in flight, dismissing
+        // (tap-outside/back) would abandon it silently mid-request with no
+        // success/failure feedback to the user (found in review) — block
+        // dismissal until it resolves, same as the Cancel button below.
+        onDismissRequest = { if (!isValidating) onDismiss() },
         title = { Text("${provider.displayName()} API Key") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -234,21 +304,25 @@ private fun CloudVoicesKeyEntryDialog(
                         },
                     )
                 }
-                if (status is KeyEntryStatus.Failed) {
-                    Text(
-                        text = (status as KeyEntryStatus.Failed).message,
+                // `when` on a captured local, not two separate `is`
+                // checks (the second re-cast unnecessarily since `status`
+                // is a `var by remember` — smart-cast doesn't survive
+                // across a lambda capture boundary; a `when` avoids the
+                // redundant cast and won't silently miss a future variant).
+                when (val current = status) {
+                    is KeyEntryStatus.Failed -> Text(
+                        text = current.message,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                }
-                if (status is KeyEntryStatus.Validating) {
-                    CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
+                    is KeyEntryStatus.Validating -> CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
+                    is KeyEntryStatus.Idle -> Unit
                 }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = status !is KeyEntryStatus.Validating && requiredFields.all { fieldValues.getValue(it).value.isNotBlank() },
+                enabled = !isValidating && requiredFields.all { fieldValues.getValue(it).value.isNotBlank() },
                 onClick = {
                     val credentials = requiredFields.associateWith { fieldValues.getValue(it).value }
                     status = KeyEntryStatus.Validating
@@ -262,7 +336,7 @@ private fun CloudVoicesKeyEntryDialog(
                 },
             ) { Text("Validate & Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(enabled = !isValidating, onClick = onDismiss) { Text("Cancel") } },
     )
 }
 

@@ -1,9 +1,14 @@
 package xyz.libravault.feature.settings.ui
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -27,16 +32,24 @@ class CloudVoicesSectionTest {
     @Test
     fun `consent off hides the provider picker`() {
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = false,
                 selectedProvider = null,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = {},
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("Enable Cloud Voices").assertIsDisplayed()
@@ -47,16 +60,24 @@ class CloudVoicesSectionTest {
     fun `toggling the switch on shows the disclosure, not an immediate consent flip`() {
         var accepted = false
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = false,
                 selectedProvider = null,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = { accepted = true },
                 onConsentDisabled = {},
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("Enable Cloud Voices").performClick()
@@ -75,16 +96,24 @@ class CloudVoicesSectionTest {
     fun `disabling consent is immediate, no disclosure`() {
         var disabled = false
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = true,
                 selectedProvider = null,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = { disabled = true },
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("Enable Cloud Voices").performClick()
@@ -95,16 +124,24 @@ class CloudVoicesSectionTest {
     @Test
     fun `consent on shows all five fixed vendor presets`() {
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = true,
                 selectedProvider = null,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = {},
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         // assertExists, not assertIsDisplayed: CloudVoicesSection doesn't own
@@ -125,16 +162,24 @@ class CloudVoicesSectionTest {
     fun `selecting a provider reports it and reveals the configure button`() {
         var selected: CloudProviderId? = null
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = true,
                 selectedProvider = null,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = {},
                 onProviderSelected = { selected = it },
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("OpenAI").performClick()
@@ -145,16 +190,24 @@ class CloudVoicesSectionTest {
     @Test
     fun `configured provider shows the checkmark and an Update button, not Configure`() {
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = true,
                 selectedProvider = CloudProviderId.OPENAI,
                 configuredProviders = setOf(CloudProviderId.OPENAI),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = {},
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("✓ Configured").assertIsDisplayed()
@@ -166,19 +219,27 @@ class CloudVoicesSectionTest {
     fun `entering a key and saving calls onValidateAndSaveKey with the entered value`() {
         var savedCredentials: Map<String, String>? = null
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = true,
                 selectedProvider = CloudProviderId.OPENAI,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = {},
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, credentials ->
                     savedCredentials = credentials
                     Result.success(Unit)
                 },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("Configure API Key").performClick()
@@ -192,16 +253,24 @@ class CloudVoicesSectionTest {
     @Test
     fun `a failed validation shows the error and does not close the dialog`() {
         composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
             CloudVoicesSection(
                 consentEnabled = true,
                 selectedProvider = CloudProviderId.OPENAI,
                 configuredProviders = emptySet(),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
                 onConsentAccepted = {},
                 onConsentDisabled = {},
                 onProviderSelected = {},
+                onVoiceIdChanged = {},
                 onValidateAndSaveKey = { _, _ -> Result.failure(RuntimeException("Invalid key")) },
                 onClearKey = {},
+                onUseCloudEngineToggled = {},
             )
+            }
         }
 
         composeTestRule.onNodeWithText("Configure API Key").performClick()
@@ -212,5 +281,89 @@ class CloudVoicesSectionTest {
         composeTestRule.onNodeWithText("Invalid key").assertIsDisplayed()
         // Dialog stays open — the field is still there.
         composeTestRule.onNodeWithText("API Key").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the use-cloud-engine switch is disabled until a configured provider and voice id both exist`() {
+        composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
+            CloudVoicesSection(
+                consentEnabled = true,
+                selectedProvider = CloudProviderId.OPENAI,
+                configuredProviders = emptySet(), // not configured yet
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
+                onConsentAccepted = {},
+                onConsentDisabled = {},
+                onProviderSelected = {},
+                onVoiceIdChanged = {},
+                onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
+                onClearKey = {},
+                onUseCloudEngineToggled = {},
+            )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Configure a provider and voice ID above first").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `entering a voice id reports it via onVoiceIdChanged`() {
+        var reported: String? = null
+        composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
+            CloudVoicesSection(
+                consentEnabled = true,
+                selectedProvider = CloudProviderId.OPENAI,
+                configuredProviders = setOf(CloudProviderId.OPENAI),
+                selectedVoiceId = null,
+                isCloudEngineActive = false,
+                onConsentAccepted = {},
+                onConsentDisabled = {},
+                onProviderSelected = {},
+                onVoiceIdChanged = { reported = it },
+                onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
+                onClearKey = {},
+                onUseCloudEngineToggled = {},
+            )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Voice ID").performTextInput("alloy")
+
+        assertEquals("alloy", reported)
+    }
+
+    @Test
+    fun `use-cloud-engine switch is enabled and toggleable once provider and voice are both set`() {
+        var toggled: Boolean? = null
+        composeTestRule.setContent {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+            ) {
+            CloudVoicesSection(
+                consentEnabled = true,
+                selectedProvider = CloudProviderId.OPENAI,
+                configuredProviders = setOf(CloudProviderId.OPENAI),
+                selectedVoiceId = "alloy",
+                isCloudEngineActive = false,
+                onConsentAccepted = {},
+                onConsentDisabled = {},
+                onProviderSelected = {},
+                onVoiceIdChanged = {},
+                onValidateAndSaveKey = { _, _ -> Result.success(Unit) },
+                onClearKey = {},
+                onUseCloudEngineToggled = { toggled = it },
+            )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Use Cloud Voices for Read Aloud").performScrollTo().performClick()
+
+        assertEquals(true, toggled)
     }
 }

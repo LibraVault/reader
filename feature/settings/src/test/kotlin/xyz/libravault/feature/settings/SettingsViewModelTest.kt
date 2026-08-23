@@ -38,6 +38,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.billing.SupportBillingClient
 import xyz.libravault.core.cloudtts.CloudApiKeyStore
+import xyz.libravault.core.cloudtts.CloudProviderId
+import xyz.libravault.core.cloudtts.CloudTtsGate
 import xyz.libravault.core.cloudtts.CloudTtsProvider
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
@@ -88,6 +90,7 @@ class SettingsViewModelTest {
     private val pocketVoiceCatalog = mockk<PocketVoiceCatalog>()
     private val cloudApiKeyStore = mockk<CloudApiKeyStore>()
     private val cloudTtsProvider = mockk<CloudTtsProvider>()
+    private val cloudTtsGate = mockk<CloudTtsGate>()
 
     private val fakeTtsEngine = mockk<TtsEngine>(relaxed = true)
     private val ttsEngineTypeFlow = MutableStateFlow(TtsEngineType.ANDROID)
@@ -126,6 +129,10 @@ class SettingsViewModelTest {
         every { ttsPreferences.cloudVoicesConsentFlow } returns flowOf(false)
         every { ttsPreferences.selectedCloudProviderFlow } returns flowOf<String?>(null)
         coEvery { cloudApiKeyStore.loadCredentials(any()) } returns null
+        // Default open so tests exercising the happy path don't each need
+        // their own gate stub; tests specifically covering the gate-closed
+        // case override this.
+        every { cloudTtsGate.observeCanUseCloudTts() } returns flowOf(true)
     }
 
     @AfterEach
@@ -141,7 +148,7 @@ class SettingsViewModelTest {
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
             supporterRepository, billingClient,
             ttsEngineProvider, ttsPreferences, pocketModelManager, pocketVoiceCatalog,
-            cloudApiKeyStore, cloudTtsProvider,
+            cloudApiKeyStore, cloudTtsProvider, cloudTtsGate,
             context,
         )
     }
@@ -542,4 +549,80 @@ class SettingsViewModelTest {
 
             coVerify(exactly = 1) { billingClient.purchaseOneTimeTip(activity) }
         }
+
+    // ── Cloud Voices ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `onValidateAndSaveCloudKey fails closed when the gate is closed, never calls the vendor`() =
+        runTest(mainDispatcher) {
+            every { cloudTtsGate.observeCanUseCloudTts() } returns flowOf(false)
+
+            val result = viewModel().onValidateAndSaveCloudKey(
+                CloudProviderId.OPENAI,
+                mapOf("api_key" to "sk-test"),
+            )
+
+            assertTrue(result.isFailure)
+            coVerify(exactly = 0) { cloudTtsProvider.validateKey(any(), any()) }
+            coVerify(exactly = 0) { cloudApiKeyStore.saveCredentials(any(), any()) }
+        }
+
+    @Test
+    fun `onValidateAndSaveCloudKey never saves when validation fails`() = runTest(mainDispatcher) {
+        coEvery { cloudTtsProvider.validateKey(any(), any()) } returns Result.failure(RuntimeException("bad key"))
+
+        val result = viewModel().onValidateAndSaveCloudKey(CloudProviderId.OPENAI, mapOf("api_key" to "sk-bad"))
+
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { cloudApiKeyStore.saveCredentials(any(), any()) }
+    }
+
+    @Test
+    fun `onValidateAndSaveCloudKey saves only after a successful validation`() = runTest(mainDispatcher) {
+        coEvery { cloudTtsProvider.validateKey(any(), any()) } returns Result.success(Unit)
+        coEvery { cloudApiKeyStore.saveCredentials(any(), any()) } just Runs
+
+        val credentials = mapOf("api_key" to "sk-good")
+        val result = viewModel().onValidateAndSaveCloudKey(CloudProviderId.OPENAI, credentials)
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 1) { cloudTtsProvider.validateKey(CloudProviderId.OPENAI, credentials) }
+        coVerify(exactly = 1) { cloudApiKeyStore.saveCredentials(CloudProviderId.OPENAI, credentials) }
+    }
+
+    @Test
+    fun `onCloudProviderSelected clears the shared voice id so a stale one never carries over`() =
+        runTest(mainDispatcher) {
+            viewModel().onCloudProviderSelected(CloudProviderId.ELEVENLABS)
+
+            coVerify(exactly = 1) { ttsPreferences.setSelectedCloudProvider(CloudProviderId.ELEVENLABS.name) }
+            coVerify(exactly = 1) { ttsPreferences.setSelectedVoice(null) }
+        }
+
+    @Test
+    fun `onUseCloudEngineToggled(true) is a no-op when the gate is closed`() = runTest(mainDispatcher) {
+        every { cloudTtsGate.observeCanUseCloudTts() } returns flowOf(false)
+
+        viewModel().onUseCloudEngineToggled(true)
+
+        coVerify(exactly = 0) { ttsPreferences.setEngineType(any()) }
+    }
+
+    @Test
+    fun `onUseCloudEngineToggled(true) switches to CLOUD when the gate is open`() = runTest(mainDispatcher) {
+        every { cloudTtsGate.observeCanUseCloudTts() } returns flowOf(true)
+
+        viewModel().onUseCloudEngineToggled(true)
+
+        coVerify(exactly = 1) { ttsPreferences.setEngineType(TtsEngineType.CLOUD) }
+    }
+
+    @Test
+    fun `onUseCloudEngineToggled(false) always reverts to ANDROID, gate irrelevant`() = runTest(mainDispatcher) {
+        every { cloudTtsGate.observeCanUseCloudTts() } returns flowOf(false)
+
+        viewModel().onUseCloudEngineToggled(false)
+
+        coVerify(exactly = 1) { ttsPreferences.setEngineType(TtsEngineType.ANDROID) }
+    }
 }
