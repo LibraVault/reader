@@ -61,9 +61,10 @@ class TtsPreferencesTest {
     @Test
     fun `TtsEngineType enum has values`() {
         val types = TtsEngineType.values()
-        assertEquals(2, types.size)
+        assertEquals(3, types.size)
         assertEquals(TtsEngineType.ANDROID, TtsEngineType.ANDROID)
         assertEquals(TtsEngineType.POCKET_TTS, TtsEngineType.POCKET_TTS)
+        assertEquals(TtsEngineType.CLOUD, TtsEngineType.CLOUD)
     }
 
     @Test
