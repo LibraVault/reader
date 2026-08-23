@@ -36,6 +36,12 @@ dependencies {
     // CloudApiKeyStore.kt) — serialized to JSON before hardware-key wrapping.
     implementation(libs.kotlinx.serialization.json)
 
+    // Vendor TTS HTTP adapters — play flavour only, scoped the same way
+    // billing-ktx is scoped in core:billing, so OkHttp never reaches the
+    // F-Droid runtime classpath.
+    "playImplementation"(libs.okhttp)
+
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)
+    "testPlayImplementation"(libs.okhttp.mockwebserver3)
 }
