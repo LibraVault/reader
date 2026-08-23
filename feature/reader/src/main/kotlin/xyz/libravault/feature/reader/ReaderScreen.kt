@@ -230,6 +230,38 @@ fun ReaderScreen(
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
                                 onShowToc       = if (item.format == MediaFormat.MARKDOWN) viewModel::showToc else null,
+                                // Read Aloud (#137/#276) — a prominent toolbar action rather
+                                // than a row buried in the settings sheet. See
+                                // ReaderTopBar.showReadAloud's doc for why.
+                                showReadAloud    = readAloudSupported(item.format),
+                                readAloudActive  = showReadAloudBar,
+                                onReadAloudClick = {
+                                    if (showReadAloudBar) {
+                                        viewModel.stopReadAloud()
+                                    } else {
+                                        when (item.format) {
+                                            MediaFormat.EPUB -> viewModel.startReadAloud(
+                                                getInitialText  = epubViewModel::getChapterTextFromProgression,
+                                                getNextText     = epubViewModel::getNextChapterText,
+                                                getPreviousText = epubViewModel::getPreviousChapterText,
+                                                chapterIndex    = { epubViewModel.ttsChapterIndex },
+                                                chapterCount    = { epubViewModel.ttsChapterCount },
+                                            )
+                                            MediaFormat.MARKDOWN -> viewModel.startReadAloud(
+                                                getInitialText = {
+                                                    markdownViewModel.getChapterTextFromProgression(
+                                                        state.progress?.markdownScrollFraction
+                                                    )
+                                                },
+                                                getNextText     = markdownViewModel::getNextChapterText,
+                                                getPreviousText = markdownViewModel::getPreviousChapterText,
+                                                chapterIndex    = { markdownViewModel.ttsChapterIndex },
+                                                chapterCount    = { markdownViewModel.ttsChapterCount },
+                                            )
+                                            else -> {}
+                                        }
+                                    }
+                                },
                             )
                         }
                     },
@@ -384,37 +416,6 @@ fun ReaderScreen(
                         onMarginScaleChanged   = viewModel::onMarginScaleChanged,
                         onJustifyTextChanged   = viewModel::onJustifyTextChanged,
                         onHyphenationChanged   = viewModel::onHyphenationChanged,
-                        // Read Aloud — EPUB (#137) and Markdown (#276).
-                        showReadAloud    = readAloudSupported(item.format),
-                        readAloudActive  = showReadAloudBar,
-                        onReadAloudClick = {
-                            if (showReadAloudBar) {
-                                viewModel.stopReadAloud()
-                            } else {
-                                when (item.format) {
-                                    MediaFormat.EPUB -> viewModel.startReadAloud(
-                                        getInitialText  = epubViewModel::getChapterTextFromProgression,
-                                        getNextText     = epubViewModel::getNextChapterText,
-                                        getPreviousText = epubViewModel::getPreviousChapterText,
-                                        chapterIndex    = { epubViewModel.ttsChapterIndex },
-                                        chapterCount    = { epubViewModel.ttsChapterCount },
-                                    )
-                                    MediaFormat.MARKDOWN -> viewModel.startReadAloud(
-                                        getInitialText = {
-                                            markdownViewModel.getChapterTextFromProgression(
-                                                state.progress?.markdownScrollFraction
-                                            )
-                                        },
-                                        getNextText     = markdownViewModel::getNextChapterText,
-                                        getPreviousText = markdownViewModel::getPreviousChapterText,
-                                        chapterIndex    = { markdownViewModel.ttsChapterIndex },
-                                        chapterCount    = { markdownViewModel.ttsChapterCount },
-                                    )
-                                    else -> {}
-                                }
-                            }
-                            viewModel.hideSettings()
-                        },
                     )
                 }
 

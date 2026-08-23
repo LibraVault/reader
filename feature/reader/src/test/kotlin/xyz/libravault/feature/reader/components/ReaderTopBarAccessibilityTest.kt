@@ -18,8 +18,8 @@ import xyz.libravault.core.ui.theme.LibravaultTheme
  * docs/TEST_COVERAGE_PRD.md, following the same approach as
  * `feature:player`'s PlayerAccessibilityTest.
  *
- * The reader top bar is the densest icon-only surface in the app: up to seven
- * controls, six of which are a bare glyph. With TalkBack, an unlabelled one is
+ * The reader top bar is the densest icon-only surface in the app: up to eight
+ * controls, seven of which are a bare glyph. With TalkBack, an unlabelled one is
  * announced as nothing but "button".
  *
  * ## Two assertions, deliberately different in kind
@@ -47,7 +47,12 @@ class ReaderTopBarAccessibilityTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    private fun setTopBar(showFontControls: Boolean = true, withToc: Boolean = true) {
+    private fun setTopBar(
+        showFontControls: Boolean = true,
+        withToc: Boolean = true,
+        showReadAloud: Boolean = false,
+        readAloudActive: Boolean = false,
+    ) {
         composeTestRule.setContent {
             LibravaultTheme {
                 ReaderTopBar(
@@ -60,6 +65,8 @@ class ReaderTopBarAccessibilityTest {
                     onSettings = {},
                     showFontControls = showFontControls,
                     onShowToc = if (withToc) ({}) else null,
+                    showReadAloud = showReadAloud,
+                    readAloudActive = readAloudActive,
                 )
             }
         }
@@ -133,6 +140,36 @@ class ReaderTopBarAccessibilityTest {
         assertTrue(
             "Expected the settings control's accessible name to be its visible label. Labels: $labels",
             labels.any { it == "Themes & Settings" },
+        )
+    }
+
+    /**
+     * The Read Aloud action is icon-only (unlike settings, it leans on visual
+     * prominence rather than a text label — see ReaderTopBar.showReadAloud's
+     * doc), so its spoken name has to come entirely from contentDescription,
+     * and that name must change with state rather than always announcing
+     * "Read Aloud" while a session is already playing.
+     */
+    @Test
+    fun readAloudControlAnnouncesItsCurrentState() {
+        setTopBar(showReadAloud = true, readAloudActive = false)
+        assertTrue(
+            "Expected \"Read Aloud\" while inactive. Labels: ${composeTestRule.clickableLabels()}",
+            composeTestRule.clickableLabels().any { it == "Read Aloud" },
+        )
+    }
+
+    @Test
+    fun readAloudControlAnnouncesStopWhileActive() {
+        setTopBar(showReadAloud = true, readAloudActive = true)
+        val labels = composeTestRule.clickableLabels()
+        assertTrue(
+            "Expected \"Stop Read Aloud\" while active. Labels: $labels",
+            labels.any { it == "Stop Read Aloud" },
+        )
+        assertTrue(
+            "The inactive label must not linger once a session is playing. Labels: $labels",
+            labels.none { it == "Read Aloud" },
         )
     }
 
