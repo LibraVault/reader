@@ -73,6 +73,13 @@ class EpubReaderViewModel @Inject constructor(
     /** Reset the TTS cursor, e.g. when the user stops playback. */
     fun resetTtsPosition() { ttsSpineIndex = -1 }
 
+    /** 0-based current TTS chapter, for the Player screen's chapter display/nav (#138). */
+    val ttsChapterIndex: Int get() = ttsSpineIndex.coerceAtLeast(0)
+
+    /** Total narratable chapters (the EPUB's spine length), for the same purpose. */
+    val ttsChapterCount: Int
+        get() = (_state.value as? EpubPublicationState.Ready)?.publication?.readingOrder?.size ?: 0
+
     /**
      * Opens the EPUB at [uri]. Idempotent — if a publication is already open
      * for the same URI, does nothing. If a different URI is passed (e.g. on
@@ -161,6 +168,20 @@ class EpubReaderViewModel @Inject constructor(
         val nextIndex = ttsSpineIndex + 1
         val link = pub.readingOrder.getOrNull(nextIndex) ?: return null
         ttsSpineIndex = nextIndex
+        return withContext(Dispatchers.IO) { fetchAndClean(pub, link) }
+    }
+
+    /**
+     * Moves the TTS cursor back to the previous spine item and returns its plain
+     * text. Returns null (and leaves the cursor unmoved) at the start of the book,
+     * mirroring [getNextChapterText]'s end-of-book contract — used by the Player
+     * screen's "previous chapter" control (#138).
+     */
+    suspend fun getPreviousChapterText(): String? {
+        val pub = (_state.value as? EpubPublicationState.Ready)?.publication ?: return null
+        val prevIndex = ttsSpineIndex - 1
+        val link = pub.readingOrder.getOrNull(prevIndex) ?: return null
+        ttsSpineIndex = prevIndex
         return withContext(Dispatchers.IO) { fetchAndClean(pub, link) }
     }
 

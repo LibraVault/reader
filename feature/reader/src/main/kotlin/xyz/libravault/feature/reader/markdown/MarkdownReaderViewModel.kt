@@ -46,7 +46,13 @@ class MarkdownReaderViewModel @Inject constructor(
     // a session starts, and the index advances as ReaderViewModel's completion-event
     // handler calls getNextChapterText().
     private var ttsChapters: List<MarkdownTtsChapter> = emptyList()
-    private var ttsChapterIndex: Int = 0
+    private var ttsChapterIndexState: Int = 0
+
+    /** 0-based current TTS chapter, for the Player screen's chapter display/nav (#138). */
+    val ttsChapterIndex: Int get() = ttsChapterIndexState
+
+    /** Total narratable chapters in the current document, for the same purpose. */
+    val ttsChapterCount: Int get() = ttsChapters.size
 
     /**
      * Reads the Markdown file at [uri]. Idempotent — if the same URI is already
@@ -93,8 +99,8 @@ class MarkdownReaderViewModel @Inject constructor(
         val ready = _state.value as? MarkdownPublicationState.Ready ?: return null
         ttsChapters = MarkdownTtsTextExtractor.chaptersForNarration(ready.text)
         if (ttsChapters.isEmpty()) return null
-        ttsChapterIndex = sectionIndexForFraction(initialScrollFraction, ttsChapters.size) ?: 0
-        return ttsChapters[ttsChapterIndex].text
+        ttsChapterIndexState = sectionIndexForFraction(initialScrollFraction, ttsChapters.size) ?: 0
+        return ttsChapters[ttsChapterIndexState].text
     }
 
     /**
@@ -103,9 +109,22 @@ class MarkdownReaderViewModel @Inject constructor(
      * [xyz.libravault.feature.reader.epub.EpubReaderViewModel.getNextChapterText].
      */
     suspend fun getNextChapterText(): String? {
-        val nextIndex = ttsChapterIndex + 1
+        val nextIndex = ttsChapterIndexState + 1
         val chapter = ttsChapters.getOrNull(nextIndex) ?: return null
-        ttsChapterIndex = nextIndex
+        ttsChapterIndexState = nextIndex
+        return chapter.text
+    }
+
+    /**
+     * Moves the TTS cursor back to the previous chapter and returns its text.
+     * Returns null (and leaves the cursor unmoved) at the start of the document,
+     * mirroring [getNextChapterText]'s end-of-document contract — used by the
+     * Player screen's "previous chapter" control (#138).
+     */
+    suspend fun getPreviousChapterText(): String? {
+        val prevIndex = ttsChapterIndexState - 1
+        val chapter = ttsChapters.getOrNull(prevIndex) ?: return null
+        ttsChapterIndexState = prevIndex
         return chapter.text
     }
 
