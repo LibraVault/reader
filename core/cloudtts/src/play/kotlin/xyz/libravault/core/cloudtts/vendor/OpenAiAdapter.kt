@@ -27,7 +27,7 @@ class OpenAiAdapter internal constructor(
     private fun baseUrl(): HttpUrl = testBaseUrl ?: "https://${CloudTtsFixedHosts.OPENAI}".toHttpUrl()
 
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
-        runCatching {
+        runCatchingCancellable {
             val apiKey = credentials.field(CloudCredentialFields.API_KEY)
             val url = baseUrl().newBuilder().addPathSegments("v1/audio/speech").build()
             val body = buildJsonObject {
@@ -46,7 +46,7 @@ class OpenAiAdapter internal constructor(
             }
         }
 
-    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatching {
+    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatchingCancellable {
         val apiKey = credentials.field(CloudCredentialFields.API_KEY)
         val url = baseUrl().newBuilder().addPathSegments("v1/models").build()
         val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $apiKey").get().build()

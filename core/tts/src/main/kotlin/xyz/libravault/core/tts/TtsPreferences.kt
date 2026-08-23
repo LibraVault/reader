@@ -31,6 +31,16 @@ private val LOCAL_ONLY_KEY = booleanPreferencesKey("local_voices_only")
 // wrong kind of subtlety for a security/privacy-relevant consent flag.
 private val CLOUD_VOICES_CONSENT_KEY = booleanPreferencesKey("cloud_voices_consent")
 
+// Which of the five BYOK vendors (core:cloudtts's CloudProviderId) is
+// currently selected — stored as its raw enum-name string, not the
+// CloudProviderId type itself, so core:tts never needs a compile-time
+// dependency on core:cloudtts (same reasoning as the TtsEngineType.CLOUD /
+// TtsEngineTypeKey split in TtsEngineFactory.kt). The selected voice ID for
+// whichever provider this names reuses the existing SELECTED_VOICE_KEY/
+// selectedVoiceFlow below — no separate key needed, same as how it already
+// serves ANDROID's and POCKET_TTS's voice selection.
+private val SELECTED_CLOUD_PROVIDER_KEY = stringPreferencesKey("selected_cloud_provider")
+
 val Context.ttsPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(name = PREFERENCES_NAME)
 
 /**
@@ -55,6 +65,22 @@ class TtsPreferences constructor(
         }
     }
 
+    /**
+     * Shared by all three [TtsEngineType]s' voice selection — ANDROID system
+     * voice names, POCKET_TTS's sherpa-onnx model voice IDs, and (per
+     * [SELECTED_CLOUD_PROVIDER_KEY]'s doc) whichever cloud vendor's voice ID
+     * once `core:cloudtts` exists.
+     *
+     * FLAGGED IN REVIEW, not yet fixed here — genuine gap for whoever builds
+     * the Cloud Voices Settings UI: since this key is shared, switching
+     * `TtsEngineType` (or the selected cloud provider) without an explicit
+     * fresh voice pick can hand a stale, engine-incompatible voiceId to
+     * whichever engine reads it next (e.g. a leftover Pocket TTS model ID
+     * sent to a cloud vendor's API, which will reject it). The UI must call
+     * [setSelectedVoice] with `null` (or a valid default for the new
+     * engine/provider) whenever engine type or cloud provider changes —
+     * this persistence layer has no way to enforce that itself.
+     */
     val selectedVoiceFlow: Flow<String?> = dataStore.data.map { preferences ->
         preferences[SELECTED_VOICE_KEY]
     }
@@ -67,6 +93,13 @@ class TtsPreferences constructor(
      * subscription must never flip this. See [CLOUD_VOICES_CONSENT_KEY]. */
     val cloudVoicesConsentFlow: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[CLOUD_VOICES_CONSENT_KEY] ?: false
+    }
+
+    /** Raw `CloudProviderId.name` string, or null if none selected yet — see
+     * [SELECTED_CLOUD_PROVIDER_KEY]. Parsing it back into a `CloudProviderId`
+     * is `core:cloudtts`'s job (it owns that type). */
+    val selectedCloudProviderFlow: Flow<String?> = dataStore.data.map { preferences ->
+        preferences[SELECTED_CLOUD_PROVIDER_KEY]
     }
 
     suspend fun setEngineType(type: TtsEngineType) {
@@ -94,6 +127,16 @@ class TtsPreferences constructor(
     suspend fun setCloudVoicesConsent(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[CLOUD_VOICES_CONSENT_KEY] = enabled
+        }
+    }
+
+    suspend fun setSelectedCloudProvider(providerName: String?) {
+        dataStore.edit { preferences ->
+            if (providerName != null) {
+                preferences[SELECTED_CLOUD_PROVIDER_KEY] = providerName
+            } else {
+                preferences.remove(SELECTED_CLOUD_PROVIDER_KEY)
+            }
         }
     }
 }

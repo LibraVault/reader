@@ -44,7 +44,7 @@ class GoogleCloudTtsAdapter internal constructor(
     private fun baseUrl(): HttpUrl = testBaseUrl ?: "https://${CloudTtsFixedHosts.GOOGLE_CLOUD_TTS}".toHttpUrl()
 
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
-        runCatching {
+        runCatchingCancellable {
             val apiKey = credentials.field(CloudCredentialFields.API_KEY)
             val url = baseUrl().newBuilder()
                 .addPathSegments("v1/text:synthesize")
@@ -70,7 +70,7 @@ class GoogleCloudTtsAdapter internal constructor(
             }
         }
 
-    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatching {
+    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatchingCancellable {
         val apiKey = credentials.field(CloudCredentialFields.API_KEY)
         val url = baseUrl().newBuilder().addPathSegments("v1/voices").addQueryParameter("key", apiKey).build()
         val request = Request.Builder().url(url).get().build()

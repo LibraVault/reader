@@ -42,7 +42,7 @@ class AzureSpeechAdapter internal constructor(
             .newBuilder().addPathSegments("sts/v1.0/issueToken").build()
 
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
-        runCatching {
+        runCatchingCancellable {
             val apiKey = credentials.field(CloudCredentialFields.API_KEY)
             val region = credentials.field(CloudCredentialFields.REGION)
             val locale = localeFromVoiceId(voiceId)
@@ -64,7 +64,7 @@ class AzureSpeechAdapter internal constructor(
             }
         }
 
-    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatching {
+    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatchingCancellable {
         val apiKey = credentials.field(CloudCredentialFields.API_KEY)
         val region = credentials.field(CloudCredentialFields.REGION)
         val request = Request.Builder()

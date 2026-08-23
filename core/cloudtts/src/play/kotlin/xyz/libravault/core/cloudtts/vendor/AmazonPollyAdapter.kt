@@ -29,7 +29,7 @@ class AmazonPollyAdapter internal constructor(
         testBaseUrl ?: "https://${CloudTtsFixedHosts.pollyHost(region)}".toHttpUrl()
 
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
-        runCatching {
+        runCatchingCancellable {
             val accessKeyId = credentials.field(CloudCredentialFields.ACCESS_KEY_ID)
             val secretAccessKey = credentials.field(CloudCredentialFields.SECRET_ACCESS_KEY)
             val region = credentials.field(CloudCredentialFields.REGION)
@@ -65,7 +65,7 @@ class AmazonPollyAdapter internal constructor(
             }
         }
 
-    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatching {
+    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatchingCancellable {
         val accessKeyId = credentials.field(CloudCredentialFields.ACCESS_KEY_ID)
         val secretAccessKey = credentials.field(CloudCredentialFields.SECRET_ACCESS_KEY)
         val region = credentials.field(CloudCredentialFields.REGION)
