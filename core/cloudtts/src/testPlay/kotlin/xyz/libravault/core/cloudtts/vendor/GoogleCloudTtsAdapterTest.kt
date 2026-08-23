@@ -52,6 +52,19 @@ class GoogleCloudTtsAdapterTest {
     }
 
     @Test
+    fun `synthesize fails closed when the api_key credential is missing`() = runTest {
+        assertTrue(adapter.synthesize("text", "en-US-Wavenet-D", emptyMap()).isFailure)
+    }
+
+    @Test
+    fun `synthesize tolerates unknown fields in the response JSON`() = runTest {
+        val base64Audio = Base64.getEncoder().encodeToString(byteArrayOf(1))
+        server.enqueue(MockResponse(code = 200, body = "{\"audioContent\":\"$base64Audio\",\"timepoints\":[]}"))
+        val result = adapter.synthesize("hi", "en-US-Wavenet-D", mapOf(CloudCredentialFields.API_KEY to "k"))
+        assertTrue(result.isSuccess, "an extra response field must not turn a successful synthesis into a failure")
+    }
+
+    @Test
     fun `validateKey calls GET v1 voices with the key as a query parameter`() = runTest {
         server.enqueue(MockResponse(code = 200))
         val result = adapter.validateKey(mapOf(CloudCredentialFields.API_KEY to "goog-key"))

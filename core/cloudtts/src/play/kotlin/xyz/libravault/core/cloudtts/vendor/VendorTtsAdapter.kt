@@ -1,5 +1,11 @@
 package xyz.libravault.core.cloudtts.vendor
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+
 /**
  * One vendor's HTTP surface, dispatched to by
  * [xyz.libravault.core.cloudtts.RealCloudTtsProvider]. Internal — not part
@@ -9,6 +15,20 @@ package xyz.libravault.core.cloudtts.vendor
 interface VendorTtsAdapter {
     suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray>
     suspend fun validateKey(credentials: Map<String, String>): Result<Unit>
+}
+
+/** Shared "execute on IO, fail closed on non-2xx" call, so this isn't
+ * hand-duplicated across all ten synthesize/validateKey call sites (one
+ * review already flagged the duplication). Caller is responsible for
+ * closing the returned [Response] (typically via `.use { }`). */
+internal suspend fun OkHttpClient.executeOrFail(request: Request, vendorName: String): Response {
+    val response = withContext(Dispatchers.IO) { newCall(request).execute() }
+    if (!response.isSuccessful) {
+        val code = response.code
+        response.close()
+        error("$vendorName returned HTTP $code")
+    }
+    return response
 }
 
 /** Every adapter's `credentials` map is validated by

@@ -1,7 +1,5 @@
 package xyz.libravault.core.cloudtts.vendor
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
@@ -31,7 +29,13 @@ class ElevenLabsAdapter internal constructor(
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
         runCatching {
             val apiKey = credentials.field(CloudCredentialFields.API_KEY)
-            val url = baseUrl().newBuilder().addPathSegments("v1/text-to-speech/$voiceId").build()
+            // addPathSegment (singular) percent-encodes voiceId as ONE opaque
+            // segment — addPathSegments(string) would instead split it on '/'
+            // and treat a voiceId containing a slash as extra path segments.
+            val url = baseUrl().newBuilder()
+                .addPathSegments("v1/text-to-speech")
+                .addPathSegment(voiceId)
+                .build()
             val body = buildJsonObject { put("text", text) }.toString()
                 .toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
@@ -40,8 +44,7 @@ class ElevenLabsAdapter internal constructor(
                 .post(body)
                 .build()
 
-            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-                if (!response.isSuccessful) error("ElevenLabs returned HTTP ${response.code}")
+            httpClient.executeOrFail(request, "ElevenLabs").use { response ->
                 response.body?.bytes() ?: error("ElevenLabs returned an empty body")
             }
         }
@@ -51,8 +54,6 @@ class ElevenLabsAdapter internal constructor(
         val url = baseUrl().newBuilder().addPathSegments("v1/user").build()
         val request = Request.Builder().url(url).addHeader("xi-api-key", apiKey).get().build()
 
-        withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-            if (!response.isSuccessful) error("ElevenLabs key validation failed: HTTP ${response.code}")
-        }
+        httpClient.executeOrFail(request, "ElevenLabs key validation").close()
     }
 }

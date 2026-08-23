@@ -62,6 +62,17 @@ class AzureSpeechAdapterTest {
     }
 
     @Test
+    fun `a quote in voiceId is XML-escaped, not injected raw into the SSML attribute`() = runTest {
+        speechServer.enqueue(MockResponse.Builder().code(200).body(okio.Buffer().write(byteArrayOf(1))).build())
+        adapter.synthesize("hi", "en-US-O'Brien'Neural", credentials)
+
+        val recorded = speechServer.takeRequest()
+        val ssml = recorded.body!!.utf8()
+        assertTrue(ssml.contains("name='en-US-O&apos;Brien&apos;Neural'"), ssml)
+        assertTrue(!ssml.contains("name='en-US-O'Brien'Neural'"), "unescaped apostrophe would break/inject into the SSML attribute")
+    }
+
+    @Test
     fun `synthesize fails closed when the region credential is missing`() = runTest {
         val result = adapter.synthesize("text", "en-US-JennyNeural", mapOf(CloudCredentialFields.API_KEY to "azure-key"))
         assertTrue(result.isFailure)

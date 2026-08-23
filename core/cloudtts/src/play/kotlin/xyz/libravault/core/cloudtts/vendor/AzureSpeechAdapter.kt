@@ -1,7 +1,5 @@
 package xyz.libravault.core.cloudtts.vendor
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -48,8 +46,11 @@ class AzureSpeechAdapter internal constructor(
             val apiKey = credentials.field(CloudCredentialFields.API_KEY)
             val region = credentials.field(CloudCredentialFields.REGION)
             val locale = localeFromVoiceId(voiceId)
-            val ssml = "<speak version='1.0' xml:lang='$locale'>" +
-                "<voice name='$voiceId'>${text.escapeXml()}</voice></speak>"
+            // Both text AND voiceId are caller-supplied — both must be
+            // XML-escaped, or a voiceId containing an apostrophe/ampersand
+            // breaks (or, worst case, injects into) the SSML document.
+            val ssml = "<speak version='1.0' xml:lang='${locale.escapeXml()}'>" +
+                "<voice name='${voiceId.escapeXml()}'>${text.escapeXml()}</voice></speak>"
             val body = ssml.toRequestBody("application/ssml+xml".toMediaType())
             val request = Request.Builder()
                 .url(speechUrl(region))
@@ -58,8 +59,7 @@ class AzureSpeechAdapter internal constructor(
                 .post(body)
                 .build()
 
-            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-                if (!response.isSuccessful) error("Azure AI Speech returned HTTP ${response.code}")
+            httpClient.executeOrFail(request, "Azure AI Speech").use { response ->
                 response.body?.bytes() ?: error("Azure AI Speech returned an empty body")
             }
         }
@@ -73,9 +73,7 @@ class AzureSpeechAdapter internal constructor(
             .post("".toRequestBody(null))
             .build()
 
-        withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-            if (!response.isSuccessful) error("Azure AI Speech key validation failed: HTTP ${response.code}")
-        }
+        httpClient.executeOrFail(request, "Azure AI Speech key validation").close()
     }
 
     private fun String.escapeXml(): String = replace("&", "&amp;")

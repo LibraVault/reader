@@ -1,7 +1,5 @@
 package xyz.libravault.core.cloudtts.vendor
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
@@ -43,8 +41,7 @@ class OpenAiAdapter internal constructor(
                 .post(body)
                 .build()
 
-            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-                if (!response.isSuccessful) error("OpenAI returned HTTP ${response.code}")
+            httpClient.executeOrFail(request, "OpenAI").use { response ->
                 response.body?.bytes() ?: error("OpenAI returned an empty body")
             }
         }
@@ -54,8 +51,6 @@ class OpenAiAdapter internal constructor(
         val url = baseUrl().newBuilder().addPathSegments("v1/models").build()
         val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $apiKey").get().build()
 
-        withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-            if (!response.isSuccessful) error("OpenAI key validation failed: HTTP ${response.code}")
-        }
+        httpClient.executeOrFail(request, "OpenAI key validation").close()
     }
 }

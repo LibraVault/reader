@@ -54,6 +54,17 @@ class ElevenLabsAdapterTest {
     }
 
     @Test
+    fun `a slash in voiceId is percent-encoded as one opaque path segment, not split into extra path segments`() = runTest {
+        server.enqueue(MockResponse(code = 200, body = "audio"))
+        adapter.synthesize("hi", "abc/../admin", mapOf(CloudCredentialFields.API_KEY to "sk-test"))
+
+        val recorded = server.takeRequest()
+        // Must NOT resolve to /v1/text-to-speech/admin (path traversal) or any
+        // extra segment — the whole voiceId is one percent-encoded segment.
+        assertTrue(recorded.target.contains("abc%2F..%2Fadmin"), recorded.target)
+    }
+
+    @Test
     fun `synthesize fails closed when the api_key credential is missing`() = runTest {
         val result = adapter.synthesize("text", "voice", emptyMap())
         assertTrue(result.isFailure)

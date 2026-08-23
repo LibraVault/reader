@@ -1,7 +1,5 @@
 package xyz.libravault.core.cloudtts.vendor
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -36,6 +34,13 @@ class GoogleCloudTtsAdapter internal constructor(
     @Serializable
     private data class SynthesizeResponse(val audioContent: String)
 
+    // ignoreUnknownKeys: Google's response may carry fields beyond
+    // audioContent (e.g. timepoints) depending on the request — a strict
+    // decoder would turn a technically-successful synthesis into a spurious
+    // failure the moment Google's response shape gains a field this adapter
+    // doesn't care about.
+    private val json = Json { ignoreUnknownKeys = true }
+
     private fun baseUrl(): HttpUrl = testBaseUrl ?: "https://${CloudTtsFixedHosts.GOOGLE_CLOUD_TTS}".toHttpUrl()
 
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
@@ -58,10 +63,9 @@ class GoogleCloudTtsAdapter internal constructor(
             }.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder().url(url).post(body).build()
 
-            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-                if (!response.isSuccessful) error("Google Cloud TTS returned HTTP ${response.code}")
+            httpClient.executeOrFail(request, "Google Cloud TTS").use { response ->
                 val responseJson = response.body?.string() ?: error("Google Cloud TTS returned an empty body")
-                val decoded = Json.decodeFromString<SynthesizeResponse>(responseJson)
+                val decoded = json.decodeFromString<SynthesizeResponse>(responseJson)
                 Base64.getDecoder().decode(decoded.audioContent)
             }
         }
@@ -71,8 +75,6 @@ class GoogleCloudTtsAdapter internal constructor(
         val url = baseUrl().newBuilder().addPathSegments("v1/voices").addQueryParameter("key", apiKey).build()
         val request = Request.Builder().url(url).get().build()
 
-        withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-            if (!response.isSuccessful) error("Google Cloud TTS key validation failed: HTTP ${response.code}")
-        }
+        httpClient.executeOrFail(request, "Google Cloud TTS key validation").close()
     }
 }

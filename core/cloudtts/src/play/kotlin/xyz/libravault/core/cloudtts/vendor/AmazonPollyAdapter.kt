@@ -1,7 +1,5 @@
 package xyz.libravault.core.cloudtts.vendor
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
@@ -63,8 +61,7 @@ class AmazonPollyAdapter internal constructor(
                 .post(payload.toRequestBody("application/json".toMediaType()))
                 .build()
 
-            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-                if (!response.isSuccessful) error("Amazon Polly returned HTTP ${response.code}")
+            httpClient.executeOrFail(request, "Amazon Polly").use { response ->
                 response.body?.bytes() ?: error("Amazon Polly returned an empty body")
             }
         }
@@ -91,8 +88,6 @@ class AmazonPollyAdapter internal constructor(
             .get()
             .build()
 
-        withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }.use { response ->
-            if (!response.isSuccessful) error("Amazon Polly key validation failed: HTTP ${response.code}")
-        }
+        httpClient.executeOrFail(request, "Amazon Polly key validation").close()
     }
 }

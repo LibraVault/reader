@@ -50,6 +50,11 @@ class OpenAiAdapterTest {
     }
 
     @Test
+    fun `synthesize fails closed when the api_key credential is missing`() = runTest {
+        assertTrue(adapter.synthesize("text", "alloy", emptyMap()).isFailure)
+    }
+
+    @Test
     fun `validateKey calls GET v1 models with a bearer token`() = runTest {
         server.enqueue(MockResponse(code = 200))
         val result = adapter.validateKey(mapOf(CloudCredentialFields.API_KEY to "sk-test"))
