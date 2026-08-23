@@ -21,9 +21,9 @@ class NoOpCloudTtsProvider @Inject constructor() : CloudTtsProvider {
         provider: CloudProviderId,
         text: String,
         voiceId: String,
-        apiKey: String,
+        credentials: Map<String, String>,
     ): Result<ByteArray> = Result.failure(UnsupportedOperationException("Cloud TTS is not available on the F-Droid build"))
 
-    override suspend fun validateKey(provider: CloudProviderId, apiKey: String): Result<Unit> =
+    override suspend fun validateKey(provider: CloudProviderId, credentials: Map<String, String>): Result<Unit> =
         Result.failure(UnsupportedOperationException("Cloud TTS is not available on the F-Droid build"))
 }

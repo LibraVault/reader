@@ -8,6 +8,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import xyz.libravault.core.vaultstore.HardwareKeyWrap
 import xyz.libravault.core.vaultstore.HardwareKeyWrapFactory
 import xyz.libravault.core.vaultstore.KeystoreKeyLostException
@@ -18,21 +21,23 @@ import javax.inject.Singleton
 
 private const val PREFERENCES_NAME = "cloud_tts_api_keys"
 
-/** One shared hardware-backed key wraps every vendor's key — simpler than a
- * Keystore alias per vendor, and this store's threat model (a single BYOK
- * secret per vendor, not a vault master key) doesn't need per-vendor
- * key rotation independence. */
+/** One shared hardware-backed key wraps every vendor's credentials — simpler
+ * than a Keystore alias per vendor, and this store's threat model (a single
+ * BYOK secret set per vendor, not a vault master key) doesn't need
+ * per-vendor key rotation independence. */
 private const val KEY_WRAP_ALIAS = "cloud_tts_api_keys"
 
 val Context.cloudApiKeyDataStore: DataStore<Preferences> by preferencesDataStore(name = PREFERENCES_NAME)
 
 /**
- * Real, Android Keystore-backed [CloudApiKeyStore]. Wraps each plaintext key
- * via [HardwareKeyWrapFactory] (reusing `core:vaultstore`'s existing,
+ * Real, Android Keystore-backed [CloudApiKeyStore]. Each provider's
+ * `Map<String, String>` credentials are JSON-serialized, then wrapped as one
+ * blob via [HardwareKeyWrapFactory] (reusing `core:vaultstore`'s existing,
  * already-hardened wrap/unwrap seam rather than re-deriving Keystore
  * alias/StrongBox/TEE logic a second time) before persisting the resulting
  * nonce+ciphertext pair to a plain (non-"Encrypted") DataStore file — the
- * DataStore itself never sees plaintext.
+ * DataStore itself never sees plaintext, and the JSON never leaves this
+ * class unwrapped.
  *
  * Primary constructor is `internal` and takes the [DataStore] directly so
  * JVM tests can construct this against an in-memory/temp-file DataStore and
@@ -69,23 +74,25 @@ class RealCloudApiKeyStore internal constructor(
         }
     }
 
-    override suspend fun saveKey(provider: CloudProviderId, apiKey: String) {
-        val wrapped = keyWrap.wrap(apiKey.toByteArray(Charsets.UTF_8))
+    override suspend fun saveCredentials(provider: CloudProviderId, credentials: Map<String, String>) {
+        val json = Json.encodeToString(credentials)
+        val wrapped = keyWrap.wrap(json.toByteArray(Charsets.UTF_8))
         dataStore.edit { prefs ->
             prefs[nonceKey(provider)] = encode(wrapped.nonce)
             prefs[ciphertextKey(provider)] = encode(wrapped.ciphertext)
         }
     }
 
-    override suspend fun loadKey(provider: CloudProviderId): String? {
+    override suspend fun loadCredentials(provider: CloudProviderId): Map<String, String>? {
         val prefs = dataStore.data.first()
         val nonce = prefs[nonceKey(provider)] ?: return null
         val ciphertext = prefs[ciphertextKey(provider)] ?: return null
         val wrapped = WrappedBlob(nonce = decode(nonce), ciphertext = decode(ciphertext))
-        return keyWrap.unwrap(wrapped).toString(Charsets.UTF_8)
+        val json = keyWrap.unwrap(wrapped).toString(Charsets.UTF_8)
+        return Json.decodeFromString<Map<String, String>>(json)
     }
 
-    override suspend fun clearKey(provider: CloudProviderId) {
+    override suspend fun clearCredentials(provider: CloudProviderId) {
         dataStore.edit { prefs ->
             prefs.remove(nonceKey(provider))
             prefs.remove(ciphertextKey(provider))

@@ -10,13 +10,13 @@ class NoOpCloudTtsProviderTest {
 
     @Test
     fun `synthesize always fails`() = runTest {
-        val result = provider.synthesize(CloudProviderId.ELEVENLABS, "text", "voice", "key")
+        val result = provider.synthesize(CloudProviderId.ELEVENLABS, "text", "voice", mapOf(CloudCredentialFields.API_KEY to "key"))
         assertTrue(result.isFailure)
     }
 
     @Test
     fun `validateKey always fails`() = runTest {
-        val result = provider.validateKey(CloudProviderId.OPENAI, "key")
+        val result = provider.validateKey(CloudProviderId.OPENAI, mapOf(CloudCredentialFields.API_KEY to "key"))
         assertTrue(result.isFailure)
     }
 }

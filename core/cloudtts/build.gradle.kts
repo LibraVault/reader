@@ -1,6 +1,7 @@
 plugins {
     id("libravault.android.library")
     id("libravault.android.hilt")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("de.mannodermaus.android-junit5")
 }
 
@@ -30,6 +31,10 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
+    // Credentials are a Map<String, String> (most vendors: one "api_key" field;
+    // Amazon Polly needs access_key_id + secret_access_key + region — see
+    // CloudApiKeyStore.kt) — serialized to JSON before hardware-key wrapping.
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)
