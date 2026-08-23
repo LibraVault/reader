@@ -11,9 +11,27 @@ contributors don't mistake them for gaps, and so users don't ask
   on-device. Backup/restore via Android's device-transfer mechanism is
   supported (see `app/src/main/res/xml/data_extraction_rules.xml`) but
   not via Drive / iCloud / a LibraVault server.
-- **F-Droid flavor has zero outbound network calls.** The `INTERNET`
-  permission is stripped from `app/src/fdroid/AndroidManifest.xml`.
-  Donations are BTC/XMR addresses only, copy-pasted by the user.
+- **Zero outbound network calls, on every flavor, not just F-Droid.** No
+  source set declares the `INTERNET` permission — not `app/src/main`,
+  and there's no `app/src/fdroid` or `app/src/play` override, because
+  neither exists. "Support the Project" hands off to an external
+  webpage via `Intent.ACTION_VIEW` rather than collecting BTC/XMR
+  addresses in-app; see `feature/settings/.../SupportLink.kt`, which
+  also notes the BTCPay invoice flow this replaced is gone outright,
+  not just hidden.
+- **Coil (image loading) transitively pulls in OkHttp, but nothing
+  ever exercises it.** `io.coil-kt:coil-base` — used app-wide for
+  cover art — brings `com.squareup.okhttp3:okhttp` onto every build
+  variant's runtime classpath, including F-Droid's, because Coil isn't
+  flavor-scoped. Every `AsyncImage` / `rememberAsyncImagePainter` call
+  site in this app (`LibraryItemCard`, `ContinueCard`, `PlayerScreen`,
+  `MiniPlayerBar`, `CoilMarkdownImageTransformer`) is fed a local
+  `file://`/`content://` URI, never `http(s)://` —
+  `CoilMarkdownImageTransformer` explicitly refuses to resolve
+  `http(s)://` Markdown image links. And even if something did hand
+  Coil a remote URL, the missing `INTERNET` permission above means the
+  OS blocks the socket before OkHttp gets a chance. Present in the
+  dependency graph, structurally unable to reach the network. See #463.
 
 ## DRM / Purchased content
 
