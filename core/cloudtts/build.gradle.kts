@@ -43,5 +43,5 @@ dependencies {
 
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)
-    "testPlayImplementation"(libs.okhttp.mockwebserver3)
+    "testPlayImplementation"(libs.okhttp.mockwebserver)
 }

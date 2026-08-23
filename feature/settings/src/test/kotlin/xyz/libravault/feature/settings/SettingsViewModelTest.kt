@@ -37,6 +37,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.billing.SupportBillingClient
+import xyz.libravault.core.cloudtts.CloudApiKeyStore
+import xyz.libravault.core.cloudtts.CloudTtsProvider
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
@@ -84,6 +86,8 @@ class SettingsViewModelTest {
     private val ttsPreferences = mockk<TtsPreferences>(relaxed = true)
     private val pocketModelManager = mockk<PocketModelManager>()
     private val pocketVoiceCatalog = mockk<PocketVoiceCatalog>()
+    private val cloudApiKeyStore = mockk<CloudApiKeyStore>()
+    private val cloudTtsProvider = mockk<CloudTtsProvider>()
 
     private val fakeTtsEngine = mockk<TtsEngine>(relaxed = true)
     private val ttsEngineTypeFlow = MutableStateFlow(TtsEngineType.ANDROID)
@@ -118,6 +122,10 @@ class SettingsViewModelTest {
         every { billingClient.isSupported } returns true
         every { billingClient.observeProductsAvailable() } returns flowOf(false)
         every { billingClient.observeSubscriptionActive() } returns flowOf(false)
+
+        every { ttsPreferences.cloudVoicesConsentFlow } returns flowOf(false)
+        every { ttsPreferences.selectedCloudProviderFlow } returns flowOf<String?>(null)
+        coEvery { cloudApiKeyStore.loadCredentials(any()) } returns null
     }
 
     @AfterEach
@@ -133,6 +141,7 @@ class SettingsViewModelTest {
             addVaultFolder, removeVaultFolder, observeVaults, scanVaultsUseCase, logger,
             supporterRepository, billingClient,
             ttsEngineProvider, ttsPreferences, pocketModelManager, pocketVoiceCatalog,
+            cloudApiKeyStore, cloudTtsProvider,
             context,
         )
     }

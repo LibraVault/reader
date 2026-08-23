@@ -36,7 +36,16 @@ webkit              = "1.17.0"
 zxing               = "3.5.3"
 desugar-jdk-libs    = "2.0.4"      # coreLibraryDesugaring — required by any module depending on Readium
 datastore           = "1.0.0"      # androidx.datastore:datastore-preferences (core:cloudtts; matches core:tts's existing, still-hardcoded usage)
-okhttp              = "5.5.0"      # core:cloudtts, play flavour only — vendor TTS HTTP adapters
+okhttp              = "4.12.0"     # core:cloudtts, play flavour only — vendor TTS HTTP adapters.
+                                    # Pinned to the 4.x line deliberately, not the latest 5.x:
+                                    # okhttp 5.x's okhttp-android artifact requires compileSdk 37,
+                                    # which this project isn't on (compileSdk 36, AGP 8.9.1's own
+                                    # recommended max) — found via a real build failure
+                                    # (:feature:settings:checkPlayDebugUnitTestAarMetadata) once
+                                    # core:cloudtts was first wired into a module the app actually
+                                    # depends on. 4.12.0 also matches the OkHttp version Coil
+                                    # already pulls in transitively (see KNOWN_LIMITATIONS.md),
+                                    # so this doesn't add a second OkHttp version to the graph.
 
 [libraries]
 # AndroidX core
@@ -90,7 +99,9 @@ androidx-datastore-preferences  = { group = "androidx.datastore",        name = 
 
 # OkHttp — core:cloudtts, play flavour only (vendor TTS HTTP adapters)
 okhttp                          = { group = "com.squareup.okhttp3",      name = "okhttp",                      version.ref = "okhttp" }
-okhttp-mockwebserver3           = { group = "com.squareup.okhttp3",      name = "mockwebserver3",               version.ref = "okhttp" }
+# The 4.x-line MockWebServer artifact (package okhttp3.mockwebserver) — the
+# 5.x "mockwebserver3" rename/package split doesn't apply at this version.
+okhttp-mockwebserver            = { group = "com.squareup.okhttp3",      name = "mockwebserver",                version.ref = "okhttp" }
 
 # Coil
 coil-compose                    = { group = "io.coil-kt",                name = "coil-compose",                version.ref = "coil" }

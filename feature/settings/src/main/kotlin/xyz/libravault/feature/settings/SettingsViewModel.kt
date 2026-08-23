@@ -14,9 +14,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.libravault.core.billing.SupportBillingClient
+import xyz.libravault.core.cloudtts.CloudApiKeyStore
+import xyz.libravault.core.cloudtts.CloudProviderId
+import xyz.libravault.core.cloudtts.CloudTtsProvider
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
 import xyz.libravault.core.domain.model.VaultFolder
@@ -71,6 +75,8 @@ class SettingsViewModel @Inject constructor(
     private val ttsPreferences: TtsPreferences,
     private val pocketModelManager: PocketModelManager,
     private val pocketVoiceCatalog: PocketVoiceCatalog,
+    private val cloudApiKeyStore: CloudApiKeyStore,
+    private val cloudTtsProvider: CloudTtsProvider,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -194,6 +200,64 @@ class SettingsViewModel @Inject constructor(
 
     fun onTtsSpeechRateChanged(rate: Float) {
         ttsEngineProvider.engine.value.setSpeechRate(rate)
+    }
+
+    // ── Cloud Voices (Premium, BYOK) ─────────────────────────────────────────
+    // PRD docs/cloud-tts-premium-prd.md §6. This section is only ever shown by
+    // SettingsScreen when `subscriptionActive` is true, but `cloudVoicesConsent`
+    // stays independently off by default — see CloudTtsGate's class doc.
+
+    val cloudVoicesConsent: StateFlow<Boolean> = ttsPreferences.cloudVoicesConsentFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val selectedCloudProvider: StateFlow<CloudProviderId?> = ttsPreferences.selectedCloudProviderFlow
+        .map { name -> name?.let { runCatching { CloudProviderId.valueOf(it) }.getOrNull() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** No reactive API on [CloudApiKeyStore] (it's a plain suspend interface,
+     * matching `HardwareKeyWrap`'s shape) — refreshed explicitly after every
+     * save/clear rather than polled, since credential changes only ever
+     * happen through this ViewModel's own actions below. */
+    private val _configuredCloudProviders = MutableStateFlow<Set<CloudProviderId>>(emptySet())
+    val configuredCloudProviders: StateFlow<Set<CloudProviderId>> = _configuredCloudProviders.asStateFlow()
+
+    init {
+        viewModelScope.launch { refreshConfiguredCloudProviders() }
+    }
+
+    private suspend fun refreshConfiguredCloudProviders() {
+        _configuredCloudProviders.value = CloudProviderId.entries
+            .filter { cloudApiKeyStore.loadCredentials(it) != null }
+            .toSet()
+    }
+
+    fun onCloudVoicesConsentAccepted() {
+        viewModelScope.launch { ttsPreferences.setCloudVoicesConsent(true) }
+    }
+
+    fun onCloudVoicesConsentDisabled() {
+        viewModelScope.launch { ttsPreferences.setCloudVoicesConsent(false) }
+    }
+
+    fun onCloudProviderSelected(provider: CloudProviderId) {
+        viewModelScope.launch { ttsPreferences.setSelectedCloudProvider(provider.name) }
+    }
+
+    /** Validates BEFORE saving (PRD §6: "key is validated with a single
+     * cheap test call, then stored") — a failed validation never reaches
+     * [CloudApiKeyStore] at all. */
+    suspend fun onValidateAndSaveCloudKey(provider: CloudProviderId, credentials: Map<String, String>): Result<Unit> {
+        val validation = cloudTtsProvider.validateKey(provider, credentials)
+        if (validation.isFailure) return validation
+        return runCatching { cloudApiKeyStore.saveCredentials(provider, credentials) }
+            .onSuccess { refreshConfiguredCloudProviders() }
+    }
+
+    fun onClearCloudKey(provider: CloudProviderId) {
+        viewModelScope.launch {
+            cloudApiKeyStore.clearCredentials(provider)
+            refreshConfiguredCloudProviders()
+        }
     }
 
     /**
