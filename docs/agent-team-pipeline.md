@@ -254,6 +254,24 @@ used the App token uniformly for every label it applies there, so it
 kept doing so; `dev-agent.yml`'s used the safe default there, so it did
 too.
 
+**Always issue a remove and an add as two separate `gh pr edit`/`gh issue
+edit` calls — never one call combining `--remove-label` and
+`--add-label`.** Every step above that crosses phases does this already
+(e.g. `dev-agent.yml`'s `status:in-progress` removal and `status:needs-qa`
+addition are two separate invocations, not one). This isn't just house
+style: issue #456 traced a live incident where a human's manual relabel of
+PR #412 to `status:needs-qa` — done as a single combined
+`gh pr edit "$PR" --remove-label status:escalated --add-label status:needs-qa`
+call — left the label visibly correct but never fired `qa-agent.yml` at
+all, with no error anywhere. Three other same-day relabels by the same
+identity, each issued as two separate calls, fired their target workflow
+correctly. The suspected mechanism is that a batched label mutation goes
+through as a single GraphQL call that doesn't reliably emit the `labeled`
+webhook the way two sequential REST-backed calls do — plausible but not
+provable after the fact, which is exactly why this needs to be a rule
+agents and humans follow going in, not a thing to debug after a silent
+miss. This applies regardless of which token is used.
+
 ## PR intake backstop (manually-opened PRs)
 
 `dev-agent.yml`'s risk-classification + `status:needs-qa` handoff (above)
