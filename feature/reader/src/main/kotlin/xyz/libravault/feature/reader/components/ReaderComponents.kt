@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
@@ -87,6 +88,18 @@ fun ReaderTopBar(
     onSettings: () -> Unit,
     showFontControls: Boolean = true,
     onShowToc: (() -> Unit)? = null,
+    // Read Aloud (#137/#276) — promoted out of the settings sheet and into the
+    // toolbar itself (issue filed from a live usability catch: burying the one
+    // control that starts a headline feature three taps deep — Settings sheet
+    // > Customize > scroll — made it read as a minor setting rather than the
+    // primary action it is). Gated the same way the settings-sheet row used to
+    // be, via the caller's readAloudSupported() check; PDF passes false. Given
+    // a filled (not outlined/plain) treatment and placed first among actions,
+    // deliberately louder than the icon-only controls beside it — the one
+    // action in this bar meant to be seen immediately, not discovered.
+    showReadAloud: Boolean = false,
+    readAloudActive: Boolean = false,
+    onReadAloudClick: () -> Unit = {},
 ) {
     TopAppBar(
         title = {
@@ -104,6 +117,24 @@ fun ReaderTopBar(
             }
         },
         actions = {
+            // First among actions — closest to the title, and visually louder
+            // (filled, not outlined) than every icon-only control that follows.
+            if (showReadAloud) {
+                FilledIconButton(
+                    onClick = onReadAloudClick,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .semantics {
+                            contentDescription = if (readAloudActive) "Stop Read Aloud" else "Read Aloud"
+                        },
+                ) {
+                    Icon(
+                        imageVector = if (readAloudActive) Icons.Default.Stop else Icons.Default.Headphones,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             if (showFontControls) {
                 // "A-"/"A+" is a good visual affordance and a poor spoken one:
                 // Compose merges that Text into the button's semantics, so
@@ -185,14 +216,6 @@ fun ReaderSettingsSheet(
     onScrollModeChanged: (ScrollMode) -> Unit,
     onWarmthChanged: (Float) -> Unit,
     onDismiss: () -> Unit,
-    // Read Aloud — EPUB (#137) and Markdown (#276), gated by the caller via
-    // ReaderScreen's readAloudSupported(), the same way iOS's
-    // ReaderSettingsSheet.showReadAloud gates per-format. False hides the row
-    // entirely rather than showing a disabled control for an unsupported format
-    // (e.g. PDF).
-    showReadAloud: Boolean = false,
-    readAloudActive: Boolean = false,
-    onReadAloudClick: () -> Unit = {},
     // Margins/justification/hyphenation (#421) — EPUB only. These map to native
     // Readium EpubPreferences fields with no Markdown/PDF equivalent (Markdown's
     // typography is Compose TextStyle, not Readium CSS; PDF pages here are
@@ -397,30 +420,10 @@ fun ReaderSettingsSheet(
                 }
             }
 
-            if (showReadAloud) {
-                HorizontalDivider()
-
-                // ── Read Aloud ─────────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onReadAloudClick)
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = if (readAloudActive) Icons.Default.Stop else Icons.Default.Headphones,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = if (readAloudActive) "Stop Read Aloud" else "Read Aloud",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-            }
+            // Read Aloud used to have its row here (#137/#276). It's now a
+            // prominent, filled button in ReaderTopBar instead — starting it
+            // shouldn't take Settings sheet > Customize > scroll. See
+            // ReaderTopBar's showReadAloud doc.
 
             Spacer(Modifier.height(16.dp))
         }
