@@ -35,9 +35,21 @@ class LibravaultDomainBridge: ObservableObject {
     private var ttsEngineType: TTSEngineType = .system
     private var isInitialized = false
     private let persistence: ReadingDataPersistence
+    /// Set once via `configureCloudTts(billingManager:)` — `LibravaultDomainBridge` is
+    /// a singleton constructed with no dependencies of its own, so it has no other way
+    /// to reach the live `StoreKitBillingManager` `CloudTtsEngine`'s gate needs. `nil`
+    /// until `AppState.init` calls `configureCloudTts`, which happens before
+    /// `ttsEngineType`'s own `didSet` can ever request `.cloud` (see that init's
+    /// ordering comment) — `switchTTSEngine(to: .cloud)` degrades safely (logs and
+    /// returns, doesn't crash) if this is somehow still nil.
+    private var cloudTtsBillingManager: StoreKitBillingManager?
 
     init(persistence: ReadingDataPersistence = ReadingDataPersistence()) {
         self.persistence = persistence
+    }
+
+    func configureCloudTts(billingManager: StoreKitBillingManager) {
+        cloudTtsBillingManager = billingManager
     }
 
     // MARK: - Initialization
@@ -77,7 +89,19 @@ class LibravaultDomainBridge: ObservableObject {
     func switchTTSEngine(to type: TTSEngineType) async {
         guard type != ttsEngineType || ttsEngine == nil else { return }
 
-        let newEngine: TTSEngineProtocol = type == .pocket ? PocketTTSEngine() : TTSEngineBridge()
+        let newEngine: TTSEngineProtocol
+        switch type {
+        case .system:
+            newEngine = TTSEngineBridge()
+        case .pocket:
+            newEngine = PocketTTSEngine()
+        case .cloud:
+            guard let billingManager = cloudTtsBillingManager else {
+                logger?.e(tag: "TTS", message: "Cannot switch to Cloud TTS: billing manager not configured yet")
+                return
+            }
+            newEngine = CloudTtsEngine(isSubscribedProvider: { billingManager.isSubscribed })
+        }
         do {
             try await newEngine.initialize()
             await ttsEngine?.stop()
