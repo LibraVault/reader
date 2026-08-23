@@ -377,7 +377,8 @@ fun SettingsScreen(
             )
 
             if (!viewModel.isBillingSupported) {
-                // F-Droid: no billing backend exists there at all — unchanged external link.
+                // F-Droid: no billing backend exists there at all — unchanged external link
+                // for the existing one-off flow.
                 OutlinedButton(
                     onClick = {
                         runCatching {
@@ -388,6 +389,17 @@ fun SettingsScreen(
                 ) {
                     Text("Support the Project")
                 }
+                Spacer(Modifier.height(8.dp))
+                // Recurring donation via BTCPay Subscriptions (#396) — no live
+                // checkout page exists yet (the BTCPay-side plan setup is
+                // separate infra work), so mirror the Play flavor's own
+                // "coming soon" state below rather than shipping a
+                // placeholder/guessed URL in a real-money flow.
+                Text(
+                    text = "Recurring support is coming soon",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
             } else if (productsAvailable) {
                 OutlinedButton(
                     onClick = { activity?.let(viewModel::purchaseSubscription) },
