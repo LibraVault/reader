@@ -283,6 +283,12 @@ Movement since the first measurement (2026-08-17, 40.1%) came from Phases 3–5:
 fails CI. The other modules are report-only: a repo-wide ratchet mostly
 produces tests written to move a number rather than to catch a bug.
 
+**`core:cloudtts`** (Premium Cloud TTS Voices, BYOK — `docs/cloud-tts-premium-prd.md`)
+was added after the 2026-08-18 snapshot above and isn't in that table yet;
+re-run `scripts/coverage-summary.py` to pick it up in the next refresh. CI
+does run its tests (`:core:cloudtts:test{Fdroid,Play}DebugUnitTest`,
+`jvm-tests.yml`), report-only like `core:tts`, not gated.
+
 Note that `core:domain` measures 17.2% where the deleted table claimed 95%.
 That module's four tested use cases are each at 100%; what the number exposes
 is a long tail of one-line delegating use cases and data-class boilerplate at
