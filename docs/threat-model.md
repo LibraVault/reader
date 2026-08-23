@@ -75,6 +75,27 @@ can't silently drift out of sync between the two. Nothing here to threat-model
 beyond "is the URL still the literal we intend" — there's no server response
 to validate, no invoice state, no credential.
 
+## A network-capable dependency present but unused (Coil/OkHttp)
+
+`io.coil-kt:coil-base`, used app-wide for cover art (`AsyncImage` /
+`rememberAsyncImagePainter`), transitively depends on
+`com.squareup.okhttp3:okhttp:4.12.0`. Coil isn't flavor-scoped, so OkHttp
+lands on every build variant's runtime classpath, F-Droid included —
+worth naming explicitly given how much deliberate effort `core:billing`
+and (in-flight) `core:cloudtts` put into keeping *new* networking
+dependencies off F-Droid.
+
+This is graph presence, not a capability the app exercises: every image
+model handed to Coil in this codebase is a local `file://`/`content://`
+URI (`LibraryItemCard`, `ContinueCard`, `PlayerScreen`, `MiniPlayerBar`),
+and `CoilMarkdownImageTransformer` explicitly refuses to resolve
+`http(s)://` Markdown image links rather than passing them through. Belt
+and suspenders: no manifest in this app (`app/src/main`, or any flavor
+override — none exists) declares the `INTERNET` permission, so even a
+hypothetical future code path that did hand Coil a remote URL would have
+the socket refused by the OS before OkHttp could act on it. Investigated
+in #463; no action taken because there is nothing to fix, only to name.
+
 ## Out of scope (explicit)
 
 - DRM / LCP-protected books — not supported; see v2 roadmap.
