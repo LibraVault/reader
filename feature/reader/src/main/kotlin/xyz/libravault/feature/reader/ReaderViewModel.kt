@@ -642,8 +642,8 @@ class ReaderViewModel @Inject constructor(
         _readAloudPlayback.value = current.copy(elapsedMs = positionMs.coerceIn(0L, current.durationMs))
     }
 
-    fun skipForwardReadAloud(deltaMs: Long = 30_000L)  = seekReadAloud(_readAloudPlayback.value.elapsedMs + deltaMs)
-    fun skipBackwardReadAloud(deltaMs: Long = 30_000L) = seekReadAloud(_readAloudPlayback.value.elapsedMs - deltaMs)
+    fun skipForwardReadAloud(deltaMs: Long = SkipDurationPreference.getSkipDurationMs(appContext))  = seekReadAloud(_readAloudPlayback.value.elapsedMs + deltaMs)
+    fun skipBackwardReadAloud(deltaMs: Long = SkipDurationPreference.getSkipDurationMs(appContext)) = seekReadAloud(_readAloudPlayback.value.elapsedMs - deltaMs)
 
     /**
      * Changing speed mid-chapter rescales the duration estimate (and elapsed
