@@ -38,6 +38,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.billing.SupportBillingClient
 import xyz.libravault.core.cloudtts.CloudApiKeyStore
+import xyz.libravault.core.cloudtts.CloudCredentialFields
+import xyz.libravault.core.cloudtts.CloudProviderId
 import xyz.libravault.core.cloudtts.CloudTtsProvider
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.UserPreferences
@@ -541,5 +543,86 @@ class SettingsViewModelTest {
             viewModel().purchaseOneTimeTip(activity)
 
             coVerify(exactly = 1) { billingClient.purchaseOneTimeTip(activity) }
+        }
+
+    // ── Cloud Voices ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `configuredCloudProviders reflects only providers with stored credentials`() =
+        runTest(mainDispatcher) {
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.ELEVENLABS) } returns
+                mapOf(CloudCredentialFields.API_KEY to "key")
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.OPENAI) } returns null
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.GOOGLE_CLOUD_TTS) } returns null
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.AZURE_SPEECH) } returns null
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.AMAZON_POLLY) } returns null
+
+            assertEquals(setOf(CloudProviderId.ELEVENLABS), viewModel().configuredCloudProviders.value)
+        }
+
+    @Test
+    fun `onCloudVoicesConsentAccepted persists consent as true`() = runTest(mainDispatcher) {
+        viewModel().onCloudVoicesConsentAccepted()
+        coVerify(exactly = 1) { ttsPreferences.setCloudVoicesConsent(true) }
+    }
+
+    @Test
+    fun `onCloudVoicesConsentDisabled persists consent as false`() = runTest(mainDispatcher) {
+        viewModel().onCloudVoicesConsentDisabled()
+        coVerify(exactly = 1) { ttsPreferences.setCloudVoicesConsent(false) }
+    }
+
+    @Test
+    fun `onCloudProviderSelected persists the provider's name`() = runTest(mainDispatcher) {
+        viewModel().onCloudProviderSelected(CloudProviderId.AZURE_SPEECH)
+        coVerify(exactly = 1) { ttsPreferences.setSelectedCloudProvider(CloudProviderId.AZURE_SPEECH.name) }
+    }
+
+    @Test
+    fun `onValidateAndSaveCloudKey saves and refreshes configuredCloudProviders when validation succeeds`() =
+        runTest(mainDispatcher) {
+            val credentials = mapOf(CloudCredentialFields.API_KEY to "sk-test")
+            coEvery { cloudTtsProvider.validateKey(CloudProviderId.OPENAI, credentials) } returns Result.success(Unit)
+            coEvery { cloudApiKeyStore.saveCredentials(CloudProviderId.OPENAI, credentials) } just Runs
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.OPENAI) } returns credentials
+
+            val vm = viewModel()
+            val result = vm.onValidateAndSaveCloudKey(CloudProviderId.OPENAI, credentials)
+
+            assertTrue(result.isSuccess)
+            coVerify(exactly = 1) { cloudTtsProvider.validateKey(CloudProviderId.OPENAI, credentials) }
+            coVerify(exactly = 1) { cloudApiKeyStore.saveCredentials(CloudProviderId.OPENAI, credentials) }
+            assertEquals(setOf(CloudProviderId.OPENAI), vm.configuredCloudProviders.value)
+        }
+
+    @Test
+    fun `onValidateAndSaveCloudKey never saves when validation fails`() = runTest(mainDispatcher) {
+        val credentials = mapOf(CloudCredentialFields.API_KEY to "bad-key")
+        val failure = Result.failure<Unit>(IllegalStateException("invalid key"))
+        coEvery { cloudTtsProvider.validateKey(CloudProviderId.OPENAI, credentials) } returns failure
+
+        val vm = viewModel()
+        val result = vm.onValidateAndSaveCloudKey(CloudProviderId.OPENAI, credentials)
+
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { cloudApiKeyStore.saveCredentials(any(), any()) }
+        assertEquals(emptySet<CloudProviderId>(), vm.configuredCloudProviders.value)
+    }
+
+    @Test
+    fun `onClearCloudKey clears credentials and refreshes configuredCloudProviders`() =
+        runTest(mainDispatcher) {
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.ELEVENLABS) } returns
+                mapOf(CloudCredentialFields.API_KEY to "key")
+            val vm = viewModel()
+            assertEquals(setOf(CloudProviderId.ELEVENLABS), vm.configuredCloudProviders.value)
+
+            coEvery { cloudApiKeyStore.clearCredentials(CloudProviderId.ELEVENLABS) } just Runs
+            coEvery { cloudApiKeyStore.loadCredentials(CloudProviderId.ELEVENLABS) } returns null
+
+            vm.onClearCloudKey(CloudProviderId.ELEVENLABS)
+
+            coVerify(exactly = 1) { cloudApiKeyStore.clearCredentials(CloudProviderId.ELEVENLABS) }
+            assertEquals(emptySet<CloudProviderId>(), vm.configuredCloudProviders.value)
         }
 }
