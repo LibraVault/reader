@@ -7,15 +7,10 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 
 /**
- * Structural/differential coverage, not known-answer: this implementation
- * was written directly from AWS's published SigV4 algorithm (see
- * AwsSigV4Signer's class doc), but no trustworthy verbatim AWS test-vector
- * fixture was available in this environment to assert an exact expected
- * signature against — asserting a wrong hardcoded value would be worse than
- * asserting nothing, since it would look like verification without being
- * any. These tests instead verify the properties that must hold regardless:
- * correct format, determinism, and sensitivity to every signed input. Real
- * live-request verification is tracked separately (see the class doc).
+ * Structural/differential coverage, plus known-answer cross-checks (see the
+ * two `known-answer` tests below) against `botocore` (the official AWS
+ * Python SDK)'s own `SigV4Auth` for the exact two request shapes
+ * `AmazonPollyAdapter` sends — see #466.
  */
 class AwsSigV4SignerTest {
 
@@ -66,5 +61,65 @@ class AwsSigV4SignerTest {
     @Test
     fun `signature changes when the payload changes`() {
         assertNotEquals(sign(payload = "{\"a\":1}").authorizationHeader, sign(payload = "{\"a\":2}").authorizationHeader)
+    }
+
+    /**
+     * Known-answer test, not just structural: expected value cross-checked against
+     * `botocore` (the official AWS Python SDK)'s `SigV4Auth.canonical_request` /
+     * `.string_to_sign` / `.signature`, called directly with a pinned timestamp
+     * (bypassing `add_auth`'s `utcnow()`), for AWS's published example keypair
+     * (`AKIAIOSFODNN7EXAMPLE` / `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) and the
+     * exact request shape `AmazonPollyAdapter.synthesize` sends. `botocore`'s
+     * canonical request and string-to-sign matched this signer's byte-for-byte
+     * before the final signature was even compared. See #466.
+     */
+    @Test
+    fun `known-answer signature matches the official AWS SDK for the SynthesizeSpeech request shape`() {
+        val signed = AwsSigV4Signer.sign(
+            method = "POST",
+            host = "polly.us-east-1.amazonaws.com",
+            canonicalUri = "/v1/speech",
+            payload = "{\"Text\":\"Hello world\",\"VoiceId\":\"Joanna\",\"OutputFormat\":\"mp3\",\"Engine\":\"neural\"}",
+            region = "us-east-1",
+            accessKeyId = "AKIAIOSFODNN7EXAMPLE",
+            secretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            extraSignedHeaders = mapOf("content-type" to "application/json"),
+            now = Instant.parse("2015-08-30T12:36:00Z"),
+        )
+
+        assertEquals("20150830T123600Z", signed.amzDate)
+        assertEquals(
+            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20150830/us-east-1/polly/aws4_request, " +
+                "SignedHeaders=content-type;host;x-amz-date, " +
+                "Signature=4d30b49509edca4827c3d5f7764f8b2906a03c284b330650374379d947282f24",
+            signed.authorizationHeader,
+        )
+    }
+
+    /**
+     * Known-answer test for the `AmazonPollyAdapter.validateKey` request shape
+     * (GET, no extra signed headers, empty payload) — see the class doc on the
+     * test above for how the expected value was derived.
+     */
+    @Test
+    fun `known-answer signature matches the official AWS SDK for the ListVoices request shape`() {
+        val signed = AwsSigV4Signer.sign(
+            method = "GET",
+            host = "polly.eu-west-1.amazonaws.com",
+            canonicalUri = "/v1/voices",
+            payload = "",
+            region = "eu-west-1",
+            accessKeyId = "AKIAIOSFODNN7EXAMPLE",
+            secretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            now = Instant.parse("2023-01-15T09:30:00Z"),
+        )
+
+        assertEquals("20230115T093000Z", signed.amzDate)
+        assertEquals(
+            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20230115/eu-west-1/polly/aws4_request, " +
+                "SignedHeaders=host;x-amz-date, " +
+                "Signature=3ae2b0f9f9373d144ea638e3be5a3db5d6dacaa702fc836c9c2a9f5dbc9c86df",
+            signed.authorizationHeader,
+        )
     }
 }

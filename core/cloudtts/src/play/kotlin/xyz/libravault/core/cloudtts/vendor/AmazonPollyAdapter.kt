@@ -16,8 +16,7 @@ import javax.inject.Inject
  * docs. The one vendor here that isn't a bearer-token REST call: AWS
  * Signature Version 4 (SigV4), region-specific host
  * (`polly.{region}.amazonaws.com`), JSON body. See [AwsSigV4Signer]'s class
- * doc for the residual-verification caveat on the signing implementation
- * itself.
+ * doc for how the signing implementation itself was verified.
  */
 class AmazonPollyAdapter internal constructor(
     private val httpClient: OkHttpClient,
