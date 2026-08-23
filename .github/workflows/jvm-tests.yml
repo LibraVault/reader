@@ -134,6 +134,8 @@ jobs:
             :app:testPlayDebugUnitTest \
             :core:billing:testFdroidDebugUnitTest \
             :core:billing:testPlayDebugUnitTest \
+            :core:cloudtts:testFdroidDebugUnitTest \
+            :core:cloudtts:testPlayDebugUnitTest \
             --continue
 
       - name: Upload test results
@@ -166,7 +168,9 @@ jobs:
             :feature:settings:koverXmlReportFdroidDebug \
             :feature:settings:koverHtmlReportFdroidDebug \
             :core:billing:koverXmlReportFdroidDebug \
-            :core:billing:koverHtmlReportFdroidDebug
+            :core:billing:koverHtmlReportFdroidDebug \
+            :core:cloudtts:koverXmlReportFdroidDebug \
+            :core:cloudtts:koverHtmlReportFdroidDebug
 
       # Prints the per-module table to the run summary, then enforces the gate.
       # Only the core:vault* modules are gated; everything else is report-only,

@@ -47,6 +47,7 @@ include(":core:ui")
 include(":core:logger")
 include(":core:tts")
 include(":core:billing")
+include(":core:cloudtts")
 
 // Feature modules
 include(":feature:onboarding")

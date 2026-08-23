@@ -20,13 +20,31 @@ private val ENGINE_TYPE_KEY = stringPreferencesKey("engine_type")
 private val SELECTED_VOICE_KEY = stringPreferencesKey("selected_voice")
 private val LOCAL_ONLY_KEY = booleanPreferencesKey("local_voices_only")
 
+// Premium Cloud TTS Voices (BYOK), PRD docs/cloud-tts-premium-prd.md §4 — the
+// second, independent gate switch alongside SupportBillingClient's real
+// subscription signal (see core:cloudtts's CloudTtsGate, which combines this
+// with `subscriptionActive`). Off by default. Deliberately NOT the existing
+// LOCAL_ONLY_KEY/localOnlyFlow below: that key is dead code today (zero
+// production call sites) with inverted polarity (localOnly=true ⇔
+// cloudVoicesConsent=false) — repurposing it would silently flip a stored
+// boolean's meaning for anyone who greps LOCAL_ONLY_KEY later, which is the
+// wrong kind of subtlety for a security/privacy-relevant consent flag.
+private val CLOUD_VOICES_CONSENT_KEY = booleanPreferencesKey("cloud_voices_consent")
+
 val Context.ttsPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(name = PREFERENCES_NAME)
 
+/**
+ * Primary constructor takes the [DataStore] directly (rather than a
+ * [Context]) so JVM tests can construct this against an in-memory/temp-file
+ * store with no Android Context or Robolectric — the [Inject]-annotated
+ * secondary constructor is what Hilt actually uses in production.
+ */
 @Singleton
-class TtsPreferences @Inject constructor(
-    @ApplicationContext private val context: Context,
+class TtsPreferences constructor(
+    private val dataStore: DataStore<Preferences>,
 ) {
-    private val dataStore = context.ttsPreferencesDataStore
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(context.ttsPreferencesDataStore)
 
     val engineTypeFlow: Flow<TtsEngineType> = dataStore.data.map { preferences ->
         val typeName = preferences[ENGINE_TYPE_KEY] ?: TtsEngineType.ANDROID.name
@@ -43,6 +61,12 @@ class TtsPreferences @Inject constructor(
 
     val localOnlyFlow: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[LOCAL_ONLY_KEY] ?: true
+    }
+
+    /** Off by default — PRD §4. Independent of subscription state; buying the
+     * subscription must never flip this. See [CLOUD_VOICES_CONSENT_KEY]. */
+    val cloudVoicesConsentFlow: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[CLOUD_VOICES_CONSENT_KEY] ?: false
     }
 
     suspend fun setEngineType(type: TtsEngineType) {
@@ -64,6 +88,12 @@ class TtsPreferences @Inject constructor(
     suspend fun setLocalOnly(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[LOCAL_ONLY_KEY] = enabled
+        }
+    }
+
+    suspend fun setCloudVoicesConsent(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[CLOUD_VOICES_CONSENT_KEY] = enabled
         }
     }
 }
