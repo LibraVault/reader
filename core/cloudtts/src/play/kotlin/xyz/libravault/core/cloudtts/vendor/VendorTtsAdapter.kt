@@ -1,5 +1,6 @@
 package xyz.libravault.core.cloudtts.vendor
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -49,3 +50,23 @@ internal fun Map<String, String>.field(name: String): String =
  * actually looks like. */
 internal fun localeFromVoiceId(voiceId: String): String =
     voiceId.split("-").take(2).joinToString("-").ifEmpty { "en-US" }
+
+/**
+ * `kotlin.runCatching` also catches [CancellationException] — a well-known
+ * structured-concurrency footgun: it turns a coroutine cancellation (e.g.
+ * `CloudTtsEngine.stop()` cancelling an in-flight `synthesize()` call) into
+ * an ordinary `Result.failure`, which every adapter's caller then treats as
+ * "cloud failed, fall back to on-device" — so pressing Stop while a network
+ * call is in flight would start the on-device engine SPEAKING instead of
+ * actually stopping (found in review, before this shipped). This rethrows
+ * [CancellationException] instead of wrapping it, exactly matching
+ * `runCatching`'s contract for every other [Throwable].
+ */
+internal suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }

@@ -32,12 +32,22 @@ interface CloudPlayback {
  * Feeds the byte array via [MediaDataSource] rather than writing a temp
  * file: no cache-file cleanup to get wrong, and the audio (synthesized
  * speech from the user's own reading material) never touches disk.
+ *
+ * All methods `synchronized(lock)`: [MediaPlayer] "objects are not
+ * thread-safe" per its own docs, and this class is genuinely called from
+ * two different threads — `play()` from [CloudTtsEngine]'s background
+ * `scope`, `pause()`/`resume()`/`stop()` directly from whatever thread the
+ * [xyz.libravault.core.tts.TtsEngine] caller is on (typically Main, same as
+ * `AndroidTtsEngine`/`PocketTtsEngine`) — a race here could pause/resume a
+ * stale reference or call `release()` on a player still mid-`start()` on
+ * the other thread (found in review).
  */
 class MediaPlayerCloudPlayback @Inject constructor() : CloudPlayback {
+    private val lock = Any()
     private var mediaPlayer: MediaPlayer? = null
 
-    override fun play(audioBytes: ByteArray, onCompletion: () -> Unit, onError: (String) -> Unit) {
-        stop()
+    override fun play(audioBytes: ByteArray, onCompletion: () -> Unit, onError: (String) -> Unit) = synchronized(lock) {
+        stopLocked()
         val player = MediaPlayer()
         try {
             player.setAudioAttributes(
@@ -68,14 +78,18 @@ class MediaPlayerCloudPlayback @Inject constructor() : CloudPlayback {
     }
 
     override fun pause() {
-        mediaPlayer?.pause()
+        synchronized(lock) { mediaPlayer?.pause() }
     }
 
     override fun resume() {
-        mediaPlayer?.start()
+        synchronized(lock) { mediaPlayer?.start() }
     }
 
     override fun stop() {
+        synchronized(lock) { stopLocked() }
+    }
+
+    private fun stopLocked() {
         mediaPlayer?.apply {
             runCatching { stop() }
             release()

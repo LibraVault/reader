@@ -6,6 +6,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.Runs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -61,6 +62,19 @@ class CloudTtsEngineTest {
             synthesizeCallCount++
             return result
         }
+        override suspend fun validateKey(provider: CloudProviderId, credentials: Map<String, String>): Result<Unit> =
+            Result.success(Unit)
+    }
+
+    /** Never returns — suspends forever until cancelled, simulating a
+     * genuinely in-flight network call for cancellation testing. */
+    private class SuspendingCloudTtsProvider : CloudTtsProvider {
+        override suspend fun synthesize(
+            provider: CloudProviderId,
+            text: String,
+            voiceId: String,
+            credentials: Map<String, String>,
+        ): Result<ByteArray> = awaitCancellation()
         override suspend fun validateKey(provider: CloudProviderId, credentials: Map<String, String>): Result<Unit> =
             Result.success(Unit)
     }
@@ -257,5 +271,75 @@ class CloudTtsEngineTest {
         advanceUntilIdle()
 
         assertEquals("hello", fallback.lastSpokenText)
+    }
+
+    @Test
+    fun `speak continues to the next chunk only after the previous chunk finishes playing`(@TempDir tempDir: File) = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val fallback = FakeTtsEngine()
+        val provider = FakeCloudTtsProvider(result = Result.success(byteArrayOf(1)))
+        val prefs = preferences(tempDir, scope)
+        prefs.setSelectedCloudProvider(CloudProviderId.OPENAI.name)
+        prefs.setSelectedVoice("alloy")
+        val playback = FakeCloudPlayback()
+        val engine = buildEngine(
+            openGate(),
+            provider,
+            FakeCloudApiKeyStore(stored = mapOf(CloudCredentialFields.API_KEY to "sk-test")),
+            prefs,
+            fallback,
+            playback,
+            scope,
+        )
+        // Two "sentences" well past MAX_CHUNK_CHARS (3900) so splitIntoChunks
+        // produces exactly two chunks.
+        val longText = "Sentence one. ".repeat(400)
+
+        engine.speak(longText)
+        advanceUntilIdle()
+
+        assertEquals(1, provider.synthesizeCallCount, "must not fetch chunk 2 before chunk 1 finishes playing")
+        assertTrue(playback.playedBytes != null)
+
+        // Simulate chunk 1's audio finishing.
+        playback.onCompletion?.invoke()
+        advanceUntilIdle()
+
+        assertEquals(2, provider.synthesizeCallCount, "chunk 2 must be fetched once chunk 1's playback completes")
+        assertNull(fallback.lastSpokenText)
+    }
+
+    @Test
+    fun `stop while a cloud synthesis call is in flight cancels it rather than falling back`(@TempDir tempDir: File) = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val fallback = FakeTtsEngine()
+        val provider = SuspendingCloudTtsProvider()
+        val prefs = preferences(tempDir, scope)
+        prefs.setSelectedCloudProvider(CloudProviderId.OPENAI.name)
+        prefs.setSelectedVoice("alloy")
+        val engine = buildEngine(
+            openGate(),
+            provider,
+            FakeCloudApiKeyStore(stored = mapOf(CloudCredentialFields.API_KEY to "sk-test")),
+            prefs,
+            fallback,
+            FakeCloudPlayback(),
+            scope,
+        )
+
+        engine.speak("hello")
+        // With an UnconfinedTestDispatcher, speak() has already run eagerly
+        // up to synthesize()'s awaitCancellation() suspension point here —
+        // i.e. a real network call is genuinely "in flight".
+        engine.stop()
+        advanceUntilIdle()
+
+        assertNull(
+            fallback.lastSpokenText,
+            "stop() must cancel the in-flight call, not have it look like an ordinary " +
+                "synthesis failure that triggers fallback.speak() — this is exactly the bug " +
+                "kotlin.runCatching's CancellationException-swallowing caused before " +
+                "runCatchingCancellable fixed it",
+        )
     }
 }

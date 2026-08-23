@@ -27,7 +27,7 @@ class ElevenLabsAdapter internal constructor(
     private fun baseUrl(): HttpUrl = testBaseUrl ?: "https://${CloudTtsFixedHosts.ELEVENLABS}".toHttpUrl()
 
     override suspend fun synthesize(text: String, voiceId: String, credentials: Map<String, String>): Result<ByteArray> =
-        runCatching {
+        runCatchingCancellable {
             val apiKey = credentials.field(CloudCredentialFields.API_KEY)
             // addPathSegment (singular) percent-encodes voiceId as ONE opaque
             // segment — addPathSegments(string) would instead split it on '/'
@@ -49,7 +49,7 @@ class ElevenLabsAdapter internal constructor(
             }
         }
 
-    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatching {
+    override suspend fun validateKey(credentials: Map<String, String>): Result<Unit> = runCatchingCancellable {
         val apiKey = credentials.field(CloudCredentialFields.API_KEY)
         val url = baseUrl().newBuilder().addPathSegments("v1/user").build()
         val request = Request.Builder().url(url).addHeader("xi-api-key", apiKey).get().build()

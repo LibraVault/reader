@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import xyz.libravault.core.tts.TtsAudioFocusManager
 import xyz.libravault.core.tts.TtsEngine
 import xyz.libravault.core.tts.TtsEngineType
@@ -36,14 +37,30 @@ private const val MAX_CHUNK_CHARS = 3900
  *
  * [CloudTtsGate.observeCanUseCloudTts] is re-checked before every chunk in
  * [speak], not just once at the top — a subscription lapsing or consent
- * being revoked mid-session stops new cloud calls immediately. On gate
- * failure, missing provider/voice selection, missing credentials, or any
- * HTTP failure, delegates the rest of the utterance to the on-device
+ * being revoked mid-session stops new cloud calls immediately. Provider,
+ * voice, and credentials are resolved once per [speak] call, not re-read
+ * per chunk (they can't change mid-utterance — no setter is exposed for
+ * them — so re-reading per chunk was only redundant DataStore/Keystore
+ * work, caught in review).
+ *
+ * On gate failure, missing provider/voice selection, missing credentials,
+ * or any HTTP failure, delegates the rest of the utterance to the on-device
  * fallback engine ([TtsEngineType.ANDROID], resolved from the SAME
  * multibinding map this class is itself bound into — Provider-based
  * multibinding maps can reference their own other entries without a cycle,
  * so no separate DI qualifier is needed) rather than retrying cloud or
  * silently stalling (PRD §3).
+ *
+ * The whole per-chunk loop runs as ONE coroutine (not a chain of
+ * `scope.launch{}` calls from playback callbacks) specifically so
+ * [speakJob]`.cancel()` (from [stop]) reliably interrupts whatever chunk is
+ * currently fetching or playing — an earlier version launched each
+ * subsequent chunk from `onCompletion`/`onError` outside [speakJob]'s
+ * tracking, so `stop()` could not prevent an already-in-flight later chunk
+ * from starting to play (found in review). [CloudPlayback.play]'s
+ * callback-based API is bridged into a single suspension point via
+ * [suspendCancellableCoroutine] so playback itself is a real, cancellable
+ * part of that one coroutine.
  */
 @Singleton
 class CloudTtsEngine @Inject constructor(
@@ -98,47 +115,62 @@ class CloudTtsEngine @Inject constructor(
         _state.value = _state.value.copy(status = TtsStatus.PLAYING, error = null)
 
         speakJob = scope.launch {
-            val chunks = splitIntoChunks(text)
-            speakChunk(chunks, 0)
-        }
-    }
+            val providerId = preferences.selectedCloudProviderFlow.first()
+                ?.let { runCatching { CloudProviderId.valueOf(it) }.getOrNull() }
+            val voiceId = preferences.selectedVoiceFlow.first()
+            if (providerId == null || voiceId == null) {
+                fallBackTo(text, "no cloud voice selected")
+                return@launch
+            }
+            val credentials = apiKeyStore.loadCredentials(providerId)
+            if (credentials == null) {
+                fallBackTo(text, "no saved credentials for $providerId")
+                return@launch
+            }
 
-    private suspend fun speakChunk(chunks: List<String>, index: Int) {
-        if (index >= chunks.size) {
+            val chunks = splitIntoChunks(text)
+            for (index in chunks.indices) {
+                if (!gate.observeCanUseCloudTts().first()) {
+                    fallBackTo(chunks, index, "cloud voices gate is closed (subscription lapsed or consent revoked)")
+                    return@launch
+                }
+
+                // CancellationException propagates straight through (not
+                // caught here, and the vendor adapters no longer swallow it
+                // either — see runCatchingCancellable) so stop() cancelling
+                // this coroutine ends the loop instead of looking like an
+                // ordinary synthesis failure that should fall back.
+                val audioBytes = cloudTtsProvider.synthesize(providerId, chunks[index], voiceId, credentials)
+                    .getOrElse {
+                        fallBackTo(chunks, index, "cloud synthesis failed: ${it.message}")
+                        return@launch
+                    }
+
+                val playError = awaitPlayback(audioBytes)
+                if (playError != null) {
+                    fallBackTo(chunks, index, "playback error: $playError")
+                    return@launch
+                }
+            }
+
             _state.value = _state.value.copy(status = TtsStatus.IDLE)
             _completionEvent.tryEmit(Unit)
-            return
         }
-
-        if (!gate.observeCanUseCloudTts().first()) {
-            fallBackTo(chunks, index, "cloud voices gate is closed (subscription lapsed or consent revoked)")
-            return
-        }
-        val providerId = preferences.selectedCloudProviderFlow.first()
-            ?.let { runCatching { CloudProviderId.valueOf(it) }.getOrNull() }
-        val voiceId = preferences.selectedVoiceFlow.first()
-        if (providerId == null || voiceId == null) {
-            fallBackTo(chunks, index, "no cloud voice selected")
-            return
-        }
-        val credentials = apiKeyStore.loadCredentials(providerId)
-        if (credentials == null) {
-            fallBackTo(chunks, index, "no saved credentials for $providerId")
-            return
-        }
-
-        val result = cloudTtsProvider.synthesize(providerId, chunks[index], voiceId, credentials)
-        val audioBytes = result.getOrElse {
-            fallBackTo(chunks, index, "cloud synthesis failed: ${it.message}")
-            return
-        }
-
-        playback.play(
-            audioBytes,
-            onCompletion = { scope.launch { speakChunk(chunks, index + 1) } },
-            onError = { message -> scope.launch { fallBackTo(chunks, index, "playback error: $message") } },
-        )
     }
+
+    /** Bridges [CloudPlayback]'s callback API into one suspension point, so
+     * playback is a real part of [speakJob]'s single coroutine — cancelling
+     * it (via [stop]) reliably stops in-flight playback rather than racing
+     * an untracked callback. Returns the error message, or null on success. */
+    private suspend fun awaitPlayback(audioBytes: ByteArray): String? =
+        suspendCancellableCoroutine { continuation ->
+            playback.play(
+                audioBytes,
+                onCompletion = { if (continuation.isActive) continuation.resumeWith(Result.success(null)) },
+                onError = { message -> if (continuation.isActive) continuation.resumeWith(Result.success(message)) },
+            )
+            continuation.invokeOnCancellation { playback.stop() }
+        }
 
     /** Delegates chunks `[index, chunks.size)` to the on-device engine and
      * forwards its state/events into this engine's own flows for as long as
@@ -152,6 +184,11 @@ class CloudTtsEngine @Inject constructor(
      * (`android.util.Log` throws "not mocked" in a plain JVM test — same
      * reasoning as [RealCloudApiKeyStore] using `java.util.Base64`, not
      * `android.util.Base64`). */
+    /** Convenience for a fallback decided before any chunking happened
+     * (e.g. no provider/voice selected) — the whole [text] goes to the
+     * fallback engine untouched. */
+    private fun fallBackTo(text: String, reason: String) = fallBackTo(listOf(text), 0, reason)
+
     private fun fallBackTo(chunks: List<String>, index: Int, reason: String) {
         lastFallbackReason = reason
         isFallenBack = true

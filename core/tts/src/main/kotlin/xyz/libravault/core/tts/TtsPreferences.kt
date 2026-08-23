@@ -65,6 +65,22 @@ class TtsPreferences constructor(
         }
     }
 
+    /**
+     * Shared by all three [TtsEngineType]s' voice selection — ANDROID system
+     * voice names, POCKET_TTS's sherpa-onnx model voice IDs, and (per
+     * [SELECTED_CLOUD_PROVIDER_KEY]'s doc) whichever cloud vendor's voice ID
+     * once `core:cloudtts` exists.
+     *
+     * FLAGGED IN REVIEW, not yet fixed here — genuine gap for whoever builds
+     * the Cloud Voices Settings UI: since this key is shared, switching
+     * `TtsEngineType` (or the selected cloud provider) without an explicit
+     * fresh voice pick can hand a stale, engine-incompatible voiceId to
+     * whichever engine reads it next (e.g. a leftover Pocket TTS model ID
+     * sent to a cloud vendor's API, which will reject it). The UI must call
+     * [setSelectedVoice] with `null` (or a valid default for the new
+     * engine/provider) whenever engine type or cloud provider changes —
+     * this persistence layer has no way to enforce that itself.
+     */
     val selectedVoiceFlow: Flow<String?> = dataStore.data.map { preferences ->
         preferences[SELECTED_VOICE_KEY]
     }
