@@ -15,16 +15,16 @@ import javax.crypto.spec.SecretKeySpec
  * `GET /v1/voices`) need — a small, focused signer, not a general-purpose
  * AWS SDK reimplementation.
  *
- * RESIDUAL RISK, called out explicitly rather than papered over: this was
- * implemented directly from AWS's published algorithm
- * (https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html)
- * and covered by structural/differential unit tests (correct format,
- * deterministic for a fixed input, sensitive to every input changing), but
- * has NOT been verified against a real AWS request/response or an official
- * AWS test-vector fixture — no trustworthy verbatim copy of one was
- * available in this environment. Tracked as a required manual/live
- * verification step before Polly support ships to users — see the filed
- * follow-up issue referenced from the vendor-adapters PR description.
+ * Implemented directly from AWS's published algorithm
+ * (https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html),
+ * covered by structural/differential unit tests (correct format, deterministic
+ * for a fixed input, sensitive to every input changing), and cross-checked with
+ * known-answer tests against `botocore` (the official AWS Python SDK)'s own
+ * `SigV4Auth`, byte-for-byte, for both real call shapes this module sends — see
+ * `AwsSigV4SignerTest`'s `known-answer` tests and #466. That verifies this
+ * algorithm against an independent, official implementation for fixed inputs;
+ * it is not a substitute for a real live request against Polly, which requires
+ * AWS credentials this environment doesn't have.
  */
 internal object AwsSigV4Signer {
 
