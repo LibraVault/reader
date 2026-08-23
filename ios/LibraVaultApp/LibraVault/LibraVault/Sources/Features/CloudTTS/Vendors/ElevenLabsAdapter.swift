@@ -18,15 +18,40 @@ struct ElevenLabsAdapter: VendorTtsAdapter {
         testBaseURL ?? URL(string: "https://\(CloudTtsFixedHosts.elevenLabs)")!
     }
 
+    /// `urlPathAllowed` minus "/" — deliberately excludes it so a voiceID containing
+    /// one gets percent-encoded to "%2F" (one opaque path segment) rather than left as
+    /// a literal separator. `URL.appendingPathComponent(_:)` does NOT do this: it
+    /// treats "/" in its argument as a real path separator (that's the whole point of
+    /// the method — appending "a/b/c" in one call is the same as three separate
+    /// appends), the opposite of Kotlin's `addPathSegment` (singular), which does
+    /// percent-encode the whole string as one segment. This was a REAL bug, not a
+    /// hypothetical one: the regression test below failed for real in CI against
+    /// `api.elevenlabs.io/v1/text-to-speech/abc/../admin` — the exact path-traversal
+    /// shape it exists to catch — before this fix.
+    private static let pathSegmentAllowedCharacters: CharacterSet = {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/")
+        return allowed
+    }()
+
+    private func synthesizeURL(voiceID: String) throws -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              let encodedVoiceID = voiceID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowedCharacters)
+        else {
+            throw CloudTtsProviderError.invalidResponse
+        }
+        // percentEncodedPath is stored/used as-is, unlike appendingPathComponent —
+        // exactly what's needed once encodedVoiceID is already correctly escaped.
+        components.percentEncodedPath = "/v1/text-to-speech/\(encodedVoiceID)"
+        guard let url = components.url else {
+            throw CloudTtsProviderError.invalidResponse
+        }
+        return url
+    }
+
     func synthesize(text: String, voiceID: String, credentials: [CloudCredentialField: String]) async throws -> Data {
         let apiKey = try credentials.requiredField(.apiKey)
-        // appendingPathComponent (not raw string interpolation into a path) percent-
-        // encodes voiceID as one opaque segment, so a voiceID containing a "/" can't be
-        // misread as extra path segments.
-        let url = baseURL
-            .appendingPathComponent("v1")
-            .appendingPathComponent("text-to-speech")
-            .appendingPathComponent(voiceID)
+        let url = try synthesizeURL(voiceID: voiceID)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
