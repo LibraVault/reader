@@ -59,7 +59,14 @@ class CloudApiKeyStoreTest {
     @Test
     fun `clearCredentials removes saved credentials`(@TempDir tempDir: File) = runTest {
         val cloudApiKeyStore = store(tempDir)
-        cloudApiKeyStore.saveCredentials(CloudProviderId.AMAZON_POLLY, mapOf(CloudCredentialFields.ACCESS_KEY_ID to "AKIAEXAMPLE"))
+        cloudApiKeyStore.saveCredentials(
+            CloudProviderId.AMAZON_POLLY,
+            mapOf(
+                CloudCredentialFields.ACCESS_KEY_ID to "AKIAEXAMPLE",
+                CloudCredentialFields.SECRET_ACCESS_KEY to "supersecret",
+                CloudCredentialFields.REGION to "us-east-1",
+            ),
+        )
         cloudApiKeyStore.clearCredentials(CloudProviderId.AMAZON_POLLY)
         assertNull(cloudApiKeyStore.loadCredentials(CloudProviderId.AMAZON_POLLY))
     }
@@ -90,6 +97,62 @@ class CloudApiKeyStoreTest {
             // Expected — see RealCloudApiKeyStore's class doc: callers (Settings
             // UI) must surface this, never fall back to a software-backed key.
         }
+    }
+
+    @Test
+    fun `saveCredentials rejects a map missing a required field`(@TempDir tempDir: File) = runTest {
+        val cloudApiKeyStore = store(tempDir)
+        try {
+            // Azure needs api_key AND region — only api_key given.
+            cloudApiKeyStore.saveCredentials(CloudProviderId.AZURE_SPEECH, mapOf(CloudCredentialFields.API_KEY to "azure-key"))
+            throw AssertionError("Expected IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            // Expected — fail fast at save time, not at synthesis time later.
+        }
+    }
+
+    @Test
+    fun `saveCredentials rejects a map with unexpected extra fields`(@TempDir tempDir: File) = runTest {
+        val cloudApiKeyStore = store(tempDir)
+        try {
+            cloudApiKeyStore.saveCredentials(
+                CloudProviderId.OPENAI,
+                mapOf(CloudCredentialFields.API_KEY to "sk-test", CloudCredentialFields.REGION to "us-east-1"),
+            )
+            throw AssertionError("Expected IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            // Expected — OpenAI doesn't take a region; an extra field usually
+            // means the caller mixed up which provider it's saving for.
+        }
+    }
+
+    @Test
+    fun `loadCredentials returns null rather than throwing when the wrap key has been lost`(@TempDir tempDir: File) = runTest {
+        val keyWrapFactory = FakeHardwareKeyWrapFactory()
+        val cloudApiKeyStore = store(tempDir, keyWrapFactory)
+        cloudApiKeyStore.saveCredentials(CloudProviderId.OPENAI, mapOf(CloudCredentialFields.API_KEY to "sk-test"))
+
+        // Simulate the Keystore losing the key after it was used to wrap this
+        // entry (KeystoreKeyLostException) — the ciphertext on disk is now
+        // permanently unreadable. loadCredentials must treat this as "nothing
+        // saved," not throw VaultAuthenticationException out of a suspend
+        // function whose signature promises Map<String,String>?.
+        keyWrapFactory.forgetKey("cloud_tts_api_keys")
+
+        assertNull(cloudApiKeyStore.loadCredentials(CloudProviderId.OPENAI))
+    }
+
+    @Test
+    fun `saving new credentials after the wrap key was lost self-heals with a fresh key`(@TempDir tempDir: File) = runTest {
+        val keyWrapFactory = FakeHardwareKeyWrapFactory()
+        val cloudApiKeyStore = store(tempDir, keyWrapFactory)
+        cloudApiKeyStore.saveCredentials(CloudProviderId.OPENAI, mapOf(CloudCredentialFields.API_KEY to "sk-old"))
+        keyWrapFactory.forgetKey("cloud_tts_api_keys")
+
+        // A write after key loss must succeed (mint a fresh key), even though
+        // a read in the same state returns null.
+        cloudApiKeyStore.saveCredentials(CloudProviderId.OPENAI, mapOf(CloudCredentialFields.API_KEY to "sk-new"))
+        assertEquals(mapOf(CloudCredentialFields.API_KEY to "sk-new"), cloudApiKeyStore.loadCredentials(CloudProviderId.OPENAI))
     }
 
     @Test

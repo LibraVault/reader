@@ -7,10 +7,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import xyz.libravault.core.vaultcrypto.VaultAuthenticationException
 import xyz.libravault.core.vaultstore.HardwareKeyWrap
 import xyz.libravault.core.vaultstore.HardwareKeyWrapFactory
 import xyz.libravault.core.vaultstore.KeystoreKeyLostException
@@ -51,6 +54,14 @@ val Context.cloudApiKeyDataStore: DataStore<Preferences> by preferencesDataStore
  * downgrade" contract. Settings UI (Cloud Voices key-entry screen) must
  * catch this and show "Cloud Voices isn't available on this device" rather
  * than crash or silently fall back to a software-backed key.
+ *
+ * Read/write deliberately use different get-or-create semantics for the
+ * shared wrap key (this used to be one cached `by lazy` property — a real
+ * bug caught in review, see the two private helpers below for why it was
+ * split): a *write* may mint a fresh Keystore key on first use, but a *read*
+ * must never silently mint one — doing so on a [KeystoreKeyLostException]
+ * would leave every other provider's still-on-disk ciphertext permanently
+ * unwrappable under the new key with no caller-visible signal.
  */
 @Singleton
 class RealCloudApiKeyStore internal constructor(
@@ -64,38 +75,68 @@ class RealCloudApiKeyStore internal constructor(
         hardwareKeyWrapFactory: HardwareKeyWrapFactory,
     ) : this(context.cloudApiKeyDataStore, hardwareKeyWrapFactory)
 
-    // Lazily created/loaded once, then reused for every provider's wrap/unwrap
-    // call — see KEY_WRAP_ALIAS.
-    private val keyWrap: HardwareKeyWrap by lazy {
+    /** For writes: get the existing wrap key, or mint one if this is the very
+     * first credential ever saved. Safe to create here — a write is about to
+     * make this provider's entry consistent with whatever key comes back. */
+    private fun getOrCreateKeyWrapForWrite(): HardwareKeyWrap =
         try {
             hardwareKeyWrapFactory.forExisting(KEY_WRAP_ALIAS)
         } catch (e: KeystoreKeyLostException) {
             hardwareKeyWrapFactory.createNew(KEY_WRAP_ALIAS)
         }
-    }
+
+    /** For reads: only ever use an existing key. `null` means the key is
+     * gone (or never existed) — every provider's ciphertext under this alias
+     * is unreadable, which is exactly equivalent to "nothing saved" from a
+     * caller's point of view, and self-heals the next time the user saves a
+     * fresh credential (a new key gets minted then, by [getOrCreateKeyWrapForWrite]). */
+    private fun existingKeyWrapForRead(): HardwareKeyWrap? =
+        try {
+            hardwareKeyWrapFactory.forExisting(KEY_WRAP_ALIAS)
+        } catch (e: KeystoreKeyLostException) {
+            null
+        }
 
     override suspend fun saveCredentials(provider: CloudProviderId, credentials: Map<String, String>) {
-        val json = Json.encodeToString(credentials)
-        val wrapped = keyWrap.wrap(json.toByteArray(Charsets.UTF_8))
-        dataStore.edit { prefs ->
-            prefs[nonceKey(provider)] = encode(wrapped.nonce)
-            prefs[ciphertextKey(provider)] = encode(wrapped.ciphertext)
+        require(credentials.keys == CloudCredentialFields.requiredFields(provider)) {
+            "Cloud TTS credentials for $provider must have exactly the fields " +
+                "${CloudCredentialFields.requiredFields(provider)}, got ${credentials.keys} — " +
+                "failing fast here rather than at synthesis time."
+        }
+        withContext(Dispatchers.IO) {
+            val json = Json.encodeToString(credentials)
+            val wrapped = getOrCreateKeyWrapForWrite().wrap(json.toByteArray(Charsets.UTF_8))
+            dataStore.edit { prefs ->
+                prefs[nonceKey(provider)] = encode(wrapped.nonce)
+                prefs[ciphertextKey(provider)] = encode(wrapped.ciphertext)
+            }
         }
     }
 
-    override suspend fun loadCredentials(provider: CloudProviderId): Map<String, String>? {
+    override suspend fun loadCredentials(provider: CloudProviderId): Map<String, String>? = withContext(Dispatchers.IO) {
         val prefs = dataStore.data.first()
-        val nonce = prefs[nonceKey(provider)] ?: return null
-        val ciphertext = prefs[ciphertextKey(provider)] ?: return null
+        val nonce = prefs[nonceKey(provider)] ?: return@withContext null
+        val ciphertext = prefs[ciphertextKey(provider)] ?: return@withContext null
+        val keyWrap = existingKeyWrapForRead() ?: return@withContext null
         val wrapped = WrappedBlob(nonce = decode(nonce), ciphertext = decode(ciphertext))
-        val json = keyWrap.unwrap(wrapped).toString(Charsets.UTF_8)
-        return Json.decodeFromString<Map<String, String>>(json)
+        try {
+            val json = keyWrap.unwrap(wrapped).toString(Charsets.UTF_8)
+            Json.decodeFromString<Map<String, String>>(json)
+        } catch (e: VaultAuthenticationException) {
+            // Ciphertext exists but doesn't verify under the current key — the
+            // shared wrap key was replaced (lost-key recovery, see class doc)
+            // after this entry was written. Treat as absent rather than
+            // crashing the caller; the stale entry is orphaned but harmless.
+            null
+        }
     }
 
     override suspend fun clearCredentials(provider: CloudProviderId) {
-        dataStore.edit { prefs ->
-            prefs.remove(nonceKey(provider))
-            prefs.remove(ciphertextKey(provider))
+        withContext(Dispatchers.IO) {
+            dataStore.edit { prefs ->
+                prefs.remove(nonceKey(provider))
+                prefs.remove(ciphertextKey(provider))
+            }
         }
     }
 
