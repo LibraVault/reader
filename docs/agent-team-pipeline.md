@@ -34,7 +34,16 @@ a prompt to an agent holding repo-write permissions and a Bash tool, just by
 filing an issue. The workflow gates on `github.event.issue.author_association`
 being `OWNER`/`MEMBER`/`COLLABORATOR` — only people with at least write
 access to the repo can trigger it. Keep this gate if the trigger surface
-ever expands (e.g. `issue_comment`).
+ever expands (e.g. `issue_comment`). Note this reads the *issue's own*
+`author_association`, not whoever applies a label — a `MEMBER` manually
+re-applying `status:ready-for-dev` to a lower-association author's issue
+does **not** bypass it, since the untrusted content is the issue body
+itself, not the labeling action. The only sanctioned bypass is a manual
+`workflow_dispatch` run (inherently trusted — GitHub itself gates who can
+invoke it) or having the same content refiled by a qualifying account.
+When the gate rejects an `issues`-triggered event, `dev-agent.yml`'s
+`explain-trust-gate-skip` job posts a comment saying so instead of leaving
+the issue silently stuck (issue #453).
 
 Goal: scale development by moving triage and first-pass implementation off the
 critical path of a human, while keeping a risk-based human checkpoint for
