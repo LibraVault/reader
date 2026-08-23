@@ -702,3 +702,44 @@ jobs:
             GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
             echo "Applied status:needs-qa to #$PR_NUMBER."
           fi
+
+  explain-trust-gate-skip:
+    # Companion to triage-and-implement's SECURITY-CRITICAL gate above, not
+    # a replacement for it. When that job's `if:` evaluates false because
+    # the ISSUE author isn't at least a COLLABORATOR, the ENTIRE job is
+    # skipped — GitHub Actions has no job-level "else" branch, so no step
+    # of that job (including one that could post an explanatory comment)
+    # ever runs. Before this job existed, that produced total silence: the
+    # issue sat on status:triage forever with zero indication anything had
+    # ever evaluated it (issue #453 — confirmed live on #396 and a batch of
+    # bot-authored meta issues #388/#408/#409/#433/#437/#441, all stuck the
+    # same way).
+    #
+    # Deliberately the exact inverse of triage-and-implement's association
+    # check (same event/action shape, negated association, same
+    # AGENTS_PAUSED respect so a paused pipeline doesn't produce a
+    # misleading "you don't have access" comment when the real reason is an
+    # unrelated pause) — the two jobs are mutually exclusive by
+    # construction, so exactly one of them evaluates true for any given
+    # `issues` event and there's no risk of a duplicate or contradictory
+    # comment. Intentionally does NOT cover the pull_request-trigger path's
+    # same-repo check (forked PRs) — out of scope for #453, which is about
+    # the issue-author association gate specifically.
+    if: >-
+      vars.AGENTS_PAUSED != 'true' &&
+      github.event_name == 'issues' &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+      (
+        github.event.action == 'opened' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Explain why triage didn't fire
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh issue comment "${{ github.event.issue.number }}" --body "Dev agent didn't triage this: this issue's author is associated with the repo as \`${{ github.event.issue.author_association }}\`, and \`dev-agent.yml\`'s trust gate requires \`OWNER\`, \`MEMBER\`, or \`COLLABORATOR\` before handing issue content to an agent with repo-write access (this repo is public — see \`docs/agent-team-pipeline.md\`'s Trust boundary section). **Re-applying \`status:ready-for-dev\` will not get past this** — the check reads the issue's own \`author_association\`, not whoever applies the label. To move this forward: either have someone with at least write access to the repo trigger it manually (Actions → Dev Agent → Run workflow, with this issue's number as \`issue_number\` — GitHub itself already gates who can do that, so it's treated as trusted), or have the same content refiled by an \`OWNER\`/\`MEMBER\`/\`COLLABORATOR\` account."
