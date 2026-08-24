@@ -27,6 +27,21 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    // Same BouncyCastle/jspecify META-INF collision core:vaultstore's/core:vaultcontent's/
+    // feature:vault's androidTest packaging already hit (issue #253) — #505 added this
+    // module's first androidTest dependency on core:vaultcrypto/core:vaultstore
+    // (ReadiumVaultIntegrationTest), which pulls in BouncyCastle transitively; jspecify
+    // is already present via Readium/media3. Only bites once the androidTest APK
+    // actually gets far enough to package, same story as feature:vault's own history.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/INDEX.LIST",
+            )
+        }
+    }
 }
 
 dependencies {
