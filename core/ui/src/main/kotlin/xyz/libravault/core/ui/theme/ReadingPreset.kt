@@ -2,13 +2,13 @@ package xyz.libravault.core.ui.theme
 
 /**
  * Font family choice bundled into a [ReadingPreset]. Mirrors `feature:reader`'s
- * `FontFamily` / `feature:vault`'s `VaultReaderFontFamily` one-for-one, but is
- * its own type rather than a reuse of either: those two are deliberately kept
- * as private-ish per-feature duplicates (see `VaultReaderSettings.kt`) so
- * neither feature module depends on the other, whereas [ReadingPreset] needs
- * exactly one shared home — core:ui, which both feature modules already
- * depend on for [ReadingTheme] — rather than two copies that could diverge.
- * Each feature maps its own font-family enum to/from this one at the call site.
+ * `FontFamily` one-for-one (the equivalent `feature:vault` type, `VaultReaderFontFamily`,
+ * was deleted by #505 once vault EPUB/PDF/Markdown reading unified onto
+ * `feature:reader`'s own settings type), but is its own type rather than a
+ * reuse of it: [ReadingPreset] needs exactly one shared home — core:ui, which
+ * `feature:reader` already depends on for [ReadingTheme] — rather than
+ * duplicating the mapping. `feature:reader` maps its own font-family enum
+ * to/from this one at the call site.
  *
  * OPEN_DYSLEXIC added by #423 alongside the "Easy Read" built-in preset below.
  */

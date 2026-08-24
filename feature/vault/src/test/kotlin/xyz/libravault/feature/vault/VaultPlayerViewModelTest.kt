@@ -31,8 +31,9 @@ import xyz.libravault.core.vaultstore.toHexString
  *
  * Bookmark methods (`addBookmark`/`removeBookmark`/`updateBookmarkNote`) only
  * depend on the `VaultStore` reference and `fileId` — both are set before the
- * entry lookup, same as `VaultReaderViewModel` — so they're exercisable via
- * the "unknown fileId" setup below without needing a real ExoPlayer.
+ * entry lookup, same pattern `ReaderViewModel`'s vault branch (#505) uses —
+ * so they're exercisable via the "unknown fileId" setup below without needing
+ * a real ExoPlayer.
  */
 class VaultPlayerViewModelTest {
 
