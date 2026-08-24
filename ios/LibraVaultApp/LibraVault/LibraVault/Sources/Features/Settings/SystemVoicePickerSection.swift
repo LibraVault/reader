@@ -88,6 +88,21 @@ struct SystemVoicePickerList: View {
         }
     }
 
+    /// Language always shown; quality only when it's not the unremarkable default,
+    /// gender only when `AVSpeechSynthesisVoice` actually reported one — see
+    /// `SystemVoiceInfo.quality`/`gender`'s own doc comments for why each can be
+    /// absent/default.
+    static func subtitle(for voice: SystemVoiceInfo) -> String {
+        var parts = [voice.language]
+        if voice.quality != "Standard" {
+            parts.append(voice.quality)
+        }
+        if let gender = voice.gender {
+            parts.append(gender)
+        }
+        return parts.joined(separator: " — ")
+    }
+
     var body: some View {
         List {
             Section {
@@ -126,7 +141,7 @@ struct SystemVoicePickerList: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(voice.name)
                                     .foregroundStyle(LibraVaultColor.onSurface)
-                                Text(voice.quality == "Standard" ? voice.language : "\(voice.language) — \(voice.quality)")
+                                Text(Self.subtitle(for: voice))
                                     .font(LibraVaultTypography.bodySmall)
                                     .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                             }

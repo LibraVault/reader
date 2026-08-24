@@ -3,8 +3,8 @@ import XCTest
 
 final class SystemVoicePickerSectionTests: XCTestCase {
     private let voices = [
-        SystemVoiceInfo(identifier: "voice.en-us.samantha", name: "Samantha", language: "en-US", quality: "Standard"),
-        SystemVoiceInfo(identifier: "voice.en-gb.daniel", name: "Daniel", language: "en-GB", quality: "Enhanced"),
+        SystemVoiceInfo(identifier: "voice.en-us.samantha", name: "Samantha", language: "en-US", quality: "Standard", gender: nil),
+        SystemVoiceInfo(identifier: "voice.en-gb.daniel", name: "Daniel", language: "en-GB", quality: "Enhanced", gender: "Male"),
     ]
 
     // MARK: - selectedVoiceLabel
@@ -52,5 +52,15 @@ final class SystemVoicePickerSectionTests: XCTestCase {
 
     func testFilteredVoicesReturnsEmptyForNoMatch() {
         XCTAssertTrue(SystemVoicePickerList.filteredVoices(voices, matching: "zzz-nonexistent").isEmpty)
+    }
+
+    // MARK: - subtitle
+
+    func testSubtitleOmitsQualityAndGenderWhenStandardAndUnspecified() {
+        XCTAssertEqual(SystemVoicePickerList.subtitle(for: voices[0]), "en-US")
+    }
+
+    func testSubtitleIncludesQualityAndGenderWhenBothPresent() {
+        XCTAssertEqual(SystemVoicePickerList.subtitle(for: voices[1]), "en-GB — Enhanced — Male")
     }
 }

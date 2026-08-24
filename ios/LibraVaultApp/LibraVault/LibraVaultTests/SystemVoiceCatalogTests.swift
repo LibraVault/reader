@@ -19,6 +19,18 @@ final class SystemVoiceCatalogTests: XCTestCase {
         XCTAssertEqual(SystemVoiceCatalog.displayLabel(for: .premium), "Premium")
     }
 
+    func testDisplayLabelForMaleGenderIsMale() {
+        XCTAssertEqual(SystemVoiceCatalog.displayLabel(for: .male), "Male")
+    }
+
+    func testDisplayLabelForFemaleGenderIsFemale() {
+        XCTAssertEqual(SystemVoiceCatalog.displayLabel(for: .female), "Female")
+    }
+
+    func testDisplayLabelForUnspecifiedGenderIsNil() {
+        XCTAssertNil(SystemVoiceCatalog.displayLabel(for: .unspecified))
+    }
+
     /// `availableVoices()` itself is a thin wrapper around real system state, so this
     /// only asserts the one thing that's actually deterministic regardless of what
     /// the Simulator's installed catalog looks like: whatever it returns comes back
