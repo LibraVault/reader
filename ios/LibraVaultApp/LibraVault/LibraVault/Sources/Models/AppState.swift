@@ -46,6 +46,19 @@ final class AppState: ObservableObject {
             Task { await bridge.switchTTSEngine(to: ttsEngineType) }
         }
     }
+    /// The user's chosen System Voice (an `AVSpeechSynthesisVoice.identifier`),
+    /// or nil for "automatic" (the pre-#506 language-detected pick). Only
+    /// meaningful while `ttsEngineType == .system` - `bridge.setPreferredSystemVoice`
+    /// is a no-op for Pocket/Cloud (see `TTSEngineProtocol.setVoice`'s default),
+    /// and the bridge remembers this across a later switch back to `.system`
+    /// regardless of when it was set, so no extra guard is needed here.
+    @Published var selectedSystemVoiceIdentifier: String? = nil {
+        didSet {
+            guard selectedSystemVoiceIdentifier != oldValue else { return }
+            userPreferencesPersistence.save(selectedSystemVoiceIdentifier: selectedSystemVoiceIdentifier)
+            Task { await bridge.setPreferredSystemVoice(identifier: selectedSystemVoiceIdentifier) }
+        }
+    }
     /// Whether MiniPlayerBar collapses to a small hint strip after a few seconds
     /// idle. Defaults to enabled — see UserPreferencesPersistence.loadMiniPlayerAutoHideEnabled.
     @Published var miniPlayerAutoHideEnabled: Bool = true {
@@ -235,6 +248,7 @@ final class AppState: ObservableObject {
         defaultPlaybackSpeed = userPreferencesPersistence.loadPlaybackSpeed()
         skipDurationSeconds = userPreferencesPersistence.loadSkipDurationSeconds()
         ttsEngineType = userPreferencesPersistence.loadTTSEngineType()
+        selectedSystemVoiceIdentifier = userPreferencesPersistence.loadSelectedSystemVoiceIdentifier()
         miniPlayerAutoHideEnabled = userPreferencesPersistence.loadMiniPlayerAutoHideEnabled()
         // `self.` is required here, not just style — the bare parameter `billingManager`
         // (now `StoreKitBillingManager?`, see the init signature above) shadows the

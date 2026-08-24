@@ -16,6 +16,7 @@ struct UserPreferencesPersistence {
         static let skipDurationSeconds = "xyz.libravault.skipDurationSeconds"
         static let ttsEngineType = "xyz.libravault.ttsEngineType"
         static let miniPlayerAutoHideEnabled = "xyz.libravault.miniPlayerAutoHideEnabled"
+        static let selectedSystemVoiceIdentifier = "xyz.libravault.selectedSystemVoiceIdentifier"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -77,5 +78,22 @@ struct UserPreferencesPersistence {
 
     func save(miniPlayerAutoHideEnabled: Bool) {
         defaults.set(miniPlayerAutoHideEnabled, forKey: Key.miniPlayerAutoHideEnabled)
+    }
+
+    /// `AVSpeechSynthesisVoice.identifier` of the user's chosen System Voice
+    /// (see #506's picker), or nil for "automatic" - the language-detected
+    /// pick `TTSEngineBridge.voice(for:)` already did before this setting
+    /// existed. `removeObject` on save(nil) rather than storing an empty
+    /// string, so a cleared selection round-trips back to nil, not "".
+    func loadSelectedSystemVoiceIdentifier() -> String? {
+        defaults.string(forKey: Key.selectedSystemVoiceIdentifier)
+    }
+
+    func save(selectedSystemVoiceIdentifier: String?) {
+        if let selectedSystemVoiceIdentifier {
+            defaults.set(selectedSystemVoiceIdentifier, forKey: Key.selectedSystemVoiceIdentifier)
+        } else {
+            defaults.removeObject(forKey: Key.selectedSystemVoiceIdentifier)
+        }
     }
 }

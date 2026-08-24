@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -233,19 +234,35 @@ struct SettingsView: View {
                 // `CloudVoicesSection`'s own "Use Cloud Voices" toggle right below it.
                 // Swap to a fixed label instead of a picker with nothing selected.
                 HStack {
-                    Text("Voice")
+                    Text("Engine")
                         .foregroundStyle(LibraVaultColor.onSurface)
                     Spacer()
                     Text(TTSEngineType.cloud.displayName)
                         .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                 }
             } else {
-                Picker("Voice", selection: $appState.ttsEngineType) {
+                // "Engine", not "Voice" — was "Voice" until #506 added a real
+                // per-voice picker below and needed the label back. This one
+                // picks System/On-Device/(Cloud, handled above); the new row
+                // picks a specific installed voice within System.
+                Picker("Engine", selection: $appState.ttsEngineType) {
                     ForEach(TTSEngineType.allCases.filter { $0 != .cloud }, id: \.self) { type in
                         Text(type.displayName).tag(type)
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            if Self.showsSystemVoicePickerRow(engineType: appState.ttsEngineType) {
+                NavigationLink(destination: SystemVoicePickerView(selectedVoiceIdentifier: $appState.selectedSystemVoiceIdentifier)) {
+                    HStack {
+                        Text("Voice")
+                            .foregroundStyle(LibraVaultColor.onSurface)
+                        Spacer()
+                        Text(Self.systemVoiceDisplayName(for: appState.selectedSystemVoiceIdentifier))
+                            .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                    }
+                }
             }
         } header: {
             sectionHeader("Text-to-Speech")
@@ -381,6 +398,28 @@ struct SettingsView: View {
     /// this file's own `appVersion` precedent (see `SettingsAppVersionTests`).
     static func showsCloudVoicesActiveLabel(engineType: TTSEngineType) -> Bool {
         engineType == .cloud
+    }
+
+    /// Whether `ttsSection` should show the per-voice picker row (#506) — only
+    /// meaningful for `.system`; Pocket ships exactly one voice (its own
+    /// section elsewhere handles that), and Cloud picks a voice via its own
+    /// provider config in `CloudVoicesSection`. Extracted as a pure `static`
+    /// predicate for the same testability reason as `showsCloudVoicesActiveLabel`.
+    static func showsSystemVoicePickerRow(engineType: TTSEngineType) -> Bool {
+        engineType == .system
+    }
+
+    /// Display text for the "Voice" row's trailing label — the voice's own
+    /// name if the stored identifier still resolves to an installed voice,
+    /// "Automatic" for no selection (nil), or "Automatic" for a stale
+    /// identifier (e.g. a language pack removed since it was picked) rather
+    /// than showing raw garbage - matches `TTSEngineBridge.resolvedVoice`'s
+    /// same "degrade to automatic" behavior on the speaking side.
+    static func systemVoiceDisplayName(for identifier: String?) -> String {
+        guard let identifier, let voice = AVSpeechSynthesisVoice(identifier: identifier) else {
+            return "Automatic"
+        }
+        return voice.name
     }
 
     private func sectionHeader(_ title: String) -> some View {

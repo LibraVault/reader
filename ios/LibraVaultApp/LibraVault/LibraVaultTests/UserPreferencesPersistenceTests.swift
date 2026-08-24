@@ -97,4 +97,29 @@ final class UserPreferencesPersistenceTests: XCTestCase {
         UserPreferencesPersistence(defaults: defaults).save(miniPlayerAutoHideEnabled: true)
         XCTAssertTrue(UserPreferencesPersistence(defaults: defaults).loadMiniPlayerAutoHideEnabled())
     }
+
+    // MARK: - Selected system voice (#506)
+
+    func testLoadSelectedSystemVoiceIdentifierDefaultsToNilWhenNothingSaved() {
+        let persistence = UserPreferencesPersistence(defaults: makeIsolatedDefaults())
+        XCTAssertNil(persistence.loadSelectedSystemVoiceIdentifier())
+    }
+
+    func testSaveThenLoadRoundTripsSelectedSystemVoiceIdentifier() {
+        let defaults = makeIsolatedDefaults()
+        UserPreferencesPersistence(defaults: defaults).save(selectedSystemVoiceIdentifier: "com.apple.voice.compact.en-US.Samantha")
+        XCTAssertEqual(
+            UserPreferencesPersistence(defaults: defaults).loadSelectedSystemVoiceIdentifier(),
+            "com.apple.voice.compact.en-US.Samantha"
+        )
+    }
+
+    func testSavingNilClearsAPreviouslySavedSelectedSystemVoiceIdentifier() {
+        // The "clear back to automatic" path - must round-trip to nil, not "".
+        let defaults = makeIsolatedDefaults()
+        let persistence = UserPreferencesPersistence(defaults: defaults)
+        persistence.save(selectedSystemVoiceIdentifier: "com.apple.voice.compact.en-US.Samantha")
+        persistence.save(selectedSystemVoiceIdentifier: nil)
+        XCTAssertNil(persistence.loadSelectedSystemVoiceIdentifier())
+    }
 }
