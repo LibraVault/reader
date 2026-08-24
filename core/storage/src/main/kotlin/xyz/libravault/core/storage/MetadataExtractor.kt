@@ -44,6 +44,17 @@ class MetadataExtractor @Inject constructor(
         private const val TAG = "MetadataExtractor"
         private const val UNKNOWN = "Unknown"
         private const val DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
+
+        // A hostile EPUB can declare a zip entry (cover image, OPF, or
+        // container.xml) whose true uncompressed size is far larger than
+        // ZipEntry.size claims — that field can be -1 (unknown, streamed
+        // entries) or simply lie, so it can't be trusted as a pre-check.
+        // This caps the bytes actually *read* from the entry, independent of
+        // whatever it claims. 25 MB is generous for any legitimate embedded
+        // cover (even an uncompressed multi-thousand-pixel JPEG/PNG) or a
+        // hand-authored OPF/container.xml, while still bounding the memory a
+        // single hostile entry can force the scanner to buffer.
+        internal const val MAX_ZIP_ENTRY_BYTES = 25 * 1024 * 1024
     }
 
     suspend fun extract(file: ScannedFile): ExtractedMetadata =
@@ -185,7 +196,10 @@ class MetadataExtractor @Inject constructor(
             ZipInputStream(stream).use { zip ->
                 val entries = mutableMapOf<String, ByteArray>()
 
-                // Read all relevant entries into memory (OPF files are small)
+                // Read all relevant entries into memory (OPF files are small,
+                // but a "cover" match can be a hostile, oversized image —
+                // readBounded rejects anything past MAX_ZIP_ENTRY_BYTES
+                // rather than trusting entry.size, which can be -1 or lie).
                 var entry = zip.nextEntry
                 while (entry != null) {
                     val name = entry.name
@@ -194,7 +208,12 @@ class MetadataExtractor @Inject constructor(
                         name.contains("cover", ignoreCase = true) &&
                         (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png"))
                     ) {
-                        entries[name] = zip.readBytes()
+                        val bytes = zip.readBounded(MAX_ZIP_ENTRY_BYTES)
+                        if (bytes != null) {
+                            entries[name] = bytes
+                        } else {
+                            logger.w(TAG, "extractEpub: skipping oversized zip entry '$name' in ${file.displayName} (> $MAX_ZIP_ENTRY_BYTES bytes)")
+                        }
                     }
                     zip.closeEntry()
                     entry = zip.nextEntry
@@ -234,7 +253,12 @@ class MetadataExtractor @Inject constructor(
                         name.contains("cover", ignoreCase = true) &&
                         (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png"))
                     ) {
-                        entries[name] = zip.readBytes()
+                        val bytes = zip.readBounded(MAX_ZIP_ENTRY_BYTES)
+                        if (bytes != null) {
+                            entries[name] = bytes
+                        } else {
+                            logger.w(TAG, "extractEpubRaw: skipping oversized zip entry '$name' in ${file.displayName} (> $MAX_ZIP_ENTRY_BYTES bytes)")
+                        }
                     }
                     zip.closeEntry()
                     entry = zip.nextEntry
@@ -256,6 +280,29 @@ class MetadataExtractor @Inject constructor(
                 ) to coverBytes
             }
         }
+    }
+
+    /**
+     * Reads the remainder of the current zip entry into a byte array,
+     * aborting and returning `null` the moment more than [limit] bytes have
+     * actually been read — never trusts [java.util.zip.ZipEntry.size], which
+     * can be `-1` (unknown, common for streamed/data-descriptor entries) or
+     * simply misreport the true uncompressed size. This is what stands
+     * between a hostile entry and an unbounded [ZipInputStream.readBytes]
+     * buffering the whole thing into memory.
+     */
+    private fun ZipInputStream.readBounded(limit: Int): ByteArray? {
+        val buffer = ByteArrayOutputStream()
+        val chunk = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val n = read(chunk)
+            if (n < 0) break
+            total += n
+            if (total > limit) return null
+            buffer.write(chunk, 0, n)
+        }
+        return buffer.toByteArray()
     }
 
     internal fun findOpfPath(stream: InputStream): String? {

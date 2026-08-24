@@ -224,6 +224,82 @@ class MetadataExtractorTest {
         // failure) IS the proof this path never called CoverArtCache at all.
     }
 
+    // ── zip-entry size cap (issue #529 — hostile oversized cover entry) ──────
+
+    @Test
+    fun `oversized cover zip entry is skipped rather than buffered unbounded`() = runTest {
+        val opf = """<?xml version="1.0"?>
+            <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
+              <metadata>
+                <dc:title>Hostile Book</dc:title>
+                <dc:creator>Hostile Author</dc:creator>
+                <meta name="cover" content="cover-image"/>
+              </metadata>
+              <manifest>
+                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg"/>
+              </manifest>
+            </package>""".trimIndent()
+        // One byte over the cap — real bytes actually written to the zip
+        // entry, not a lying ZipEntry.size, so this exercises the bounded
+        // *read* itself rather than any size-field pre-check.
+        val oversizedCover = ByteArray(MetadataExtractor.MAX_ZIP_ENTRY_BYTES + 1)
+        val fullZip = buildEpubZipBinary(
+            "META-INF/container.xml" to """<?xml version="1.0"?>
+                <container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>""".trimIndent().toByteArray(),
+            "OEBPS/content.opf" to opf.toByteArray(),
+            "OEBPS/images/cover.jpg" to oversizedCover,
+        )
+
+        val uri = mockk<Uri>(relaxed = true)
+        val contentResolver = mockk<ContentResolver>()
+        val context = mockk<Context> { every { this@mockk.contentResolver } returns contentResolver }
+        every { contentResolver.openInputStream(uri) } returns fullZip.inputStream()
+        val strictCoverArtCache = mockk<CoverArtCache>() // no stubs — any call fails the test
+        val extractorWithRealZip = MetadataExtractor(context, strictCoverArtCache, mockk(relaxed = true))
+        val file = ScannedFile(uri, "hostile.epub", "application/epub+zip", MediaFormat.EPUB, 1234L)
+
+        val (metadata, rawCover) = extractorWithRealZip.extractWithoutCaching(file)
+
+        // Title/author still come through — only the oversized cover entry
+        // is dropped, not the whole extraction.
+        assertEquals("Hostile Book", metadata.title)
+        assertEquals("Hostile Author", metadata.author)
+        assertNull(rawCover, "an oversized cover entry must be rejected, not buffered")
+    }
+
+    @Test
+    fun `a cover zip entry exactly at the cap is still read normally`() = runTest {
+        val opf = """<?xml version="1.0"?>
+            <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
+              <metadata>
+                <dc:title>Big But Fine Book</dc:title>
+                <meta name="cover" content="cover-image"/>
+              </metadata>
+              <manifest>
+                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg"/>
+              </manifest>
+            </package>""".trimIndent()
+        val coverAtCap = ByteArray(MetadataExtractor.MAX_ZIP_ENTRY_BYTES) { it.toByte() }
+        val fullZip = buildEpubZipBinary(
+            "META-INF/container.xml" to """<?xml version="1.0"?>
+                <container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>""".trimIndent().toByteArray(),
+            "OEBPS/content.opf" to opf.toByteArray(),
+            "OEBPS/images/cover.jpg" to coverAtCap,
+        )
+
+        val uri = mockk<Uri>(relaxed = true)
+        val contentResolver = mockk<ContentResolver>()
+        val context = mockk<Context> { every { this@mockk.contentResolver } returns contentResolver }
+        every { contentResolver.openInputStream(uri) } returns fullZip.inputStream()
+        val extractorWithRealZip = MetadataExtractor(context, mockk(relaxed = true), mockk(relaxed = true))
+        val file = ScannedFile(uri, "big-but-fine.epub", "application/epub+zip", MediaFormat.EPUB, 1234L)
+
+        val (metadata, rawCover) = extractorWithRealZip.extractWithoutCaching(file)
+
+        assertEquals("Big But Fine Book", metadata.title)
+        assertArrayEquals(coverAtCap, rawCover)
+    }
+
     @Test
     fun `extractWithoutCaching falls back cleanly when the EPUB has no OPF, still touches no cache`() = runTest {
         val zipBytes = buildEpubZip("README.txt" to "not an epub")
