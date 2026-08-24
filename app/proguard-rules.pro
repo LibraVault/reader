@@ -56,3 +56,20 @@
 -dontwarn org.openjsse.**
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# ── Strip Log.* calls in release (issue #528) ─────────────────────────────────
+# Belt-and-suspenders on top of LibravaultLogger's own BuildConfig.DEBUG gate:
+# any android.util.Log.* call anywhere in the app (including third-party code
+# and any future call site that forgets the gate) is dropped from release
+# builds entirely by R8, rather than merely relying on every call site
+# behaving. R8 removes the call (and, where possible, the now-dead argument
+# expressions) because these methods are declared to have no side effects.
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int i(...);
+    public static int w(...);
+    public static int d(...);
+    public static int e(...);
+    public static int wtf(...);
+}
