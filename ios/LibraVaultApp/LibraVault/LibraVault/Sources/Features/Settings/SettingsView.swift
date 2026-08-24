@@ -215,10 +215,18 @@ struct SettingsView: View {
     /// Pocket TTS's voice model ships bundled with the app on iOS (unlike Android's
     /// on-first-use download - see PocketModelManager.swift), so there's no download
     /// progress UI to show here; picking it just switches the active engine.
+    ///
+    /// `.cloud` deliberately excluded from this picker's options (issue #491) — same
+    /// reasoning as Android's `TtsSettingsSection` never listing `CLOUD` as a bare
+    /// radio option: picking it here, with no provider/key/voice configured, would
+    /// silently do nothing useful (`CloudTtsEngine`'s own gate just falls back to
+    /// on-device every time). `CloudVoicesSection`'s own "Use Cloud Voices for Read
+    /// Aloud" toggle is the only path that should set `ttsEngineType = .cloud`, gated
+    /// on actually being configured.
     private var ttsSection: some View {
         Section {
             Picker("Voice", selection: $appState.ttsEngineType) {
-                ForEach(TTSEngineType.allCases, id: \.self) { type in
+                ForEach(TTSEngineType.allCases.filter { $0 != .cloud }, id: \.self) { type in
                     Text(type.displayName).tag(type)
                 }
             }
@@ -226,7 +234,7 @@ struct SettingsView: View {
         } header: {
             sectionHeader("Text-to-Speech")
         } footer: {
-            Text("On-device voice runs fully offline, with no network access.")
+            Text("On-device voice (System/On-Device above) runs fully offline. Cloud Voices, below once subscribed, is the only other network activity this app can ever have, and only sends text to a vendor you explicitly configure.")
                 .font(LibraVaultTypography.bodySmall)
                 .foregroundStyle(LibraVaultColor.onSurfaceVariant)
         }

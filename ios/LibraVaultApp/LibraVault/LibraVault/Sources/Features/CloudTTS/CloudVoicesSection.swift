@@ -12,6 +12,13 @@ import SwiftUI
 /// already use. This state has no reason to live anywhere `AppState`'s other properties
 /// do, and `AppState` has no dependency on Cloud TTS today.
 struct CloudVoicesSection: View {
+    // Both already flow through the environment everywhere `SettingsView` (this
+    // section's only real call site) is used — reached here for exactly one thing:
+    // actually activating the cloud engine (issue #491, see the toggle below).
+    // Nothing else in this file needs either.
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var billingManager: StoreKitBillingManager
+
     private let preferences: CloudVoicePreferences
     private let keyStore: CloudApiKeyStore
     private let ttsProvider: CloudTtsProvider
@@ -86,6 +93,36 @@ struct CloudVoicesSection: View {
                             .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                     }
                     .padding(.vertical, LibraVaultSpacing.xs)
+
+                    // Issue #491: this section previously let a user fully configure a
+                    // provider/key/voice id with no way to actually turn Cloud Voices
+                    // on — `ttsSection`'s bare engine Picker listed `.cloud` instead,
+                    // reachable with nothing configured, which `CloudTtsEngine`'s own
+                    // gate would just silently fall back on every real call. This
+                    // toggle is now the one intended path: shown once a provider is
+                    // merely *selected*, not gated on already being configured (that
+                    // gating bug is exactly what Android's PR #470 hit and fixed —
+                    // hiding the toggle until configured leaves no way to discover it
+                    // exists at all), disabled + explained until it actually is.
+                    let canActivate = Self.canActivateCloudEngine(
+                        selectedProvider: selectedProvider, configuredProviders: configuredProviders, voiceID: voiceID
+                    )
+                    let isActive = appState.ttsEngineType == .cloud
+                    Toggle(isOn: Binding(
+                        get: { isActive },
+                        set: { newValue in setCloudEngineActive(newValue) }
+                    )) {
+                        VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
+                            Text("Use Cloud Voices for Read Aloud")
+                            if !canActivate && !isActive {
+                                Text("Configure a provider and voice ID above first")
+                                    .font(LibraVaultTypography.bodySmall)
+                                    .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    .tint(LibraVaultColor.primary)
+                    .disabled(!canActivate && !isActive)
                 }
             }
         } header: {
@@ -161,6 +198,35 @@ struct CloudVoicesSection: View {
         }
         .padding(.vertical, LibraVaultSpacing.xs)
         .buttonStyle(.plain)
+    }
+
+    /// Turning ON re-checks `CloudTtsGate` before actually switching the engine — a
+    /// backstop, not just relying on the toggle's own `.disabled` UI affordance above;
+    /// `CloudTtsProvider`'s own doc requires every caller to check the gate
+    /// immediately before use, and this is the one call path that can flip
+    /// `ttsEngineType` to `.cloud` at all (issue #491). Turning OFF always reverts to
+    /// `.system`, gate irrelevant — disabling Cloud Voices must never be blocked.
+    private func setCloudEngineActive(_ enabled: Bool) {
+        guard enabled else {
+            appState.ttsEngineType = .system
+            return
+        }
+        guard CloudTtsGate.canUseCloudTts(isSubscribed: billingManager.isSubscribed, consentEnabled: consentEnabled) else { return }
+        appState.ttsEngineType = .cloud
+    }
+
+    /// Whether the "Use Cloud Voices for Read Aloud" toggle should be enabled (issue
+    /// #491) — the selected provider must actually have credentials saved AND a
+    /// non-blank voice id must be set. Extracted as a pure `static func`, matching
+    /// this file's own `isSaveEnabled` precedent, so it's directly testable without
+    /// standing up SwiftUI.
+    static func canActivateCloudEngine(
+        selectedProvider: CloudProviderId?,
+        configuredProviders: Set<CloudProviderId>,
+        voiceID: String
+    ) -> Bool {
+        guard let selectedProvider, configuredProviders.contains(selectedProvider) else { return false }
+        return !voiceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// `nil` credentials (nothing saved yet) vs. present — no partial/invalid state to
@@ -331,4 +397,6 @@ private struct CloudVoicesKeyEntrySheet: View {
             ttsProvider: RealCloudTtsProvider()
         )
     }
+    .environmentObject(AppState())
+    .environmentObject(StoreKitBillingManager())
 }
