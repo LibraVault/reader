@@ -29,6 +29,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.MediaFormat
@@ -49,6 +50,11 @@ import xyz.libravault.core.tts.TtsEngine
 import xyz.libravault.core.tts.TtsEngineProvider
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
+import xyz.libravault.core.vaultstore.VaultBookmark
+import xyz.libravault.core.vaultstore.VaultHighlight
+import xyz.libravault.core.vaultstore.VaultManifestEntry
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.VaultStore
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SleepTimerState
 import java.time.Instant
@@ -86,6 +92,7 @@ class ReaderViewModelTest {
     private val addHighlight       = mockk<AddHighlightUseCase>(relaxed = true)
     private val deleteHighlight    = mockk<DeleteHighlightUseCase>(relaxed = true)
     private val logger             = mockk<LibravaultLogger>(relaxed = true)
+    private val sessionManager     = mockk<VaultSessionManager>()
 
     // PR #11: audiobook mini-player state relay + MediaController future.
     // Use a real PlaybackStateHolder (cheap, no required init) and a SettableFuture
@@ -177,9 +184,35 @@ class ReaderViewModelTest {
             playbackStateHolder = playbackStateHolder,
             controllerFuture    = controllerFuture,
             ttsEngineProvider   = ttsEngineProvider,
+            sessionManager      = sessionManager,
             appContext          = appContext,
         )
     }
+
+    // #505 — vaultId/fileId nav args instead of itemId, same shape VaultReaderScreen
+    // (feature:vault, deleted by #505) used to read off its own SavedStateHandle.
+    private fun vaultViewModel(vaultId: String = "vault-1", fileIdHex: String = "aabbcc"): ReaderViewModel =
+        ReaderViewModel(
+            savedStateHandle    = SavedStateHandle(mapOf("vaultId" to vaultId, "fileId" to fileIdHex)),
+            getItem             = getItem,
+            getVaultFolder      = getVaultFolder,
+            openFile            = openFile,
+            getProgress         = getProgress,
+            saveProgress        = saveProgress,
+            observeBookmarks    = observeBookmarks,
+            addBookmark         = addBookmark,
+            deleteBookmark      = deleteBookmark,
+            updateBookmarkNote  = updateBookmarkNote,
+            observeHighlights   = observeHighlights,
+            addHighlight        = addHighlight,
+            deleteHighlight     = deleteHighlight,
+            logger              = logger,
+            playbackStateHolder = playbackStateHolder,
+            controllerFuture    = controllerFuture,
+            ttsEngineProvider   = ttsEngineProvider,
+            sessionManager      = sessionManager,
+            appContext          = appContext,
+        )
 
     // ── Init ─────────────────────────────────────────────────────────────────
 
@@ -189,8 +222,9 @@ class ReaderViewModelTest {
         viewModel().uiState.test {
             val loaded = awaitItem()
             assertFalse(loaded.isLoading)
-            assertNotNull(loaded.item)
-            assertEquals("Test Book", loaded.item!!.title)
+            assertNotNull(loaded.contentSource)
+            assertEquals(ContentSource.RealFile(fakeItem.filePath), loaded.contentSource)
+            assertEquals("Test Book", loaded.title)
             assertEquals(fakeProgress.positionCfi, loaded.progress?.positionCfi)
             cancelAndIgnoreRemainingEvents()
         }
@@ -221,6 +255,7 @@ class ReaderViewModelTest {
             playbackStateHolder = playbackStateHolder,
             controllerFuture    = controllerFuture,
             ttsEngineProvider   = ttsEngineProvider,
+            sessionManager      = sessionManager,
             appContext          = appContext,
         )
 
@@ -228,7 +263,97 @@ class ReaderViewModelTest {
         vm.uiState.test {
             val error = awaitItem()
             assertNotNull(error.error)
-            assertNull(error.item)
+            assertNull(error.contentSource)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ── Init (Encrypted Vault, #505) ─────────────────────────────────────────
+
+    private val fakeVaultEntry = VaultManifestEntry(
+        fileId            = byteArrayOf(0xAA.toByte(), 0xBB.toByte(), 0xCC.toByte()),
+        title             = "Vault Book",
+        author            = "Vault Author",
+        format            = "EPUB",
+        sizeBytes         = 1024L,
+        addedAtEpochMillis = 0L,
+    )
+
+    @Test
+    fun `vault init resolves a ContentSource VaultEntry and seeds title-author-format`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultEntry)
+
+        vaultViewModel(fileIdHex = "aabbcc").uiState.test {
+            val loaded = awaitItem()
+            assertFalse(loaded.isLoading)
+            assertNull(loaded.error)
+            assertEquals(ContentSource.VaultEntry("vault-1", "aabbcc", MediaFormat.EPUB), loaded.contentSource)
+            assertEquals("Vault Book", loaded.title)
+            assertEquals("Vault Author", loaded.author)
+            assertEquals(MediaFormat.EPUB, loaded.format)
+            // No relative-image resolution for encrypted vault Markdown (#442 v1 scope) —
+            // structural for every VaultEntry, not just Markdown, per ReaderUiState's doc.
+            assertNull(loaded.vaultTreeUri)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init surfaces a locked vault as an error, not a crash`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns false
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertFalse(state.isLoading)
+            assertEquals("Vault is locked", state.error)
+            assertNull(state.contentSource)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init surfaces a missing entry as an error`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns emptyList()
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertEquals("File not found in this vault", state.error)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init rejects an audio entry, routing the user back to the player`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultEntry.copy(format = "MP3"))
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertEquals("This is an audio file — open it from the player instead", state.error)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init surfaces an exception from a fresh openReader-adjacent call as an error, not a crash`() = runTest {
+        // Regression coverage for the gap VaultReaderViewModel (feature:vault, deleted
+        // by #505) had: its PDF/Markdown branches let this kind of failure escape
+        // unhandled — only its EPUB branch caught anything.
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } throws IllegalStateException("Vault vault-1 is not unlocked")
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertFalse(state.isLoading)
+            assertNotNull(state.error)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -481,6 +606,66 @@ class ReaderViewModelTest {
     fun `remove bookmark delegates to delete use case`() = runTest {
         viewModel().removeBookmark(42L)
         coVerify { deleteBookmark(42L) }
+    }
+
+    // ── Bookmarks/highlights (Encrypted Vault, #505) ─────────────────────────
+    //
+    // Round-trips through VaultStore instead of the Room use cases above —
+    // ported from VaultReaderViewModel's (feature:vault, deleted by #505)
+    // equivalent tests, now against ReaderViewModel's vaultRef branch.
+
+    @Test
+    fun `vault addBookmark round-trips through VaultStore and updates bookmarks state`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultEntry)
+        val vaultBookmark = VaultBookmark(id = 1L, positionRef = "epubcfi(/6/4)", label = "My mark", note = null, createdAtEpochMillis = 0L)
+        coEvery { store.addBookmark(any(), "epubcfi(/6/4)", "My mark", null) } returns vaultBookmark
+
+        val vm = vaultViewModel()
+        vm.addBookmark("epubcfi(/6/4)", "My mark")
+
+        assertEquals(1, vm.bookmarks.value.size)
+        assertEquals("epubcfi(/6/4)", vm.bookmarks.value.first().positionRef)
+        assertEquals(1L, vm.uiState.value.lastAddedBookmarkId)
+    }
+
+    @Test
+    fun `vault removeBookmark round-trips through VaultStore and updates bookmarks state`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(
+            fakeVaultEntry.copy(
+                bookmarks = listOf(VaultBookmark(id = 1L, positionRef = "epubcfi(/6/4)", label = null, note = null, createdAtEpochMillis = 0L)),
+            ),
+        )
+        coEvery { store.removeBookmark(any(), 1L) } returns Unit
+
+        val vm = vaultViewModel()
+        assertEquals(1, vm.bookmarks.value.size) // seeded from the manifest entry
+
+        vm.removeBookmark(1L)
+
+        assertTrue(vm.bookmarks.value.isEmpty())
+        coVerify { store.removeBookmark(any(), 1L) }
+    }
+
+    @Test
+    fun `vault addHighlight round-trips through VaultStore and updates highlights state`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultEntry)
+        val vaultHighlight = VaultHighlight(id = 1L, positionRef = "epubcfi(/6/4)", highlightedText = "text", colorHex = "#FFE066", note = null, createdAtEpochMillis = 0L)
+        coEvery { store.addHighlight(any(), "epubcfi(/6/4)", "text", "#FFE066") } returns vaultHighlight
+
+        val vm = vaultViewModel()
+        vm.addHighlight("epubcfi(/6/4)", "text")
+
+        assertEquals(1, vm.highlights.value.size)
+        assertEquals("text", vm.highlights.value.first().highlightedText)
     }
 
     // ── Bookmarks sheet + note editing ─────────────────────────────────────────

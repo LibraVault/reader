@@ -1,6 +1,7 @@
 package xyz.libravault.feature.reader
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,11 +16,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.libravault.core.domain.model.AppReadingTheme
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.Highlight
-import xyz.libravault.core.domain.model.LibraryItem
+import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.domain.model.ReadingProgress
 import xyz.libravault.core.domain.usecase.AddBookmarkUseCase
 import xyz.libravault.core.domain.usecase.AddHighlightUseCase
@@ -39,6 +42,11 @@ import xyz.libravault.core.tts.TtsDurationEstimator
 import xyz.libravault.core.tts.TtsEngineProvider
 import xyz.libravault.core.tts.TtsState
 import xyz.libravault.core.tts.TtsStatus
+import xyz.libravault.core.vaultstore.VAULT_AUDIO_FORMAT_NAMES
+import xyz.libravault.core.vaultstore.VaultBookmark
+import xyz.libravault.core.vaultstore.VaultHighlight
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.hexToFileId
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
@@ -48,7 +56,12 @@ import java.time.Instant
 import javax.inject.Inject
 
 data class ReaderUiState(
-    val item: LibraryItem?          = null,
+    /** Where this reader's bytes come from — a real file or (#505) an Encrypted
+     *  Vault entry. Null only before the first load resolves. */
+    val contentSource: ContentSource? = null,
+    val title: String                = "",
+    val author: String               = "",
+    val format: MediaFormat?         = null,
     val progress: ReadingProgress?  = null,
     val settings: ReaderSettings    = ReaderSettings(),
     val isLoading: Boolean          = true,
@@ -59,10 +72,14 @@ data class ReaderUiState(
     val showTocSheet: Boolean       = false,
     /** Set briefly after a bookmark is added; the screen shows a confirmation toast. */
     val lastAddedBookmarkId: Long?  = null,
-    /** The item's vault folder SAF tree URI — used by the Markdown reader to resolve
-     *  relative image references (see MarkdownAssetResolver). Null for items opened
-     *  via an external intent (no vault association) or non-Markdown formats. */
-    val vaultTreeUri: android.net.Uri? = null,
+    /** The item's *unencrypted* SAF vault folder tree URI — used by the Markdown
+     *  reader to resolve relative image references (see MarkdownAssetResolver).
+     *  A different, unrelated concept from [ContentSource.VaultEntry] (the
+     *  encrypted-vault feature) despite the name — see #505's naming-collision
+     *  note in `ReaderViewModel.init{}`. Null for items opened via an external
+     *  intent, non-Markdown formats, or any [ContentSource.VaultEntry] (encrypted
+     *  vault Markdown never supports relative-image resolution — #442 v1 scope). */
+    val vaultTreeUri: Uri? = null,
     /** Full Player-screen overlay for an active Read Aloud session (#138), opened by
      *  tapping the Read Aloud mini-bar. */
     val showReadAloudPlayer: Boolean = false,
@@ -102,6 +119,11 @@ class ReaderViewModel @Inject constructor(
     private val playbackStateHolder: PlaybackStateHolder,
     private val controllerFuture: ListenableFuture<MediaController>,
     private val ttsEngineProvider: TtsEngineProvider,
+    // #505 — resolves a ContentSource.VaultEntry (below) and its bookmarks/
+    // highlights. GetVaultFolderUseCase above is a *different*, unrelated
+    // concept (an unencrypted SAF-tree folder) despite the name collision —
+    // see init{}'s comment.
+    private val sessionManager: VaultSessionManager,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -109,6 +131,17 @@ class ReaderViewModel @Inject constructor(
 
     // itemId comes from navigation back-stack
     private val itemId: Long? = savedStateHandle.get<Long>("itemId")?.takeIf { it > 0 }
+
+    // vaultId/fileId come from navigation back-stack for a Screen.VaultRead entry
+    // (#505) — mutually exclusive with itemId/encodedUri, same as those two are
+    // with each other. Resolved once, synchronously, from nav args (not from the
+    // async entry lookup in init{}) so the bookmarks/highlights StateFlows below
+    // — declared before init{} runs — know at construction time which backing
+    // source to use.
+    private val vaultRef: Pair<String, String>? =
+        savedStateHandle.get<String>("vaultId")?.let { vaultId ->
+            savedStateHandle.get<String>("fileId")?.let { fileIdHex -> vaultId to fileIdHex }
+        }
 
     /** Audiobook playback state — drives the mini-player overlay in the reader. */
     val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
@@ -156,11 +189,28 @@ class ReaderViewModel @Inject constructor(
     )
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
-    val bookmarks: StateFlow<List<Bookmark>> = (itemId?.let { observeBookmarks(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    // #505 — a vault session's bookmarks/highlights live in the encrypted manifest,
+    // not Room, and don't change from outside this ViewModel — so unlike the Room
+    // path, there's no Flow to observe; these are seeded once in init{} (from the
+    // manifest entry already fetched to resolve contentSource) and mutated locally
+    // by add/removeBookmark/Highlight below, mirroring VaultReaderViewModel's
+    // (feature:vault, deleted by #505) existing _bookmarks/_highlights pattern.
+    private val _vaultBookmarks = MutableStateFlow<List<Bookmark>>(emptyList())
+    private val _vaultHighlights = MutableStateFlow<List<Highlight>>(emptyList())
 
-    val highlights: StateFlow<List<Highlight>> = (itemId?.let { observeHighlights(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val bookmarks: StateFlow<List<Bookmark>> = if (vaultRef != null) {
+        _vaultBookmarks.asStateFlow()
+    } else {
+        (itemId?.let { observeBookmarks(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    val highlights: StateFlow<List<Highlight>> = if (vaultRef != null) {
+        _vaultHighlights.asStateFlow()
+    } else {
+        (itemId?.let { observeHighlights(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
 
     init {
         controllerFuture.addListener(
@@ -206,45 +256,111 @@ class ReaderViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            if (itemId != null) {
-                // Normal library flow — load by Room ID
-                val item = getItem(itemId)
-                if (item == null) {
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
-                    return@launch
+            when {
+                itemId != null -> {
+                    // Normal library flow — load by Room ID
+                    val item = getItem(itemId)
+                    if (item == null) {
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = "Item not found.")
+                        return@launch
+                    }
+                    val progress = getProgress(itemId)
+                    // getVaultFolder here is the *unencrypted* SAF-tree "VaultFolder"
+                    // concept (relative-image resolution for Markdown) — unrelated to
+                    // vaultRef/ContentSource.VaultEntry (the encrypted-vault feature)
+                    // below, despite both being named "vault". A real naming collision
+                    // in the domain model, not a typo — see ReaderUiState.vaultTreeUri.
+                    val vaultTreeUri = if (item.format == MediaFormat.MARKDOWN) {
+                        getVaultFolder(item.vaultFolderId)?.uri?.let { Uri.parse(it) }
+                    } else {
+                        null
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        contentSource = ContentSource.RealFile(item.filePath),
+                        title         = item.title,
+                        author        = item.author,
+                        format        = item.format,
+                        progress      = progress,
+                        isLoading     = false,
+                        vaultTreeUri  = vaultTreeUri,
+                    )
+                    logger.i("Reader", "Opened from library: ${item.title}")
                 }
-                val progress = getProgress(itemId)
-                val vaultTreeUri = if (item.format == xyz.libravault.core.domain.model.MediaFormat.MARKDOWN) {
-                    getVaultFolder(item.vaultFolderId)?.uri?.let { android.net.Uri.parse(it) }
-                } else {
-                    null
+
+                vaultRef != null -> {
+                    // Encrypted Vault flow (#505) — resolve a ContentSource.VaultEntry
+                    // and seed its bookmarks/highlights. try/catch closes a real gap
+                    // VaultReaderViewModel (feature:vault, deleted by #505) had: its
+                    // PDF/Markdown branches let a VaultStore.openReader()/VaultLockedException
+                    // failure escape unhandled — only its EPUB branch caught anything.
+                    val (vaultId, fileIdHex) = vaultRef
+                    try {
+                        if (!sessionManager.isUnlocked(vaultId)) {
+                            _uiState.value = _uiState.value.copy(isLoading = false, error = "Vault is locked")
+                            return@launch
+                        }
+                        val store = sessionManager.requireUnlocked(vaultId)
+                        val fileId = fileIdHex.hexToFileId()
+                        val entry = store.listEntries().find { it.fileId.contentEquals(fileId) }
+                        if (entry == null) {
+                            _uiState.value = _uiState.value.copy(isLoading = false, error = "File not found in this vault")
+                            return@launch
+                        }
+                        if (entry.format in VAULT_AUDIO_FORMAT_NAMES) {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error     = "This is an audio file — open it from the player instead",
+                            )
+                            return@launch
+                        }
+                        val format = MediaFormat.entries.find { it.name == entry.format }
+                        if (format == null) {
+                            _uiState.value = _uiState.value.copy(isLoading = false, error = "Unsupported format: ${entry.format}")
+                            return@launch
+                        }
+                        _vaultBookmarks.value = entry.bookmarks.map { it.toDomainBookmark() }
+                        _vaultHighlights.value = entry.highlights.map { it.toDomainHighlight() }
+                        _uiState.value = _uiState.value.copy(
+                            contentSource = ContentSource.VaultEntry(vaultId, fileIdHex, format),
+                            title         = entry.title,
+                            author        = entry.author ?: "",
+                            format        = format,
+                            progress      = null, // no persisted vault reading progress yet, matches today's behavior
+                            isLoading     = false,
+                            vaultTreeUri  = null, // encrypted vault Markdown never resolves relative images (#442 v1)
+                        )
+                        logger.i("Reader", "Opened from vault: ${entry.title}")
+                    } catch (e: Exception) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error     = "Could not open vault file: ${e.message}",
+                        )
+                    }
                 }
-                _uiState.value = _uiState.value.copy(
-                    item        = item,
-                    progress    = progress,
-                    isLoading   = false,
-                    vaultTreeUri = vaultTreeUri,
-                )
-                logger.i("Reader", "Opened from library: ${item.title}")
-            } else {
-                // External intent flow — resolve URI to a transient LibraryItem
-                val rawUri = savedStateHandle.get<String>("encodedUri")
-                    ?.let { android.net.Uri.parse(android.net.Uri.decode(it)) }
-                if (rawUri == null) {
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = "No file specified.")
-                    return@launch
+
+                else -> {
+                    // External intent flow — resolve URI to a transient LibraryItem
+                    val rawUri = savedStateHandle.get<String>("encodedUri")
+                        ?.let { Uri.parse(Uri.decode(it)) }
+                    if (rawUri == null) {
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = "No file specified.")
+                        return@launch
+                    }
+                    val item = openFile(rawUri)
+                    if (item == null) {
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = "Unsupported file format.")
+                        return@launch
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        contentSource = ContentSource.RealFile(item.filePath),
+                        title         = item.title,
+                        author        = item.author,
+                        format        = item.format,
+                        progress      = null,
+                        isLoading     = false,
+                    )
+                    logger.i("Reader", "Opened from external intent: ${item.title}")
                 }
-                val item = openFile(rawUri)
-                if (item == null) {
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Unsupported file format.")
-                    return@launch
-                }
-                _uiState.value = _uiState.value.copy(
-                    item      = item,
-                    progress  = null,
-                    isLoading = false,
-                )
-                logger.i("Reader", "Opened from external intent: ${item.title}")
             }
         }
     }
@@ -386,11 +502,20 @@ class ReaderViewModel @Inject constructor(
     fun hideToc() { _uiState.value = _uiState.value.copy(showTocSheet = false) }
 
     fun addBookmark(positionRef: String, label: String? = null) {
-        val id = itemId ?: return
+        val vault = vaultRef
         viewModelScope.launch {
-            val newId = addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
-            _uiState.value = _uiState.value.copy(lastAddedBookmarkId = newId)
-            logger.i("Reader", "Bookmark added at $positionRef (id=$newId)")
+            if (vault != null) {
+                val (vaultId, fileIdHex) = vault
+                val vb = sessionManager.requireUnlocked(vaultId).addBookmark(fileIdHex.hexToFileId(), positionRef, label)
+                _vaultBookmarks.update { it + vb.toDomainBookmark() }
+                _uiState.value = _uiState.value.copy(lastAddedBookmarkId = vb.id)
+                logger.i("Reader", "Vault bookmark added at $positionRef (id=${vb.id})")
+            } else {
+                val id = itemId ?: return@launch
+                val newId = addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
+                _uiState.value = _uiState.value.copy(lastAddedBookmarkId = newId)
+                logger.i("Reader", "Bookmark added at $positionRef (id=$newId)")
+            }
         }
     }
 
@@ -401,31 +526,66 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun removeBookmark(id: Long) {
-        viewModelScope.launch { deleteBookmark(id) }
+        val vault = vaultRef
+        viewModelScope.launch {
+            if (vault != null) {
+                val (vaultId, fileIdHex) = vault
+                sessionManager.requireUnlocked(vaultId).removeBookmark(fileIdHex.hexToFileId(), id)
+                _vaultBookmarks.update { list -> list.filterNot { it.id == id } }
+            } else {
+                deleteBookmark(id)
+            }
+        }
     }
 
     fun updateBookmarkNote(id: Long, note: String?) {
-        viewModelScope.launch { updateBookmarkNote.invoke(id, note) }
+        val vault = vaultRef
+        viewModelScope.launch {
+            if (vault != null) {
+                val (vaultId, fileIdHex) = vault
+                sessionManager.requireUnlocked(vaultId).updateBookmarkNote(fileIdHex.hexToFileId(), id, note)
+                _vaultBookmarks.update { list -> list.map { if (it.id == id) it.copy(note = note) else it } }
+            } else {
+                updateBookmarkNote.invoke(id, note)
+            }
+        }
     }
 
     // ── Highlights ────────────────────────────────────────────────────────────
 
     fun addHighlight(positionRef: String, text: String, colorHex: String = "#FFE066") {
-        val id = itemId ?: return
+        val vault = vaultRef
         viewModelScope.launch {
-            addHighlight(
-                Highlight(
-                    itemId          = id,
-                    positionRef     = positionRef,
-                    highlightedText = text,
-                    colorHex        = colorHex,
+            if (vault != null) {
+                val (vaultId, fileIdHex) = vault
+                val vh = sessionManager.requireUnlocked(vaultId)
+                    .addHighlight(fileIdHex.hexToFileId(), positionRef, text, colorHex)
+                _vaultHighlights.update { it + vh.toDomainHighlight() }
+            } else {
+                val id = itemId ?: return@launch
+                addHighlight(
+                    Highlight(
+                        itemId          = id,
+                        positionRef     = positionRef,
+                        highlightedText = text,
+                        colorHex        = colorHex,
+                    )
                 )
-            )
+            }
         }
     }
 
     fun removeHighlight(id: Long) {
-        viewModelScope.launch { deleteHighlight(id) }
+        val vault = vaultRef
+        viewModelScope.launch {
+            if (vault != null) {
+                val (vaultId, fileIdHex) = vault
+                sessionManager.requireUnlocked(vaultId).removeHighlight(fileIdHex.hexToFileId(), id)
+                _vaultHighlights.update { list -> list.filterNot { it.id == id } }
+            } else {
+                deleteHighlight(id)
+            }
+        }
     }
 
     // ── Audiobook mini-player controls ────────────────────────────────────────
@@ -698,6 +858,36 @@ class ReaderViewModel @Inject constructor(
         stopReadAloud()
     }
 }
+
+/**
+ * A vault entry's [id]/[positionRef]/[label]/[note] map straight across to
+ * [Bookmark]; [itemId] gets the same `-1L` transient-item sentinel
+ * `OpenFileUseCase` already uses for external-intent items with no Room row —
+ * a vault bookmark is equally not Room-backed. Vault-sourced [Bookmark]s are
+ * never persisted through the Room-based use cases above, only through
+ * [ReaderViewModel.vaultRef]'s branch, so this sentinel is never round-tripped
+ * back into a real query.
+ */
+private const val VAULT_TRANSIENT_ITEM_ID = -1L
+
+private fun VaultBookmark.toDomainBookmark(): Bookmark = Bookmark(
+    id          = id,
+    itemId      = VAULT_TRANSIENT_ITEM_ID,
+    positionRef = positionRef,
+    label       = label,
+    note        = note,
+    createdAt   = Instant.ofEpochMilli(createdAtEpochMillis),
+)
+
+private fun VaultHighlight.toDomainHighlight(): Highlight = Highlight(
+    id              = id,
+    itemId          = VAULT_TRANSIENT_ITEM_ID,
+    positionRef     = positionRef,
+    highlightedText = highlightedText,
+    colorHex        = colorHex,
+    note            = note,
+    createdAt       = Instant.ofEpochMilli(createdAtEpochMillis),
+)
 
 /**
  * [AppReadingTheme] (`core:domain`, KMP-safe) <-> [xyz.libravault.core.ui.theme.ReadingTheme]

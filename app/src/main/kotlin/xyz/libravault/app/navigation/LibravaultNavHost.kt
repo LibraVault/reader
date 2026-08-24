@@ -9,6 +9,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import xyz.libravault.core.vaultstore.VAULT_AUDIO_FORMAT_NAMES
 import xyz.libravault.core.vaultstore.toHexString
 import xyz.libravault.feature.library.LibraryScreen
 import xyz.libravault.feature.onboarding.OnboardingScreen
@@ -17,7 +18,6 @@ import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
 import xyz.libravault.feature.vault.CreateVaultScreen
 import xyz.libravault.feature.vault.UnlockVaultScreen
-import xyz.libravault.feature.vault.VAULT_AUDIO_FORMAT_NAMES
 import xyz.libravault.feature.vault.VaultContentsScreen
 import xyz.libravault.feature.vault.VaultListScreen
 import xyz.libravault.feature.vault.VaultPlayerScreen
