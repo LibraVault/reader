@@ -29,6 +29,13 @@ struct SettingsView: View {
             readingSection
             playbackSection
             ttsSection
+            // Only ever rendered when subscribed — the real signal
+            // (`StoreKitBillingManager.isSubscribed`, wired straight through per PRD
+            // §8, no mock/stub — see docs/cloud-tts-premium-prd.md and issue #452).
+            // The consent toggle inside stays independently off by default regardless.
+            if billingManager.isSubscribed {
+                CloudVoicesSection()
+            }
             // No "Appearance" section: Android's only control there is Material You
             // dynamic color, which has no iOS equivalent — nothing honest to put here.
             privacySection
@@ -512,7 +519,7 @@ struct HelpView: View {
         ),
         HelpTopic(
             question: "Does LibraVault need an internet connection?",
-            answer: "No. LibraVault works fully offline — no accounts, no cloud sync, no tracking. Everything, including on-device Read Aloud, runs locally."
+            answer: "No. LibraVault works fully offline — no accounts, no cloud sync, no tracking. Everything, including on-device Read Aloud, runs locally. The one opt-in exception is Cloud Voices (Settings → Cloud Voices, subscribers only): if you turn it on and configure your own API key for a cloud TTS vendor, the text you choose to read aloud is sent to that vendor. It's off by default and stays off unless you explicitly enable it."
         ),
     ]
 
