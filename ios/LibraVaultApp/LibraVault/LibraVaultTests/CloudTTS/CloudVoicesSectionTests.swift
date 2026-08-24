@@ -73,7 +73,7 @@ final class CloudVoicesSectionTests: XCTestCase {
     // MARK: - validateAndSave
 
     func testValidateAndSaveSavesCredentialsWhenValidationSucceeds() async {
-        let ttsProvider = FakeCloudTtsProvider()
+        let ttsProvider = FakeCloudVoicesTtsProvider()
         let keyStore = FakeCloudApiKeyStore()
         let credentials: [CloudCredentialField: String] = [.apiKey: "sk-real"]
 
@@ -89,7 +89,7 @@ final class CloudVoicesSectionTests: XCTestCase {
     /// The single most safety-critical assertion here (PRD §6: "validated ... then
     /// stored") — a failed validation must never reach the key store at all.
     func testValidateAndSaveNeverSavesWhenValidationFails() async {
-        let ttsProvider = FakeCloudTtsProvider()
+        let ttsProvider = FakeCloudVoicesTtsProvider()
         ttsProvider.validateKeyError = CloudTtsProviderError.httpError(statusCode: 401, body: "unauthorized")
         let keyStore = FakeCloudApiKeyStore()
 
@@ -104,7 +104,7 @@ final class CloudVoicesSectionTests: XCTestCase {
     /// A key-store-side failure (e.g. a field-count mismatch) after validation already
     /// succeeded is still surfaced as a failure, not silently swallowed.
     func testValidateAndSavePropagatesKeyStoreFailureAfterValidationSucceeds() async {
-        let ttsProvider = FakeCloudTtsProvider()
+        let ttsProvider = FakeCloudVoicesTtsProvider()
         let keyStore = FakeCloudApiKeyStore()
 
         let result = await CloudVoicesSection.validateAndSave(
