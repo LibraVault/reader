@@ -3,6 +3,7 @@ package xyz.libravault.feature.reader
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelStore
 import androidx.media3.session.MediaController
 import app.cash.turbine.test
 import com.google.common.util.concurrent.SettableFuture
@@ -121,6 +122,16 @@ class ReaderViewModelTest {
     // synchronously on the calling thread, which is what these tests want.
     private val mainDispatcher = Dispatchers.Unconfined
 
+    // Owns every ViewModel this test class creates so tearDown() can clear() them —
+    // same fix as MarkdownReaderViewModelTest's (#554/#553). ReaderViewModel.init
+    // launches several infinite viewModelScope.launch { flow.collect {} } blocks (Read
+    // Aloud completion/stop-event and sleep-timer collectors, see advanceReadAloudElapsed's
+    // doc comment above) that only Android's real onCleared() lifecycle ever cancels —
+    // without this, every test would leak them, and a later exception on one gets
+    // misattributed to whichever unrelated test runs next
+    // (kotlinx.coroutines.test.UncaughtExceptionsBeforeTest). See #562.
+    private val viewModelStore = ViewModelStore()
+
     @BeforeEach
     fun setUp() {
         // The init coroutine completes before tests start collecting, so only the
@@ -150,8 +161,14 @@ class ReaderViewModelTest {
 
     @AfterEach
     fun tearDown() {
+        viewModelStore.clear()
         Dispatchers.resetMain()
     }
+
+    // Owns a ViewModel constructed outside the viewModel() factory below (e.g. when a
+    // test needs to stub mocks between construction and the factory's own defaults) so
+    // tearDown() still clears it.
+    private fun own(vm: ReaderViewModel): ReaderViewModel = vm.also { viewModelStore.put(it.toString(), it) }
 
     private fun viewModel(itemId: Long = 1L): ReaderViewModel {
         coEvery { getItem(itemId) }           returns fakeItem
@@ -159,25 +176,27 @@ class ReaderViewModelTest {
         coEvery { observeBookmarks(itemId) }  returns flowOf(emptyList())
         coEvery { observeHighlights(itemId) } returns flowOf(emptyList())
 
-        return ReaderViewModel(
-            savedStateHandle    = SavedStateHandle(mapOf("itemId" to itemId)),
-            getItem             = getItem,
-            getVaultFolder      = getVaultFolder,
-            openFile            = openFile,
-            getProgress         = getProgress,
-            saveProgress        = saveProgress,
-            observeBookmarks    = observeBookmarks,
-            addBookmark         = addBookmark,
-            deleteBookmark      = deleteBookmark,
-            updateBookmarkNote  = updateBookmarkNote,
-            observeHighlights   = observeHighlights,
-            addHighlight        = addHighlight,
-            deleteHighlight     = deleteHighlight,
-            logger              = logger,
-            playbackStateHolder = playbackStateHolder,
-            controllerFuture    = controllerFuture,
-            ttsEngineProvider   = ttsEngineProvider,
-            appContext          = appContext,
+        return own(
+            ReaderViewModel(
+                savedStateHandle    = SavedStateHandle(mapOf("itemId" to itemId)),
+                getItem             = getItem,
+                getVaultFolder      = getVaultFolder,
+                openFile            = openFile,
+                getProgress         = getProgress,
+                saveProgress        = saveProgress,
+                observeBookmarks    = observeBookmarks,
+                addBookmark         = addBookmark,
+                deleteBookmark      = deleteBookmark,
+                updateBookmarkNote  = updateBookmarkNote,
+                observeHighlights   = observeHighlights,
+                addHighlight        = addHighlight,
+                deleteHighlight     = deleteHighlight,
+                logger              = logger,
+                playbackStateHolder = playbackStateHolder,
+                controllerFuture    = controllerFuture,
+                ttsEngineProvider   = ttsEngineProvider,
+                appContext          = appContext,
+            )
         )
     }
 
@@ -203,25 +222,27 @@ class ReaderViewModelTest {
         coEvery { observeBookmarks(99L) }  returns flowOf(emptyList())
         coEvery { observeHighlights(99L) } returns flowOf(emptyList())
 
-        val vm = ReaderViewModel(
-            savedStateHandle    = SavedStateHandle(mapOf("itemId" to 99L)),
-            getItem             = getItem,
-            getVaultFolder      = getVaultFolder,
-            openFile            = openFile,
-            getProgress         = getProgress,
-            saveProgress        = saveProgress,
-            observeBookmarks    = observeBookmarks,
-            addBookmark         = addBookmark,
-            deleteBookmark      = deleteBookmark,
-            updateBookmarkNote  = updateBookmarkNote,
-            observeHighlights   = observeHighlights,
-            addHighlight        = addHighlight,
-            deleteHighlight     = deleteHighlight,
-            logger              = logger,
-            playbackStateHolder = playbackStateHolder,
-            controllerFuture    = controllerFuture,
-            ttsEngineProvider   = ttsEngineProvider,
-            appContext          = appContext,
+        val vm = own(
+            ReaderViewModel(
+                savedStateHandle    = SavedStateHandle(mapOf("itemId" to 99L)),
+                getItem             = getItem,
+                getVaultFolder      = getVaultFolder,
+                openFile            = openFile,
+                getProgress         = getProgress,
+                saveProgress        = saveProgress,
+                observeBookmarks    = observeBookmarks,
+                addBookmark         = addBookmark,
+                deleteBookmark      = deleteBookmark,
+                updateBookmarkNote  = updateBookmarkNote,
+                observeHighlights   = observeHighlights,
+                addHighlight        = addHighlight,
+                deleteHighlight     = deleteHighlight,
+                logger              = logger,
+                playbackStateHolder = playbackStateHolder,
+                controllerFuture    = controllerFuture,
+                ttsEngineProvider   = ttsEngineProvider,
+                appContext          = appContext,
+            )
         )
 
         // init coroutine already completed — first emission is the error state
