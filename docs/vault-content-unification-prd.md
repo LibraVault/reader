@@ -21,6 +21,12 @@ on either end:
   ViewModel, and UI component involved is a second implementation, not a
   parameterization of the first.
 
+**Confirmed direction (2026-08-24):** only the *entry point* — resolving a
+`LibraryItem` to bytes, vault or plaintext — should ever fork. Reading and
+playback logic downstream of that resolution stays one implementation. §3's
+`ContentSource` abstraction is how that gets enforced structurally, not just
+stated as intent.
+
 That fork was a deliberate, reasonable call at the time (§2), but the
 predictable cost has arrived: every reader/player feature now has to be
 built twice, and vault keeps landing second and incomplete. Measured, not
@@ -118,10 +124,9 @@ and should not wait on Phase 2's design being finalized:
    `LibravaultMediaCallback`, delete `VaultPlayerScreen`. #493 is this
    phase, not a standalone parallel service — re-scope it here once Phase 1
    validates the `ContentSource` pattern works end-to-end.
-3. **Library UI.** Add the padlock badge to `LibraryItemCard`. Decide
-   whether vault-name chips stay as a secondary organizational filter or get
-   folded away now that vault membership isn't the primary axis a user needs
-   to browse by (open question, §7).
+3. **Library UI.** Add the padlock badge to `LibraryItemCard`, gated by the
+   Library-visibility setting resolved in §8. Whether vault-name chips
+   survive as a secondary filter is still open (§7).
 
 ## 5. Explicitly out of scope for this migration
 
@@ -158,3 +163,50 @@ device verification, not just CI green, before either phase merges to `dev`.
 - Whether Phase 1 alone (reading unification) is worth shipping even if
   Phase 2 (audio) turns out to need significantly more design work than
   scoped here — current lean is yes, since it unblocks #489 independently.
+
+## 8. User-configurable vault settings (resolved 2026-08-24)
+
+Three questions raised while scoping #493 (vault audiobook background
+playback) turned out to be product decisions this doc should own, not ones
+#493 should answer standalone. Resolved as: **all three are user-configurable
+settings**, not a single hardcoded behavior — the underlying privacy/security
+posture varies too much by user (some want zero vault trace outside an
+unlocked session; others just want folder-style organization) to pick one
+default and call it done.
+
+| Setting | Choices | Default |
+|---|---|---|
+| **Library visibility** | Vault items never appear in the main Library (must enter via the "Encrypted Vaults" gateway) **vs.** vault items appear inline in the Library, marked only by the Phase 3 padlock badge | Gateway-only (most private) |
+| **Lock-screen / notification metadata** | Real title/author on the now-playing card and notification **vs.** generic "Vault" placeholder | Generic placeholder |
+| **Background-playback auto-lock behavior** | No exemption — today's existing behavior (`VaultSessionManager.lockAll()` on `ProcessLifecycleOwner.onStop`, immediate, no timer) applies even during playback **vs.** a grace period / stay-unlocked-while-playing exemption | No exemption (today's behavior, unchanged) |
+| **Stop playback on lock** | Audio stops the moment the vault locks **vs.** audio keeps playing after lock (lower-severity than leaving visual reader content exposed, since it's audio-only) | Stops on lock |
+
+Every default above is the more secure/private option — each setting is an
+opt-in loosening, not an opt-out of privacy. This matches the only existing
+precedent for a vault security toggle, `VaultScreenSecurityPreference`
+(`docs/threat-model.md`, `FLAG_SECURE` while vault content is on screen):
+user-togglable, default on/secure.
+
+**Where these live:** `SettingsScreen.kt`'s existing "Encrypted Vaults"
+section (`SettingsScreen.kt:308-338`) already hosts one such toggle
+("Screen Security") separately from the plain "Vaults" (SAF-folder) section
+above it — same reasoning applies here, these are Encrypted-Vault-specific,
+not general library settings. All four new settings belong in that same
+section, not scattered across Reading/Playback/Privacy. No new top-level
+Settings section needed; this one already exists and is the right home.
+
+**Note on the auto-lock timer specifically:** there is no timer today —
+`VaultSessionManager` locks every open vault immediately and unconditionally
+on the app leaving the foreground (§ doc comment in
+`VaultSessionManager.kt:47-52`). "Make the auto-lock timer configurable"
+therefore means introducing a timer/grace-period concept that doesn't exist
+yet, gated behind this setting, not exposing a value that's currently
+hardcoded to a non-zero number.
+
+**Implementation note, not a new phase:** these four settings are additive
+to Phase 2/3 (§4), not a new phase — Phase 3 wires Library visibility +
+padlock badge together; Phase 2 wires the auto-lock/stop-on-lock pair
+alongside whichever itemId approach (§3) it lands on, since both need
+`VaultSessionManager` and `PlaybackStateHolder`/`MediaSession` lifecycle
+touching regardless. Lock-screen metadata is a small, independent
+`MediaMetadata` build-time check and can land with either.
