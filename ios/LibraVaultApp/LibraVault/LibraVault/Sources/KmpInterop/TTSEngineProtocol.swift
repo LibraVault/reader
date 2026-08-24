@@ -16,15 +16,19 @@ protocol TTSEngineProtocol: AnyObject {
     func resume() async
 }
 
-/// Mirrors Android's `TtsEngineType` (core/tts/TtsEngineFactory.kt).
+/// Mirrors Android's `TtsEngineType` (core/tts/TtsEngineFactory.kt). `.cloud` added for
+/// Premium Cloud TTS Voices (BYOK) — see `CloudTtsEngine`/`LibravaultDomainBridge
+/// .switchTTSEngine(to:)`.
 enum TTSEngineType: String, CaseIterable {
     case system
     case pocket
+    case cloud
 
     var displayName: String {
         switch self {
         case .system: return "System Voice"
         case .pocket: return "On-Device (Pocket TTS)"
+        case .cloud: return "Cloud Voices"
         }
     }
 }
