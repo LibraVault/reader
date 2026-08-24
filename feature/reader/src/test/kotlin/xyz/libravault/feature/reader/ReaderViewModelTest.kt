@@ -265,6 +265,30 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `auto-scroll speed is clamped to valid range`() = runTest {
+        val vm = viewModel()
+        vm.onAutoScrollSpeedChanged(10.0f)
+        assertEquals(3.0f, vm.uiState.value.settings.autoScrollSpeed)
+
+        vm.onAutoScrollSpeedChanged(0.1f)
+        assertEquals(0.5f, vm.uiState.value.settings.autoScrollSpeed)
+    }
+
+    @Test
+    fun `auto-scroll defaults to off and toggles independently of speed`() = runTest {
+        val vm = viewModel()
+        assertFalse(vm.uiState.value.settings.autoScrollEnabled)
+        assertEquals(1.0f, vm.uiState.value.settings.autoScrollSpeed)
+
+        vm.onAutoScrollEnabledChanged(true)
+        assertTrue(vm.uiState.value.settings.autoScrollEnabled)
+        assertEquals(1.0f, vm.uiState.value.settings.autoScrollSpeed)
+
+        vm.onAutoScrollEnabledChanged(false)
+        assertFalse(vm.uiState.value.settings.autoScrollEnabled)
+    }
+
+    @Test
     fun `selecting OpenDyslexic font bumps line spacing to the accessibility default`() = runTest {
         val vm = viewModel()
         assertEquals(1.4f, vm.uiState.value.settings.lineSpacing) // sanity: default before selection

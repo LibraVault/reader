@@ -215,9 +215,9 @@ fun ReaderSettingsSheet(
     onLineSpacingChanged: (Float) -> Unit,
     onScrollModeChanged: (ScrollMode) -> Unit,
     onWarmthChanged: (Float) -> Unit,
-    onAutoScrollEnabledChanged: (Boolean) -> Unit,
-    onAutoScrollSpeedChanged: (Float) -> Unit,
     onDismiss: () -> Unit,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit = {},
+    onAutoScrollSpeedChanged: (Float) -> Unit = {},
     // Margins/justification/hyphenation (#421) — EPUB only. These map to native
     // Readium EpubPreferences fields with no Markdown/PDF equivalent (Markdown's
     // typography is Compose TextStyle, not Readium CSS; PDF pages here are
