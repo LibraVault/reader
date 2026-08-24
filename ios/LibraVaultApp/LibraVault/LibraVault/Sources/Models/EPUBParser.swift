@@ -22,14 +22,26 @@ enum EPUBParser {
         let archive = try openArchive(at: fileURL)
 
         // `META-INF/encryption.xml` is the EPUB OCF spec's marker that some (or all)
-        // resources in the archive are encrypted by a Content Protection scheme (Adobe
-        // ADEPT, Apple FairPlay, Readium LCP, …) Libravault has no decryption support
-        // for — see KNOWN_LIMITATIONS.md. Left unchecked, only the (often unencrypted)
-        // cover page reads back cleanly and every other spine item's ciphertext gets
-        // force-decoded as UTF-8/Latin-1 text by the plainText fallback below, which
-        // renders as garbled glyph soup instead of a clean error (issue #351).
-        if archive["META-INF/encryption.xml"] != nil {
-            throw ParseError.drmProtected
+        // resources in the archive are encrypted. Its *presence* alone isn't a
+        // reliable DRM signal, though: the same file/element shape is also used for
+        // **font obfuscation** (IDPF's algorithm `http://www.idpf.org/2008/embedding`
+        // and Adobe's `http://ns.adobe.com/pdf/enc#RC`), a routine, non-DRM step many
+        // otherwise-unprotected EPUBs take to license embedded custom fonts. An
+        // existence-only check (the original form of this fix) rejected every one of
+        // those as "protected" — a real false positive, not a hypothetical one; see
+        // the OCF/IDPF font-mangling spec these two algorithm URIs come from. Only an
+        // `EncryptedData` entry using some *other* algorithm — real Content Protection
+        // (Adobe ADEPT, Readium LCP, …) Libravault has no decryption support for, see
+        // KNOWN_LIMITATIONS.md — should reject the book. Left unchecked entirely, only
+        // the (often unencrypted) cover page reads back cleanly and every other spine
+        // item's ciphertext gets force-decoded as UTF-8/Latin-1 text by the plainText
+        // fallback below, which renders as garbled glyph soup instead of a clean error
+        // (issue #351).
+        if let encryptionEntry = archive["META-INF/encryption.xml"] {
+            let encryptionData = try read(encryptionEntry, from: archive)
+            if isContentEncrypted(encryptionData) {
+                throw ParseError.drmProtected
+            }
         }
 
         let containerData = try extract("META-INF/container.xml", from: archive)
@@ -182,6 +194,50 @@ enum EPUBParser {
         ) {
             if elementName == "rootfile", let fullPath = attributeDict["full-path"] {
                 opfPath = fullPath
+            }
+        }
+    }
+
+    // MARK: - encryption.xml
+
+    /// Font-obfuscation-only algorithm URIs from the IDPF/Adobe font-mangling specs —
+    /// not real Content Protection, so an `EncryptedData` entry using only these
+    /// doesn't mean the *book* is DRM-protected, just that its embedded fonts are
+    /// license-mangled (a routine, widely-used step that has nothing to do with
+    /// whether the reading content itself is readable).
+    private static let fontObfuscationAlgorithms: Set<String> = [
+        "http://www.idpf.org/2008/embedding",
+        "http://ns.adobe.com/pdf/enc#RC",
+    ]
+
+    /// True if `encryption.xml` declares at least one `EncryptedData` entry whose
+    /// algorithm isn't one of the known font-obfuscation-only ones above — i.e. real
+    /// Content Protection is in play, not just mangled embedded fonts. A malformed
+    /// `encryption.xml` (present but unparsable) is treated conservatively as real
+    /// encryption: the file's own presence is still the OCF signal that *something*
+    /// in the archive is encrypted, and a parse failure shouldn't silently downgrade
+    /// that to "safe to render as plaintext."
+    private static func isContentEncrypted(_ data: Data) -> Bool {
+        let delegate = EncryptionXMLDelegate()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        guard parser.parse() else { return true }
+        guard !delegate.algorithms.isEmpty else { return true }
+        return !delegate.algorithms.allSatisfy { fontObfuscationAlgorithms.contains($0) }
+    }
+
+    private final class EncryptionXMLDelegate: NSObject, XMLParserDelegate {
+        var algorithms: [String] = []
+
+        func parser(
+            _ parser: XMLParser,
+            didStartElement elementName: String,
+            namespaceURI: String?,
+            qualifiedName qName: String?,
+            attributes attributeDict: [String: String]
+        ) {
+            if elementName == "EncryptionMethod", let algorithm = attributeDict["Algorithm"] {
+                algorithms.append(algorithm)
             }
         }
     }
