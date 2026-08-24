@@ -1,6 +1,7 @@
 package xyz.libravault.feature.reader.epub
 
 import android.net.Uri
+import androidx.lifecycle.ViewModelStore
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -25,6 +26,13 @@ class EpubReaderViewModelTest {
     private val readiumProvider = mockk<ReadiumProvider>()
     private val logger = mockk<LibravaultLogger>(relaxed = true)
 
+    // Owns every ViewModel this test class creates so tearDown() can clear() them —
+    // same fix as MarkdownReaderViewModelTest's (#554/#553): openPublication()'s
+    // viewModelScope.launch can still be mid-flight when Dispatchers.resetMain() runs,
+    // and a later exception on that leaked coroutine gets misattributed to whichever
+    // test runs next (kotlinx.coroutines.test.UncaughtExceptionsBeforeTest). See #562.
+    private val viewModelStore = ViewModelStore()
+
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -32,10 +40,14 @@ class EpubReaderViewModelTest {
 
     @AfterEach
     fun tearDown() {
+        viewModelStore.clear()
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = EpubReaderViewModel(readiumProvider, logger)
+    private fun viewModel(): EpubReaderViewModel =
+        EpubReaderViewModel(readiumProvider, logger).also {
+            viewModelStore.put(it.toString(), it)
+        }
 
     // ── Locator / pending-navigation state ───────────────────────────────────
     //
