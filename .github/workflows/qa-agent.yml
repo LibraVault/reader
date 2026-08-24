@@ -111,6 +111,32 @@ jobs:
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Backstop — take the PR out of draft if it's still one
+        # dev-agent.yml's own tail step is normally the only place that
+        # calls `gh pr ready` (see .claude/agents/dev-agent.md's "mark it
+        # ready for review" step), right before it hands off
+        # status:needs-qa. But a crashed dev-agent run recovered by
+        # hand-relabeling straight to status:needs-qa (the same
+        # "near-miss" recovery pattern as issue #388's missing risk:*
+        # label) skips that tail step entirely — nothing else in the
+        # pipeline re-checks the draft flag afterward. A PR left in that
+        # state sails through this workflow while jvm-tests.yml's and
+        # ios-app-build.yml's draft-gated jobs silently skip the real
+        # test/build run for it, with the workflow's own conclusion still
+        # reading "success" — confirmed live on PR #412 (issue #460).
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+          IS_DRAFT=$(gh pr view "$PR_NUMBER" --json isDraft -q .isDraft)
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "PR #$PR_NUMBER is still marked draft at the QA gate — taking it out of draft (see issue #460)." >&2
+            gh pr ready "$PR_NUMBER"
+            gh pr comment "$PR_NUMBER" --body "This PR was still marked draft when it reached \`status:needs-qa\` — normally \`dev-agent.yml\`'s own tail step calls \`gh pr ready\` before handing off, but a crashed-run recovery can skip that step (see issue #460). Took it out of draft here so the draft-gated real test/build jobs (\`jvm-tests.yml\`, \`ios-app-build.yml\`) actually run for this commit instead of silently skipping."
+          fi
+
       - name: Check out PR branch
         if: steps.guard.outputs.skip != 'true'
         env:

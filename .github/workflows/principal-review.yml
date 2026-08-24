@@ -132,6 +132,27 @@ jobs:
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Backstop — take the PR out of draft if it's still one
+        # Same backstop as qa-agent.yml's identical step — see its
+        # comment for the full root cause (issue #460). Kept here too,
+        # not just in qa-agent.yml: a PR can reach status:needs-review
+        # via a manual/hand-relabeled path that skips qa-agent.yml
+        # entirely (e.g. a human standing in for this very workflow, as
+        # in #460's own PR #412), so this gate needs its own backstop
+        # rather than relying solely on QA having already caught it.
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
+          IS_DRAFT=$(gh pr view "$PR_NUMBER" --json isDraft -q .isDraft)
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "PR #$PR_NUMBER is still marked draft at the review gate — taking it out of draft (see issue #460)." >&2
+            gh pr ready "$PR_NUMBER"
+            gh pr comment "$PR_NUMBER" --body "This PR was still marked draft when it reached \`status:needs-review\` — normally \`dev-agent.yml\`'s own tail step calls \`gh pr ready\` before handing off, but a crashed-run recovery can skip that step (see issue #460). Took it out of draft here so the draft-gated real test/build jobs (\`jvm-tests.yml\`, \`ios-app-build.yml\`) actually run for this commit instead of silently skipping."
+          fi
+
       - name: Check out PR branch
         if: steps.guard.outputs.skip != 'true'
         env:
