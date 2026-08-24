@@ -2,11 +2,14 @@ package xyz.libravault.feature.reader.epub
 
 import android.net.Uri
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -48,6 +51,18 @@ class EpubReaderViewModelTest {
         EpubReaderViewModel(readiumProvider, logger).also {
             viewModelStore.put(it.toString(), it)
         }
+
+    // ── tearDown cancels leaked ViewModel coroutines (#562) ─────────────────────
+
+    @Test
+    fun `tearDown cancels a leaked ViewModel coroutine`() = runTest {
+        val vm = viewModel()
+        val leaked = vm.viewModelScope.launch { awaitCancellation() }
+
+        tearDown()
+
+        assertTrue(leaked.isCancelled)
+    }
 
     // ── Locator / pending-navigation state ───────────────────────────────────
     //

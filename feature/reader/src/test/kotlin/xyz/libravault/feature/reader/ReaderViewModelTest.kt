@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.media3.session.MediaController
 import app.cash.turbine.test
 import com.google.common.util.concurrent.SettableFuture
@@ -14,9 +15,11 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -198,6 +201,18 @@ class ReaderViewModelTest {
                 appContext          = appContext,
             )
         )
+    }
+
+    // ── tearDown cancels leaked ViewModel coroutines (#562) ─────────────────────
+
+    @Test
+    fun `tearDown cancels a leaked ViewModel coroutine`() = runTest {
+        val vm = viewModel()
+        val leaked = vm.viewModelScope.launch { awaitCancellation() }
+
+        tearDown()
+
+        assertTrue(leaked.isCancelled)
     }
 
     // ── Init ─────────────────────────────────────────────────────────────────
