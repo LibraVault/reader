@@ -135,6 +135,42 @@ this doc already documents (§ "FIVE VACUOUS TESTS"). Recommendation: leave it b
 scope until a human scopes what "approve a snapshot" should actually look like on iOS — this is a
 product/process decision, not a test-writing one.
 
+### 1b. Phase 7 execution, partial — 2026-08-24
+
+The scoping in §6 Phase 7 below was never executed (verified: no `*ScreenLogic.kt` existed for any
+of the five targets beyond the `LibraryScreenLogic` template itself). This session executed two of
+the six targets and re-scoped a third; **Android moved 46.9% → 50.4%.**
+
+- **`SettingsScreenKt` — DONE.** Split into a thin `SettingsScreen(viewModel)` wrapper plus pure
+  `SettingsContent(state, actions)`, following the `PlayerScreen`/`PortraitPlayerContent` template
+  exactly. 10 new logic/interaction tests + 3 Roborazzi screenshot baselines (first per-screen
+  baseline in the repo — `feature:settings` needed the `roborazzi` plugin added, it never had it).
+  `feature:settings` 58.4% → 87.5%. **Recording the first baseline caught a real, pre-existing bug**:
+  the reading-theme filter-chip row had no wrap or scroll, so with `AppReadingTheme`'s 5th entry
+  (`System`, #349) the chip broke mid-word into "Syst"/"em" in every theme. Fixed with
+  `horizontalScroll`; two of the new assertions were hand mutation-checked (flipping
+  `cloudVoicesActuallySending`'s AND to OR, and dropping the remove-vault callback both turned
+  exactly the expected tests red).
+- **`ReaderScreenKt` — RE-SCOPED, partially done.** This target does **not** fit the
+  wrapper/pure-content template: its `epubViewModel`/`markdownViewModel` are obtained via sibling
+  `hiltViewModel()` calls specifically so their instances are *shared* with the
+  `ViewModelStoreOwner` `EpubReaderScreen`/`MarkdownReaderScreen` use downstream — extracting a pure
+  content composable risks silently breaking that sharing, exactly the "a real behaviour change
+  slipping in unnoticed" risk this phase already calls out (§ Risks). Recommend a deliberate design
+  pass before touching the top-level composable, not a mechanical extraction. `selectReaderBottomBar`/
+  `readAloudSupported` (the file's other pure functions) already had dedicated tests;
+  `ReaderMiniPlayerBar`/`ReaderReadAloudMiniBar` (the two remaining pure, untested pieces) were
+  widened from `private` to `internal` and covered for display state. Click-wiring assertions were
+  attempted and dropped after an extended isolation investigation found `performClick()` silently
+  invokes nothing on either bar specifically when rendered with its real, distinct icon set together
+  — every icon click-tests fine individually; not believed to be a production bug (unchanged, shipped
+  code), but an unexplained Robolectric/Compose test-harness interaction, logged here rather than
+  shipped as a flaky assertion. `feature:reader` 40.3% → 45.1%.
+- **`CreateVaultScreenKt`, `EpubReaderScreenKt`, `PdfReaderScreenKt` — not started.** `EpubReaderScreenKt`
+  was already flagged in §6 as "may warrant logic extraction first"; given `ReaderScreenKt`'s
+  surprise, treat `PdfReaderScreenKt`/`EpubReaderScreenKt` as similarly suspect until read — check
+  for the same sibling-`hiltViewModel()`-sharing shape before assuming the template applies.
+
 ---
 
 ## 2. Problem statement
