@@ -42,6 +42,17 @@ jobs:
       ios: ${{ steps.filter.outputs.ios }}
       android: ${{ steps.filter.outputs.android }}
     steps:
+      # paths-filter diffs via the GitHub API on `pull_request` events (no
+      # checkout needed) but falls back to local git history on `push`
+      # events — with no checkout at all, that fails with "not a git
+      # repository" on every push to dev/main. fetch-depth: 0 (full
+      # history) rather than a shallow depth because paths-filter's
+      # default base for push is the commit before the push
+      # (github.event.before), which can be arbitrarily far back for a
+      # multi-commit push. See issue #514.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
