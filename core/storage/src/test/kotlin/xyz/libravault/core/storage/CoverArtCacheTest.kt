@@ -106,4 +106,80 @@ class CoverArtCacheTest {
             assertEquals(0, r and (r - 1), "actual=$actual → result=$r is not a power of two")
         }
     }
+
+    // ── wouldExceedDecodeBudget (issue #529 — pixel ceiling, independent of
+    // and in addition to the inSampleSize cap) ──────────────────────────────
+
+    @Test
+    fun `legitimate cover dimensions are well under the decode budget`() {
+        // A realistic 3000x4000 cover, sampled down per calculateSampleSize.
+        val sampleSize = cache.calculateSampleSize(actual = 4000, target = 512)
+        assertTrue(sampleSize in 1..16)
+        assertTrue(
+            !cache.wouldExceedDecodeBudget(outWidth = 3000, outHeight = 4000, sampleSize = sampleSize),
+            "a normal 3000x4000 cover must never be rejected by the decode budget",
+        )
+    }
+
+    @Test
+    fun `a very large but genuine scan still fits after sampling`() {
+        // A genuine high-res 10000x10000 scan saturates inSampleSize at 16
+        // (same as the adversarial case below) but downsamples to a
+        // perfectly reasonable 625x625 buffer — must NOT be rejected.
+        val sampleSize = cache.calculateSampleSize(actual = 10_000, target = 512)
+        assertEquals(16, sampleSize)
+        assertTrue(
+            !cache.wouldExceedDecodeBudget(outWidth = 10_000, outHeight = 10_000, sampleSize = sampleSize),
+        )
+    }
+
+    @Test
+    fun `adversarial dimensions that saturate sample size still exceed the pixel budget`() {
+        // A hostile header claiming 1,000,000 x 1,000,000 px saturates
+        // inSampleSize at 16 (identical to a legitimate 8192px cover), but
+        // still decodes to a 62,500 x 62,500 buffer -- the sample-size cap
+        // alone cannot catch this; the pixel-budget check must.
+        val sampleSize = cache.calculateSampleSize(actual = 1_000_000, target = 512)
+        assertEquals(16, sampleSize)
+        assertTrue(
+            cache.wouldExceedDecodeBudget(outWidth = 1_000_000, outHeight = 1_000_000, sampleSize = sampleSize),
+            "a 1,000,000x1,000,000 claimed header must be rejected regardless of the sample-size cap",
+        )
+    }
+
+    @Test
+    fun `extreme aspect ratio is also caught (one huge dimension, one tiny)`() {
+        // A pathological 1x500_000_000 header — one axis alone can still
+        // force a huge allocation even though the "long edge" logic that
+        // picks sampleSize only looks at the max of the two, and sampleSize
+        // itself saturates at 16 for any long edge past 16,384 regardless
+        // of how much further beyond that it actually goes.
+        val sampleSize = cache.calculateSampleSize(actual = 500_000_000, target = 512)
+        assertEquals(16, sampleSize)
+        assertTrue(
+            cache.wouldExceedDecodeBudget(outWidth = 1, outHeight = 500_000_000, sampleSize = sampleSize),
+        )
+    }
+
+    @Test
+    fun `exactly at the pixel budget boundary is allowed`() {
+        // 4096 x 4096 at sample size 1 == MAX_DECODE_PIXELS exactly.
+        assertTrue(
+            !cache.wouldExceedDecodeBudget(outWidth = 4096, outHeight = 4096, sampleSize = 1),
+        )
+    }
+
+    @Test
+    fun `one pixel past the budget boundary is rejected`() {
+        assertTrue(
+            cache.wouldExceedDecodeBudget(outWidth = 4097, outHeight = 4096, sampleSize = 1),
+        )
+    }
+
+    @Test
+    fun `sampleSize of zero does not divide-by-zero (coerced to 1 pixel minimum)`() {
+        // Defensive: calculateSampleSize should never actually return 0,
+        // but wouldExceedDecodeBudget must not crash if it ever did.
+        assertTrue(!cache.wouldExceedDecodeBudget(outWidth = 10, outHeight = 10, sampleSize = 0))
+    }
 }
