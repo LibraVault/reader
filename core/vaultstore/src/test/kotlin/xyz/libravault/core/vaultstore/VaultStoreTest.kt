@@ -1,5 +1,6 @@
 package xyz.libravault.core.vaultstore
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -366,6 +367,114 @@ class VaultStoreTest {
         store.openReader(entry.fileId).use { reader ->
             assertArrayEquals(content, reader.readAt(0, content.size))
         }
+    }
+
+    /**
+     * Regression test for #526 (design item 5, the open-reader registry):
+     * before [VaultStore.openReader] tracked its handed-out readers,
+     * [VaultStore.lock] had no way to reach a reader a reader/player screen
+     * still held, so that screen could go on decrypting content from an
+     * already-"locked" vault. Verified this test actually distinguishes the
+     * fix: run against commit `a1b021f` (the last commit before the
+     * `openReaders` registry was introduced) it fails — `readAt` after
+     * `lock()` still returns the plaintext content instead of throwing.
+     */
+    @Test
+    fun `lock closes and scrubs every reader handed out via openReader`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val content = ByteArray(1_000) { it.toByte() }
+        val entry = store.importFile(ByteArrayInputStream(content), content.size.toLong(), "title", null, "pdf")
+
+        val reader = store.openReader(entry.fileId)
+
+        store.lock()
+
+        assertThrows<java.io.IOException>(
+            "a reader that survived past lock() must fail fast on its next read, not go on serving decrypted content",
+        ) {
+            reader.readAt(0, content.size)
+        }
+    }
+
+    /**
+     * Regression test for #526's actual root cause (design item 3, H2): two
+     * screens racing an `addBookmark`/import read-modify-write manifest
+     * cycle on the *same* [VaultStore]. [VaultStore.mutationMutex] is
+     * private, so this can't observe the lock directly — instead it proves
+     * true mutual exclusion behaviorally: a first mutation ([importFile]) is
+     * paused mid-flight, while it still holds the mutex, a concurrent
+     * second mutation ([addBookmark]) is started on another thread and shown
+     * to make zero progress (still not completed after a generous window)
+     * until the first one is released and finishes — then, once both have
+     * completed, both mutations' results are present in the manifest (no
+     * lost update from either racing the other's read-modify-write cycle).
+     *
+     * Verified this test actually distinguishes the fix: run against commit
+     * `a1b021f` (the last commit before `mutationMutex` was introduced) it
+     * fails — the concurrent `addBookmark` completes almost immediately
+     * instead of waiting for the paused `importFile` to finish.
+     */
+    @Test
+    fun `two concurrent mutations on the same vault are serialized, not interleaved`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val existing = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "existing", null, "pdf")
+
+        val readStarted = CountDownLatch(1)
+        val resumeRead = CountDownLatch(1)
+        val newContent = ByteArray(10) { it.toByte() }
+        val pausingInput = PausingInputStream(newContent, readStarted, resumeRead)
+
+        val bookmarkAttemptStarted = CountDownLatch(1)
+        val bookmarkCompleted = CountDownLatch(1)
+        var bookmarkResult: VaultBookmark? = null
+
+        val importerThread = Thread {
+            runBlocking {
+                store.importFile(pausingInput, newContent.size.toLong(), "new-import", null, "pdf")
+            }
+        }
+        importerThread.start()
+
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS), "import never started reading — mutex wasn't even acquired")
+
+        val bookmarkThread = Thread {
+            bookmarkAttemptStarted.countDown()
+            runBlocking {
+                bookmarkResult = store.addBookmark(existing.fileId, "page:1", "label")
+            }
+            bookmarkCompleted.countDown()
+        }
+        bookmarkThread.start()
+        assertTrue(bookmarkAttemptStarted.await(5, TimeUnit.SECONDS), "bookmark thread never even started")
+
+        // The paused importFile call is still holding mutationMutex at this point
+        // (it hasn't been released), so a correctly-serialized addBookmark call
+        // must not be able to complete yet — this is the actual mutual-exclusion
+        // assertion, not just an end-state check.
+        assertFalse(
+            bookmarkCompleted.await(300, TimeUnit.MILLISECONDS),
+            "addBookmark completed while a concurrent importFile still held the mutex — " +
+                "the two mutators raced instead of being serialized",
+        )
+
+        resumeRead.countDown() // let the paused import proceed to its final write
+        importerThread.join(5_000)
+        assertFalse(importerThread.isAlive, "importer thread never finished")
+
+        assertTrue(bookmarkCompleted.await(5, TimeUnit.SECONDS), "addBookmark never completed after the import released the mutex")
+        bookmarkThread.join(5_000)
+
+        assertEquals("label", bookmarkResult?.label)
+
+        // No lost update: both mutations' results must be present, regardless
+        // of which one's read-modify-write cycle ran first.
+        val entries = store.listEntries()
+        assertEquals(2, entries.size, "both the pre-existing import and the new import must be present")
+        val existingAfter = entries.find { it.fileId.contentEquals(existing.fileId) }
+        assertEquals(1, existingAfter?.bookmarks?.size, "the concurrent addBookmark must not have been lost")
+        assertEquals("label", existingAfter?.bookmarks?.single()?.label)
     }
 
     /** Blocks the first call to [read] until [readStarted] is signalled and
