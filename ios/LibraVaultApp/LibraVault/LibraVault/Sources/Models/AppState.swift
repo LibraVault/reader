@@ -134,9 +134,16 @@ final class AppState: ObservableObject {
         return nowPlayingChapters?.map(\.title) ?? []
     }
 
+    /// Cleaned for narration via `TtsTextNormalizer`, not the raw chapter
+    /// text - `nowPlayingChapters[...].text` elsewhere (chapters sheet,
+    /// bookmarks) stays untouched, since page numbers/footnote markers are
+    /// only a problem when they're about to be spoken aloud. Both callers
+    /// (startPlayback's synthesis and the speed-change duration re-estimate
+    /// above) need the same cleaned text, so this is the one place to do it.
     private func chapterText(for chapter: Int) -> String {
         guard let nowPlayingChapters, !nowPlayingChapters.isEmpty else { return "" }
-        return nowPlayingChapters[(chapter - 1) % nowPlayingChapters.count].text
+        let raw = nowPlayingChapters[(chapter - 1) % nowPlayingChapters.count].text
+        return TtsTextNormalizer.clean(raw)
     }
 
     /// Set by PlayerView's onAppear/onDisappear so the global mini-player can hide
