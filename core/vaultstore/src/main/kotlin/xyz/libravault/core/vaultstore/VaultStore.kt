@@ -113,6 +113,23 @@ class VaultStore(
      * needing to change.
      */
     private val usableSpaceBytes: () -> Long = { vaultDir.usableSpace },
+    /**
+     * Test-only seam (#552): invoked by [openReader] right after it takes its
+     * VMK snapshot, immediately before constructing the [VaultFileReader] —
+     * the real-time gap a concurrent [lock] can race during (opening the
+     * content file, parsing its header, and eagerly decrypting chunk 0 are
+     * all genuine wall-clock work, unlike the fast, `vmkLock`-guarded
+     * snapshot itself). Defaults to a no-op; production callers never touch
+     * this. Exists for the same reason [nowEpochMillis]/[random]/
+     * [usableSpaceBytes] are injectable (this class is deliberately built to
+     * be JVM-testable — see the class doc) — but unlike those,
+     * [openReader]'s construction step has no caller-supplied parameter
+     * (e.g. [importFile]'s `input: InputStream`) that already doubles as a
+     * natural injection point, so this hook exists purely to give a test the
+     * same kind of deterministic pause the `PausingInputStream` technique
+     * gives the write-side regression tests.
+     */
+    private val onReaderConstructionStarted: () -> Unit = {},
 ) {
 
     @Volatile private var vmk: ByteArray? = null
@@ -580,9 +597,29 @@ class VaultStore(
      * extending it doesn't work here, since callers need the concrete
      * [VaultFileReader] type (PDF proxy-fd / Media3 `DataSource` adapters
      * both take it directly, not just any `Closeable`).
+     *
+     * Registration happens **before** the post-construction [generation]
+     * check, deliberately, not after (#552): [VaultFileReader]'s constructor
+     * is real wall-clock work (opens the file, parses the header, eagerly
+     * decrypts chunk 0), so a [lock] racing this call could otherwise run
+     * its whole sweep ([openReaders]`.toList()`/`.clear()`/close-each) while
+     * this reader still only exists as a local variable, missing it
+     * entirely and leaving it to keep serving decrypted content
+     * indefinitely — reopening #526's exact vulnerability through the very
+     * mechanism meant to close it. Registering first means a [lock] sweep
+     * that runs mid-construction (or in the brief gap right after) still
+     * sees and closes this reader; the [generation] check below then
+     * independently self-aborts (and self-closes) it too if that happened —
+     * both paths are safe together since [VaultFileReader.close] is
+     * idempotent and removing an already-removed [openReaders] entry is a
+     * no-op. Either a [lock] that ran strictly before this call already
+     * failed [requireUnlockedSnapshot]'s own check with a fresh
+     * [VaultLockedException]; one that races *during* this call is what the
+     * ordering above and the check below jointly cover.
      */
     fun openReader(fileId: ByteArray): VaultFileReader {
         val snapshot = requireUnlockedSnapshot()
+        onReaderConstructionStarted()
         val reader = object : VaultFileReader(contentFile(fileId), snapshot.vmk, fileId) {
             override fun close() {
                 openReaders.remove(this)
@@ -590,6 +627,14 @@ class VaultStore(
             }
         }
         openReaders.add(reader)
+        if (generation != snapshot.generation) {
+            // A lock() ran after the VMK snapshot above — during construction, or in the
+            // narrow gap right before this check — and may already have missed this
+            // reader in its own sweep. Self-abort rather than handing back a reader that
+            // should already be considered stale.
+            reader.close()
+            throw VaultLockedException()
+        }
         return reader
     }
 

@@ -477,6 +477,60 @@ class VaultStoreTest {
         assertEquals("label", existingAfter?.bookmarks?.single()?.label)
     }
 
+    /**
+     * Regression test for #552, found during principal review of this same
+     * PR: [VaultStore.openReader]'s previous ordering registered the
+     * just-constructed reader in its `openReaders` set only AFTER
+     * [VaultFileReader]'s constructor finished — real wall-clock work
+     * (opens the file, parses the header, eagerly decrypts chunk 0). A
+     * [VaultStore.lock] racing that exact window could run its entire
+     * close/scrub sweep before the new reader was ever visible to it,
+     * letting that reader escape closure entirely and keep serving
+     * decrypted content indefinitely — reopening #526's exact
+     * vulnerability through the very mechanism meant to close it.
+     *
+     * [onReaderConstructionStarted] is a `VaultStore` test-only seam
+     * (constructor-injectable, same pattern as [VaultStore]'s existing
+     * `nowEpochMillis`/`random`/`usableSpaceBytes`) that pauses
+     * `openReader()` at exactly that gap — right after the VMK snapshot,
+     * right before construction — so this test can deterministically land
+     * `lock()` inside it, the same real-time window the bug lived in.
+     */
+    @Test
+    fun `a lock racing openReader's construction still aborts and does not leak the reader`() = runTest {
+        val readStarted = CountDownLatch(1)
+        val resumeConstruction = CountDownLatch(1)
+        val dir = createTempDirectory(prefix = "vaultstore-openreader-race-test").toFile()
+        dir.deleteOnExit()
+        val store = VaultStore(
+            vaultDir = dir,
+            keystoreKeyAlias = "alias",
+            keyWrapFactory = FakeHardwareKeyWrapFactory(),
+            onReaderConstructionStarted = {
+                readStarted.countDown()
+                assertTrue(resumeConstruction.await(5, TimeUnit.SECONDS), "lock() never released the paused construction")
+            },
+        )
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "title", null, "pdf")
+
+        val lockerThread = Thread {
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS), "openReader never reached its paused construction point")
+            store.lock()
+            resumeConstruction.countDown()
+        }
+        lockerThread.start()
+
+        assertThrows<VaultLockedException>(
+            "a lock() racing openReader's construction must abort it, not hand back a reader that already escaped the close sweep",
+        ) {
+            store.openReader(entry.fileId)
+        }
+        lockerThread.join(5_000)
+        assertFalse(lockerThread.isAlive, "locker thread never finished")
+        assertFalse(store.isUnlocked, "lock() must have actually taken effect")
+    }
+
     /** Blocks the first call to [read] until [readStarted] is signalled and
      * [resumeRead] is released — see the regression test above for why. */
     private class PausingInputStream(
