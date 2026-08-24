@@ -487,8 +487,19 @@ fun ReaderScreen(
 
 // ── Reader mini player bar ────────────────────────────────────────────────────
 
+// internal (was private) so ReaderMiniPlayerBarTest can render it directly —
+// see docs/TEST_COVERAGE_PRD.md Phase 7. ReaderScreen's top-level composable
+// itself is NOT extracted the PlayerScreen/SettingsScreen way: epubViewModel
+// and markdownViewModel above are obtained via sibling hiltViewModel() calls
+// specifically so their instances are shared with the ViewModelStoreOwner
+// child screens (EpubReaderScreen/MarkdownReaderScreen) use — pulling that
+// into a "pure" content composable risks silently breaking that sharing,
+// which is exactly the "a real behaviour change slipping in unnoticed" risk
+// Phase 7 already calls out. These two mini-bars are the genuinely pure,
+// currently-untested pieces of this file; the top-level composable needs a
+// deliberate design pass, not a mechanical extraction.
 @Composable
-private fun ReaderMiniPlayerBar(
+internal fun ReaderMiniPlayerBar(
     nowPlaying: PlaybackStateHolder.State,
     onNowPlayingClick: () -> Unit,
     onPrevious: () -> Unit,
@@ -598,7 +609,7 @@ private fun ReaderMiniPlayerBar(
  * the same way [ReaderMiniPlayerBar]'s cover art/title do for the audiobook player.
  */
 @Composable
-private fun ReaderReadAloudMiniBar(
+internal fun ReaderReadAloudMiniBar(
     isPlaying: Boolean,
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,

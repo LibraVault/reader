@@ -41,9 +41,11 @@ REPORT_NAMES = ("reportDebug.xml", "reportFdroidDebug.xml", "reportPlayDebug.xml
 
 # Modules whose coverage is gated rather than merely reported (PRD §5 R3).
 # Deliberately narrow: gating everything invites tests written to move a number
-# rather than to catch a bug. These three hold the encrypted-vault code, where a
-# silent coverage regression is a security regression.
-GATED_PREFIXES = ("core:vaultcrypto", "core:vaultstore", "core:vaultcontent")
+# rather than to catch a bug. The first three hold the encrypted-vault code,
+# where a silent coverage regression is a security regression; core:cloudtts
+# joined 2026-08-24 for the same reason — it holds user API keys and vendor
+# credentials (docs/TEST_COVERAGE_PRD.md §1a).
+GATED_PREFIXES = ("core:vaultcrypto", "core:vaultstore", "core:vaultcontent", "core:cloudtts")
 
 BASELINE_PATH = "scripts/coverage-baseline.json"
 

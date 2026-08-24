@@ -2,6 +2,7 @@
 
 **Status:** Draft · **Author:** Principal review pass, 2026-08-16 · **Base commit:** `7f4712a` (dev)
 **Supersedes the metrics half of:** [`docs/TEST_PLAN.md`](TEST_PLAN.md) (self-declared stale)
+**Last refreshed:** 2026-08-24 — see [§1a Status update](#1a-status-update--2026-08-24) for what changed since the 08-16→08-18 audit.
 
 ---
 
@@ -71,6 +72,107 @@ Per-module Android test counts (executed, incl. both flavors where applicable):
 **This is a healthy suite.** It is green, it is fast, `AGENTS.md` mandates tests with every change, and the crypto core is genuinely well covered (Wycheproof known-answer vector, tamper detection, nonce uniqueness, round-trip). The 15 Robolectric-hosted Compose tests in `src/test/` are a good call — they buy real UI assertions without emulator cost.
 
 The problems are not "too few tests." They are **blind spots we cannot see, and gates that do not fire.**
+
+### 1a. Status update — 2026-08-24
+
+Six days and one large feature (Cloud TTS, #451/#452) after the numbers above. Re-measured
+against `dev` @ `4666c57` via the same `./gradlew koverXmlReportDebug` + `scripts/coverage-summary.py`
+invocation, extended to cover the two modules that didn't exist on 08-18.
+
+**Android overall: 46.9%** (4,924 / 10,497 lines, up from 40.1%). Two new modules:
+
+| Module | Coverage | | Module | Coverage |
+|---|---:|---|---|---:|
+| `app` | 15.3% | | `feature:settings` | 58.4% |
+| `feature:onboarding` | 15.9% | | `core:cloudtts` | **65.7%** |
+| `core:domain` | 17.2% | | `core:database` | 67.4% |
+| `feature:library` | 26.3% | | `core:vaultcontent` 🔒 | 70.2% |
+| `core:tts` | 34.7% | | `core:ui` | 79.4% |
+| `feature:reader` | 40.3% | | `core:vaultstore` 🔒 | 84.1% |
+| `feature:vault` | 43.0% | | `core:billing` | 85.7% |
+| `feature:player` | 44.3% | | `core:vaultcrypto` 🔒 | 91.3% |
+| `core:storage` | 50.3% | | `core:logger` | 97.4% |
+
+`core:cloudtts` (new, #451/#452) and `core:billing` (new since the 08-16 audit, native billing
+work) both shipped with real tests from day one — 12 Kotlin test files for cloudtts alone,
+including a SigV4 signer verified against independently-computed botocore known-answers. Most
+of the rest of the movement is Phase 4/5/6 work already credited elsewhere in this doc
+(`app` 8.9→15.3, `feature:library` 23.5→26.3 from PR #265, `feature:reader` 26.5→40.3,
+`feature:vault` 36.6→43.0, `feature:player` 39.2→44.3).
+
+**`core:cloudtts` is now gated** (`scripts/coverage-baseline.json`) — it holds user API keys and
+vendor credentials, the same risk class as the three vault modules already gated. `core:billing`
+is not: 7 total measurable lines, almost entirely delegating to platform billing SDKs, not worth
+a dedicated gate.
+
+**iOS: not re-measured** — `xccov` needs a macOS toolchain and there is none available in this
+environment. The 54.7% figure below is now stale by the same Cloud TTS work (19 new iOS test files
+landed alongside it) and should be pulled from a CI artifact rather than hand-estimated; not done here.
+
+**A real, previously-undetected CI bug was found in this pass, filed as #514:** `jvm-tests.yml` and
+`ios-app-build.yml`'s `changes` job (the `dorny/paths-filter` step that Phase 0's fail-closed fix
+depends on) had no `actions/checkout` before it. `paths-filter` diffs via the GitHub API on
+`pull_request` events (no checkout needed) but falls back to local git history on `push` — so
+every `push`-triggered run to `dev`/`main` (i.e. every merge) was failing at `Detect Changed Paths`
+with `fatal: not a git repository`, skipping the actual test job, and reporting a false red on the
+post-merge run. Verified against the last 15 `jvm-tests.yml` runs: 100% of `push` runs failed,
+100% of `pull_request` runs passed. **Fixed via PR #517** (dev-agent picked up #514 concurrently
+with this session and shipped a minimal standalone fix — `actions/checkout@v4` on both jobs — faster
+than this session's own bundled draft of the same change, which was dropped in favour of #517 to
+avoid a duplicate/conflicting fix).
+
+**Phase 7's `feature:library` blocker is cleared** — PR #265 (splitting `LibraryScreen.kt` per
+composable) merged 2026-08-18. The "sequence after PR #265" note on that phase's targets table is
+now moot; `LibraryScreenKt` itself remains a lower priority than the five 0%-covered screens listed
+there since it's already past 26%.
+
+**Both remaining Phase 4 iOS/Keystore follow-ups are done:** #253 (`AndroidKeystoreHardwareKeyWrap`
+instrumented tests) shipped via PR #279; #256 (iOS `PocketTTSEngine` boundary extraction) is closed
+— both already reflected in the Phase 4 table below.
+
+**#273 (iOS snapshot baselines, deferred from Phase 5) stays `status:blocked`.** It's blocked on a
+human visual-approval step for snapshot baselines that was never designed, not on effort — and
+there's no macOS locally to build or exercise one. Building an approval workflow blind, with no way
+to verify it locally, risks shipping something structurally similar to the vacuous-Roborazzi trap
+this doc already documents (§ "FIVE VACUOUS TESTS"). Recommendation: leave it blocked and out of
+scope until a human scopes what "approve a snapshot" should actually look like on iOS — this is a
+product/process decision, not a test-writing one.
+
+### 1b. Phase 7 execution, partial — 2026-08-24
+
+The scoping in §6 Phase 7 below was never executed (verified: no `*ScreenLogic.kt` existed for any
+of the five targets beyond the `LibraryScreenLogic` template itself). This session executed two of
+the six targets and re-scoped a third; **Android moved 46.9% → 50.4%.**
+
+- **`SettingsScreenKt` — DONE.** Split into a thin `SettingsScreen(viewModel)` wrapper plus pure
+  `SettingsContent(state, actions)`, following the `PlayerScreen`/`PortraitPlayerContent` template
+  exactly. 10 new logic/interaction tests + 3 Roborazzi screenshot baselines (first per-screen
+  baseline in the repo — `feature:settings` needed the `roborazzi` plugin added, it never had it).
+  `feature:settings` 58.4% → 87.5%. **Recording the first baseline caught a real, pre-existing bug**:
+  the reading-theme filter-chip row had no wrap or scroll, so with `AppReadingTheme`'s 5th entry
+  (`System`, #349) the chip broke mid-word into "Syst"/"em" in every theme. Fixed with
+  `horizontalScroll`; two of the new assertions were hand mutation-checked (flipping
+  `cloudVoicesActuallySending`'s AND to OR, and dropping the remove-vault callback both turned
+  exactly the expected tests red).
+- **`ReaderScreenKt` — RE-SCOPED, partially done.** This target does **not** fit the
+  wrapper/pure-content template: its `epubViewModel`/`markdownViewModel` are obtained via sibling
+  `hiltViewModel()` calls specifically so their instances are *shared* with the
+  `ViewModelStoreOwner` `EpubReaderScreen`/`MarkdownReaderScreen` use downstream — extracting a pure
+  content composable risks silently breaking that sharing, exactly the "a real behaviour change
+  slipping in unnoticed" risk this phase already calls out (§ Risks). Recommend a deliberate design
+  pass before touching the top-level composable, not a mechanical extraction. `selectReaderBottomBar`/
+  `readAloudSupported` (the file's other pure functions) already had dedicated tests;
+  `ReaderMiniPlayerBar`/`ReaderReadAloudMiniBar` (the two remaining pure, untested pieces) were
+  widened from `private` to `internal` and covered for display state. Click-wiring assertions were
+  attempted and dropped after an extended isolation investigation found `performClick()` silently
+  invokes nothing on either bar specifically when rendered with its real, distinct icon set together
+  — every icon click-tests fine individually; not believed to be a production bug (unchanged, shipped
+  code), but an unexplained Robolectric/Compose test-harness interaction, logged here rather than
+  shipped as a flaky assertion. `feature:reader` 40.3% → 45.1%.
+- **`CreateVaultScreenKt`, `EpubReaderScreenKt`, `PdfReaderScreenKt` — not started.** `EpubReaderScreenKt`
+  was already flagged in §6 as "may warrant logic extraction first"; given `ReaderScreenKt`'s
+  surprise, treat `PdfReaderScreenKt`/`EpubReaderScreenKt` as similarly suspect until read — check
+  for the same sibling-`hiltViewModel()`-sharing shape before assuming the template applies.
 
 ---
 
@@ -317,7 +419,7 @@ unlocks both kinds of test at once:
 | `CreateVaultScreenKt` | 167 | 0% | Security-adjacent — do after the pattern is settled |
 | `EpubReaderScreenKt` | 149 | 0% | Heaviest state machine; may warrant logic extraction first |
 | `PdfReaderScreenKt` | 146 | 0% | |
-| `LibraryScreenKt` | 615 | 8.8% | **Sequence after PR #265**, which is splitting this file per-composable and is awaiting a human merge |
+| `LibraryScreenKt` | 615 | 26.3% (was 8.8%) | PR #265 merged 08-18, splitting this file per-composable — the sequencing blocker is cleared. Now lower priority than the five 0% screens above |
 
 #### Honest projection
 
@@ -342,7 +444,8 @@ silently wrong, not from chasing a number.
 - **These are production UI refactors.** Each PR needs the existing-tests-pass
   evidence, and each is a candidate for a real behaviour change slipping in
   unnoticed.
-- **`feature:library` collides with PR #265.** Do not start it until that lands.
+- ~~**`feature:library` collides with PR #265.** Do not start it until that lands.~~ Resolved —
+  PR #265 merged 2026-08-18.
 
 ---
 
