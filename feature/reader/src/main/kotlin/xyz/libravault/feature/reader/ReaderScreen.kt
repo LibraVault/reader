@@ -362,7 +362,9 @@ fun ReaderScreen(
 
                                 MediaFormat.MARKDOWN -> {
                                     MarkdownReaderScreen(
-                                        fileUri          = uri,
+                                        // TODO(#505): temporary RealFile wrap, removed once this
+                                        // screen itself takes a ContentSource (commit 7).
+                                        contentSource    = ContentSource.RealFile(uri.toString()),
                                         initialScrollFraction = state.progress?.markdownScrollFraction,
                                         scrollToFraction = pendingMarkdownScrollFraction.value,
                                         onScrollConsumed = { pendingMarkdownScrollFraction.value = null },

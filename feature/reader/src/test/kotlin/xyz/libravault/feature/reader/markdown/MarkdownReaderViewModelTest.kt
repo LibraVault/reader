@@ -6,6 +6,8 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -18,8 +20,13 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import xyz.libravault.core.domain.model.ContentSource
+import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.MarkdownAssetResolver
+import xyz.libravault.core.vaultcrypto.VaultFileReader
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.VaultStore
 
 class MarkdownReaderViewModelTest {
 
@@ -28,57 +35,69 @@ class MarkdownReaderViewModelTest {
         every { contentResolver } returns resolver
     }
     private val assetResolver = mockk<MarkdownAssetResolver>(relaxed = true)
+    private val sessionManager = mockk<VaultSessionManager>()
     private val logger = mockk<LibravaultLogger>(relaxed = true)
+    private val realFileSource = ContentSource.RealFile("content://test/doc.md")
+
+    // ContentSource.RealFile.uriString flows through MarkdownReaderViewModel's real
+    // Uri.parse() call (ContentResolver.openInputStream needs an actual Uri — unlike
+    // ReadiumProvider's String-based entry point, there's no way around constructing
+    // one here). Same mockkStatic(Uri::class) pattern LibraryViewModelTest/
+    // SettingsViewModelTest already use for the same reason. Every call returns the
+    // same relaxed mock instance, which is what resolver.openInputStream(any()) below
+    // matches against.
+    private lateinit var parsedUri: Uri
 
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        mockkStatic(Uri::class)
+        parsedUri = mockk(relaxed = true)
+        every { Uri.parse(any()) } returns parsedUri
     }
 
     @AfterEach
     fun tearDown() {
+        unmockkStatic(Uri::class)
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = MarkdownReaderViewModel(context, assetResolver, logger)
+    private fun viewModel() = MarkdownReaderViewModel(context, assetResolver, sessionManager, logger)
 
     @Test
     fun `load reads file content into Ready state`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns "# Hello".byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns "# Hello".byteInputStream()
 
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         val state = vm.state.value
         assertTrue(state is MarkdownPublicationState.Ready, "expected Ready, got $state")
         assertEquals("# Hello", (state as MarkdownPublicationState.Ready).text)
-        assertEquals(uri, state.uri)
+        assertEquals(realFileSource, state.source)
     }
 
     @Test
     fun `load with unopenable stream produces Error state`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns null
+        every { resolver.openInputStream(parsedUri) } returns null
 
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         assertTrue(vm.state.value is MarkdownPublicationState.Error)
     }
 
     @Test
-    fun `load is idempotent for the same already-ready uri`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
+    fun `load is idempotent for the same already-ready source`() = runTest {
         // If the idempotency guard were missing, load()'s second call would consult
         // this mock again — mockk defaults to returning the same stubbed stream, but
         // since a ByteArrayInputStream can only be read once, a real regression here
         // (reading the exhausted stream a second time) would flip the state to Error.
-        every { resolver.openInputStream(uri) } returns "content".byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns "content".byteInputStream()
 
         val vm = viewModel()
-        vm.load(uri).join()
-        vm.load(uri)
+        vm.load(realFileSource).join()
+        vm.load(realFileSource)
 
         val state = vm.state.value
         assertTrue(state is MarkdownPublicationState.Ready)
@@ -87,40 +106,104 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `file exceeding the size cap produces Error state`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
         val oversized = ByteArray(MarkdownReaderViewModel.MAX_FILE_BYTES + 1)
-        every { resolver.openInputStream(uri) } returns oversized.inputStream()
+        every { resolver.openInputStream(parsedUri) } returns oversized.inputStream()
 
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         assertTrue(vm.state.value is MarkdownPublicationState.Error)
     }
 
     @Test
     fun `file at exactly the size cap is accepted`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
         val exact = ByteArray(MarkdownReaderViewModel.MAX_FILE_BYTES) { 'a'.code.toByte() }
-        every { resolver.openInputStream(uri) } returns exact.inputStream()
+        every { resolver.openInputStream(parsedUri) } returns exact.inputStream()
 
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         assertTrue(vm.state.value is MarkdownPublicationState.Ready)
     }
 
-    // ── vaultTreeUri / asset parent directory resolution ──────────────────────
+    // ── ContentSource.VaultEntry (#505) ──────────────────────────────────────
+
+    private val vaultSource = ContentSource.VaultEntry("vault-1", "aabbcc", MediaFormat.MARKDOWN)
+
+    private fun stubVaultReader(text: String): VaultFileReader {
+        val store = mockk<VaultStore>()
+        val reader = mockk<VaultFileReader>()
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        every { store.openReader(any()) } returns reader
+        every { reader.plainSize } returns bytes.size.toLong()
+        every { reader.readAt(0L, bytes.size) } returns bytes
+        every { reader.close() } returns Unit
+        return reader
+    }
+
+    @Test
+    fun `load reads a vault entry into Ready state`() = runTest {
+        stubVaultReader("# Vault Doc")
+
+        val vm = viewModel()
+        vm.load(vaultSource).join()
+
+        val state = vm.state.value
+        assertTrue(state is MarkdownPublicationState.Ready, "expected Ready, got $state")
+        assertEquals("# Vault Doc", (state as MarkdownPublicationState.Ready).text)
+        assertEquals(vaultSource, state.source)
+    }
+
+    @Test
+    fun `load never resolves an asset parent directory for vault entries`() = runTest {
+        stubVaultReader("content")
+
+        val vm = viewModel()
+        vm.load(vaultSource).join()
+
+        val state = vm.state.value
+        assertTrue(state is MarkdownPublicationState.Ready)
+        assertEquals(null, (state as MarkdownPublicationState.Ready).assetParentDirectory)
+        verify(exactly = 0) { assetResolver.findParentDirectory(any(), any()) }
+    }
+
+    @Test
+    fun `load surfaces a locked vault as an Error state, not a crash`() = runTest {
+        every { sessionManager.requireUnlocked("vault-1") } throws IllegalStateException("Vault vault-1 is not unlocked")
+
+        val vm = viewModel()
+        vm.load(vaultSource).join()
+
+        assertTrue(vm.state.value is MarkdownPublicationState.Error)
+    }
+
+    @Test
+    fun `a vault entry exceeding the size cap produces Error state, closing the gap the old vault-only path had`() = runTest {
+        val store = mockk<VaultStore>()
+        val reader = mockk<VaultFileReader>()
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        every { store.openReader(any()) } returns reader
+        every { reader.plainSize } returns (MarkdownReaderViewModel.MAX_FILE_BYTES + 1).toLong()
+        every { reader.close() } returns Unit
+
+        val vm = viewModel()
+        vm.load(vaultSource).join()
+
+        assertTrue(vm.state.value is MarkdownPublicationState.Error)
+    }
+
+    // ── vaultTreeUri / asset parent directory resolution (RealFile only) ────
 
     @Test
     fun `load with a vaultTreeUri resolves and stores the asset parent directory`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
         val vaultTreeUri = mockk<Uri>(relaxed = true)
         val parentDirectory = mockk<DocumentFile>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns "content".byteInputStream()
-        every { assetResolver.findParentDirectory(vaultTreeUri, uri) } returns parentDirectory
+        every { resolver.openInputStream(parsedUri) } returns "content".byteInputStream()
+        every { assetResolver.findParentDirectory(vaultTreeUri, parsedUri) } returns parentDirectory
 
         val vm = viewModel()
-        vm.load(uri, vaultTreeUri).join()
+        vm.load(realFileSource, vaultTreeUri).join()
 
         val state = vm.state.value
         assertTrue(state is MarkdownPublicationState.Ready)
@@ -129,11 +212,10 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `load without a vaultTreeUri never consults the asset resolver`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns "content".byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns "content".byteInputStream()
 
         val vm = viewModel()
-        vm.load(uri, vaultTreeUri = null).join()
+        vm.load(realFileSource, vaultTreeUri = null).join()
 
         val state = vm.state.value
         assertTrue(state is MarkdownPublicationState.Ready)
@@ -163,10 +245,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `getChapterTextFromProgression with null fraction starts at the first chapter`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         val text = vm.getChapterTextFromProgression(null)
 
@@ -175,10 +256,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `getChapterTextFromProgression anchors to the chapter nearest the given fraction`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         // 3 chapters; sectionIndexForFraction(0.7, 3) rounds to index 2 (the third).
         val text = vm.getChapterTextFromProgression(0.7)
@@ -188,10 +268,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `getNextChapterText walks forward from the chapter getChapterTextFromProgression anchored`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
         vm.getChapterTextFromProgression(null) // anchors at chapter 0 (Chapter One)
 
         val next = vm.getNextChapterText()
@@ -201,10 +280,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `getNextChapterText returns null at the end of the document`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
         vm.getChapterTextFromProgression(0.99) // anchors at the last chapter (Chapter Three)
 
         assertNull(vm.getNextChapterText())
@@ -222,10 +300,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `ttsChapterCount reflects the narratable chapter count once anchored`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
 
         vm.getChapterTextFromProgression(null)
 
@@ -235,10 +312,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `getPreviousChapterText walks back and updates ttsChapterIndex`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
         vm.getChapterTextFromProgression(0.99) // anchors at chapter 2 (Chapter Three)
         assertEquals(2, vm.ttsChapterIndex)
 
@@ -250,10 +326,9 @@ class MarkdownReaderViewModelTest {
 
     @Test
     fun `getPreviousChapterText returns null and leaves the cursor unmoved at the start`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        every { resolver.openInputStream(uri) } returns threeChapterMarkdown.byteInputStream()
+        every { resolver.openInputStream(parsedUri) } returns threeChapterMarkdown.byteInputStream()
         val vm = viewModel()
-        vm.load(uri).join()
+        vm.load(realFileSource).join()
         vm.getChapterTextFromProgression(null) // anchors at chapter 0
 
         val previous = vm.getPreviousChapterText()
