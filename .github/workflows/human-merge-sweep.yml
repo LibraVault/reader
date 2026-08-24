@@ -31,10 +31,20 @@
 #   GITHUB_TOKEN cannot do that — GitHub does not let actions taken with
 #   it trigger further workflow runs (see docs/agent-team-pipeline.md's
 #   "Cross-workflow triggering" section; pr-intake.yml mints the same App
-#   token for exactly this reason, applying status:needs-qa). The minted
-#   App token below is passed to the agent step as PIPELINE_APP_TOKEN
-#   specifically for that one action — every other action in this run
-#   keeps using GH_TOKEN (GITHUB_TOKEN).
+#   token for exactly this reason, applying status:needs-qa).
+# - The audit-log append (Parts 1-4 all funnel into the same
+#   log-append-via-PR pattern, added for issue #409) is a third case:
+#   `git push`ing the log branch and `gh pr create`ing it hit the exact
+#   same two constraints dev-agent.yml already documents (issues #182,
+#   #311) — GITHUB_TOKEN can't create a PR in this repo at all, and a
+#   push under it gets attributed to `github-actions[bot]`, landing that
+#   push's checks on `action_required` with zero jobs ever created.
+#   *Merging* that log PR once opened isn't affected by either limit
+#   (same as the Parts 1/2 bullet above), so only its push/create step
+#   needs the elevated token.
+#   The minted App token below is passed to the agent step as
+#   PIPELINE_APP_TOKEN for these three specific actions — every other
+#   action in this run keeps using GH_TOKEN (GITHUB_TOKEN).
 
 name: Human-Merge Sweep
 
@@ -69,7 +79,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mint pipeline App token (Part 3/4 retries only)
+      - name: Mint pipeline App token (Part 3/4 retries + log-append PRs)
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -109,16 +119,29 @@ jobs:
 
             Two GitHub tokens are available as environment variables:
             GH_TOKEN (the default `gh` picks up automatically) for every
-            action except two, and PIPELINE_APP_TOKEN, which you must
-            pass explicitly (`GH_TOKEN="$PIPELINE_APP_TOKEN" gh ...`)
-            ONLY for Part 3's retry action (removing status:needs-info and
-            re-adding status:ready-for-dev/status:needs-qa/status:needs-
-            review) and Part 4's retry action (re-applying status:ready-
-            for-dev/status:needs-qa/status:needs-review after a capacity
-            skip). Both label changes need to trigger another workflow,
-            which the default token cannot do. Every other action in
-            every part (merging, closing, editing other labels,
-            commenting) uses the default GH_TOKEN.
+            action except three, and PIPELINE_APP_TOKEN, which you must
+            pass explicitly for those three:
+            - Part 3's retry action (removing status:needs-info and
+              re-adding status:ready-for-dev/status:needs-qa/status:needs-
+              review) and Part 4's retry action (re-applying status:ready-
+              for-dev/status:needs-qa/status:needs-review after a capacity
+              skip): `GH_TOKEN="$PIPELINE_APP_TOKEN" gh issue edit ...` /
+              `gh pr edit ...`. Both label changes need to trigger another
+              workflow, which the default token cannot do.
+            - Every log-append PR's `git push` and `gh pr create` (the
+              log-append-via-PR pattern used throughout the persona,
+              added for issue #409): `git push
+              https://x-access-token:$PIPELINE_APP_TOKEN@github.com/LibraVault/reader.git HEAD:<branch>`
+              and `GH_TOKEN="$PIPELINE_APP_TOKEN" gh pr create ...`. The
+              default token can't create a PR in this repo at all, and a
+              push under it would land that push's own checks on
+              `action_required` with zero jobs ever created — see the
+              persona's Part 1 for the full pattern. Once that PR is
+              open, merging it (`gh pr merge <n> --squash --auto`) is
+              fine on the default GH_TOKEN, same as every other merge in
+              this run.
+            Every other action in every part (merging, closing, editing
+            other labels, commenting) uses the default GH_TOKEN.
 
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run:

@@ -60,7 +60,7 @@ run — never rely on a label alone to mean "still true."
      concretely show it's superseded, `gh pr close <n> --comment "..."`
      citing the superseding PR by number, THEN append one row to
      `docs/human-merge-sweep-log.md` recording the close (same
-     commit-and-push-to-`dev` pattern used for a merge, below) — every
+     log-append-via-PR pattern used for a merge, below) — every
      state-changing action in this file gets a row, closes included, not
      just merges. If it's ambiguous, leave it alone and flag it in your
      summary — do not guess.
@@ -107,11 +107,35 @@ run — never rely on a label alone to mean "still true."
          (a 422/"reference does not exist" response just means it's
          already gone — not an error).
        - Append one row to `docs/human-merge-sweep-log.md` (it already
-         exists with a header) recording what you did, then commit and
-         push that one file directly to `dev`:
-         `git fetch origin dev && git checkout -B dev origin/dev && git add docs/human-merge-sweep-log.md && git commit -m "..." && git push origin dev`.
-         Best-effort — a failure here must never be treated as undoing
-         the merge itself, which already happened.
+         exists with a header) recording what you did, then open a small
+         PR for it instead of pushing to `dev` directly — `dev`'s branch
+         protection requires 3 status checks that a direct push can never
+         satisfy (this was issue #409; a human chose the PR route over a
+         branch-protection bypass so the audit log stays under the same
+         checks as everything else that lands on `dev`). The branch push
+         and the PR creation both need the elevated token, not the
+         default `GH_TOKEN` — the same two constraints `dev-agent.yml`
+         already hit and documents (issues #182, #311): `GITHUB_TOKEN`
+         can't create PRs in this repo at all, and a `git push` under it
+         gets attributed to `github-actions[bot]` on the resulting event,
+         landing its checks on `action_required` with zero jobs ever
+         created:
+         `git fetch origin dev && git checkout -b sweep-log/<epoch-seconds> origin/dev && git add docs/human-merge-sweep-log.md && git commit -m "..." && git push https://x-access-token:$PIPELINE_APP_TOKEN@github.com/LibraVault/reader.git HEAD:sweep-log/<epoch-seconds> && GH_TOKEN="$PIPELINE_APP_TOKEN" gh pr create --base dev --title "docs: human-merge-sweep log — <one-line summary>" --body "Automated audit-log append (human-merge-sweep run). No reviewable behavior change." --label risk:low`.
+         Once it's open, `gh pr merge <n> --squash --auto` (default
+         `GH_TOKEN` is fine here — merging isn't blocked by either of the
+         two settings above, same as every other merge in this file) to
+         land it as soon as the required checks pass — this is genuinely
+         fire-and-forget, do not poll or wait on it within this run. If
+         `gh pr merge --auto` itself reports the PR already conflicts
+         with `dev` (another append landed first), rebase once —
+         `git fetch origin dev && git rebase origin/dev && git push --force-with-lease https://x-access-token:$PIPELINE_APP_TOKEN@github.com/LibraVault/reader.git HEAD:sweep-log/<epoch-seconds>`
+         — and retry the auto-merge; if it conflicts again, leave the PR
+         open rather than force through it — the next sweep run's own
+         log-append starts from wherever `dev` actually landed, so nothing
+         is lost. Best-effort in every case — a failure or delay logging
+         this must never be treated as undoing the merge/close/retry/
+         escalation action itself, which already happened independent of
+         the log.
 
 ## Part 2 — sweep for other stale PRs
 
@@ -123,7 +147,7 @@ run — never rely on a label alone to mean "still true."
    PR. Close only what you can concretely show is superseded, citing the
    superseding PR number in your close comment, and log it to
    `docs/human-merge-sweep-log.md` exactly like a Part 1 close (same
-   commit-and-push-to-`dev` pattern) — this log is meant to be the
+   log-append-via-PR pattern) — this log is meant to be the
    complete record of every state change this sweep makes, not just
    Part 1's. Leave everything else — including "conflicting but I can't
    tell why" — for a human, and say so
@@ -163,7 +187,7 @@ quickly, never to answer for them.
      timeline (`.../issues/<n>` in a browser shows it) rather than
      re-summarizing every prior cycle yourself.
    - Append one row to `docs/human-merge-sweep-log.md` recording the
-     escalation (same commit-and-push-to-`dev` pattern as every other
+     escalation (same log-append-via-PR pattern as every other
      logged action).
    - Do nothing else for this item this run — skip the rest of Part 3
      for it entirely, including the security/release-blocker check and
@@ -237,7 +261,7 @@ quickly, never to answer for them.
        `<!-- human-merge-sweep-retry -->` marker on its own first line,
        then explaining you're retrying and why you judged it transient.
      - Append one row to `docs/human-merge-sweep-log.md` recording the
-       retry (same commit-and-push-to-`dev` pattern as Part 1's merge
+       retry (same log-append-via-PR pattern as Part 1's merge
        logging), so a human skimming the log sees it without digging
        through comment history.
      If the marker IS already present: do not retry a second time — this
@@ -307,7 +331,7 @@ quietly progressing, until a human happens to reread the comment.
      a real question, and that you're retrying now that a slot should be
      free.
    - Append one row to `docs/human-merge-sweep-log.md` recording the
-     retry, same pattern as Parts 1/3.
+     retry, same log-append-via-PR pattern as Parts 1/3.
 6. This part never merges, closes, escalates, or comments beyond the one
    retry note above — a capacity skip is never a signal to do anything
    except try again once.
