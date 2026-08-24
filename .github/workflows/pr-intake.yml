@@ -45,10 +45,25 @@ name: PR Intake
 # deterministic classify-and-label shape as `intake`, just triggered
 # differently. See issue #388 for the mirror-image gap (status present,
 # risk absent after a different crash-recovery path) — not handled here.
+#
+# `intake` also reacts to `pull_request: synchronize` (issue #558, surfaced
+# by PR #543): `opened`/`reopened` alone only classify risk once, at PR-open
+# time. A PR that starts small/low-risk and later grows into sensitive-path
+# territory via plain `git push` — a normal thing during real development,
+# not just this one case — stayed mislabeled at its original risk tier for
+# its entire lifetime, even though agent-policy.yml's `risk:high` is meant
+# to be a *hard* backstop regardless of what QA/review conclude. On
+# `synchronize`, the job re-runs classify_pr_risk.py to keep the risk label
+# current, but deliberately does NOT redo the status handoff (the PR is
+# likely already further along in the pipeline than "just intake'd" by the
+# time it's pushed to again) and does NOT re-check the "already carries a
+# pipeline status label" idempotency guard that exists for `opened`/
+# `reopened` re-firing — that guard would otherwise skip every reclassification
+# too. See the `EVENT_ACTION` branches below.
 
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
   schedule:
     # Offset 15 minutes from human-merge-sweep.yml's own `0 */4 * * *` so
     # the two scheduled jobs don't cluster on the same tick.
@@ -75,7 +90,12 @@ jobs:
     # "libravault-pipeline-bot[bot]") — those are already labeled by
     # dev-agent.yml's own tail before this event's job would even start;
     # re-running here would be redundant at best, and a real race at
-    # worst (this job doesn't wait for that job to finish).
+    # worst (this job doesn't wait for that job to finish). `user.login`
+    # is the PR's original author regardless of who pushed the triggering
+    # commit, so this exclusion also covers every later `synchronize` push
+    # dev-agent.yml itself makes during a revise-mode run — that workflow's
+    # own tail step already reclassifies risk after each such push, on the
+    # same PR, so there's nothing here for a bot-authored PR to catch.
     #
     # Explicit event_name check (rather than relying on
     # github.event.pull_request.* simply being empty on a schedule/
@@ -102,6 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           PR_NUMBER="${{ github.event.pull_request.number }}"
+          EVENT_ACTION="${{ github.event.action }}"
 
           # No early exit when this comes back empty — see the top-of-file
           # comment. issue_number is still exported (possibly empty) so
@@ -115,13 +136,23 @@ jobs:
           # Idempotency / re-entry guard: `reopened` can fire on a PR this
           # workflow (or a human) already labeled once. Any existing
           # pipeline status label means intake already happened (or a
-          # human/qa/review round has since moved it on) — don't relabel
-          # over that state. Applies whether or not an issue is linked.
-          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
-          if echo ",$PR_LABELS," | grep -qE ",status:(needs-qa|needs-review|needs-info|needs-human-merge|blocked|in-progress),"; then
-            echo "PR #$PR_NUMBER already carries a pipeline status label ($PR_LABELS) — already picked up, nothing to do." >&2
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          # human/qa/review round has since moved it on) — don't redo the
+          # status *handoff* over that state. Applies whether or not an
+          # issue is linked.
+          #
+          # Deliberately skipped for `synchronize` (issue #558): the whole
+          # point of reacting to that event is to keep the risk label
+          # current on a PR that's already further along the pipeline than
+          # "just intake'd" — the same status label this guard treats as
+          # "already picked up" is exactly the state a `synchronize` push
+          # expects to see, not a reason to skip reclassifying.
+          if [ "$EVENT_ACTION" != "synchronize" ]; then
+            PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
+            if echo ",$PR_LABELS," | grep -qE ",status:(needs-qa|needs-review|needs-info|needs-human-merge|blocked|in-progress),"; then
+              echo "PR #$PR_NUMBER already carries a pipeline status label ($PR_LABELS) — already picked up, nothing to do." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           # Nothing to check here without a linked issue — an issue-less
@@ -137,7 +168,12 @@ jobs:
             }
             if echo ",$ISSUE_LABELS," | grep -q ",status:blocked,"; then
               echo "Issue #$ISSUE_NUMBER carries status:blocked — a human parked this, skipping." >&2
-              gh pr comment "$PR_NUMBER" --body "The linked issue (#$ISSUE_NUMBER) carries \`status:blocked\` — a human parked this, skipping automated intake for this PR. Remove the label from the issue to resume."
+              # Only comment on opened/reopened — a blocked issue's PR can
+              # keep receiving pushes (synchronize) indefinitely, and this
+              # would otherwise repost the same comment on every one of them.
+              if [ "$EVENT_ACTION" != "synchronize" ]; then
+                gh pr comment "$PR_NUMBER" --body "The linked issue (#$ISSUE_NUMBER) carries \`status:blocked\` — a human parked this, skipping automated intake for this PR. Remove the label from the issue to resume."
+              fi
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -170,12 +206,24 @@ jobs:
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           HEAD_REF="${{ github.event.pull_request.head.ref }}"
           ISSUE_NUMBER="${{ steps.guard.outputs.issue_number }}"
+          EVENT_ACTION="${{ github.event.action }}"
 
           git fetch origin "$BASE_REF" "$HEAD_REF"
 
           pip install --quiet pyyaml
           python3 .github/scripts/classify_pr_risk.py \
             "origin/$BASE_REF" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"
+
+          # `synchronize` (issue #558) exists purely to keep the risk label
+          # current on a PR that's already moving through the pipeline —
+          # classify_pr_risk.py's --apply-label call above already did that,
+          # idempotently. Redoing the status handoff below on every push
+          # would incorrectly reset (or fight) whatever status a QA/review
+          # round has since moved the PR to, so stop here for this event.
+          if [ "$EVENT_ACTION" = "synchronize" ]; then
+            echo "synchronize event — risk label refreshed, status handoff skipped (PR is already past initial intake)."
+            exit 0
+          fi
 
           if [ -n "$ISSUE_NUMBER" ]; then
             GH_TOKEN="$APP_GH_TOKEN" gh pr edit "$PR_NUMBER" --add-label status:needs-qa
