@@ -22,18 +22,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import xyz.libravault.core.ui.components.WarmthOverlay
 
 /**
@@ -65,6 +70,7 @@ fun VaultReaderScreen(
     viewModel: VaultReaderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val wasLocked by viewModel.wasLocked.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
@@ -78,6 +84,23 @@ fun VaultReaderScreen(
 
     LaunchedEffect(state) {
         if (state is VaultReaderState.WrongScreen) onBack()
+    }
+
+    // #526 — re-check lock state every time this screen comes back to the
+    // foreground, same DisposableEffect+ON_RESUME idiom VaultListScreen
+    // already uses, since nothing else here observes VaultSessionManager
+    // continuously.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentViewModel = rememberUpdatedState(viewModel)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentViewModel.value.checkStillUnlocked()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(wasLocked) {
+        if (wasLocked) onBack()
     }
 
     val pendingPdfPage = pendingNavigationRef?.takeIf { it.startsWith("page:") }

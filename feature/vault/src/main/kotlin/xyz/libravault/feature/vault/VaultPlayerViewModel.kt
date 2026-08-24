@@ -22,6 +22,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import xyz.libravault.core.vaultcontent.VaultDataSource
 import xyz.libravault.core.vaultstore.VaultBookmark
+import xyz.libravault.core.vaultstore.VaultLockedException
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
 import javax.inject.Inject
@@ -44,6 +45,11 @@ data class VaultPlayerUiState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val bufferedMs: Long = 0L,
+    /** Flips true once this screen detects the vault got locked out from
+     * under it (#526) — same `wasLocked` pattern [VaultContentsUiState]
+     * already uses. The screen pops back to the unlock flow when this
+     * flips. */
+    val wasLocked: Boolean = false,
 )
 
 /**
@@ -159,6 +165,34 @@ class VaultPlayerViewModel @Inject constructor(
         player?.let { exo -> exo.seekTo((exo.currentPosition + SKIP_MS).coerceAtMost(exo.duration.coerceAtLeast(0))) }
     }
 
+    /**
+     * Called from the screen's `ON_RESUME` observer (same
+     * `DisposableEffect`+`LifecycleEventObserver` idiom `VaultListScreen`
+     * already uses) — #526: this screen otherwise never re-checks lock state
+     * after [init]. Flips [VaultPlayerUiState.wasLocked] if [sessionManager]
+     * no longer reports this vault unlocked.
+     */
+    fun checkStillUnlocked() {
+        if (!_uiState.value.isLoading && !sessionManager.isUnlocked(vaultId)) {
+            _uiState.update { it.copy(wasLocked = true) }
+        }
+    }
+
+    /** Runs [block] in [viewModelScope], treating [VaultLockedException] as
+     * "the vault locked mid-operation" rather than an unhandled crash (#526)
+     * — the mutation itself already aborted cleanly inside [VaultStore]; this
+     * just makes the screen notice and pop back instead of the exception
+     * propagating unhandled out of the coroutine. */
+    private fun launchOrNoticeLock(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: VaultLockedException) {
+                _uiState.update { it.copy(wasLocked = true) }
+            }
+        }
+    }
+
     // ── Bookmarks ─────────────────────────────────────────────────────────────
 
     /** Bookmarks the current playback position using the `"ms:N"` convention
@@ -168,7 +202,7 @@ class VaultPlayerViewModel @Inject constructor(
     fun addBookmark(label: String? = null) {
         val s = store ?: return
         val positionMs = _uiState.value.positionMs
-        viewModelScope.launch {
+        launchOrNoticeLock {
             val bookmark = s.addBookmark(fileId, "ms:$positionMs", label ?: formatPosition(positionMs))
             _bookmarks.update { it + bookmark }
         }
@@ -176,7 +210,7 @@ class VaultPlayerViewModel @Inject constructor(
 
     fun removeBookmark(id: Long) {
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             s.removeBookmark(fileId, id)
             _bookmarks.update { list -> list.filterNot { it.id == id } }
         }
@@ -184,7 +218,7 @@ class VaultPlayerViewModel @Inject constructor(
 
     fun updateBookmarkNote(id: Long, note: String?) {
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             s.updateBookmarkNote(fileId, id, note)
             _bookmarks.update { list -> list.map { if (it.id == id) it.copy(note = note) else it } }
         }

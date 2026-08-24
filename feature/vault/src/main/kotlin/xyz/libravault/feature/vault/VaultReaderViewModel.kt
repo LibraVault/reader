@@ -18,6 +18,7 @@ import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.core.vaultcrypto.VaultFileReader
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultHighlight
+import xyz.libravault.core.vaultstore.VaultLockedException
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
 import javax.inject.Inject
@@ -80,6 +81,15 @@ class VaultReaderViewModel @Inject constructor(
 
     private val _state = MutableStateFlow<VaultReaderState>(VaultReaderState.Loading)
     val state: StateFlow<VaultReaderState> = _state.asStateFlow()
+
+    /** Flips true once this screen detects the vault got locked out from
+     * under it (#526) — either a mutating call aborted with
+     * [VaultLockedException], or [checkStillUnlocked] found [sessionManager]
+     * no longer reports this vault unlocked. Same `wasLocked` pattern
+     * [VaultContentsViewModel] already uses; the screen pops back to the
+     * unlock flow when this flips, same as that screen does. */
+    private val _wasLocked = MutableStateFlow(false)
+    val wasLocked: StateFlow<Boolean> = _wasLocked.asStateFlow()
 
     // #428 — seeded from the global default rather than VaultReaderSettings()'s
     // own hardcoded DARK, so a vault file opens in whatever theme Settings has
@@ -163,6 +173,36 @@ class VaultReaderViewModel @Inject constructor(
         reader?.close()
     }
 
+    /**
+     * Called from the screen's `ON_RESUME` observer (same
+     * `DisposableEffect`+`LifecycleEventObserver` idiom `VaultListScreen`
+     * already uses) — #526: this screen otherwise never re-checks lock state
+     * after [init], so a lock that fired while the screen was backgrounded
+     * would go unnoticed until the user tried (and failed) to read/mutate
+     * something. Flips [wasLocked] if [sessionManager] no longer reports this
+     * vault unlocked.
+     */
+    fun checkStillUnlocked() {
+        if (_state.value !is VaultReaderState.Loading && !sessionManager.isUnlocked(vaultId)) {
+            _wasLocked.value = true
+        }
+    }
+
+    /** Runs [block] in [viewModelScope], treating [VaultLockedException] as
+     * "the vault locked mid-operation" rather than an unhandled crash (#526)
+     * — the mutation itself already aborted cleanly inside [VaultStore]; this
+     * just makes the screen notice and pop back instead of the exception
+     * propagating unhandled out of the coroutine. */
+    private fun launchOrNoticeLock(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: VaultLockedException) {
+                _wasLocked.value = true
+            }
+        }
+    }
+
     // ── Reading settings ──────────────────────────────────────────────────────
 
     fun onThemeChanged(theme: ReadingTheme) {
@@ -236,7 +276,7 @@ class VaultReaderViewModel @Inject constructor(
     fun addBookmark(label: String? = null) {
         val ref = _currentPositionRef.value ?: return
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             val bookmark = s.addBookmark(fileId, ref, label)
             _bookmarks.update { it + bookmark }
         }
@@ -244,7 +284,7 @@ class VaultReaderViewModel @Inject constructor(
 
     fun removeBookmark(id: Long) {
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             s.removeBookmark(fileId, id)
             _bookmarks.update { list -> list.filterNot { it.id == id } }
         }
@@ -252,7 +292,7 @@ class VaultReaderViewModel @Inject constructor(
 
     fun updateBookmarkNote(id: Long, note: String?) {
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             s.updateBookmarkNote(fileId, id, note)
             _bookmarks.update { list -> list.map { if (it.id == id) it.copy(note = note) else it } }
         }
@@ -272,7 +312,7 @@ class VaultReaderViewModel @Inject constructor(
 
     fun addHighlight(positionRef: String, text: String, colorHex: String = "#FFE066") {
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             val highlight = s.addHighlight(fileId, positionRef, text, colorHex)
             _highlights.update { it + highlight }
         }
@@ -280,7 +320,7 @@ class VaultReaderViewModel @Inject constructor(
 
     fun removeHighlight(id: Long) {
         val s = store ?: return
-        viewModelScope.launch {
+        launchOrNoticeLock {
             s.removeHighlight(fileId, id)
             _highlights.update { list -> list.filterNot { it.id == id } }
         }
