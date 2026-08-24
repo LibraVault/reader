@@ -173,18 +173,29 @@ jobs:
           path: /tmp/artifacts
           destination: reports
 
-  # Mirrors .github/workflows/ui-tests.yml. Least certain of the three new
-  # jobs here: GH Actions gets emulator hardware acceleration via
-  # reactivecircus/android-emulator-runner + manually-enabled KVM on
-  # ubuntu-latest, which has no direct CircleCI equivalent. This uses
-  # CircleCI's own android-machine executor + the android orb's
-  # start-emulator-and-run-tests command instead (documented nested-KVM
-  # emulator path — see https://circleci.com/docs/android-machine-image and
-  # https://circleci.com/developer/orbs/orb/circleci/android), which is a
-  # different mechanism, not a line-for-line port. Treat the first real
-  # trigger of this job as a shakeout run, same as jvm-tests' first run
-  # above — verify the orb's current command/parameter names and the
-  # android-machine image tag before relying on this.
+  # Mirrors .github/workflows/ui-tests.yml. This uses CircleCI's own
+  # android-machine executor + the android orb's start-emulator-and-run-tests
+  # command (documented nested-KVM emulator path — see
+  # https://circleci.com/docs/guides/execution-managed/android-machine-image/
+  # and https://github.com/CircleCI-Public/android-orb), which is a different
+  # mechanism from GH Actions' reactivecircus/android-emulator-runner +
+  # manually-enabled KVM, not a line-for-line port.
+  #
+  # Issue #538: the first real shakeout trigger of this job (2026-08) hung
+  # and was killed by the orb's own default 10m no_output_timeout on the
+  # "Run tests with max tries of 2" step, ~58 minutes in, with no
+  # BUILD FAILED/assertion/OOM in the captured output — just Gradle's
+  # internal build-operation traces, then silence. CircleCI's own docs
+  # confirm the android-machine executor gets real nested-virtualization
+  # (KVM) acceleration, recommended at `large`+ (already what's configured
+  # below), so the mechanism itself isn't the suspect the original comment
+  # here flagged it as. Two concrete gaps this job had that could each
+  # extend a slow run into an apparent hang, addressed below: no Gradle
+  # dependency cache (every run did a full cold dependency resolution over
+  # the network, unlike jvm-tests below), and no visibility into what the
+  # emulator itself was doing during that silence. Neither is confirmed as
+  # *the* root cause — that needs a re-trigger via the `circleci-job` label
+  # to observe — but both are real gaps worth closing regardless.
   ui-tests:
     executor:
       name: android/android-machine
@@ -192,6 +203,17 @@ jobs:
       tag: 2024.01.1
     steps:
       - checkout
+
+      # Added for #538: the first shakeout run had no dependency cache at
+      # all, meaning every run pays for a full cold Gradle dependency
+      # resolution over the network — a plausible contributor to a run
+      # that "just hangs" with no build error. Same cache key as jvm-tests
+      # below so a same-day jvm-tests run on this branch already warms it.
+      - restore_cache:
+          keys:
+            - gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+            - gradle-cache-
+
       - run:
           name: Grant execute permission for gradlew
           command: chmod +x gradlew
@@ -203,6 +225,18 @@ jobs:
           system-image: system-images;android-34;google_apis;x86_64
           post-emulator-launch-assemble-command: ""
           test-command: "./gradlew connectedDebugAndroidTest --continue"
+          # Added for #538: the shakeout run's only signal was Gradle's own
+          # sparse internal traces — nothing from the emulator/device side.
+          # This streams `adb logcat` to its own step in the job UI for the
+          # duration of the run, so a future hang has an actual device-side
+          # log to diagnose from instead of just silence.
+          run-logcat: true
+
+      - save_cache:
+          key: gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
       # Same trap jvm-tests' own "Collect reports for upload" step documents:
       # each module writes its own build/reports/androidTests and
       # build/outputs/androidTest-results, never one top-level dir, and
