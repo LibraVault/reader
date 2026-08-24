@@ -46,11 +46,14 @@ struct CloudVoicePreferences {
     /// Scoped to Cloud TTS only — deliberately a SEPARATE key from
     /// `UserPreferencesPersistence`'s TTS engine type, not shared the way Android's
     /// `TtsPreferences.selectedVoiceFlow` is shared across all three engine types
-    /// there. iOS's on-device engines (`TTSEngineBridge`/`PocketTTSEngine`) don't have
-    /// a "selected voice id" concept of their own to collide with (see
-    /// `TTSEngineBridge.voice(for:)` — the system voice is auto-detected from text
-    /// language, never user-picked), so there's no equivalent stale-carryover risk to
-    /// guard against here the way `CloudVoicesSection`'s Android counterpart does.
+    /// there. As of issue #506, the System engine has its own equivalent key
+    /// (`UserPreferencesPersistence.selectedSystemVoiceIdentifier`) — also kept
+    /// separate rather than merged into this one, so switching engines can never hand
+    /// a cloud vendor's voice ID to `AVSpeechSynthesisVoice(identifier:)` (which would
+    /// just fail to resolve, same as any other stale identifier — see
+    /// `TTSEngineBridge.voice(for:)` — but there's no reason to invite the collision).
+    /// `PocketTTSEngine`'s bundled voice still has no selection concept of its own to
+    /// collide with either way.
     func loadSelectedVoiceID() -> String? {
         defaults.string(forKey: Key.selectedVoiceID)
     }

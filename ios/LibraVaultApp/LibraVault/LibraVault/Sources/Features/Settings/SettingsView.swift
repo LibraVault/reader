@@ -246,6 +246,13 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                // Only meaningful for the System engine (issue #506) — Pocket TTS
+                // ships a single bundled voice with nothing to pick, and Cloud
+                // Voices' analogous picker is CloudVoicesSection's own Voice ID field.
+                if appState.ttsEngineType == .system {
+                    SystemVoicePickerRow()
+                }
             }
         } header: {
             sectionHeader("Text-to-Speech")

@@ -83,4 +83,37 @@ final class TTSEngineBridgeTests: XCTestCase {
     func testVoiceForEmptyTextIsNil() {
         XCTAssertNil(TTSEngineBridge.voice(for: ""))
     }
+
+    // MARK: - Explicit voice selection (issue #506)
+
+    /// A real installed identifier must win over auto-detection, even for text whose
+    /// detected language doesn't match it — an explicit user pick always takes
+    /// priority. Depends on the Simulator/CI voice catalog having at least one voice
+    /// installed (true for every real iOS install and every CI runner observed so
+    /// far), so this is conditional the same way testVoiceForTextNeverReturnsA
+    /// MismatchedLanguage above is.
+    func testVoiceForTextPrefersAValidSelectedIdentifierOverAutoDetection() {
+        guard let realVoice = AVSpeechSynthesisVoice.speechVoices().first else { return }
+        let dutchText = "Het was de beste tijd, het was de slechtste tijd."
+        let resolved = TTSEngineBridge.voice(for: dutchText, selectedVoiceIdentifier: realVoice.identifier)
+        XCTAssertEqual(resolved?.identifier, realVoice.identifier)
+    }
+
+    /// A stale/garbage identifier (e.g. the picked voice's language pack was since
+    /// removed) must fall back to the existing auto-detect-from-text-language
+    /// behaviour, not return nil / leave speech silently broken.
+    func testVoiceForTextFallsBackToAutoDetectionForAnInvalidSelectedIdentifier() {
+        let english = "The quick brown fox jumps over the lazy dog near the riverbank at dawn."
+        let withInvalidSelection = TTSEngineBridge.voice(for: english, selectedVoiceIdentifier: "not-a-real-voice-identifier")
+        let autoDetected = TTSEngineBridge.voice(for: english)
+        XCTAssertEqual(withInvalidSelection?.identifier, autoDetected?.identifier)
+    }
+
+    func testVoiceForTextWithNilSelectedIdentifierMatchesOmittingItEntirely() {
+        let english = "The quick brown fox jumps over the lazy dog near the riverbank at dawn."
+        XCTAssertEqual(
+            TTSEngineBridge.voice(for: english, selectedVoiceIdentifier: nil)?.identifier,
+            TTSEngineBridge.voice(for: english)?.identifier
+        )
+    }
 }

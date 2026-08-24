@@ -340,6 +340,16 @@ class LoggerBridge {
 // class from AppState.swift's playback controls.
 class TTSEngineBridge: TTSEngineProtocol {
     private let synthesizer = AVSpeechSynthesizer()
+    /// Read fresh on every `speak()` call rather than captured once at construction —
+    /// same "read preferences fresh on every call" shape as `CloudTtsEngine
+    /// .performSpeak` reading `CloudVoicePreferences`, so a voice picked in Settings
+    /// mid-session takes effect on the very next utterance without needing to
+    /// reconstruct the engine.
+    private let preferences: UserPreferencesPersistence
+
+    init(preferences: UserPreferencesPersistence = UserPreferencesPersistence()) {
+        self.preferences = preferences
+    }
 
     /// `xcodebuild test`'s CI Simulator has no real audio hardware, and
     /// AVAudioSession activation / AVSpeechSynthesizer there was confirmed (two
@@ -366,7 +376,7 @@ class TTSEngineBridge: TTSEngineProtocol {
         guard !Self.isRunningUnderXCTest, !text.isEmpty else { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = Self.scaledRate(for: rate)
-        utterance.voice = Self.voice(for: text)
+        utterance.voice = Self.voice(for: text, selectedVoiceIdentifier: preferences.loadSelectedSystemVoiceIdentifier())
         synthesizer.stopSpeaking(at: .immediate)
         synthesizer.speak(utterance)
     }
@@ -377,7 +387,18 @@ class TTSEngineBridge: TTSEngineProtocol {
     /// the field as an English PDF/EPUB being read in a Dutch voice on an iPad set
     /// to Dutch. Detects the dominant language of the text being spoken instead and
     /// asks for a voice in that language.
-    static func voice(for text: String) -> AVSpeechSynthesisVoice? {
+    ///
+    /// `selectedVoiceIdentifier` (issue #506) takes priority when present and still
+    /// resolves to a real installed voice — `AVSpeechSynthesisVoice(identifier:)`
+    /// returns `nil` for a stale identifier (e.g. the user's picked voice was removed
+    /// via a Settings > Accessibility > Spoken Content language-pack deletion since
+    /// they picked it), in which case this silently falls through to the existing
+    /// auto-detect-from-text-language behaviour below, exactly as if nothing had ever
+    /// been picked, rather than leaving speech broken.
+    static func voice(for text: String, selectedVoiceIdentifier: String? = nil) -> AVSpeechSynthesisVoice? {
+        if let selectedVoiceIdentifier, let voice = AVSpeechSynthesisVoice(identifier: selectedVoiceIdentifier) {
+            return voice
+        }
         guard let languageCode = detectedLanguageCode(for: text) else { return nil }
         // AVSpeechSynthesisVoice(language:) does its own fuzzy region matching (an
         // "en" hit resolves to whichever en-* voice is installed) and returns nil
