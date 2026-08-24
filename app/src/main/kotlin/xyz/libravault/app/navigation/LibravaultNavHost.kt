@@ -21,7 +21,6 @@ import xyz.libravault.feature.vault.UnlockVaultScreen
 import xyz.libravault.feature.vault.VaultContentsScreen
 import xyz.libravault.feature.vault.VaultListScreen
 import xyz.libravault.feature.vault.VaultPlayerScreen
-import xyz.libravault.feature.vault.VaultReaderScreen
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
@@ -175,7 +174,14 @@ fun LibravaultNavHost(
                 navArgument("fileId") { type = NavType.StringType },
             ),
         ) {
-            VaultReaderScreen(onBack = { navController.popBackStack() })
+            // #505 — vault EPUB/PDF/Markdown now render through the same ReaderScreen
+            // as plain files; ReaderViewModel reads vaultId/fileId off this composable's
+            // own SavedStateHandle (same Hilt nav-arg auto-population that already makes
+            // itemId/encodedUri work below), exactly like VaultReaderScreen used to.
+            ReaderScreen(
+                onBack            = { navController.popBackStack() },
+                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
+            )
         }
 
         composable(
