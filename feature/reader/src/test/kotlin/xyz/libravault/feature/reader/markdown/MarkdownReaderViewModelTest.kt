@@ -5,10 +5,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -54,6 +57,18 @@ class MarkdownReaderViewModelTest {
         MarkdownReaderViewModel(context, assetResolver, logger).also {
             viewModelStore.put(it.toString(), it)
         }
+
+    // ── tearDown cancels leaked ViewModel coroutines (#553) ─────────────────────
+
+    @Test
+    fun `tearDown cancels a leaked ViewModel coroutine`() = runTest {
+        val vm = viewModel()
+        val leaked = vm.viewModelScope.launch { awaitCancellation() }
+
+        tearDown()
+
+        assertTrue(leaked.isCancelled)
+    }
 
     @Test
     fun `load reads file content into Ready state`() = runTest {
