@@ -36,8 +36,14 @@ class TtsSettingsSectionTest {
         locale = "en-US",
     )
 
+    private val androidVoice = TtsVoiceInfo(
+        id = "en-us-x-sfg-local",
+        displayName = "English (United States) — en-us-x-sfg-local",
+        locale = "en-US",
+    )
+
     @Test
-    fun `android engine selected hides pocket-only sections`() {
+    fun `android engine selected hides pocket-only model section but still shows voice picker`() {
         composeTestRule.setContent {
             TtsSettingsSection(
                 engineType = TtsEngineType.ANDROID,
@@ -53,7 +59,73 @@ class TtsSettingsSectionTest {
 
         composeTestRule.onNodeWithText("Android System TTS").assertIsDisplayed()
         composeTestRule.onNodeWithText("Pocket TTS (offline)").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Voice").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Voice").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Voice model ready").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Preparing voice model… 0%").assertDoesNotExist()
+    }
+
+    @Test
+    fun `android engine lists real system voices and reports selection`() {
+        var selectedVoiceId: String? = null
+
+        composeTestRule.setContent {
+            TtsSettingsSection(
+                engineType = TtsEngineType.ANDROID,
+                speechRate = 1.0f,
+                selectedVoiceId = null,
+                availableVoices = listOf(androidVoice),
+                modelStatus = ModelStatus.Idle,
+                onEngineTypeSelected = {},
+                onVoiceSelected = { selectedVoiceId = it },
+                onSpeechRateChanged = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText("${androidVoice.displayName} (${androidVoice.locale})")
+            .performClick()
+
+        assertEquals("en-us-x-sfg-local", selectedVoiceId)
+    }
+
+    @Test
+    fun `network-required voice is labelled`() {
+        val networkVoice = androidVoice.copy(id = "cloud-voice", requiresNetwork = true)
+
+        composeTestRule.setContent {
+            TtsSettingsSection(
+                engineType = TtsEngineType.ANDROID,
+                speechRate = 1.0f,
+                selectedVoiceId = null,
+                availableVoices = listOf(networkVoice),
+                modelStatus = ModelStatus.Idle,
+                onEngineTypeSelected = {},
+                onVoiceSelected = {},
+                onSpeechRateChanged = {},
+            )
+        }
+
+        composeTestRule
+            .onNodeWithText("${networkVoice.displayName} (${networkVoice.locale}) — requires network")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `android engine with no voices yet shows the generic empty state`() {
+        composeTestRule.setContent {
+            TtsSettingsSection(
+                engineType = TtsEngineType.ANDROID,
+                speechRate = 1.0f,
+                selectedVoiceId = null,
+                availableVoices = emptyList(),
+                modelStatus = ModelStatus.Idle,
+                onEngineTypeSelected = {},
+                onVoiceSelected = {},
+                onSpeechRateChanged = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText("Voices become available once the TTS engine is ready.")
+            .assertIsDisplayed()
     }
 
     @Test
@@ -93,7 +165,7 @@ class TtsSettingsSectionTest {
         }
 
         composeTestRule.onNodeWithText("Preparing voice model… 42%").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Voices become available once the model is ready.")
+        composeTestRule.onNodeWithText("Voices become available once the TTS engine is ready.")
             .assertIsDisplayed()
     }
 

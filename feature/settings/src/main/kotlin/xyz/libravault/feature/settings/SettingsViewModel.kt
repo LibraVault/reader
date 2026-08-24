@@ -154,7 +154,15 @@ class SettingsViewModel @Inject constructor(
             engineType = engineType,
             speechRate = engineState.speechRate,
             selectedVoiceId = engineState.selectedVoiceId,
-            availableVoices = pocketVoiceCatalog.availableVoices(),
+            // Pocket TTS's voice list is gated on the bundled model being extracted
+            // (see PocketVoiceCatalog), which the engine's own state doesn't track -
+            // every other engine (Android system TTS, Cloud) already enumerates its
+            // real voices into engineState.availableVoices, so use that directly.
+            availableVoices = if (engineType == TtsEngineType.POCKET_TTS) {
+                pocketVoiceCatalog.availableVoices()
+            } else {
+                engineState.availableVoices
+            },
             modelStatus = modelStatus,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TtsSettingsUiState())
