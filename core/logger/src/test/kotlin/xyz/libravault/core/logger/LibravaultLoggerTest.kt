@@ -67,6 +67,52 @@ class LibravaultLoggerTest {
         verify { mockPrefsEditor.apply() }
     }
 
+    // ── Logcat sink debug-gating (issue #528) ────────────────────────────────
+    //
+    // `write`'s `debugBuild` parameter defaults to `BuildConfig.DEBUG`, but
+    // CI only ever runs `testDebugUnitTest` (AGENTS.md), where that real
+    // constant is always `true` — a test relying on it could never observe
+    // the release-gated branch. These tests pass `debugBuild` explicitly to
+    // exercise both branches directly, independent of the actual build type.
+
+    @Test
+    fun `write logs to Logcat when debugBuild is true`() = runTest {
+        val logger = LibravaultLogger(mockContext)
+
+        logger.write("D", "MyTag", "debug build message", null, debugBuild = true)
+
+        verify { Log.d("LibraVault", "[MyTag] debug build message") }
+    }
+
+    @Test
+    fun `write does not log to Logcat when debugBuild is false`() = runTest {
+        val logger = LibravaultLogger(mockContext)
+
+        logger.write("D", "MyTag", "release build message", null, debugBuild = false)
+        logger.write("I", "MyTag", "release build message", null, debugBuild = false)
+        logger.write("W", "MyTag", "release build message", null, debugBuild = false)
+        logger.write("E", "MyTag", "release build message", null, debugBuild = false)
+
+        verify(exactly = 0) { Log.d(any(), any()) }
+        verify(exactly = 0) { Log.i(any(), any()) }
+        verify(exactly = 0) { Log.w(any(), any(), any<Throwable>()) }
+        verify(exactly = 0) { Log.e(any(), any(), any<Throwable>()) }
+    }
+
+    @Test
+    fun `write still respects isEnabled file logging when debugBuild is false`() = runTest {
+        every { mockPrefs.getBoolean("logging_enabled", false) } returns true
+        val logger = LibravaultLogger(mockContext)
+
+        logger.write("E", "MyTag", "release build message", null, debugBuild = false)
+
+        // No Logcat sink, but the user-opted-in file sink is unaffected.
+        verify(exactly = 0) { Log.e(any(), any(), any<Throwable>()) }
+        val logFile = File(tempDir, "libravault.log")
+        assertTrue(logFile.exists())
+        assertTrue(logFile.readText().contains("[E/MyTag] release build message"))
+    }
+
     // ── Logging when disabled ────────────────────────────────────────────────
 
     @Test
