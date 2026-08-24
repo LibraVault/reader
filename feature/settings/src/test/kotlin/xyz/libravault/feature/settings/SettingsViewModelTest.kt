@@ -410,6 +410,32 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `tts state sources available voices from the engine itself when android is selected`() =
+        runTest(mainDispatcher) {
+            ttsEngineTypeFlow.value = TtsEngineType.ANDROID
+            ttsEngineStateFlow.value = TtsState(
+                selectedVoiceId = "en-us-x-sfg-local",
+                availableVoices = listOf(
+                    TtsVoiceInfo(id = "en-us-x-sfg-local", displayName = "English (US)", locale = "en-US"),
+                ),
+            )
+            // Must NOT leak into an ANDROID-selected state — this is the pocket catalog,
+            // a different voice list entirely.
+            every { pocketVoiceCatalog.availableVoices() } returns listOf(
+                TtsVoiceInfo(id = "en_US-ljspeech-high", displayName = "Ljspeech", locale = "en-US"),
+            )
+
+            val vm = viewModel()
+            vm.ttsState.test {
+                val state = awaitItem()
+                assertEquals(TtsEngineType.ANDROID, state.engineType)
+                assertEquals(1, state.availableVoices.size)
+                assertEquals("en-us-x-sfg-local", state.availableVoices.first().id)
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `tts state does not collect model setup progress while android engine selected`() =
         runTest(mainDispatcher) {
             ttsEngineTypeFlow.value = TtsEngineType.ANDROID
