@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.ui.components.BookmarkAddedToast
@@ -345,7 +346,9 @@ fun ReaderScreen(
 
                                 MediaFormat.PDF -> {
                                     PdfReaderScreen(
-                                        fileUri          = uri,
+                                        // TODO(#505): temporary RealFile wrap, removed once this
+                                        // screen itself takes a ContentSource (commit 7).
+                                        contentSource    = ContentSource.RealFile(uri.toString()),
                                         initialPage      = state.progress?.pageIndex ?: 0,
                                         scrollToPage     = pendingPdfPage.value,
                                         onScrollConsumed = { pendingPdfPage.value = null },
