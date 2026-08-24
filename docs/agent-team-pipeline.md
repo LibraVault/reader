@@ -289,13 +289,13 @@ this gap for everything else. Confirmed live: issue #223's actual fix, PR
 noticed and hand-applied `risk:low`/`status:needs-qa`.
 
 [`pr-intake.yml`](../.github/workflows/pr-intake.yml) closes this gap: it
-triggers on `pull_request: opened`/`reopened`, skips PRs authored by
-`libravault-pipeline-bot[bot]` (those are already handled synchronously by
-`dev-agent.yml` itself) and PRs already carrying a pipeline status label
-(idempotent against `reopened` re-firing), then runs the same
-deterministic risk-classification step `dev-agent.yml`'s tail runs for its
-own PRs — but the status label it hands off depends on whether the PR
-links an issue:
+triggers on `pull_request: opened`/`reopened`/`synchronize`, skips PRs
+authored by `libravault-pipeline-bot[bot]` (those are already handled
+synchronously by `dev-agent.yml` itself) and, for `opened`/`reopened`, PRs
+already carrying a pipeline status label (idempotent against `reopened`
+re-firing), then runs the same deterministic risk-classification step
+`dev-agent.yml`'s tail runs for its own PRs — but the status label it hands
+off depends on whether the PR links an issue:
 
 - **Linked issue** (a `Closes #N`-style line in the PR body): applies
   `status:needs-qa`, same as `dev-agent.yml`'s own handoff — there's an
@@ -308,6 +308,16 @@ links an issue:
   there; `principal-review.yml` already tolerates a missing linked issue
   gracefully. Added in [#344](https://github.com/LibraVault/reader/pull/344)
   (closes [#343](https://github.com/LibraVault/reader/issues/343)).
+
+On a later `synchronize` push to a PR already past initial intake, `pr-
+intake.yml` only re-runs the risk-classification step above — it does
+**not** redo the status handoff, since the PR is likely already further
+along than "just intake'd" by the time it's pushed to again. Without this,
+a PR that started small/low-risk and later grew into sensitive-path
+territory via a plain `git push` stayed mislabeled at its original risk
+tier for its entire lifetime, even though `risk:high` is meant to be a hard
+backstop regardless of what QA/review conclude (confirmed live: PR #543,
+issue [#558](https://github.com/LibraVault/reader/issues/558)).
 
 It runs no agent — this is a pure backstop, not a fourth triage path.
 
