@@ -67,13 +67,32 @@ jobs:
     # trigger never fire for any PR the pipeline itself produces). Trust
     # here instead rests on GitHub's own enforcement of who can add a label
     # at all (requires triage/write access) plus the same-repo check below.
+    #
+    # `github-actions[bot]`-authored issues are trusted too, alongside the
+    # association check, not instead of it: `author_association` reports
+    # this identity as `CONTRIBUTOR`, not `COLLABORATOR`, so it was falling
+    # through the gate and sitting silently stuck on `status:triage` (issue
+    # #453 — confirmed live on #388/#408/#409/#433/#437/#441, all filed by
+    # this exact identity). The only thing in this repo that files an issue
+    # under `github-actions[bot]` is `principal-review.yml`'s own `gh issue
+    # create` step (`.claude/agents/principal-review-agent.md`'s "Documenting
+    # real findings" — a CONFIRMED finding from the agent's own review of an
+    # already-trust-gated PR, not a proxy for arbitrary external input), so
+    # this is a narrow, specific trust grant to the pipeline's own output,
+    # not a general bot-identity bypass. A public repo's default
+    # `GITHUB_TOKEN` posting as this same login from some other, less
+    # careful workflow later would also pass this check — keep that in mind
+    # before adding a second `gh issue create` anywhere else in this repo.
     if: >-
       vars.AGENTS_PAUSED != 'true' &&
       (
         github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'issues' &&
-          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+          (
+            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) ||
+            github.event.issue.user.login == 'github-actions[bot]'
+          ) &&
           (
             github.event.action == 'opened' ||
             (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
@@ -725,10 +744,16 @@ jobs:
     # comment. Intentionally does NOT cover the pull_request-trigger path's
     # same-repo check (forked PRs) — out of scope for #453, which is about
     # the issue-author association gate specifically.
+    #
+    # Also negates the `github-actions[bot]` carve-out added alongside the
+    # association check above, for the same mutual-exclusivity reason — this
+    # job must stay silent for exactly the issues the other job now handles,
+    # not just the ones it handled before that carve-out existed.
     if: >-
       vars.AGENTS_PAUSED != 'true' &&
       github.event_name == 'issues' &&
       !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+      github.event.issue.user.login != 'github-actions[bot]' &&
       (
         github.event.action == 'opened' ||
         (github.event.action == 'labeled' && github.event.label.name == 'status:ready-for-dev')
