@@ -13,7 +13,15 @@ lifecycle           = "2.8.2"
 core-ktx            = "1.13.1"
 activity-compose    = "1.9.0"
 serialization       = "1.7.0"
-readium             = "3.0.0-beta.2"
+readium             = "3.0.0-beta.2" # Pre-release, pinned deliberately (see issue #531) — this is
+                                    # the component that parses/renders untrusted EPUBs in a
+                                    # WebView, the largest third-party attack surface in the app,
+                                    # so it isn't bumped to "whatever beta happens to be latest".
+                                    # GA (3.0.0) has since shipped upstream, with 3.1.1 the latest
+                                    # as of 2026-08-24 — see issue #534 for the
+                                    # deliberate bump, which needs its own scoped verification pass
+                                    # (readium's own migration notes call out breaking API changes
+                                    # between beta and GA) rather than riding along with this one.
 markdown-renderer   = "0.32.0"
 documentfile        = "1.0.1"
 splashscreen        = "1.0.1"
