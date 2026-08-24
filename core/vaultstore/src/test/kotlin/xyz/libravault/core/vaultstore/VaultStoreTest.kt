@@ -10,7 +10,10 @@ import org.junit.jupiter.api.assertThrows
 import xyz.libravault.core.vaultcrypto.Argon2Params
 import xyz.libravault.core.vaultstore.testing.FakeHardwareKeyWrapFactory
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.security.SecureRandom
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
 
 class VaultStoreTest {
@@ -309,5 +312,81 @@ class VaultStoreTest {
             "a failed rename must not delete the old cover art file",
         )
         assertArrayEquals(originalCover, store.readCoverArt(entry.fileId))
+    }
+
+    /**
+     * Regression test for #525 (H1): [VaultStore.lock] used to zero the VMK
+     * field IN PLACE, and every mutator held onto that exact same array —
+     * so a `lock()` racing an in-flight [VaultStore.importFile] could
+     * encrypt the manifest write under an already-zeroed key, permanently
+     * corrupting it.
+     *
+     * [PausingInputStream] blocks the very first read call
+     * [ChunkedVaultWriter.encrypt][xyz.libravault.core.vaultcrypto.ChunkedVaultWriter.encrypt]
+     * makes (via `readFully`) until released — this is the injection point
+     * called for in the issue: no new test-only hook needed, `importFile`'s
+     * own `input: InputStream` parameter is already exactly the suspension
+     * point a real "app backgrounded mid-import" race would land on. A
+     * plain [Thread] (not a coroutine — `lock()` is a synchronous, non-suspend
+     * call, deliberately, per the class doc) waits for the read to start,
+     * calls `store.lock()`, then releases the read to let the import
+     * proceed to its (now doomed) final manifest write.
+     */
+    @Test
+    fun `a lock mid-import aborts the write cleanly and leaves the vault intact`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+
+        val readStarted = CountDownLatch(1)
+        val resumeRead = CountDownLatch(1)
+        val content = ByteArray(10) { it.toByte() }
+        val pausingInput = PausingInputStream(content, readStarted, resumeRead)
+
+        val lockerThread = Thread {
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS), "import never started reading")
+            store.lock()
+            resumeRead.countDown()
+        }
+        lockerThread.start()
+
+        assertThrows<VaultLockedException> {
+            store.importFile(pausingInput, content.size.toLong(), "title", null, "pdf")
+        }
+        lockerThread.join(5_000)
+        assertFalse(lockerThread.isAlive, "locker thread never finished")
+        assertFalse(store.isUnlocked, "lock() must have actually taken effect")
+
+        // The vault itself must not be corrupted — it still unlocks with the
+        // original PIN and is fully usable afterward, not just openable.
+        assertEquals(UnlockOutcome.Success, store.unlockWithPin("1234".toCharArray()))
+        assertTrue(store.listEntries().isEmpty(), "an aborted import must not leave a manifest entry behind")
+
+        val entry = store.importFile(ByteArrayInputStream(content), content.size.toLong(), "after-lock", null, "pdf")
+        assertEquals(1, store.listEntries().size)
+        store.openReader(entry.fileId).use { reader ->
+            assertArrayEquals(content, reader.readAt(0, content.size))
+        }
+    }
+
+    /** Blocks the first call to [read] until [readStarted] is signalled and
+     * [resumeRead] is released — see the regression test above for why. */
+    private class PausingInputStream(
+        content: ByteArray,
+        private val readStarted: CountDownLatch,
+        private val resumeRead: CountDownLatch,
+    ) : InputStream() {
+        private val delegate = ByteArrayInputStream(content)
+        private var alreadyPaused = false
+
+        override fun read(): Int = throw UnsupportedOperationException("not used by ChunkedVaultWriter's readFully")
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (!alreadyPaused) {
+                alreadyPaused = true
+                readStarted.countDown()
+                assertTrue(resumeRead.await(5, TimeUnit.SECONDS), "lock() never released the paused read")
+            }
+            return delegate.read(b, off, len)
+        }
     }
 }
