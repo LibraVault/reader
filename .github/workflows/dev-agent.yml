@@ -711,6 +711,13 @@ jobs:
           if [ "${{ steps.guard.outputs.mode }}" = "triage" ]; then
             git fetch origin "$HEAD_REF"
             git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
+            # See the matching comment on "Check out PR branch" above
+            # (issue #386): a plain checkout has been observed leaving
+            # unrelated files' working-tree content mismatched against
+            # HEAD despite reporting a clean switch — force it instead of
+            # assuming it, since `git commit` right below trusts the tree
+            # to match HEAD.
+            git reset --hard HEAD
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit --allow-empty -m "ci: retrigger checks after ready_for_review produced no run" \
