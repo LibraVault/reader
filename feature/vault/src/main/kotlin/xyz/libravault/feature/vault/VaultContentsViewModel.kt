@@ -19,6 +19,7 @@ import xyz.libravault.core.storage.model.ScannedFile
 import xyz.libravault.core.vaultstore.VaultManifestEntry
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
+import xyz.libravault.core.vaultstore.toHexString
 import javax.inject.Inject
 import xyz.libravault.core.storage.model.MediaFormat as StorageMediaFormat
 

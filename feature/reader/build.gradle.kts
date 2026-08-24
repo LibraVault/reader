@@ -34,6 +34,12 @@ dependencies {
     implementation(project(":core:logger"))
     implementation(project(":core:database"))
     implementation(project(":core:tts"))
+    // #505: vault-backed ContentSource resolution — VaultSessionManager/VaultStore
+    // (session/lock state, bookmark/highlight round-trip) and the vault-native
+    // content adapters (VaultProxyFdHost/VaultMemfdFallback for PDF,
+    // VaultReadiumResource for EPUB) that used to be feature:vault-only.
+    implementation(project(":core:vaultstore"))
+    implementation(project(":core:vaultcontent"))
     implementation(project(":feature:player"))
     implementation(libs.media3.session)
     implementation("com.google.guava:guava:33.2.1-android")

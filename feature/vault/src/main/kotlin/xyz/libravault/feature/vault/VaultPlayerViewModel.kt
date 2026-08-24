@@ -24,6 +24,7 @@ import xyz.libravault.core.vaultcontent.VaultDataSource
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
+import xyz.libravault.core.vaultstore.hexToFileId
 import javax.inject.Inject
 
 private const val SKIP_MS = 30_000L

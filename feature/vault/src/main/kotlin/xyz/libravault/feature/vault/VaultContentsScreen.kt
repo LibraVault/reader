@@ -53,6 +53,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import xyz.libravault.core.storage.VaultScreenSecurityPreference
 import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.core.vaultstore.VaultManifestEntry
+import xyz.libravault.core.vaultstore.toHexString
 
 /**
  * One unlocked vault's contents: browse ([onOpenEntry]), import (the FAB,

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
+import xyz.libravault.core.vaultstore.toHexString
 
 /**
  * Only the pre-playback error paths are unit-testable here — everything past

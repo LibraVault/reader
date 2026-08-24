@@ -29,6 +29,7 @@ import xyz.libravault.core.vaultstore.VaultHighlight
 import xyz.libravault.core.vaultstore.VaultManifestEntry
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
+import xyz.libravault.core.vaultstore.toHexString
 
 class VaultReaderViewModelTest {
 

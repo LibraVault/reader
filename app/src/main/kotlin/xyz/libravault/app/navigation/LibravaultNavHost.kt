@@ -9,6 +9,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import xyz.libravault.core.vaultstore.toHexString
 import xyz.libravault.feature.library.LibraryScreen
 import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
@@ -21,7 +22,6 @@ import xyz.libravault.feature.vault.VaultContentsScreen
 import xyz.libravault.feature.vault.VaultListScreen
 import xyz.libravault.feature.vault.VaultPlayerScreen
 import xyz.libravault.feature.vault.VaultReaderScreen
-import xyz.libravault.feature.vault.toHexString
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
