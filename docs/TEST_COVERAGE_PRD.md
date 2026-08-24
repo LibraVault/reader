@@ -174,6 +174,12 @@ the six targets and re-scoped a third; **Android moved 46.9% → 50.4%.**
   surprise, treat `PdfReaderScreenKt`/`EpubReaderScreenKt` as similarly suspect until read — check
   for the same sibling-`hiltViewModel()`-sharing shape before assuming the template applies.
 
+**CircleCI fallback pipeline verified end-to-end, not just configured.** Triggering it during this
+review (`circleci-job` label) surfaced #514 and #516 in the first place — both fixed and merged
+(#517, #519). A second trigger against `dev` @ `b25a7b6`, after both fixes, confirmed the whole
+path works: label → dispatch job → CircleCI pipeline accepted → PR comment with the run link
+actually posts this time. Pipeline: https://app.circleci.com/pipelines/circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd
+
 ---
 
 ## 2. Problem statement
