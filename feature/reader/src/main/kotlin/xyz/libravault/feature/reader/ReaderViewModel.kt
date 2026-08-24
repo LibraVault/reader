@@ -45,7 +45,9 @@ import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.vaultstore.VAULT_AUDIO_FORMAT_NAMES
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultHighlight
+import xyz.libravault.core.vaultstore.VaultLockedException
 import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.VaultStore
 import xyz.libravault.core.vaultstore.hexToFileId
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SeekClamp
@@ -84,6 +86,15 @@ data class ReaderUiState(
      *  tapping the Read Aloud mini-bar. */
     val showReadAloudPlayer: Boolean = false,
     val showReadAloudSleepTimerSheet: Boolean = false,
+    /** Flips true once a [ContentSource.VaultEntry] session detects the vault
+     *  got locked out from under it (#526, ported here from the deleted
+     *  `VaultReaderViewModel` when #505 unified onto this ViewModel) — either
+     *  a mutating call aborted with [VaultLockedException], or
+     *  [ReaderViewModel.checkStillUnlocked] found the vault no longer
+     *  unlocked. Always false for a non-vault [contentSource]. The screen
+     *  pops back (`onBack()`) when this flips, same as `VaultPlayerScreen`/
+     *  `VaultContentsScreen` already do for their own `wasLocked`. */
+    val wasLocked: Boolean = false,
 )
 
 /**
@@ -503,7 +514,7 @@ class ReaderViewModel @Inject constructor(
 
     fun addBookmark(positionRef: String, label: String? = null) {
         val vault = vaultRef
-        viewModelScope.launch {
+        launchOrNoticeLock {
             if (vault != null) {
                 val (vaultId, fileIdHex) = vault
                 val vb = sessionManager.requireUnlocked(vaultId).addBookmark(fileIdHex.hexToFileId(), positionRef, label)
@@ -511,7 +522,7 @@ class ReaderViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(lastAddedBookmarkId = vb.id)
                 logger.i("Reader", "Vault bookmark added at $positionRef (id=${vb.id})")
             } else {
-                val id = itemId ?: return@launch
+                val id = itemId ?: return@launchOrNoticeLock
                 val newId = addBookmark(Bookmark(itemId = id, positionRef = positionRef, label = label))
                 _uiState.value = _uiState.value.copy(lastAddedBookmarkId = newId)
                 logger.i("Reader", "Bookmark added at $positionRef (id=$newId)")
@@ -525,9 +536,47 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    // ── Vault lock observation (#526, ported from the deleted VaultReaderViewModel) ──
+
+    /**
+     * Called from the screen's `ON_RESUME` observer (same
+     * `DisposableEffect`+`LifecycleEventObserver` idiom `VaultListScreen`/
+     * `VaultPlayerScreen` already use) — #526: a [ContentSource.VaultEntry]
+     * session otherwise never re-checks lock state after [init], so a lock
+     * that fired while the screen was backgrounded would go unnoticed until
+     * the user tried (and failed) to read/mutate something. Flips
+     * [ReaderUiState.wasLocked] if [sessionManager] no longer reports this
+     * vault unlocked. A no-op for a non-vault [ReaderUiState.contentSource]
+     * (`vaultRef == null`).
+     */
+    fun checkStillUnlocked() {
+        val vault = vaultRef ?: return
+        if (!_uiState.value.isLoading && !sessionManager.isUnlocked(vault.first)) {
+            _uiState.value = _uiState.value.copy(wasLocked = true)
+        }
+    }
+
+    /** Runs [block] in [viewModelScope], treating [VaultLockedException] as
+     * "the vault locked mid-operation" rather than an unhandled crash (#526)
+     * — the mutation itself already aborted cleanly inside [VaultStore]; this
+     * just makes the screen notice and pop back instead of the exception
+     * propagating unhandled out of the coroutine. A plain `viewModelScope.launch`
+     * for the non-vault path, since [VaultLockedException] can never be thrown
+     * there — this wrapper is used unconditionally for bookmark/highlight
+     * mutations below purely so both branches share one call shape. */
+    private fun launchOrNoticeLock(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: VaultLockedException) {
+                _uiState.value = _uiState.value.copy(wasLocked = true)
+            }
+        }
+    }
+
     fun removeBookmark(id: Long) {
         val vault = vaultRef
-        viewModelScope.launch {
+        launchOrNoticeLock {
             if (vault != null) {
                 val (vaultId, fileIdHex) = vault
                 sessionManager.requireUnlocked(vaultId).removeBookmark(fileIdHex.hexToFileId(), id)
@@ -540,7 +589,7 @@ class ReaderViewModel @Inject constructor(
 
     fun updateBookmarkNote(id: Long, note: String?) {
         val vault = vaultRef
-        viewModelScope.launch {
+        launchOrNoticeLock {
             if (vault != null) {
                 val (vaultId, fileIdHex) = vault
                 sessionManager.requireUnlocked(vaultId).updateBookmarkNote(fileIdHex.hexToFileId(), id, note)
@@ -555,14 +604,14 @@ class ReaderViewModel @Inject constructor(
 
     fun addHighlight(positionRef: String, text: String, colorHex: String = "#FFE066") {
         val vault = vaultRef
-        viewModelScope.launch {
+        launchOrNoticeLock {
             if (vault != null) {
                 val (vaultId, fileIdHex) = vault
                 val vh = sessionManager.requireUnlocked(vaultId)
                     .addHighlight(fileIdHex.hexToFileId(), positionRef, text, colorHex)
                 _vaultHighlights.update { it + vh.toDomainHighlight() }
             } else {
-                val id = itemId ?: return@launch
+                val id = itemId ?: return@launchOrNoticeLock
                 addHighlight(
                     Highlight(
                         itemId          = id,
@@ -577,7 +626,7 @@ class ReaderViewModel @Inject constructor(
 
     fun removeHighlight(id: Long) {
         val vault = vaultRef
-        viewModelScope.launch {
+        launchOrNoticeLock {
             if (vault != null) {
                 val (vaultId, fileIdHex) = vault
                 sessionManager.requireUnlocked(vaultId).removeHighlight(fileIdHex.hexToFileId(), id)

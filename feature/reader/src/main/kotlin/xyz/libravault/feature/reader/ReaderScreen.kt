@@ -38,18 +38,23 @@ import xyz.libravault.core.ui.components.GeneratedCover
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.MediaFormat
@@ -126,6 +131,25 @@ fun ReaderScreen(
     val nowPlaying  by viewModel.nowPlaying.collectAsState()
     val readAloud   by viewModel.readAloudState.collectAsState()
     val readAloudPlayback by viewModel.readAloudPlayback.collectAsState()
+
+    // #526 (ported here from the deleted VaultReaderScreen when #505 unified onto this
+    // screen) — re-check lock state every time this screen comes back to the
+    // foreground, same DisposableEffect+ON_RESUME idiom VaultListScreen/VaultPlayerScreen
+    // already use, since nothing else here observes VaultSessionManager continuously. A
+    // no-op for a non-vault contentSource (ReaderViewModel.checkStillUnlocked() early-
+    // returns when vaultRef is null).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentViewModel = rememberUpdatedState(viewModel)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentViewModel.value.checkStillUnlocked()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    androidx.compose.runtime.LaunchedEffect(state.wasLocked) {
+        if (state.wasLocked) onBack()
+    }
 
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     val pendingPdfPage = androidx.compose.runtime.remember {

@@ -358,6 +358,75 @@ class ReaderViewModelTest {
         }
     }
 
+    // ── Vault lock observation (#526, ported from the deleted VaultReaderViewModel) ──
+
+    @Test
+    fun `checkStillUnlocked flips wasLocked when the session manager reports the vault no longer unlocked`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultEntry)
+
+        val vm = vaultViewModel()
+        assertFalse(vm.uiState.value.wasLocked, "wasLocked must start false")
+
+        // The vault locked out from under this screen (e.g. auto-lock firing while it
+        // was backgrounded) -- sessionManager now reports it as locked.
+        every { sessionManager.isUnlocked("vault-1") } returns false
+        vm.checkStillUnlocked()
+
+        assertTrue(vm.uiState.value.wasLocked, "checkStillUnlocked must flip wasLocked once the vault is no longer unlocked")
+    }
+
+    @Test
+    fun `checkStillUnlocked does not flip wasLocked while still loading`() = runTest {
+        // Guards the !isLoading check in checkStillUnlocked -- store.listEntries()
+        // never returns (awaitCancellation), so init's coroutine genuinely suspends
+        // mid-flight and isLoading stays true; this codebase's ViewModelTests use
+        // Dispatchers.Unconfined (runs launched work eagerly up to the first real
+        // suspension point), so without a real suspend point here init would just
+        // run straight to completion and this guard couldn't be observed at all.
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } coAnswers { kotlinx.coroutines.awaitCancellation() }
+
+        val vm = vaultViewModel()
+        assertTrue(vm.uiState.value.isLoading, "sanity: still loading")
+
+        // isUnlocked=false would normally flip wasLocked, but must not while loading.
+        every { sessionManager.isUnlocked("vault-1") } returns false
+        vm.checkStillUnlocked()
+
+        assertFalse(vm.uiState.value.wasLocked, "checkStillUnlocked must not flip wasLocked while state is still loading")
+    }
+
+    @Test
+    fun `checkStillUnlocked is a no-op for a non-vault contentSource`() = runTest {
+        val vm = viewModel() // plain itemId-based session, vaultRef == null
+        vm.checkStillUnlocked() // must not throw (e.g. NPE on a null vaultRef)
+
+        assertFalse(vm.uiState.value.wasLocked)
+    }
+
+    @Test
+    fun `a vault mutating call that throws VaultLockedException flips wasLocked instead of crashing`() = runTest {
+        val store = mockk<VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultEntry)
+        coEvery { store.addBookmark(any(), "epubcfi(/6/4)", null, null) } throws
+            xyz.libravault.core.vaultstore.VaultLockedException()
+
+        val vm = vaultViewModel()
+        assertFalse(vm.uiState.value.wasLocked, "wasLocked must start false")
+
+        vm.addBookmark("epubcfi(/6/4)")
+
+        assertTrue(vm.uiState.value.wasLocked, "launchOrNoticeLock must catch VaultLockedException and flip wasLocked")
+        assertTrue(vm.bookmarks.value.isEmpty(), "a failed bookmark must not appear in state")
+    }
+
     // ── Toolbar ───────────────────────────────────────────────────────────────
 
     @Test
