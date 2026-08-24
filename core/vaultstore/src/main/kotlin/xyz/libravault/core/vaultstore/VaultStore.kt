@@ -1,6 +1,8 @@
 package xyz.libravault.core.vaultstore
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import xyz.libravault.core.vaultcrypto.Argon2Params
 import xyz.libravault.core.vaultcrypto.ChunkedVaultWriter
@@ -11,6 +13,7 @@ import xyz.libravault.core.vaultcrypto.VaultKeyManager
 import java.io.File
 import java.io.InputStream
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 
 /** Outcome of an unlock attempt. Deliberately does not distinguish "wrong PIN"
  * from "tampered data" — same reasoning as core:vaultcrypto's
@@ -61,12 +64,22 @@ class CoverArtTooLargeException(sizeBytes: Int, maxBytes: Int) :
  * Vault lifecycle: create, unlock (PIN or recovery key), lock, import,
  * list/read manifest entries.
  *
- * One instance per vault directory, **not thread-safe** — matches
- * [VaultFileReader]'s own constraint, since this class holds a single
- * in-memory VMK and delegates content reads to that class. Callers on Android
- * (Phase 5/6) are expected to own one `VaultStore` per open vault behind a
- * single-writer boundary (e.g. a `Mutex`-guarded ViewModel/repository), not
- * share it across concurrent callers.
+ * One instance per vault directory. Every VMK-touching method takes a
+ * defensive copy of the in-memory VMK at entry ([requireUnlockedSnapshot])
+ * rather than using the live field, and mutators (the ones that call
+ * [VaultManifest.write]) are serialized against each other via [mutationMutex]
+ * and abort — throwing [VaultLockedException], persisting nothing — if
+ * [generation] changed underneath them before their final write. This is
+ * what makes [lock] safe to call at any moment, including mid-operation, from
+ * a different thread (issues #525/#526 — see PR description for the full
+ * design writeup): it can never corrupt an in-flight operation's manifest
+ * write with a zeroed key, and it can never leave two concurrent mutators'
+ * read-modify-write manifest cycles interleaved.
+ *
+ * [lock] itself deliberately does **not** wait on [mutationMutex] — it only
+ * holds [vmkLock] for the duration of a `fill`/`copyOf` (not an
+ * operation-length wait), so the "locks instantly on backgrounding"
+ * guarantee (PRD §7) holds regardless of what else this instance is doing.
  *
  * Deliberately named `VaultStore`, not `VaultManager` — `core.storage.VaultManager`
  * already exists for the *unencrypted* "Folder" concept (PRD §9's rename to
@@ -103,6 +116,37 @@ class VaultStore(
 ) {
 
     @Volatile private var vmk: ByteArray? = null
+
+    /** Guards [vmk] itself — held only for a `fill`/`copyOf`, never for the
+     * duration of a whole operation. This is the fix for the actual root
+     * cause of #525: without it, [requireUnlockedSnapshot] reading the live
+     * array reference and [lock] zeroing that same array in place could
+     * interleave, producing a "defensive copy" that was actually already
+     * zeroed by the time it was copied. */
+    private val vmkLock = Any()
+
+    /** Bumped, under [vmkLock], every time [lock] runs. Mutators snapshot
+     * this alongside their VMK copy and refuse to persist a manifest write
+     * if it has moved since — see [requireUnlockedSnapshot] and
+     * [writeManifestIfStillUnlocked]. */
+    @Volatile private var generation: Long = 0L
+
+    /** Serializes this store's mutator methods (the ones that read-modify-write
+     * the manifest) against each other — fixes #526's root cause, two screens
+     * racing that cycle on the *same* vault. Deliberately per-`VaultStore`,
+     * not [VaultSessionManager]'s app-wide mutex: an unrelated vault, or a
+     * read-only call on this same vault, must never wait on it. [lock] does
+     * not acquire this — see the class doc. */
+    private val mutationMutex = Mutex()
+
+    /** Every [VaultFileReader] handed out by [openReader], not yet closed —
+     * #526: [lock] closes (and, per [VaultFileReader.close]'s own doc, scrubs)
+     * every one of these the moment it runs, so a reader/player screen that
+     * opened one earlier can't go on serving decrypted content after the
+     * vault reports itself locked. A reader removes itself on a normal close
+     * (see [openReader]); entries left behind by [lock] itself are harmless —
+     * [VaultFileReader.close] is idempotent. */
+    private val openReaders = ConcurrentHashMap.newKeySet<VaultFileReader>()
 
     val isUnlocked: Boolean get() = vmk != null
     fun exists(): Boolean = VaultConfig.exists(vaultDir)
@@ -193,16 +237,69 @@ class VaultStore(
         }
     }
 
-    /** Zeroes the in-memory VMK and drops the reference. Idempotent. */
+    /**
+     * Zeroes the in-memory VMK, drops the reference, bumps [generation], and
+     * closes every reader [openReader] has handed out (#526). Idempotent.
+     *
+     * Deliberately fast and unconditional: does **not** acquire
+     * [mutationMutex] and does not wait for any in-flight operation to
+     * finish — only briefly holds [vmkLock] for the zero/null itself. An
+     * in-flight operation either already took its own defensive VMK copy
+     * (safe to keep running) or will observe the bumped [generation] and
+     * abort its own write (see [writeManifestIfStillUnlocked]); either way,
+     * this call never blocks on them.
+     */
     fun lock() {
-        vmk?.fill(0)
-        vmk = null
+        synchronized(vmkLock) {
+            vmk?.fill(0)
+            vmk = null
+            generation++
+        }
+        // Snapshot-then-clear rather than iterating openReaders directly:
+        // a reader's own close() (see openReader) mutates this same set by
+        // removing itself, which would otherwise be a concurrent
+        // modification of the set we're iterating.
+        val readers = openReaders.toList()
+        openReaders.clear()
+        readers.forEach { runCatching { it.close() } }
     }
 
-    private fun requireUnlocked(): ByteArray = vmk ?: throw VaultLockedException()
+    private data class VmkSnapshot(val vmk: ByteArray, val generation: Long)
+
+    /** Defensive-copy entry point for every VMK-touching method (#525) — the
+     * copy is taken under [vmkLock], the same lock [lock] zeroes under, so
+     * [lock] can never zero an array after this method has already started
+     * copying it. The returned [VmkSnapshot.vmk] remains a valid key
+     * regardless of anything [lock] does afterward. */
+    private fun requireUnlockedSnapshot(): VmkSnapshot = synchronized(vmkLock) {
+        val current = vmk ?: throw VaultLockedException()
+        VmkSnapshot(current.copyOf(), generation)
+    }
+
+    /**
+     * The final step of every mutator: aborts (throws [VaultLockedException],
+     * writes nothing) if [lock] ran since [snapshot] was taken, instead of
+     * persisting a manifest write that a lock should have cancelled.
+     *
+     * Note this check-then-write is not fully atomic with [lock] — closing
+     * that window completely would mean holding [vmkLock] for an entire
+     * manifest write, which would make [lock] wait on in-flight operations
+     * and break its "instant" guarantee (see the class doc). That's an
+     * accepted, narrow race: [snapshot.vmk] is a defensive copy taken before
+     * [lock] could ever have zeroed it (guaranteed by [requireUnlockedSnapshot]),
+     * so even in the tiny window between this check and the write actually
+     * happening, the key used is always valid — never a zeroed/corrupted one.
+     * This check exists to also skip a write that's merely *stale* (a lock
+     * happened mid-operation), not to guard against a wrong key, which item
+     * (1) above already rules out unconditionally.
+     */
+    private fun writeManifestIfStillUnlocked(snapshot: VmkSnapshot, entries: List<VaultManifestEntry>) {
+        if (generation != snapshot.generation) throw VaultLockedException()
+        VaultManifest.write(vaultDir, snapshot.vmk, entries)
+    }
 
     suspend fun listEntries(): List<VaultManifestEntry> = withContext(Dispatchers.IO) {
-        VaultManifest.read(vaultDir, requireUnlocked())
+        VaultManifest.read(vaultDir, requireUnlockedSnapshot().vmk)
     }
 
     /**
@@ -237,62 +334,65 @@ class VaultStore(
         format: String,
         coverArt: ByteArray? = null,
     ): VaultManifestEntry = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        if (coverArt != null && coverArt.size > MAX_COVER_ART_BYTES) {
-            throw CoverArtTooLargeException(coverArt.size, MAX_COVER_ART_BYTES)
-        }
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val vmkNow = snapshot.vmk
+            if (coverArt != null && coverArt.size > MAX_COVER_ART_BYTES) {
+                throw CoverArtTooLargeException(coverArt.size, MAX_COVER_ART_BYTES)
+            }
 
-        // A generous margin above the declared size, not just >=: chunking overhead
-        // (one AEAD tag per 32 KiB chunk) and the manifest rewrite both cost a
-        // little more than the raw content size.
-        val required = declaredSize + declaredSize / 32 + (coverArt?.size ?: 0) + 16 * 1024
-        val available = usableSpaceBytes()
-        if (available < required) throw InsufficientStorageException(required, available)
+            // A generous margin above the declared size, not just >=: chunking overhead
+            // (one AEAD tag per 32 KiB chunk) and the manifest rewrite both cost a
+            // little more than the raw content size.
+            val required = declaredSize + declaredSize / 32 + (coverArt?.size ?: 0) + 16 * 1024
+            val available = usableSpaceBytes()
+            if (available < required) throw InsufficientStorageException(required, available)
 
-        val fileId = newFileId()
-        val tmp = File(vaultDir, "${fileId.toHexForFileName()}.tmp")
-        val finalFile = contentFile(fileId)
-        val coverFileId = coverArt?.let { newFileId() }
-        val coverTmp = coverFileId?.let { File(vaultDir, "${it.toHexForFileName()}.tmp") }
-        val coverFinalFile = coverFileId?.let { contentFile(it) }
+            val fileId = newFileId()
+            val tmp = File(vaultDir, "${fileId.toHexForFileName()}.tmp")
+            val finalFile = contentFile(fileId)
+            val coverFileId = coverArt?.let { newFileId() }
+            val coverTmp = coverFileId?.let { File(vaultDir, "${it.toHexForFileName()}.tmp") }
+            val coverFinalFile = coverFileId?.let { contentFile(it) }
 
-        try {
-            ChunkedVaultWriter.encrypt(vmkNow, fileId, declaredSize, input, tmp.outputStream())
-            if (coverArt != null && coverFileId != null && coverTmp != null) {
-                ChunkedVaultWriter.encrypt(
-                    vmkNow, coverFileId, coverArt.size.toLong(), coverArt.inputStream(), coverTmp.outputStream(),
+            try {
+                ChunkedVaultWriter.encrypt(vmkNow, fileId, declaredSize, input, tmp.outputStream())
+                if (coverArt != null && coverFileId != null && coverTmp != null) {
+                    ChunkedVaultWriter.encrypt(
+                        vmkNow, coverFileId, coverArt.size.toLong(), coverArt.inputStream(), coverTmp.outputStream(),
+                    )
+                }
+            } catch (e: Exception) {
+                tmp.delete()
+                coverTmp?.delete()
+                throw e
+            }
+
+            try {
+                check(tmp.renameTo(finalFile)) { "Failed to finalize imported file" }
+                if (coverTmp != null && coverFinalFile != null) {
+                    check(coverTmp.renameTo(coverFinalFile)) { "Failed to finalize cover art" }
+                }
+
+                val entry = VaultManifestEntry(
+                    fileId = fileId,
+                    title = title,
+                    author = author,
+                    format = format,
+                    sizeBytes = declaredSize,
+                    addedAtEpochMillis = nowEpochMillis(),
+                    coverArtFileId = coverFileId,
                 )
+                val updatedEntries = VaultManifest.read(vaultDir, vmkNow) + entry
+                writeManifestIfStillUnlocked(snapshot, updatedEntries) // atomic — see VaultManifest.write
+                entry
+            } catch (e: Exception) {
+                finalFile.delete()
+                tmp.delete() // still present if renameTo itself is what failed
+                coverFinalFile?.delete()
+                coverTmp?.delete()
+                throw e
             }
-        } catch (e: Exception) {
-            tmp.delete()
-            coverTmp?.delete()
-            throw e
-        }
-
-        try {
-            check(tmp.renameTo(finalFile)) { "Failed to finalize imported file" }
-            if (coverTmp != null && coverFinalFile != null) {
-                check(coverTmp.renameTo(coverFinalFile)) { "Failed to finalize cover art" }
-            }
-
-            val entry = VaultManifestEntry(
-                fileId = fileId,
-                title = title,
-                author = author,
-                format = format,
-                sizeBytes = declaredSize,
-                addedAtEpochMillis = nowEpochMillis(),
-                coverArtFileId = coverFileId,
-            )
-            val updatedEntries = VaultManifest.read(vaultDir, vmkNow) + entry
-            VaultManifest.write(vaultDir, vmkNow, updatedEntries) // atomic — see VaultManifest.write
-            entry
-        } catch (e: Exception) {
-            finalFile.delete()
-            tmp.delete() // still present if renameTo itself is what failed
-            coverFinalFile?.delete()
-            coverTmp?.delete()
-            throw e
         }
     }
 
@@ -312,40 +412,43 @@ class VaultStore(
      * @throws CoverArtTooLargeException [jpegBytes] exceeds [MAX_COVER_ART_BYTES]
      */
     suspend fun setCoverArt(fileId: ByteArray, jpegBytes: ByteArray): Unit = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        if (jpegBytes.size > MAX_COVER_ART_BYTES) throw CoverArtTooLargeException(jpegBytes.size, MAX_COVER_ART_BYTES)
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val vmkNow = snapshot.vmk
+            if (jpegBytes.size > MAX_COVER_ART_BYTES) throw CoverArtTooLargeException(jpegBytes.size, MAX_COVER_ART_BYTES)
 
-        val entries = VaultManifest.read(vaultDir, vmkNow)
-        val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
-        val previousCoverFileId = entry.coverArtFileId
+            val entries = VaultManifest.read(vaultDir, vmkNow)
+            val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
+            val previousCoverFileId = entry.coverArtFileId
 
-        val newCoverFileId = newFileId()
-        val tmp = File(vaultDir, "${newCoverFileId.toHexForFileName()}.tmp")
-        val finalFile = contentFile(newCoverFileId)
-        try {
-            ChunkedVaultWriter.encrypt(
-                vmkNow, newCoverFileId, jpegBytes.size.toLong(), jpegBytes.inputStream(), tmp.outputStream(),
-            )
-            check(tmp.renameTo(finalFile)) { "Failed to finalize cover art" }
+            val newCoverFileId = newFileId()
+            val tmp = File(vaultDir, "${newCoverFileId.toHexForFileName()}.tmp")
+            val finalFile = contentFile(newCoverFileId)
+            try {
+                ChunkedVaultWriter.encrypt(
+                    vmkNow, newCoverFileId, jpegBytes.size.toLong(), jpegBytes.inputStream(), tmp.outputStream(),
+                )
+                check(tmp.renameTo(finalFile)) { "Failed to finalize cover art" }
 
-            val updated = entries.map { if (it.fileId.contentEquals(fileId)) it.copy(coverArtFileId = newCoverFileId) else it }
-            VaultManifest.write(vaultDir, vmkNow, updated)
+                val updated = entries.map { if (it.fileId.contentEquals(fileId)) it.copy(coverArtFileId = newCoverFileId) else it }
+                writeManifestIfStillUnlocked(snapshot, updated)
 
-            // Only remove the old cover file once the manifest points at the new
-            // one — deleting it first would risk losing both if the write above
-            // had failed instead.
-            previousCoverFileId?.let { contentFile(it).delete() }
-        } catch (e: Exception) {
-            finalFile.delete()
-            tmp.delete()
-            throw e
+                // Only remove the old cover file once the manifest points at the new
+                // one — deleting it first would risk losing both if the write above
+                // had failed instead.
+                previousCoverFileId?.let { contentFile(it).delete() }
+            } catch (e: Exception) {
+                finalFile.delete()
+                tmp.delete()
+                throw e
+            }
         }
     }
 
     /** Decrypts and returns [fileId]'s cover art, or `null` if it has none.
      * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
     suspend fun readCoverArt(fileId: ByteArray): ByteArray? = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
+        val vmkNow = requireUnlockedSnapshot().vmk
         val entry = VaultManifest.read(vaultDir, vmkNow).find { it.fileId.contentEquals(fileId) }
             ?: throw VaultEntryNotFoundException(fileId)
         val coverFileId = entry.coverArtFileId ?: return@withContext null
@@ -372,32 +475,36 @@ class VaultStore(
         colorHex: String = "#FFE066",
         note: String? = null,
     ): VaultHighlight = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        val entries = VaultManifest.read(vaultDir, vmkNow)
-        val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val entries = VaultManifest.read(vaultDir, snapshot.vmk)
+            val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
 
-        val nextId = (entry.highlights.maxOfOrNull { it.id } ?: 0L) + 1L
-        val highlight = VaultHighlight(nextId, positionRef, highlightedText, colorHex, note, nowEpochMillis())
+            val nextId = (entry.highlights.maxOfOrNull { it.id } ?: 0L) + 1L
+            val highlight = VaultHighlight(nextId, positionRef, highlightedText, colorHex, note, nowEpochMillis())
 
-        val updated = entries.map {
-            if (it.fileId.contentEquals(fileId)) it.copy(highlights = it.highlights + highlight) else it
+            val updated = entries.map {
+                if (it.fileId.contentEquals(fileId)) it.copy(highlights = it.highlights + highlight) else it
+            }
+            writeManifestIfStillUnlocked(snapshot, updated)
+            highlight
         }
-        VaultManifest.write(vaultDir, vmkNow, updated)
-        highlight
     }
 
     /** Removes a highlight by id. A no-op if [highlightId] doesn't exist —
      * deleting something already gone isn't an error.
      * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
     suspend fun removeHighlight(fileId: ByteArray, highlightId: Long): Unit = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        val entries = VaultManifest.read(vaultDir, vmkNow)
-        if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val entries = VaultManifest.read(vaultDir, snapshot.vmk)
+            if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
 
-        val updated = entries.map {
-            if (it.fileId.contentEquals(fileId)) it.copy(highlights = it.highlights.filterNot { h -> h.id == highlightId }) else it
+            val updated = entries.map {
+                if (it.fileId.contentEquals(fileId)) it.copy(highlights = it.highlights.filterNot { h -> h.id == highlightId }) else it
+            }
+            writeManifestIfStillUnlocked(snapshot, updated)
         }
-        VaultManifest.write(vaultDir, vmkNow, updated)
     }
 
     /** Appends a new bookmark to [fileId]'s manifest entry — same pattern as
@@ -410,53 +517,81 @@ class VaultStore(
         label: String? = null,
         note: String? = null,
     ): VaultBookmark = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        val entries = VaultManifest.read(vaultDir, vmkNow)
-        val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val entries = VaultManifest.read(vaultDir, snapshot.vmk)
+            val entry = entries.find { it.fileId.contentEquals(fileId) } ?: throw VaultEntryNotFoundException(fileId)
 
-        val nextId = (entry.bookmarks.maxOfOrNull { it.id } ?: 0L) + 1L
-        val bookmark = VaultBookmark(nextId, positionRef, label, note, nowEpochMillis())
+            val nextId = (entry.bookmarks.maxOfOrNull { it.id } ?: 0L) + 1L
+            val bookmark = VaultBookmark(nextId, positionRef, label, note, nowEpochMillis())
 
-        val updated = entries.map {
-            if (it.fileId.contentEquals(fileId)) it.copy(bookmarks = it.bookmarks + bookmark) else it
+            val updated = entries.map {
+                if (it.fileId.contentEquals(fileId)) it.copy(bookmarks = it.bookmarks + bookmark) else it
+            }
+            writeManifestIfStillUnlocked(snapshot, updated)
+            bookmark
         }
-        VaultManifest.write(vaultDir, vmkNow, updated)
-        bookmark
     }
 
     /** Removes a bookmark by id. A no-op if [bookmarkId] doesn't exist.
      * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
     suspend fun removeBookmark(fileId: ByteArray, bookmarkId: Long): Unit = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        val entries = VaultManifest.read(vaultDir, vmkNow)
-        if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val entries = VaultManifest.read(vaultDir, snapshot.vmk)
+            if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
 
-        val updated = entries.map {
-            if (it.fileId.contentEquals(fileId)) it.copy(bookmarks = it.bookmarks.filterNot { b -> b.id == bookmarkId }) else it
+            val updated = entries.map {
+                if (it.fileId.contentEquals(fileId)) it.copy(bookmarks = it.bookmarks.filterNot { b -> b.id == bookmarkId }) else it
+            }
+            writeManifestIfStillUnlocked(snapshot, updated)
         }
-        VaultManifest.write(vaultDir, vmkNow, updated)
     }
 
     /** Replaces a bookmark's note (`null`/blank clears it). A no-op if
      * [bookmarkId] doesn't exist.
      * @throws VaultEntryNotFoundException no manifest entry for [fileId] */
     suspend fun updateBookmarkNote(fileId: ByteArray, bookmarkId: Long, note: String?): Unit = withContext(Dispatchers.IO) {
-        val vmkNow = requireUnlocked()
-        val entries = VaultManifest.read(vaultDir, vmkNow)
-        if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
+        mutationMutex.withLock {
+            val snapshot = requireUnlockedSnapshot()
+            val entries = VaultManifest.read(vaultDir, snapshot.vmk)
+            if (entries.none { it.fileId.contentEquals(fileId) }) throw VaultEntryNotFoundException(fileId)
 
-        val updated = entries.map { entry ->
-            if (!entry.fileId.contentEquals(fileId)) return@map entry
-            entry.copy(
-                bookmarks = entry.bookmarks.map { b -> if (b.id == bookmarkId) b.copy(note = note) else b },
-            )
+            val updated = entries.map { entry ->
+                if (!entry.fileId.contentEquals(fileId)) return@map entry
+                entry.copy(
+                    bookmarks = entry.bookmarks.map { b -> if (b.id == bookmarkId) b.copy(note = note) else b },
+                )
+            }
+            writeManifestIfStillUnlocked(snapshot, updated)
         }
-        VaultManifest.write(vaultDir, vmkNow, updated)
     }
 
-    /** Opens a seekable decrypting reader for [fileId] — the primitive Phase 3's
-     * content-delivery adapters (PDF proxy fd, Media3 DataSource, etc.) wrap. */
-    fun openReader(fileId: ByteArray): VaultFileReader = VaultFileReader(contentFile(fileId), requireUnlocked(), fileId)
+    /**
+     * Opens a seekable decrypting reader for [fileId] — the primitive Phase 3's
+     * content-delivery adapters (PDF proxy fd, Media3 DataSource, etc.) wrap.
+     *
+     * Registers the returned reader in [openReaders] (#526) — [lock] closes
+     * and scrubs it immediately if the vault locks while a reader/player
+     * screen still holds it. The returned instance is a thin subclass that
+     * deregisters itself from [openReaders] on a normal (non-lock) `close()`
+     * so that collection doesn't grow unbounded across a long unlocked
+     * session — a decorator that merely wraps [VaultFileReader] rather than
+     * extending it doesn't work here, since callers need the concrete
+     * [VaultFileReader] type (PDF proxy-fd / Media3 `DataSource` adapters
+     * both take it directly, not just any `Closeable`).
+     */
+    fun openReader(fileId: ByteArray): VaultFileReader {
+        val snapshot = requireUnlockedSnapshot()
+        val reader = object : VaultFileReader(contentFile(fileId), snapshot.vmk, fileId) {
+            override fun close() {
+                openReaders.remove(this)
+                super.close()
+            }
+        }
+        openReaders.add(reader)
+        return reader
+    }
 
     /** On-disk path for a file's encrypted content — an opaque, hex-encoded id,
      * never the real filename (PRD §8.2 point 6). */
