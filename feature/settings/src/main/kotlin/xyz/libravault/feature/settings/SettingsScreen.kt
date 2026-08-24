@@ -3,7 +3,6 @@ package xyz.libravault.feature.settings
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -62,6 +62,16 @@ import xyz.libravault.core.ui.findActivity
 import xyz.libravault.feature.settings.ui.CloudVoicesSection
 import xyz.libravault.feature.settings.ui.TtsSettingsSection
 
+// ── Thin wrapper ─────────────────────────────────────────────────────────────
+//
+// Everything that needs a real ViewModel, Activity, or Context (SAF folder
+// picker, external browser intent, in-app-billing purchase flow) lives here.
+// Everything else — the whole screen body — is [SettingsContent], a pure
+// function of (state, actions) with no Hilt/Context dependency, so it can be
+// rendered directly in a Robolectric Compose test the same way
+// TtsSettingsSection and PlayerScreen's PortraitPlayerContent already are (see
+// docs/TEST_COVERAGE_PRD.md Phase 7 — this file is one of that phase's
+// targets, split per the PlayerScreen template).
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -78,11 +88,11 @@ fun SettingsScreen(
     val cloudVoicesConsent by viewModel.cloudVoicesConsent.collectAsState()
     val selectedCloudProvider by viewModel.selectedCloudProvider.collectAsState()
     val configuredCloudProviders by viewModel.configuredCloudProviders.collectAsState()
-    val isCloudEngineActive = ttsState.engineType == TtsEngineType.CLOUD
     val context = LocalContext.current
     val activity = context.findActivity()
 
-    // SAF folder picker launcher
+    // SAF folder picker launcher — needs an Activity result contract, so it
+    // cannot move into the pure content composable.
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -96,12 +106,127 @@ fun SettingsScreen(
         }
     }
 
-    fun launchFolderPicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        }
-        folderPickerLauncher.launch(intent)
-    }
+    val state = SettingsContentState(
+        prefs = prefs,
+        vaultState = vaultState,
+        isSupporter = isSupporter,
+        productsAvailable = productsAvailable,
+        subscriptionActive = subscriptionActive,
+        isBillingSupported = viewModel.isBillingSupported,
+        appVersionName = viewModel.appVersionName,
+        ttsState = ttsState,
+        cloudVoicesConsent = cloudVoicesConsent,
+        selectedCloudProvider = selectedCloudProvider,
+        configuredCloudProviders = configuredCloudProviders,
+    )
+
+    val actions = SettingsActions(
+        onBack = onBack,
+        onEncryptedVaultsClick = onEncryptedVaultsClick,
+        onAddVaultClick = {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+            folderPickerLauncher.launch(intent)
+        },
+        onRemoveVault = viewModel::removeVault,
+        onReadingThemeChanged = viewModel::onReadingThemeChanged,
+        onPlaybackSpeedChanged = viewModel::onPlaybackSpeedChanged,
+        onSkipDurationChanged = viewModel::onSkipDurationChanged,
+        onTtsEngineTypeSelected = viewModel::onTtsEngineTypeSelected,
+        onTtsVoiceSelected = viewModel::onTtsVoiceSelected,
+        onTtsSpeechRateChanged = viewModel::onTtsSpeechRateChanged,
+        onCloudVoicesConsentAccepted = viewModel::onCloudVoicesConsentAccepted,
+        onCloudVoicesConsentDisabled = viewModel::onCloudVoicesConsentDisabled,
+        onCloudProviderSelected = viewModel::onCloudProviderSelected,
+        onCloudVoiceIdChanged = viewModel::onCloudVoiceIdChanged,
+        onValidateAndSaveCloudKey = viewModel::onValidateAndSaveCloudKey,
+        onClearCloudKey = viewModel::onClearCloudKey,
+        onUseCloudEngineToggled = viewModel::onUseCloudEngineToggled,
+        onDynamicColorToggled = viewModel::onDynamicColorToggled,
+        onLoggingToggled = viewModel::onLoggingToggled,
+        onViewLogs = viewModel::viewLogs,
+        onClearLogs = viewModel::clearLogs,
+        onClearCoverCache = viewModel::clearCoverCache,
+        onScreenSecurityToggled = viewModel::onScreenSecurityToggled,
+        onSupportProjectClick = {
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_URL)))
+            }
+        },
+        onSubscribeClick = { activity?.let(viewModel::purchaseSubscription) },
+        onTipClick = { activity?.let(viewModel::purchaseOneTimeTip) },
+    )
+
+    SettingsContent(state = state, actions = actions)
+}
+
+// ── State & actions bundles ─────────────────────────────────────────────────
+//
+// Mirrors PlayerScreen's PlayerActions pattern (see PlayerScreen.kt):
+// bundling every collaborator into two plain data classes turns the screen
+// body below into a pure function testable without a ViewModel or Hilt graph.
+
+internal data class SettingsContentState(
+    val prefs: xyz.libravault.core.domain.model.UserPreferences,
+    val vaultState: VaultManagementState,
+    val isSupporter: Boolean,
+    val productsAvailable: Boolean,
+    val subscriptionActive: Boolean,
+    val isBillingSupported: Boolean,
+    val appVersionName: String,
+    val ttsState: TtsSettingsUiState,
+    val cloudVoicesConsent: Boolean,
+    val selectedCloudProvider: CloudProviderId?,
+    val configuredCloudProviders: Set<CloudProviderId>,
+) {
+    /** Same AND as CloudTtsGate's own — see the "Permissions" copy below for why
+     * all three conditions matter, not just [cloudVoicesConsent] alone. */
+    val cloudVoicesActuallySending: Boolean
+        get() = subscriptionActive && cloudVoicesConsent && ttsState.engineType == TtsEngineType.CLOUD
+}
+
+internal data class SettingsActions(
+    val onBack: () -> Unit,
+    val onEncryptedVaultsClick: () -> Unit,
+    val onAddVaultClick: () -> Unit,
+    val onRemoveVault: (VaultFolder) -> Unit,
+    val onReadingThemeChanged: (AppReadingTheme) -> Unit,
+    val onPlaybackSpeedChanged: (Float) -> Unit,
+    val onSkipDurationChanged: (Int) -> Unit,
+    val onTtsEngineTypeSelected: (TtsEngineType) -> Unit,
+    val onTtsVoiceSelected: (String) -> Unit,
+    val onTtsSpeechRateChanged: (Float) -> Unit,
+    val onCloudVoicesConsentAccepted: () -> Unit,
+    val onCloudVoicesConsentDisabled: () -> Unit,
+    val onCloudProviderSelected: (CloudProviderId) -> Unit,
+    val onCloudVoiceIdChanged: (String) -> Unit,
+    val onValidateAndSaveCloudKey: suspend (CloudProviderId, Map<String, String>) -> Result<Unit>,
+    val onClearCloudKey: (CloudProviderId) -> Unit,
+    val onUseCloudEngineToggled: (Boolean) -> Unit,
+    val onDynamicColorToggled: (Boolean) -> Unit,
+    val onLoggingToggled: (Boolean) -> Unit,
+    val onViewLogs: () -> Unit,
+    val onClearLogs: () -> Unit,
+    val onClearCoverCache: () -> Unit,
+    val onScreenSecurityToggled: (Boolean) -> Unit,
+    val onSupportProjectClick: () -> Unit,
+    val onSubscribeClick: () -> Unit,
+    val onTipClick: () -> Unit,
+)
+
+// ── Pure content — the whole screen body, no ViewModel/Context/Activity ────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsContent(
+    state: SettingsContentState,
+    actions: SettingsActions,
+    modifier: Modifier = Modifier,
+) {
+    val prefs = state.prefs
+    val vaultState = state.vaultState
+    val ttsState = state.ttsState
+    val isCloudEngineActive = ttsState.engineType == TtsEngineType.CLOUD
 
     // Remove-vault confirmation dialog state
     var vaultToRemove by remember { mutableStateOf<VaultFolder?>(null) }
@@ -116,7 +241,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.removeVault(vault)
+                    actions.onRemoveVault(vault)
                     vaultToRemove = null
                 }) {
                     Text("Remove", color = MaterialTheme.colorScheme.error)
@@ -131,11 +256,12 @@ fun SettingsScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.headlineMedium) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = actions.onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
@@ -175,7 +301,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             OutlinedButton(
-                onClick = { launchFolderPicker() },
+                onClick = actions.onAddVaultClick,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !vaultState.isScanning,
             ) {
@@ -206,11 +332,20 @@ fun SettingsScreen(
                 title    = "Default theme",
                 subtitle = "Applied when opening a book or PDF",
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // horizontalScroll — found via the Phase 7 screenshot baseline below:
+            // with 5 AppReadingTheme entries (System, added by #349, was the
+            // 5th), this Row had no wrap or scroll and squeezed "System" down to
+            // chip width, breaking it mid-word into "Syst"/"em". A fixed Row of
+            // chips will keep hitting this as themes are added; scrolling avoids
+            // relying on the current entry count staying small.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
                 AppReadingTheme.entries.forEach { theme ->
                     FilterChip(
                         selected = prefs.defaultReadingTheme == theme,
-                        onClick  = { viewModel.onReadingThemeChanged(theme) },
+                        onClick  = { actions.onReadingThemeChanged(theme) },
                         label    = {
                             Text(theme.name.lowercase().replaceFirstChar { it.uppercase() })
                         },
@@ -229,7 +364,7 @@ fun SettingsScreen(
             )
             Slider(
                 value         = prefs.defaultPlaybackSpeed,
-                onValueChange = viewModel::onPlaybackSpeedChanged,
+                onValueChange = actions.onPlaybackSpeedChanged,
                 valueRange    = 0.5f..3.0f,
                 steps         = 9,
             )
@@ -244,7 +379,7 @@ fun SettingsScreen(
                 listOf(10, 15, 30, 45, 60).forEach { sec ->
                     FilterChip(
                         selected = prefs.defaultSkipDurationSec == sec,
-                        onClick  = { viewModel.onSkipDurationChanged(sec) },
+                        onClick  = { actions.onSkipDurationChanged(sec) },
                         label    = { Text("${sec}s") },
                     )
                 }
@@ -258,30 +393,30 @@ fun SettingsScreen(
                 selectedVoiceId = ttsState.selectedVoiceId,
                 availableVoices = ttsState.availableVoices,
                 modelStatus = ttsState.modelStatus,
-                onEngineTypeSelected = viewModel::onTtsEngineTypeSelected,
-                onVoiceSelected = viewModel::onTtsVoiceSelected,
-                onSpeechRateChanged = viewModel::onTtsSpeechRateChanged,
+                onEngineTypeSelected = actions.onTtsEngineTypeSelected,
+                onVoiceSelected = actions.onTtsVoiceSelected,
+                onSpeechRateChanged = actions.onTtsSpeechRateChanged,
             )
 
             // Only ever rendered when subscriptionActive — the real signal
             // (#397/#398), no mock/stub (PRD §8: safely inert until a real
             // Play Console product exists). The consent toggle inside stays
             // independently off by default regardless.
-            if (subscriptionActive) {
+            if (state.subscriptionActive) {
                 Divider()
                 CloudVoicesSection(
-                    consentEnabled = cloudVoicesConsent,
-                    selectedProvider = selectedCloudProvider,
-                    configuredProviders = configuredCloudProviders,
+                    consentEnabled = state.cloudVoicesConsent,
+                    selectedProvider = state.selectedCloudProvider,
+                    configuredProviders = state.configuredCloudProviders,
                     selectedVoiceId = ttsState.selectedVoiceId,
                     isCloudEngineActive = isCloudEngineActive,
-                    onConsentAccepted = viewModel::onCloudVoicesConsentAccepted,
-                    onConsentDisabled = viewModel::onCloudVoicesConsentDisabled,
-                    onProviderSelected = viewModel::onCloudProviderSelected,
-                    onVoiceIdChanged = viewModel::onCloudVoiceIdChanged,
-                    onValidateAndSaveKey = viewModel::onValidateAndSaveCloudKey,
-                    onClearKey = viewModel::onClearCloudKey,
-                    onUseCloudEngineToggled = viewModel::onUseCloudEngineToggled,
+                    onConsentAccepted = actions.onCloudVoicesConsentAccepted,
+                    onConsentDisabled = actions.onCloudVoicesConsentDisabled,
+                    onProviderSelected = actions.onCloudProviderSelected,
+                    onVoiceIdChanged = actions.onCloudVoiceIdChanged,
+                    onValidateAndSaveKey = actions.onValidateAndSaveCloudKey,
+                    onClearKey = actions.onClearCloudKey,
+                    onUseCloudEngineToggled = actions.onUseCloudEngineToggled,
                 )
             }
 
@@ -294,7 +429,7 @@ fun SettingsScreen(
                 title    = "Material You dynamic colour",
                 subtitle = "Use your wallpaper colours throughout the app",
                 checked  = prefs.dynamicColorEnabled,
-                onCheckedChange = viewModel::onDynamicColorToggled,
+                onCheckedChange = actions.onDynamicColorToggled,
             )
 
             Divider()
@@ -307,7 +442,7 @@ fun SettingsScreen(
                 subtitle = "Logs are stored only on this device and never transmitted. " +
                         "You can view or clear them at any time.",
                 checked  = prefs.loggingEnabled,
-                onCheckedChange = viewModel::onLoggingToggled,
+                onCheckedChange = actions.onLoggingToggled,
             )
 
             if (prefs.loggingEnabled) {
@@ -315,8 +450,8 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    TextButton(onClick = viewModel::viewLogs) { Text("View logs") }
-                    TextButton(onClick = viewModel::clearLogs) { Text("Clear logs") }
+                    TextButton(onClick = actions.onViewLogs) { Text("View logs") }
+                    TextButton(onClick = actions.onClearLogs) { Text("Clear logs") }
                 }
             }
 
@@ -329,7 +464,7 @@ fun SettingsScreen(
                 title    = "Cover art cache",
                 subtitle = "Extracted cover images stored locally for fast display",
             )
-            TextButton(onClick = viewModel::clearCoverCache) {
+            TextButton(onClick = actions.onClearCoverCache) {
                 Text("Clear cover cache")
             }
 
@@ -347,7 +482,7 @@ fun SettingsScreen(
                         "Vault are unreadable without its PIN, even with direct access to this device's storage.",
             )
             OutlinedButton(
-                onClick = onEncryptedVaultsClick,
+                onClick = actions.onEncryptedVaultsClick,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Manage Encrypted Vaults")
@@ -360,7 +495,7 @@ fun SettingsScreen(
                 subtitle = "Block screenshots and screen recording while viewing or listening " +
                         "to Encrypted Vault content. Applies to all vaults; on by default.",
                 checked  = prefs.screenSecurityEnabled,
-                onCheckedChange = viewModel::onScreenSecurityToggled,
+                onCheckedChange = actions.onScreenSecurityToggled,
             )
 
             Divider()
@@ -370,21 +505,21 @@ fun SettingsScreen(
 
             SettingLabel(
                 title    = "LibraVault",
-                subtitle = "Version ${viewModel.appVersionName} · GPL-3.0 · libravault.xyz",
+                subtitle = "Version ${state.appVersionName} · GPL-3.0 · libravault.xyz",
             )
             SettingLabel(
                 title    = "Permissions",
                 subtitle = "This app does not request location, contacts, camera, or broad " +
                         "file access. It reads only folders you explicitly grant it." +
                         privacySubtitleSuffix(
-                            isBillingSupported = viewModel.isBillingSupported,
+                            isBillingSupported = state.isBillingSupported,
                             // Real network risk requires all three — subscribed
                             // AND consented AND actually the active Read Aloud
                             // engine, matching CloudTtsGate's own AND — not
                             // just the consent flag alone (found in review: the
                             // consent toggle can outlive a lapsed subscription
                             // that already hid the section it was set from).
-                            cloudVoicesActuallySending = subscriptionActive && cloudVoicesConsent && isCloudEngineActive,
+                            cloudVoicesActuallySending = state.cloudVoicesActuallySending,
                         ),
             )
 
@@ -393,7 +528,7 @@ fun SettingsScreen(
             // ── Support Development ─────────────────────────────────────────────
             SectionHeader("Support Development")
 
-            if (isSupporter) {
+            if (state.isSupporter) {
                 Text(
                     text = "★ You're a Supporter — thank you!",
                     style = MaterialTheme.typography.bodyMedium,
@@ -410,15 +545,11 @@ fun SettingsScreen(
                         "donation addresses are on the website, not in this app.",
             )
 
-            if (!viewModel.isBillingSupported) {
+            if (!state.isBillingSupported) {
                 // F-Droid: no billing backend exists there at all — unchanged external link
                 // for the existing one-off flow.
                 OutlinedButton(
-                    onClick = {
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_URL)))
-                        }
-                    },
+                    onClick = actions.onSupportProjectClick,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Support the Project")
@@ -434,16 +565,16 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
-            } else if (productsAvailable) {
+            } else if (state.productsAvailable) {
                 OutlinedButton(
-                    onClick = { activity?.let(viewModel::purchaseSubscription) },
+                    onClick = actions.onSubscribeClick,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Subscribe — $1/mo")
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
-                    onClick = { activity?.let(viewModel::purchaseOneTimeTip) },
+                    onClick = actions.onTipClick,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Send a one-time tip")

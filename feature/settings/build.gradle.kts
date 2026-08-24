@@ -1,6 +1,7 @@
 plugins {
     id("libravault.android.feature")
     id("de.mannodermaus.android-junit5")
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -41,6 +42,12 @@ dependencies {
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
+    // Screenshot baselines for SettingsContent (docs/TEST_COVERAGE_PRD.md Phase
+    // 7) — same setup as core:ui's ThemeScreenshotTest, attached to the
+    // Robolectric Compose tests this module already runs.
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
     // Debug-only manifest declaring the ComponentActivity that Compose's
     // createComposeRule() launches to host test content - picked up by unit
     // tests too via testOptions.unitTests.isIncludeAndroidResources above.
