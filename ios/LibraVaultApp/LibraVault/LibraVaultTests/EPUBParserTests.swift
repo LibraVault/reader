@@ -20,11 +20,15 @@ final class EPUBParserTests: XCTestCase {
     /// `META-INF/encryption.xml`, the OCF marker for a DRM-protected archive (issue
     /// #351); `encryptionAlgorithm` picks which `<EncryptionMethod Algorithm="...">`
     /// it declares — real DRM (Adobe ADEPT) by default, or a font-obfuscation-only
-    /// algorithm to exercise the "not actually DRM" path.
+    /// algorithm to exercise the "not actually DRM" path. `rawEncryptionXML`, when
+    /// given, is written verbatim instead of the templated content above (and
+    /// `encryptionAlgorithm` is ignored) — for fixtures that need a malformed or
+    /// otherwise non-templated `encryption.xml` body.
     private func makeFixtureEPUB(
         chapterBodies: [String],
         includeEncryption: Bool = false,
-        encryptionAlgorithm: String = "http://ns.adobe.com/adept"
+        encryptionAlgorithm: String = "http://ns.adobe.com/adept",
+        rawEncryptionXML: String? = nil
     ) throws -> URL {
         let sourceDir = tempDir.appendingPathComponent("source-\(UUID().uuidString)", isDirectory: true)
         let oebpsDir = sourceDir.appendingPathComponent("OEBPS", isDirectory: true)
@@ -34,7 +38,9 @@ final class EPUBParserTests: XCTestCase {
 
         try "application/epub+zip".write(to: sourceDir.appendingPathComponent("mimetype"), atomically: true, encoding: .utf8)
 
-        if includeEncryption {
+        if let rawEncryptionXML {
+            try rawEncryptionXML.write(to: metaInfDir.appendingPathComponent("encryption.xml"), atomically: true, encoding: .utf8)
+        } else if includeEncryption {
             try """
             <?xml version="1.0"?>
             <encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -215,6 +221,43 @@ final class EPUBParserTests: XCTestCase {
 
         XCTAssertEqual(chapters.count, 1)
         XCTAssertTrue(chapters[0].text.contains("Perfectly readable prose."))
+    }
+
+    /// A present-but-unparsable `encryption.xml` must stay conservative and still
+    /// throw `.drmProtected` — its own presence is still the OCF signal that
+    /// *something* in the archive is encrypted, and a parse failure must not
+    /// silently downgrade that to "safe to render as plaintext."
+    func testParseThrowsDrmProtectedForMalformedEncryptionXml() throws {
+        let epubURL = try makeFixtureEPUB(
+            chapterBodies: ["<h1>Chapter One</h1><p>Ciphertext masquerading as prose.</p>"],
+            includeEncryption: true,
+            rawEncryptionXML: "this is not valid XML at all <<<"
+        )
+
+        XCTAssertThrowsError(try EPUBParser.parse(fileURL: epubURL)) { error in
+            XCTAssertEqual(error as? EPUBParser.ParseError, .drmProtected)
+        }
+    }
+
+    /// A well-formed `encryption.xml` that declares no `EncryptionMethod` entries at
+    /// all is a shape the font-obfuscation allowlist never claims to recognize — it
+    /// must still throw `.drmProtected` rather than falling through as "no algorithms
+    /// found, so nothing to worry about."
+    func testParseThrowsDrmProtectedForEncryptionXmlWithNoEncryptionMethod() throws {
+        let epubURL = try makeFixtureEPUB(
+            chapterBodies: ["<h1>Chapter One</h1><p>Ciphertext masquerading as prose.</p>"],
+            includeEncryption: true,
+            rawEncryptionXML: """
+            <?xml version="1.0"?>
+            <encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <EncryptedData xmlns="http://www.w3.org/2001/04/xmlenc#"/>
+            </encryption>
+            """
+        )
+
+        XCTAssertThrowsError(try EPUBParser.parse(fileURL: epubURL)) { error in
+            XCTAssertEqual(error as? EPUBParser.ParseError, .drmProtected)
+        }
     }
 
     func testParseThrowsForInvalidArchive() throws {
