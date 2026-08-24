@@ -1,6 +1,6 @@
 # PRD: Vault Content Source Unification
 
-**Status:** Draft · **Author:** principal-dev-lead session, 2026-08-24 · **Base commit:** `82ba777` (dev)
+**Status:** Approved 2026-08-24 · **Author:** principal-dev-lead session, 2026-08-24 · **Base commit:** `82ba777` (dev)
 **Revisits the architecture decision in:** [PR #166](https://github.com/LibraVault/reader/pull/166) (Phase 5b — original vault read/play, 2026-08-15)
 **Blocks:** [#489](https://github.com/LibraVault/reader/issues/489) (vault Read Aloud), [#493](https://github.com/LibraVault/reader/issues/493) (vault audiobook background playback) — both paused pending this doc
 
