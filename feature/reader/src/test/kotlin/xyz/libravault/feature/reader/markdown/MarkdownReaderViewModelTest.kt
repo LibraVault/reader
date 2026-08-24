@@ -4,10 +4,14 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -30,6 +34,14 @@ class MarkdownReaderViewModelTest {
     private val assetResolver = mockk<MarkdownAssetResolver>(relaxed = true)
     private val logger = mockk<LibravaultLogger>(relaxed = true)
 
+    // Owns every ViewModel this test class creates so tearDown() can clear() them.
+    // Without this, a ViewModel's viewModelScope outlives the test that created it —
+    // its coroutine can still be mid-flight (e.g. the Dispatchers.IO hop in load())
+    // when Dispatchers.resetMain() runs, and a later exception on that leaked
+    // coroutine gets misattributed to whichever test runs next
+    // (kotlinx.coroutines.test.UncaughtExceptionsBeforeTest). See #553.
+    private val viewModelStore = ViewModelStore()
+
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -37,10 +49,26 @@ class MarkdownReaderViewModelTest {
 
     @AfterEach
     fun tearDown() {
+        viewModelStore.clear()
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = MarkdownReaderViewModel(context, assetResolver, logger)
+    private fun viewModel(): MarkdownReaderViewModel =
+        MarkdownReaderViewModel(context, assetResolver, logger).also {
+            viewModelStore.put(it.toString(), it)
+        }
+
+    // ── tearDown cancels leaked ViewModel coroutines (#553) ─────────────────────
+
+    @Test
+    fun `tearDown cancels a leaked ViewModel coroutine`() = runTest {
+        val vm = viewModel()
+        val leaked = vm.viewModelScope.launch { awaitCancellation() }
+
+        tearDown()
+
+        assertTrue(leaked.isCancelled)
+    }
 
     @Test
     fun `load reads file content into Ready state`() = runTest {
