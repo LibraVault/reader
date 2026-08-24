@@ -24,8 +24,8 @@ contributors don't mistake them for gaps, and so users don't ask
   vendor `URLSession` adapters (`Sources/Features/CloudTTS/Vendors/`) are
   the only networking code anywhere in the iOS app, and are only ever
   reachable via `CloudVoicesSection`'s Settings UI (gated on
-  `StoreKitBillingManager.isSubscribed`) or, once #478 merges,
-  `CloudTtsEngine`. Reaching the network at all, on either platform, still
+  `StoreKitBillingManager.isSubscribed`) or `CloudTtsEngine` (the
+  playback-time enforcement point, `TTSEngineType.cloud`). Reaching the network at all, on either platform, still
   requires an active subscription AND a separate, off-by-default consent
   toggle — see `docs/cloud-tts-premium-prd.md` and `docs/threat-model.md`'s
   "Cloud TTS sends reader text to a third-party vendor" row. "Support the

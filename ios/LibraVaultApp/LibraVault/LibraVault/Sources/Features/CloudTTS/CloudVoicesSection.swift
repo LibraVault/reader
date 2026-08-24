@@ -19,6 +19,7 @@ struct CloudVoicesSection: View {
     @State private var consentEnabled: Bool
     @State private var selectedProvider: CloudProviderId?
     @State private var configuredProviders: Set<CloudProviderId>
+    @State private var voiceID: String
     @State private var showDisclosure = false
     @State private var isShowingKeyEntry = false
     @State private var keyEntryProvider: CloudProviderId = .elevenLabs
@@ -34,6 +35,7 @@ struct CloudVoicesSection: View {
         _consentEnabled = State(initialValue: preferences.loadConsentEnabled())
         _selectedProvider = State(initialValue: preferences.loadSelectedProvider())
         _configuredProviders = State(initialValue: Self.loadConfiguredProviders(keyStore: keyStore))
+        _voiceID = State(initialValue: preferences.loadSelectedVoiceID() ?? "")
     }
 
     var body: some View {
@@ -62,6 +64,28 @@ struct CloudVoicesSection: View {
             if consentEnabled {
                 ForEach(CloudProviderId.allCases, id: \.self) { provider in
                     providerRow(provider)
+                }
+
+                // Shown once a provider is merely selected, not gated on it being
+                // configured yet — same reasoning as Android's CloudVoicesSection.kt:
+                // hiding this until a key is saved means a user configuring for the
+                // first time never sees the field exists at all.
+                if let selectedProvider {
+                    VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
+                        TextField("Voice ID", text: Binding(
+                            get: { voiceID },
+                            set: { newValue in
+                                voiceID = newValue
+                                preferences.save(selectedVoiceID: newValue.isEmpty ? nil : newValue)
+                            }
+                        ))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        Text("From \(selectedProvider.displayName)'s own voice list/dashboard")
+                            .font(LibraVaultTypography.bodySmall)
+                            .foregroundStyle(LibraVaultColor.onSurfaceVariant)
+                    }
+                    .padding(.vertical, LibraVaultSpacing.xs)
                 }
             }
         } header: {
@@ -94,6 +118,8 @@ struct CloudVoicesSection: View {
     private func providerRow(_ provider: CloudProviderId) -> some View {
         VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
             Button {
+                voiceID = Self.voiceID(afterSelecting: provider, previousProvider: selectedProvider, currentVoiceID: voiceID)
+                preferences.save(selectedVoiceID: voiceID.isEmpty ? nil : voiceID)
                 selectedProvider = provider
                 preferences.save(selectedProvider: provider)
             } label: {
@@ -150,6 +176,17 @@ struct CloudVoicesSection: View {
     /// `PasswordVisualTransformation` for every field except `CloudCredentialFields.REGION`.
     static func isSecureField(_ field: CloudCredentialField) -> Bool {
         field != .region
+    }
+
+    /// Voice ID is provider-scoped — a value entered for one vendor is meaningless (and
+    /// potentially misleading, since `CloudTtsEngine.performSpeak` submits it verbatim
+    /// to whichever provider is currently selected) once the user switches to a
+    /// different one. Mirrors Android's identical "cleared automatically whenever the
+    /// selected provider changes" rule (`CloudVoicesSection.kt`'s field comment).
+    /// Re-selecting the SAME provider (e.g. re-tapping the already-selected row) must
+    /// NOT clear it.
+    static func voiceID(afterSelecting provider: CloudProviderId, previousProvider: CloudProviderId?, currentVoiceID: String) -> String {
+        provider == previousProvider ? currentVoiceID : ""
     }
 
     /// "Validate & Save" is only actionable once every required field for the selected
