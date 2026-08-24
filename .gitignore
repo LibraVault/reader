@@ -44,6 +44,10 @@ app/src/main/assets/index.android.bundle
 *.class
 out/
 
+# Python (scripts/*.py)
+__pycache__/
+*.pyc
+
 # OS
 Thumbs.db
 .DS_Store
