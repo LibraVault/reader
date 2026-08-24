@@ -109,14 +109,17 @@ a dedicated gate.
 environment. The 54.7% figure below is now stale by the same Cloud TTS work (19 new iOS test files
 landed alongside it) and should be pulled from a CI artifact rather than hand-estimated; not done here.
 
-**A real, previously-undetected CI bug was found and fixed in this pass:** `jvm-tests.yml` and
+**A real, previously-undetected CI bug was found in this pass, filed as #514:** `jvm-tests.yml` and
 `ios-app-build.yml`'s `changes` job (the `dorny/paths-filter` step that Phase 0's fail-closed fix
 depends on) had no `actions/checkout` before it. `paths-filter` diffs via the GitHub API on
 `pull_request` events (no checkout needed) but falls back to local git history on `push` — so
 every `push`-triggered run to `dev`/`main` (i.e. every merge) was failing at `Detect Changed Paths`
 with `fatal: not a git repository`, skipping the actual test job, and reporting a false red on the
 post-merge run. Verified against the last 15 `jvm-tests.yml` runs: 100% of `push` runs failed,
-100% of `pull_request` runs passed. Fixed by adding `actions/checkout@v4` to both jobs.
+100% of `pull_request` runs passed. **Fixed via PR #517** (dev-agent picked up #514 concurrently
+with this session and shipped a minimal standalone fix — `actions/checkout@v4` on both jobs — faster
+than this session's own bundled draft of the same change, which was dropped in favour of #517 to
+avoid a duplicate/conflicting fix).
 
 **Phase 7's `feature:library` blocker is cleared** — PR #265 (splitting `LibraryScreen.kt` per
 composable) merged 2026-08-18. The "sequence after PR #265" note on that phase's targets table is
