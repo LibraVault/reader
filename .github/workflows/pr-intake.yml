@@ -252,11 +252,29 @@ jobs:
             local PR_NUMBER="$1"
             echo "Processing PR #$PR_NUMBER..."
 
-            local ISSUE_NUMBER
-            ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER") || {
-              echo "resolve_linked_issue.sh could not resolve a single linked issue for #$PR_NUMBER (none found, or ambiguous) — treating as issue-less for routing purposes." >&2
+            local ISSUE_NUMBER RESOLVE_OUTPUT RESOLVE_EXIT
+            # resolve_linked_issue.sh's own AMBIGUOUS_EXIT=3 — duplicated
+            # as a literal here since this runs in a separate shell
+            # invocation and can't source the constant. See that script's
+            # exit-code contract docstring, and issue #408 for why the two
+            # failure modes below must NOT collapse into one another: a
+            # genuine gh infra failure must never be treated as "no linked
+            # issue" (that's what previously permanently mislabeled a PR
+            # that merely hit a transient API hiccup as issue-less,
+            # since this job only fires on PRs still missing a status:*
+            # label — a real link gets stuck at status:needs-review
+            # forever instead of retried next scheduled run).
+            RESOLVE_EXIT=0
+            RESOLVE_OUTPUT=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER") || RESOLVE_EXIT=$?
+            if [ "$RESOLVE_EXIT" -eq 0 ]; then
+              ISSUE_NUMBER="$RESOLVE_OUTPUT"
+            elif [ "$RESOLVE_EXIT" -eq 3 ]; then
+              echo "resolve_linked_issue.sh: PR #$PR_NUMBER's body links more than one distinct issue — ambiguous, treating as issue-less for routing purposes." >&2
               ISSUE_NUMBER=""
-            }
+            else
+              echo "resolve_linked_issue.sh: gh pr view failed for PR #$PR_NUMBER (exit $RESOLVE_EXIT) — infra failure, not \"no linked issue\". Skipping this PR this round rather than mislabeling it; it's still missing a status:* label so the next scheduled sweep will retry it." >&2
+              return 1
+            fi
 
             if [ -n "$ISSUE_NUMBER" ]; then
               # Same blocked-issue guard as `intake`'s own guard step above —

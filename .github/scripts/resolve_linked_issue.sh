@@ -11,9 +11,27 @@
 # callers running under `set -e` fail loudly with a distinct message
 # rather than silently behaving as if the PR just has no linked issue.
 #
+# Exit codes a caller can rely on:
+#   0                     - resolved (0 or 1 linked issue; stdout has the
+#                           number, or is empty for "none linked")
+#   AMBIGUOUS_EXIT (3)    - more than one distinct issue is linked; not a
+#                           "gh failed" situation, just needs a human to
+#                           pick one
+#   anything else non-zero - `gh pr view` itself failed (its own exit code
+#                           is passed through as-is); an infra hiccup, not
+#                           a verdict about the PR at all
+# 3 is deliberately off of gh's own conventional exit codes (0/1/2/4) so a
+# caller that cares can test for exactly this value instead of just
+# non-zero (issue #408: a caller that collapsed "ambiguous" and "gh itself
+# failed" into the same "no linked issue" bucket permanently mislabeled a
+# PR on a merely transient API error).
+#
 # Usage: resolve_linked_issue.sh <pr-number>
 # Requires GH_TOKEN in the environment (see gh-cli auth requirements).
 set -uo pipefail
+
+# See the exit-code contract documented above the shebang comment block.
+AMBIGUOUS_EXIT=3
 
 # Resolves the linked issue number(s) from a PR body passed on stdin.
 #
@@ -76,7 +94,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   RESOLVE_EXIT=$?
   if [ "$RESOLVE_EXIT" -ne 0 ]; then
     echo "resolve_linked_issue.sh: PR #$PR_NUMBER's body has multiple distinct closing-issue lines ($(echo "$ISSUE_NUMBERS" | tr '\n' ' ')) — ambiguous, not resolving one automatically. A human needs to sort this out (single-issue linkage is all downstream callers support)." >&2
-    exit 1
+    exit "$AMBIGUOUS_EXIT"
   fi
 
   echo "$ISSUE_NUMBERS"
