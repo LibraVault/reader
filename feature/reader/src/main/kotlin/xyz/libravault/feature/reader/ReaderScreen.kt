@@ -336,6 +336,7 @@ fun ReaderScreen(
                                             onPositionChanged = viewModel::onEpubPositionChanged,
                                             onCentreTap       = viewModel::onCentreTap,
                                             onAddHighlight    = viewModel::addHighlight,
+                                            onAutoScrollEnabledChanged = viewModel::onAutoScrollEnabledChanged,
                                             viewModel         = epubViewModel,
                                         )
                                     } else {
@@ -352,6 +353,7 @@ fun ReaderScreen(
                                         settings         = state.settings,
                                         onPageChanged    = viewModel::onPdfPageChanged,
                                         onCentreTap      = viewModel::onCentreTap,
+                                        onAutoScrollEnabledChanged = viewModel::onAutoScrollEnabledChanged,
                                     )
                                 }
 
@@ -364,6 +366,7 @@ fun ReaderScreen(
                                         settings         = state.settings,
                                         onScrollChanged  = viewModel::onMarkdownScrollChanged,
                                         onCentreTap      = viewModel::onCentreTap,
+                                        onAutoScrollEnabledChanged = viewModel::onAutoScrollEnabledChanged,
                                         onTocExtracted   = { markdownToc.value = it },
                                         scrollToSectionIndex   = pendingMarkdownSectionIndex.value,
                                         onSectionScrollConsumed = { pendingMarkdownSectionIndex.value = null },
@@ -409,6 +412,8 @@ fun ReaderScreen(
                         onLineSpacingChanged = viewModel::onLineSpacingChanged,
                         onScrollModeChanged  = viewModel::onScrollModeChanged,
                         onWarmthChanged      = viewModel::onWarmthChanged,
+                        onAutoScrollEnabledChanged = viewModel::onAutoScrollEnabledChanged,
+                        onAutoScrollSpeedChanged   = viewModel::onAutoScrollSpeedChanged,
                         onDismiss            = viewModel::hideSettings,
                         // Margins/justification/hyphenation (#421) — EPUB only, see
                         // ReaderSettingsSheet.showEpubLayoutControls's doc.

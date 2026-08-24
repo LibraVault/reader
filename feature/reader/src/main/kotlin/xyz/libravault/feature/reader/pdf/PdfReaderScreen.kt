@@ -47,6 +47,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import xyz.libravault.feature.reader.ScrollMode
 import xyz.libravault.feature.reader.ReaderSettings
+import xyz.libravault.feature.reader.autoAdvancePages
+import xyz.libravault.feature.reader.autoScroll
 
 /**
  * PDF viewer using Android's native [PdfRenderer] (API 31+).
@@ -63,6 +65,10 @@ import xyz.libravault.feature.reader.ReaderSettings
  *
  * @param fileUri      SAF content URI of the PDF.
  * @param initialPage  Restored page index from Room — 0-based.
+ * @param onAutoScrollEnabledChanged Called with `false` when auto-scroll (#5) stops
+ *                     itself — see AutoScroll.kt's doc — so the Settings-sheet
+ *                     toggle reflects reality instead of staying "on" while nothing
+ *                     is actually advancing any more.
  */
 @Composable
 fun PdfReaderScreen(
@@ -71,6 +77,7 @@ fun PdfReaderScreen(
     settings: ReaderSettings,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit = {},
     scrollToPage: Int? = null,
     onScrollConsumed: () -> Unit = {},
 ) {
@@ -146,6 +153,8 @@ fun PdfReaderScreen(
             onScrollConsumed = onScrollConsumed,
             onPageChanged    = onPageChanged,
             onCentreTap      = onCentreTap,
+            settings         = settings,
+            onAutoScrollEnabledChanged = onAutoScrollEnabledChanged,
         )
         ScrollMode.PAGINATED -> PdfPaginatedView(
             renderer         = r,
@@ -160,6 +169,8 @@ fun PdfReaderScreen(
             zoomState        = zoomState,
             onPageChanged    = onPageChanged,
             onCentreTap      = onCentreTap,
+            settings         = settings,
+            onAutoScrollEnabledChanged = onAutoScrollEnabledChanged,
         )
     }
 }
@@ -177,6 +188,8 @@ private fun PdfScrollingView(
     onScrollConsumed: () -> Unit,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
+    settings: ReaderSettings,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
     val scope     = rememberCoroutineScope()
@@ -187,6 +200,17 @@ private fun PdfScrollingView(
             val target = scrollToPage.coerceIn(0, pageCount - 1)
             listState.animateScrollToItem(target)
             onScrollConsumed()
+        }
+    }
+
+    // Auto-scroll (#5) — see AutoScroll.kt's doc for the mechanism and why a manual
+    // drag or reaching the last page stops it (via onAutoScrollEnabledChanged)
+    // rather than trying to resume silently.
+    LaunchedEffect(settings.autoScrollEnabled, settings.autoScrollSpeed, listState) {
+        if (settings.autoScrollEnabled) {
+            listState.autoScroll(settings.autoScrollSpeed) {
+                onAutoScrollEnabledChanged(false)
+            }
         }
     }
 
@@ -242,6 +266,8 @@ private fun PdfPaginatedView(
     zoomState: androidx.compose.foundation.gestures.TransformableState,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
+    settings: ReaderSettings,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit,
 ) {
     var currentPage by remember { mutableIntStateOf(initialPage.coerceIn(0, pageCount - 1)) }
 
@@ -256,6 +282,22 @@ private fun PdfPaginatedView(
     val screenWidthDp = configuration.screenWidthDp.dp
 
     LaunchedEffect(currentPage) { onPageChanged(currentPage) }
+
+    // Auto-scroll (#5) — no continuous ScrollableState in paginated mode, so this
+    // is a timed page turn instead of a pixel scroll (see AutoScroll.kt's doc).
+    // Stops itself (via onAutoScrollEnabledChanged) at the last page.
+    LaunchedEffect(settings.autoScrollEnabled, settings.autoScrollSpeed, pageCount) {
+        if (settings.autoScrollEnabled) {
+            autoAdvancePages(settings.autoScrollSpeed, onFinished = { onAutoScrollEnabledChanged(false) }) {
+                if (currentPage < pageCount - 1) {
+                    currentPage++
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
 
     Box(
         modifier = Modifier

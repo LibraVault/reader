@@ -67,6 +67,7 @@ import xyz.libravault.core.ui.theme.resolved
 import xyz.libravault.feature.reader.FontFamily
 import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.ScrollMode
+import xyz.libravault.feature.reader.autoAdvancePages
 
 private const val EPUB_FRAGMENT_TAG = "epub_navigator"
 private const val DECORATION_GROUP_HIGHLIGHTS = "highlights"
@@ -101,6 +102,12 @@ private val HIGHLIGHT_COLORS = listOf(
  * @param onCentreTap      Callback invoked when the user taps the centre of the screen
  *                          (used to show/hide the toolbar in the parent screen).
  * @param onAddHighlight   Callback invoked when the user selects text and adds a highlight.
+ * @param onAutoScrollEnabledChanged Called with `false` when auto-scroll (#5) stops
+ *                         itself — end of book reached, since a manual page turn
+ *                         doesn't preempt a timed advance the way a scroll gesture
+ *                         does (see AutoScroll.kt's doc) — so the Settings-sheet
+ *                         toggle reflects reality instead of staying "on" while
+ *                         nothing is actually advancing any more.
  */
 @Composable
 fun EpubReaderScreen(
@@ -113,6 +120,7 @@ fun EpubReaderScreen(
     onPositionChanged: (String) -> Unit,
     onCentreTap: () -> Unit,
     onAddHighlight: (positionRef: String, selectedText: String, colorHex: String) -> Unit,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit = {},
     viewModel: EpubReaderViewModel = hiltViewModel(),  // caller may pass its own instance
 ) {
     val publicationState by viewModel.state.collectAsState()
@@ -162,6 +170,7 @@ fun EpubReaderScreen(
                     onLocatorChanged         = viewModel::onLocatorChanged,
                     onCentreTap              = onCentreTap,
                     onAddHighlight           = onAddHighlight,
+                    onAutoScrollEnabledChanged = onAutoScrollEnabledChanged,
                 )
             }
         }
@@ -183,6 +192,7 @@ private fun EpubNavigatorView(
     onLocatorChanged: (Locator) -> Unit,
     onCentreTap: () -> Unit,
     onAddHighlight: (positionRef: String, selectedText: String, colorHex: String) -> Unit,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     // Stable ID for the FragmentContainerView so we can look up the fragment later
@@ -415,6 +425,21 @@ private fun EpubNavigatorView(
     // changes while the reader is open (#370's "updates live" acceptance criterion).
     LaunchedEffect(settings, systemInDarkTheme, navigator) {
         navigator?.submitPreferences(settings.toEpubPreferences(systemInDarkTheme))
+    }
+
+    // ── Auto-scroll (#5) ──────────────────────────────────────────────────────
+    // Readium's navigator only exposes page-granular goForward(animated) here, not a
+    // pixel-level scroll offset — see AutoScroll.kt's doc for why this is a timed
+    // advance rather than a continuous scroll, same as PDF's paginated mode. Stops
+    // itself (via onAutoScrollEnabledChanged) once goForward() reports nothing
+    // further to advance to (end of book).
+    LaunchedEffect(settings.autoScrollEnabled, settings.autoScrollSpeed, navigator) {
+        val nav = navigator
+        if (settings.autoScrollEnabled && nav != null) {
+            autoAdvancePages(settings.autoScrollSpeed, onFinished = { onAutoScrollEnabledChanged(false) }) {
+                nav.goForward(animated = true)
+            }
+        }
     }
 
     // ── Highlight decorations ────────────────────────────────────────────────

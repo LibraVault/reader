@@ -375,6 +375,19 @@ class ReaderViewModel @Inject constructor(
         )
     }
 
+    // #5
+    fun onAutoScrollEnabledChanged(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(autoScrollEnabled = enabled)
+        )
+    }
+
+    fun onAutoScrollSpeedChanged(speed: Float) {
+        _uiState.value = _uiState.value.copy(
+            settings = _uiState.value.settings.copy(autoScrollSpeed = speed.coerceIn(0.5f, 3.0f))
+        )
+    }
+
     // ── Bookmarks ─────────────────────────────────────────────────────────────
 
     fun showBookmarks() { _uiState.value = _uiState.value.copy(showBookmarksSheet = true) }

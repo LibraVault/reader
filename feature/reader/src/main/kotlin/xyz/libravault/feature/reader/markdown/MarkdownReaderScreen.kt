@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.flow.distinctUntilChanged
 import xyz.libravault.feature.reader.ReaderSettings
+import xyz.libravault.feature.reader.autoScroll
 import xyz.libravault.feature.reader.markdown.mermaid.rememberMermaidMarkdownComponents
 import xyz.libravault.feature.reader.markdown.toc.MarkdownTocExtractor
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
@@ -76,6 +77,11 @@ import kotlin.math.roundToInt
  * @param onScrollChanged      Reports scroll position changes (as a fraction) for Room
  *                             persistence.
  * @param onCentreTap          Tap in the centre-third of the screen — toggles the toolbar.
+ * @param onAutoScrollEnabledChanged Called with `false` when auto-scroll (#5) stops
+ *                             itself — end of document reached, or a manual scroll
+ *                             gesture preempted it (see AutoScroll.kt) — so the
+ *                             Settings-sheet toggle reflects reality instead of
+ *                             staying "on" while nothing is actually scrolling.
  * @param scrollToFraction     One-shot scroll target (fraction) set when the user taps a
  *                             bookmark.
  * @param onScrollConsumed     Called once [scrollToFraction] has been applied, mirroring
@@ -95,6 +101,7 @@ fun MarkdownReaderScreen(
     settings: ReaderSettings,
     onScrollChanged: (Double) -> Unit,
     onCentreTap: () -> Unit,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit = {},
     scrollToFraction: Double? = null,
     onScrollConsumed: () -> Unit = {},
     onTocExtracted: (List<TocEntry>) -> Unit = {},
@@ -153,6 +160,17 @@ fun MarkdownReaderScreen(
                             onScrollChanged(fraction.coerceIn(0.0, 1.0))
                         }
                     }
+            }
+
+            // Auto-scroll (#5) — see AutoScroll.kt's doc for the mechanism and why a
+            // manual drag or reaching the end of the document stops it (via
+            // onAutoScrollEnabledChanged) rather than trying to resume silently.
+            LaunchedEffect(settings.autoScrollEnabled, settings.autoScrollSpeed, scrollState) {
+                if (settings.autoScrollEnabled) {
+                    scrollState.autoScroll(settings.autoScrollSpeed) {
+                        onAutoScrollEnabledChanged(false)
+                    }
+                }
             }
 
             // Restore saved progress once, the first time the target section's offset
