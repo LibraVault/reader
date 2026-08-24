@@ -214,6 +214,12 @@ final class AppState: ObservableObject {
         self.audioEngine = audioEngine
         self.nowPlayingManager = nowPlayingManager
         self.billingManager = billingManager ?? StoreKitBillingManager()
+        // Must run before ttsEngineType's own assignment below: that assignment's
+        // didSet can call bridge.switchTTSEngine(to:), which needs
+        // cloudTtsBillingManager already set if the saved preference is .cloud —
+        // bridge is a singleton with no dependencies of its own, so this is its only
+        // path to the live StoreKitBillingManager instance.
+        bridge.configureCloudTts(billingManager: self.billingManager)
         #if DEBUG
         UITestFixtures.ensureFolder(persistence: folderPersistence)
         #endif
