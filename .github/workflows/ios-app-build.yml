@@ -42,6 +42,10 @@ jobs:
       ios: ${{ steps.filter.outputs.ios }}
       android: ${{ steps.filter.outputs.android }}
     steps:
+      # Required for paths-filter on `push` events — see jvm-tests.yml's
+      # identical `changes` job for the full explanation. Same bug, same
+      # fix, both workflows share this pattern.
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:

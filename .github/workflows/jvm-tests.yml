@@ -33,6 +33,14 @@ jobs:
     outputs:
       android: ${{ steps.filter.outputs.android }}
     steps:
+      # Required for paths-filter on `push` events: without a checkout,
+      # paths-filter has no local git history to diff against and fails
+      # with "fatal: not a git repository" (`pull_request` events don't
+      # need this — paths-filter diffs via the GitHub API against the PR
+      # base instead). This was silently failing every push to dev/main
+      # before this fix; PR-triggered runs were unaffected, which is why
+      # it went unnoticed — see docs/TEST_COVERAGE_PRD.md.
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
