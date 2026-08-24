@@ -1,12 +1,26 @@
 # Mamba-based TTS v2 Enhancement Plan
 
-**Status**: Planned for post-v1.0 release  
-**Priority**: Medium (quality/features enhancement)  
+**Status**: Backlog, deprioritized (see "Status Update — 2026-08-24" below)  
+**Priority**: Low (was Medium — downgraded; the strongest concrete motivation below is resolved, see update)  
 **Complexity**: High (ML training required)
 
 ## Overview
 
 Explore training a lightweight, specialized Mamba-based TTS model (10-30M params) that natively handles e-reader metadata skipping (page numbers, footnotes, chapter markers) without post-processing. This complements or potentially replaces sherpa-onnx for higher quality narration on supported devices.
+
+## Status Update — 2026-08-24
+
+Two things changed since this plan was written that materially weaken its case. Recorded here rather than silently re-litigated the next time someone opens this doc.
+
+**1. The concrete motivation below (metadata preprocessing) is now solved for free, without ML.** `EpubTextPreprocessor.kt` — a plain regex chain, no training, no network — already strips page numbers, footnote markers, chapter markers, decorative separators, and figure captions before TTS sees the text (it predates this plan and was ported to iOS as `TtsTextNormalizer.swift` on this date, PR #498). Measured against ~433K words of real public-domain text (Pride and Prejudice + On the Origin of Species): 0.37%/0.04% word loss, all of it either intended abbreviation expansion or intended clutter removal — no real prose silently eaten (see PR #501's reliability test suite for the methodology and full results). That leaves only the vaguer "potential higher quality with discrete audio tokens" bullet below as this plan's remaining justification — unproven, not the concrete "we need native `<skip>` handling" case the plan opens with.
+
+**2. Real user feedback arrived and pointed away from this plan, not toward it.** The "gather user feedback" gate in *Next Steps* below has now actually fired: issue #443 reported the on-device voice as "robotic." Root cause was sherpa-onnx's `silenceScale` defaulting to a rushed 0.2 and the bundled voice being licensing-driven rather than quality-driven — both fixed via config tuning and a same-architecture Piper voice-tier swap (`medium` → `high`, PR #444), not by anything this plan proposes. The one real quality complaint received so far was resolved for the cost of a config change plus an ~18MB asset swap, not weeks of model training.
+
+**3. No real precedent found for the plan's own 12-30M parameter target.** A literature check (2026-08-24) found no published Mamba TTS model at that scale — the smallest directly relevant published architecture search turned up ([MAVE](https://arxiv.org/abs/2510.04738)) is compared against an 830M-class baseline on datacenter GPUs, nowhere near mobile-scale. The 12-30M figure remains what *Open Questions* below already called it: unresolved, not benchmarked.
+
+**4. Mamba's real, demonstrated advantage may not apply to this workload at all.** The "Backbone candidate: Zamba2" section below already flags that Zamba2's published gains are measured on long-context prefill (32k tokens) and that "LibraVault's actual workload is short TTS inputs... where a growing KV cache was never going to be the bottleneck anyway." That caveat generalizes beyond Zamba2 specifically: Mamba's core efficiency property (linear-time scaling, fixed-size state vs. a growing KV cache) is a long-context/large-model story. A short per-`speak()`-call utterance against a 12-30M parameter budget doesn't obviously have the problem Mamba is good at solving — it's being reached for here mainly because it's *small*, not because this workload has the property Mamba is actually known for.
+
+**Recommendation**: stay in backlog, don't re-prioritize on "quality" alone in the abstract — that keeps resolving more cheaply than this plan every time it's actually tested against a real complaint. Revisit only if a *specific, Mamba-shaped* need shows up (e.g. a demonstrated small-scale precedent worth building on, or a workload that actually has the long-context property), not "narration could still be better" on its own.
 
 ## Motivation
 
@@ -287,15 +301,17 @@ This is a product decision, not yet made — captured here for the v2 planning d
 
 ## Next Steps (Post-v1.0)
 
-1. Revisit this plan after Pocket-TTS v1.0 ships
-2. Gather user feedback on current narration quality
-3. If quality/metadata handling is a blocker, prioritize Mamba v2
-4. Otherwise, consider it for v1.1 or later release cycle
-5. Prototype data augmentation script (low-risk first step)
+Superseded by the "Status Update — 2026-08-24" section above: steps 1-3 below have now actually happened, and pointed away from this plan rather than toward it.
+
+1. ~~Revisit this plan after Pocket-TTS v1.0 ships~~ — done, see status update
+2. ~~Gather user feedback on current narration quality~~ — done (issue #443), see status update
+3. ~~If quality/metadata handling is a blocker, prioritize Mamba v2~~ — metadata handling was never a blocker (solved separately, for free); the one quality complaint received was resolved without this plan
+4. Stay in backlog rather than "consider for v1.1" by default — see status update's recommendation for what would actually justify revisiting
+5. Data augmentation script prototyping remains a reasonable low-risk first step **if** this is ever picked back up, unchanged from before
 
 ---
 
 **Created**: 2026-07-21  
-**Last Updated**: 2026-08-02 (added Zamba2 backbone candidate evaluation)  
+**Last Updated**: 2026-08-24 (status update: metadata-handling motivation resolved separately without ML, real user feedback resolved more cheaply than this plan, no precedent found for the 12-30M param target, Mamba's long-context advantage likely doesn't apply to this workload — deprioritized)  
 **Owner**: @Rob  
-**Status**: Backlog (post-v1.0)
+**Status**: Backlog, deprioritized (post-v1.0, no active trigger to revisit)
