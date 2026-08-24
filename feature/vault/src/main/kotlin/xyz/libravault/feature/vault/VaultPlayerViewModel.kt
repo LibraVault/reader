@@ -21,13 +21,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import xyz.libravault.core.vaultcontent.VaultDataSource
-import xyz.libravault.core.vaultcrypto.VaultFileReader
 import xyz.libravault.core.vaultstore.VaultBookmark
 import xyz.libravault.core.vaultstore.VaultSessionManager
 import xyz.libravault.core.vaultstore.VaultStore
 import javax.inject.Inject
 
 private const val SKIP_MS = 30_000L
+
+/**
+ * One [VaultStore.openReader] call per `createDataSource()`, never a reader
+ * shared across instances — see class doc above and issue #527. Extracted so
+ * the fan-out itself is unit-testable without constructing a real ExoPlayer.
+ */
+internal fun vaultPlayerDataSourceFactory(store: VaultStore, fileId: ByteArray): VaultDataSource.Factory =
+    VaultDataSource.Factory { store.openReader(fileId) }
 
 data class VaultPlayerUiState(
     val title: String = "",
@@ -48,11 +55,14 @@ data class VaultPlayerUiState(
  * player and stops audio, unlike the main library's player. Explicitly
  * scoped out for this pass; see the PR description.
  *
- * `VaultDataSource.Factory { reader }` fed straight into
- * [ProgressiveMediaSource] is exactly the pattern
+ * [vaultPlayerDataSourceFactory]'s `VaultDataSource.Factory { store.openReader(fileId) }`
+ * fed straight into [ProgressiveMediaSource] is exactly the pattern
  * `core:vaultcontent`'s `VaultDataSource` doc comment names as the
- * no-URI-scheme-needed path for a caller that already holds an open
- * [VaultFileReader].
+ * no-URI-scheme-needed path for a caller that can open a fresh reader per
+ * factory invocation — one fresh reader per `createDataSource()` call, since
+ * Media3 may open/close a track's `DataSource` more than once (retries,
+ * re-buffering) and neither a reader nor a `VaultDataSource` is safe to share
+ * across instances.
  */
 @HiltViewModel
 class VaultPlayerViewModel @Inject constructor(
@@ -65,7 +75,6 @@ class VaultPlayerViewModel @Inject constructor(
     private val fileIdHex: String = checkNotNull(savedStateHandle["fileId"]) { "VaultPlayerScreen requires a fileId nav argument" }
     private val fileId: ByteArray = fileIdHex.hexToFileId()
 
-    private var reader: VaultFileReader? = null
     private var player: ExoPlayer? = null
     private var store: VaultStore? = null
 
@@ -90,12 +99,10 @@ class VaultPlayerViewModel @Inject constructor(
             }
             _bookmarks.value = entry.bookmarks
 
-            val r = s.openReader(fileId)
-            reader = r
             val exo = ExoPlayer.Builder(context).build()
             player = exo
 
-            val mediaSource = ProgressiveMediaSource.Factory(VaultDataSource.Factory { r })
+            val mediaSource = ProgressiveMediaSource.Factory(vaultPlayerDataSourceFactory(s, fileId))
                 .createMediaSource(MediaItem.fromUri(Uri.parse("vault://$fileIdHex")))
             exo.setMediaSource(mediaSource)
             exo.addListener(object : Player.Listener {
@@ -200,6 +207,5 @@ class VaultPlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         player?.release()
-        reader?.close()
     }
 }
