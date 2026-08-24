@@ -94,7 +94,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PIPELINE_NUMBER: ${{ steps.trigger.outputs.pipeline_number }}
         run: |
-          gh pr comment "$PR_NUMBER" --body "Triggered the CircleCI fallback pipeline for this branch (jvm-tests, ui-tests, keystore-hardware-test, tts-audio-test): https://app.circleci.com/pipelines/circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd/$PIPELINE_NUMBER"
+          gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body "Triggered the CircleCI fallback pipeline for this branch (jvm-tests, ui-tests, keystore-hardware-test, tts-audio-test): https://app.circleci.com/pipelines/circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd/$PIPELINE_NUMBER"
 
       - name: Comment on failure to trigger
         if: failure()
@@ -102,7 +102,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr comment "$PR_NUMBER" --body "Failed to trigger the CircleCI fallback pipeline — check that the CIRCLECI_TOKEN repo secret is set and valid, then re-apply the \`circleci-job\` label. See the workflow run log for details." || true
+          gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body "Failed to trigger the CircleCI fallback pipeline — check that the CIRCLECI_TOKEN repo secret is set and valid, then re-apply the \`circleci-job\` label. See the workflow run log for details." || true
 
       - name: Remove the triggering label
         if: always()
@@ -110,4 +110,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr edit "$PR_NUMBER" --remove-label circleci-job || true
+          gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" --remove-label circleci-job || true
