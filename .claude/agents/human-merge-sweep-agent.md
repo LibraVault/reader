@@ -112,14 +112,23 @@ run — never rely on a label alone to mean "still true."
          protection requires 3 status checks that a direct push can never
          satisfy (this was issue #409; a human chose the PR route over a
          branch-protection bypass so the audit log stays under the same
-         checks as everything else that lands on `dev`):
-         `git fetch origin dev && git checkout -b sweep-log/<epoch-seconds> origin/dev && git add docs/human-merge-sweep-log.md && git commit -m "..." && git push origin sweep-log/<epoch-seconds> && gh pr create --base dev --title "docs: human-merge-sweep log — <one-line summary>" --body "Automated audit-log append (human-merge-sweep run). No reviewable behavior change." --label risk:low`,
-         then `gh pr merge <n> --squash --auto` to merge as soon as the
-         required checks pass — this is genuinely fire-and-forget, do not
-         poll or wait on it within this run. If `gh pr merge --auto`
-         itself reports the PR already conflicts with `dev` (another
-         append landed first), rebase once —
-         `git fetch origin dev && git rebase origin/dev && git push --force-with-lease`
+         checks as everything else that lands on `dev`). The branch push
+         and the PR creation both need the elevated token, not the
+         default `GH_TOKEN` — the same two constraints `dev-agent.yml`
+         already hit and documents (issues #182, #311): `GITHUB_TOKEN`
+         can't create PRs in this repo at all, and a `git push` under it
+         gets attributed to `github-actions[bot]` on the resulting event,
+         landing its checks on `action_required` with zero jobs ever
+         created:
+         `git fetch origin dev && git checkout -b sweep-log/<epoch-seconds> origin/dev && git add docs/human-merge-sweep-log.md && git commit -m "..." && git push https://x-access-token:$PIPELINE_APP_TOKEN@github.com/LibraVault/reader.git HEAD:sweep-log/<epoch-seconds> && GH_TOKEN="$PIPELINE_APP_TOKEN" gh pr create --base dev --title "docs: human-merge-sweep log — <one-line summary>" --body "Automated audit-log append (human-merge-sweep run). No reviewable behavior change." --label risk:low`.
+         Once it's open, `gh pr merge <n> --squash --auto` (default
+         `GH_TOKEN` is fine here — merging isn't blocked by either of the
+         two settings above, same as every other merge in this file) to
+         land it as soon as the required checks pass — this is genuinely
+         fire-and-forget, do not poll or wait on it within this run. If
+         `gh pr merge --auto` itself reports the PR already conflicts
+         with `dev` (another append landed first), rebase once —
+         `git fetch origin dev && git rebase origin/dev && git push --force-with-lease https://x-access-token:$PIPELINE_APP_TOKEN@github.com/LibraVault/reader.git HEAD:sweep-log/<epoch-seconds>`
          — and retry the auto-merge; if it conflicts again, leave the PR
          open rather than force through it — the next sweep run's own
          log-append starts from wherever `dev` actually landed, so nothing
