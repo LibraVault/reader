@@ -175,4 +175,56 @@ class VaultPlayerViewModelTest {
         assertEquals(0L, vm.uiState.value.positionMs)
         assertTrue(vm.uiState.value.isPlaying.not())
     }
+
+    // ── Lock observation (#526) ──────────────────────────────────────────────
+
+    @Test
+    fun `checkStillUnlocked flips wasLocked when the session manager reports the vault no longer unlocked`() = runTest {
+        // isLoading only clears once a real ExoPlayer reaches STATE_READY (not
+        // reachable in a JVM unit test — see the class doc), so this uses the
+        // "unknown fileId" early-return shape (isUnlocked=true, listEntries
+        // empty), same as the other pre-playback tests here, to reach a
+        // terminal (non-loading) state without constructing a real player.
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns emptyList()
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.isLoading.not(), "must have reached a terminal state before checkStillUnlocked is meaningful")
+        assertTrue(vm.uiState.value.wasLocked.not(), "wasLocked must start false")
+
+        every { sessionManager.isUnlocked("vault-1") } returns false
+        vm.checkStillUnlocked()
+
+        assertTrue(vm.uiState.value.wasLocked, "checkStillUnlocked must flip wasLocked once the vault is no longer unlocked")
+    }
+
+    @Test
+    fun `checkStillUnlocked does not flip wasLocked while still loading`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns false
+
+        val vm = viewModel()
+        // Deliberately not calling advanceUntilIdle() -- isLoading is still true.
+        vm.checkStillUnlocked()
+
+        assertTrue(vm.uiState.value.wasLocked.not(), "checkStillUnlocked must not flip wasLocked while still loading")
+    }
+
+    @Test
+    fun `a mutating call that throws VaultLockedException flips wasLocked instead of crashing`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns emptyList()
+        coEvery { vaultStore.addBookmark(fileId, "ms:0", "0:00", null) } throws
+            xyz.libravault.core.vaultstore.VaultLockedException()
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.wasLocked.not(), "wasLocked must start false")
+
+        vm.addBookmark()
+        advanceUntilIdle() // must not propagate the exception out of the coroutine
+
+        assertTrue(vm.uiState.value.wasLocked, "launchOrNoticeLock must catch VaultLockedException and flip wasLocked")
+        assertTrue(vm.bookmarks.value.isEmpty(), "a failed bookmark must not appear in state")
+    }
 }

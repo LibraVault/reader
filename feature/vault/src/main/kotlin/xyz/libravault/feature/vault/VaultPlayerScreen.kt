@@ -19,16 +19,22 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import xyz.libravault.core.storage.VaultScreenSecurityPreference
 import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.feature.player.components.PlaybackControls
@@ -57,6 +63,23 @@ fun VaultPlayerScreen(
     var showBookmarksSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
+
+    // #526 — re-check lock state every time this screen comes back to the
+    // foreground, same DisposableEffect+ON_RESUME idiom VaultListScreen
+    // already uses, since nothing else here observes VaultSessionManager
+    // continuously.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentViewModel = rememberUpdatedState(viewModel)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentViewModel.value.checkStillUnlocked()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(state.wasLocked) {
+        if (state.wasLocked) onBack()
+    }
 
     Scaffold(
         topBar = {

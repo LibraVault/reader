@@ -112,7 +112,27 @@ class CoverArtCache @Inject constructor(
         }
 
         val longEdge = maxOf(opts.outWidth, opts.outHeight)
-        opts.inSampleSize = calculateSampleSize(longEdge, MAX_COVER_PX)
+        val sampleSize = calculateSampleSize(longEdge, MAX_COVER_PX)
+
+        // inSampleSize is capped at MAX_SAMPLE_SIZE (16) for output-quality
+        // reasons, not as an absolute bound on the decoded buffer: a header
+        // claiming e.g. 1,000,000 x 1,000,000 px still decodes to a
+        // 62,500 x 62,500 bitmap at sample size 16 — a legitimate 512 px
+        // target and a hostile multi-billion-pixel claim both saturate to
+        // the same sample size, so the sample-size cap alone cannot tell
+        // them apart. This checks what the decode would *actually* produce
+        // and rejects outright if it's still unreasonable, independent of
+        // and in addition to the sample-size cap above.
+        if (wouldExceedDecodeBudget(opts.outWidth, opts.outHeight, sampleSize)) {
+            logger.w(
+                TAG,
+                "decode: rejecting $key — claimed ${opts.outWidth}x${opts.outHeight} would " +
+                    "still decode to an oversized buffer at sample size $sampleSize",
+            )
+            return null
+        }
+
+        opts.inSampleSize = sampleSize
         opts.inJustDecodeBounds = false
 
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
@@ -130,6 +150,20 @@ class CoverArtCache @Inject constructor(
         return size
     }
 
+    /**
+     * True if decoding claimed [outWidth]x[outHeight] at [sampleSize] would
+     * still produce a pixel buffer larger than [MAX_DECODE_PIXELS] — i.e.
+     * the sample-size cap alone wasn't enough to bring an adversarial
+     * header's claimed dimensions down to something safe to allocate.
+     * Pure/testable independent of BitmapFactory (see [calculateSampleSize]).
+     */
+    internal fun wouldExceedDecodeBudget(outWidth: Int, outHeight: Int, sampleSize: Int): Boolean {
+        val safeSampleSize  = sampleSize.coerceAtLeast(1) // belt and braces — never divide by 0
+        val effectiveWidth  = (outWidth  / safeSampleSize).coerceAtLeast(1)
+        val effectiveHeight = (outHeight / safeSampleSize).coerceAtLeast(1)
+        return effectiveWidth.toLong() * effectiveHeight.toLong() > MAX_DECODE_PIXELS
+    }
+
     private fun keyHash(key: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(key.toByteArray(Charsets.UTF_8))
@@ -140,5 +174,13 @@ class CoverArtCache @Inject constructor(
         private const val TAG = "CoverArtCache"
         private const val MAX_COVER_PX   = 512
         private const val MAX_SAMPLE_SIZE = 16
+
+        // Ceiling on the pixel count of the buffer the *real* decode pass
+        // (post inSampleSize) is allowed to allocate. 4096x4096 (~16.7M px,
+        // ~64 MB at ARGB_8888) is a generous multiple of the 512 px target —
+        // far more than any legitimate cover thumbnail needs — while still
+        // being a hard, well-below-OOM bound regardless of what a hostile
+        // header claims its dimensions are.
+        internal const val MAX_DECODE_PIXELS = 4096L * 4096L
     }
 }

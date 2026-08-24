@@ -123,7 +123,6 @@ class PocketTtsEngine @Inject constructor(
 
         scope.launch {
             try {
-                Log.d(TAG, "Speaking text: ${text.take(50)}...")
                 val config = GenerationConfig(
                     speed = _state.value.speechRate,
                     sid = PocketVoiceCatalog.DEFAULT_SPEAKER_ID,
