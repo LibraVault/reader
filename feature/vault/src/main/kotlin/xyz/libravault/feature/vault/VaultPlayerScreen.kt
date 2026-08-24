@@ -54,7 +54,7 @@ fun VaultPlayerScreen(
     val bookmarks by viewModel.bookmarks.collectAsState()
     var showBookmarksSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
+    SecureScreenEffect(enabled = rememberScreenSecurityEnabled(context))
 
     Scaffold(
         topBar = {

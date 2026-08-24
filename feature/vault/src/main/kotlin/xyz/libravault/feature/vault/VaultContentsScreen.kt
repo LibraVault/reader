@@ -73,7 +73,7 @@ fun VaultContentsScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
+    SecureScreenEffect(enabled = rememberScreenSecurityEnabled(context))
 
     LaunchedEffect(state.wasLocked) {
         if (state.wasLocked) onBack()
