@@ -189,13 +189,12 @@ jobs:
   # confirm the android-machine executor gets real nested-virtualization
   # (KVM) acceleration, recommended at `large`+ (already what's configured
   # below), so the mechanism itself isn't the suspect the original comment
-  # here flagged it as. Two concrete gaps this job had that could each
-  # extend a slow run into an apparent hang, addressed below: no Gradle
-  # dependency cache (every run did a full cold dependency resolution over
-  # the network, unlike jvm-tests below), and no visibility into what the
-  # emulator itself was doing during that silence. Neither is confirmed as
-  # *the* root cause — that needs a re-trigger via the `circleci-job` label
-  # to observe — but both are real gaps worth closing regardless.
+  # here flagged it as. Two concrete gaps addressed below, neither confirmed
+  # as *the* root cause (that needs a re-trigger via the `circleci-job`
+  # label to observe), but both real and worth closing regardless: extra
+  # cache resilience (see the restore_cache/save_cache comment below — the
+  # orb already caches, but not in a way that survives a timeout) and no
+  # visibility into what the emulator itself was doing during the silence.
   ui-tests:
     executor:
       name: android/android-machine
@@ -204,11 +203,19 @@ jobs:
     steps:
       - checkout
 
-      # Added for #538: the first shakeout run had no dependency cache at
-      # all, meaning every run pays for a full cold Gradle dependency
-      # resolution over the network — a plausible contributor to a run
-      # that "just hangs" with no build error. Same cache key as jvm-tests
-      # below so a same-day jvm-tests run on this branch already warms it.
+      # Added for #538. The android orb's start-emulator-and-run-tests
+      # command below already does its own Gradle caching by default
+      # (restore-gradle-cache-post-emulator-launch / save-gradle-cache), so
+      # this job was not actually cold on every run before this change —
+      # correcting an inaccurate claim in this PR's original description.
+      # This manual cache still earns its place for two reasons the orb's
+      # own cache doesn't cover: (1) same cache key as jvm-tests below, so a
+      # same-day jvm-tests run on this branch already warms it; (2) the
+      # orb's save-gradle-cache step runs *after* run-tests with no
+      # `when: always` (verified against the orb's pinned source), so a
+      # timeout on run-tests — exactly what happened in #538 — skips it,
+      # leaving the orb's own cache permanently cold across repeated hangs.
+      # This save_cache below has no such failure mode.
       - restore_cache:
           keys:
             - gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
