@@ -47,7 +47,7 @@ import java.nio.ByteBuffer
  * @throws UnsupportedCipherException the header's cipher id isn't one this build understands
  * @throws MalformedVaultHeaderException a header field is structurally invalid (e.g. chunkSize <= 0)
  */
-class VaultFileReader(
+open class VaultFileReader(
     file: java.io.File,
     private val vmk: ByteArray,
     expectedFileId: ByteArray?,
@@ -204,5 +204,26 @@ class VaultFileReader(
         return if (produced == want) result else result.copyOf(produced)
     }
 
-    override fun close() = raf.close()
+    /**
+     * Closes the underlying file handle AND scrubs this reader's own derived
+     * key material (issue #526: a reader/player screen that opened this
+     * before the vault locked must not go on serving decrypted content —
+     * [xyz.libravault.core.vaultstore.VaultStore.lock] closes every reader it
+     * handed out via [xyz.libravault.core.vaultstore.VaultStore.openReader]
+     * for exactly this reason). Idempotent — [java.io.RandomAccessFile.close]
+     * tolerates being called more than once, and re-filling an
+     * already-zeroed array is a harmless no-op.
+     *
+     * `open` so `VaultStore` can wrap the instance it hands out in a thin
+     * subclass that also deregisters itself on a normal (non-lock) close —
+     * see that class for why a decorator/wrapper around the concrete type
+     * doesn't work here (callers depend on the concrete [VaultFileReader]
+     * type, e.g. for PDF proxy-fd/Media3 adapters).
+     */
+    open override fun close() {
+        raf.close()
+        fileContentKey.fill(0)
+        cachedChunk?.fill(0)
+        cachedChunk = null
+    }
 }

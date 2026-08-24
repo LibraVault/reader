@@ -1,5 +1,6 @@
 package xyz.libravault.core.vaultstore
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -10,7 +11,10 @@ import org.junit.jupiter.api.assertThrows
 import xyz.libravault.core.vaultcrypto.Argon2Params
 import xyz.libravault.core.vaultstore.testing.FakeHardwareKeyWrapFactory
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.security.SecureRandom
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
 
 class VaultStoreTest {
@@ -309,5 +313,243 @@ class VaultStoreTest {
             "a failed rename must not delete the old cover art file",
         )
         assertArrayEquals(originalCover, store.readCoverArt(entry.fileId))
+    }
+
+    /**
+     * Regression test for #525 (H1): [VaultStore.lock] used to zero the VMK
+     * field IN PLACE, and every mutator held onto that exact same array —
+     * so a `lock()` racing an in-flight [VaultStore.importFile] could
+     * encrypt the manifest write under an already-zeroed key, permanently
+     * corrupting it.
+     *
+     * [PausingInputStream] blocks the very first read call
+     * [ChunkedVaultWriter.encrypt][xyz.libravault.core.vaultcrypto.ChunkedVaultWriter.encrypt]
+     * makes (via `readFully`) until released — this is the injection point
+     * called for in the issue: no new test-only hook needed, `importFile`'s
+     * own `input: InputStream` parameter is already exactly the suspension
+     * point a real "app backgrounded mid-import" race would land on. A
+     * plain [Thread] (not a coroutine — `lock()` is a synchronous, non-suspend
+     * call, deliberately, per the class doc) waits for the read to start,
+     * calls `store.lock()`, then releases the read to let the import
+     * proceed to its (now doomed) final manifest write.
+     */
+    @Test
+    fun `a lock mid-import aborts the write cleanly and leaves the vault intact`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+
+        val readStarted = CountDownLatch(1)
+        val resumeRead = CountDownLatch(1)
+        val content = ByteArray(10) { it.toByte() }
+        val pausingInput = PausingInputStream(content, readStarted, resumeRead)
+
+        val lockerThread = Thread {
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS), "import never started reading")
+            store.lock()
+            resumeRead.countDown()
+        }
+        lockerThread.start()
+
+        assertThrows<VaultLockedException> {
+            store.importFile(pausingInput, content.size.toLong(), "title", null, "pdf")
+        }
+        lockerThread.join(5_000)
+        assertFalse(lockerThread.isAlive, "locker thread never finished")
+        assertFalse(store.isUnlocked, "lock() must have actually taken effect")
+
+        // The vault itself must not be corrupted — it still unlocks with the
+        // original PIN and is fully usable afterward, not just openable.
+        assertEquals(UnlockOutcome.Success, store.unlockWithPin("1234".toCharArray()))
+        assertTrue(store.listEntries().isEmpty(), "an aborted import must not leave a manifest entry behind")
+
+        val entry = store.importFile(ByteArrayInputStream(content), content.size.toLong(), "after-lock", null, "pdf")
+        assertEquals(1, store.listEntries().size)
+        store.openReader(entry.fileId).use { reader ->
+            assertArrayEquals(content, reader.readAt(0, content.size))
+        }
+    }
+
+    /**
+     * Regression test for #526 (design item 5, the open-reader registry):
+     * before [VaultStore.openReader] tracked its handed-out readers,
+     * [VaultStore.lock] had no way to reach a reader a reader/player screen
+     * still held, so that screen could go on decrypting content from an
+     * already-"locked" vault. Verified this test actually distinguishes the
+     * fix: run against commit `a1b021f` (the last commit before the
+     * `openReaders` registry was introduced) it fails — `readAt` after
+     * `lock()` still returns the plaintext content instead of throwing.
+     */
+    @Test
+    fun `lock closes and scrubs every reader handed out via openReader`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val content = ByteArray(1_000) { it.toByte() }
+        val entry = store.importFile(ByteArrayInputStream(content), content.size.toLong(), "title", null, "pdf")
+
+        val reader = store.openReader(entry.fileId)
+
+        store.lock()
+
+        assertThrows<java.io.IOException>(
+            "a reader that survived past lock() must fail fast on its next read, not go on serving decrypted content",
+        ) {
+            reader.readAt(0, content.size)
+        }
+    }
+
+    /**
+     * Regression test for #526's actual root cause (design item 3, H2): two
+     * screens racing an `addBookmark`/import read-modify-write manifest
+     * cycle on the *same* [VaultStore]. [VaultStore.mutationMutex] is
+     * private, so this can't observe the lock directly — instead it proves
+     * true mutual exclusion behaviorally: a first mutation ([importFile]) is
+     * paused mid-flight, while it still holds the mutex, a concurrent
+     * second mutation ([addBookmark]) is started on another thread and shown
+     * to make zero progress (still not completed after a generous window)
+     * until the first one is released and finishes — then, once both have
+     * completed, both mutations' results are present in the manifest (no
+     * lost update from either racing the other's read-modify-write cycle).
+     *
+     * Verified this test actually distinguishes the fix: run against commit
+     * `a1b021f` (the last commit before `mutationMutex` was introduced) it
+     * fails — the concurrent `addBookmark` completes almost immediately
+     * instead of waiting for the paused `importFile` to finish.
+     */
+    @Test
+    fun `two concurrent mutations on the same vault are serialized, not interleaved`() = runTest {
+        val store = newStore()
+        store.create("1234".toCharArray(), fastParams)
+        val existing = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "existing", null, "pdf")
+
+        val readStarted = CountDownLatch(1)
+        val resumeRead = CountDownLatch(1)
+        val newContent = ByteArray(10) { it.toByte() }
+        val pausingInput = PausingInputStream(newContent, readStarted, resumeRead)
+
+        val bookmarkAttemptStarted = CountDownLatch(1)
+        val bookmarkCompleted = CountDownLatch(1)
+        var bookmarkResult: VaultBookmark? = null
+
+        val importerThread = Thread {
+            runBlocking {
+                store.importFile(pausingInput, newContent.size.toLong(), "new-import", null, "pdf")
+            }
+        }
+        importerThread.start()
+
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS), "import never started reading — mutex wasn't even acquired")
+
+        val bookmarkThread = Thread {
+            bookmarkAttemptStarted.countDown()
+            runBlocking {
+                bookmarkResult = store.addBookmark(existing.fileId, "page:1", "label")
+            }
+            bookmarkCompleted.countDown()
+        }
+        bookmarkThread.start()
+        assertTrue(bookmarkAttemptStarted.await(5, TimeUnit.SECONDS), "bookmark thread never even started")
+
+        // The paused importFile call is still holding mutationMutex at this point
+        // (it hasn't been released), so a correctly-serialized addBookmark call
+        // must not be able to complete yet — this is the actual mutual-exclusion
+        // assertion, not just an end-state check.
+        assertFalse(
+            bookmarkCompleted.await(300, TimeUnit.MILLISECONDS),
+            "addBookmark completed while a concurrent importFile still held the mutex — " +
+                "the two mutators raced instead of being serialized",
+        )
+
+        resumeRead.countDown() // let the paused import proceed to its final write
+        importerThread.join(5_000)
+        assertFalse(importerThread.isAlive, "importer thread never finished")
+
+        assertTrue(bookmarkCompleted.await(5, TimeUnit.SECONDS), "addBookmark never completed after the import released the mutex")
+        bookmarkThread.join(5_000)
+
+        assertEquals("label", bookmarkResult?.label)
+
+        // No lost update: both mutations' results must be present, regardless
+        // of which one's read-modify-write cycle ran first.
+        val entries = store.listEntries()
+        assertEquals(2, entries.size, "both the pre-existing import and the new import must be present")
+        val existingAfter = entries.find { it.fileId.contentEquals(existing.fileId) }
+        assertEquals(1, existingAfter?.bookmarks?.size, "the concurrent addBookmark must not have been lost")
+        assertEquals("label", existingAfter?.bookmarks?.single()?.label)
+    }
+
+    /**
+     * Regression test for #552, found during principal review of this same
+     * PR: [VaultStore.openReader]'s previous ordering registered the
+     * just-constructed reader in its `openReaders` set only AFTER
+     * [VaultFileReader]'s constructor finished — real wall-clock work
+     * (opens the file, parses the header, eagerly decrypts chunk 0). A
+     * [VaultStore.lock] racing that exact window could run its entire
+     * close/scrub sweep before the new reader was ever visible to it,
+     * letting that reader escape closure entirely and keep serving
+     * decrypted content indefinitely — reopening #526's exact
+     * vulnerability through the very mechanism meant to close it.
+     *
+     * [onReaderConstructionStarted] is a `VaultStore` test-only seam
+     * (constructor-injectable, same pattern as [VaultStore]'s existing
+     * `nowEpochMillis`/`random`/`usableSpaceBytes`) that pauses
+     * `openReader()` at exactly that gap — right after the VMK snapshot,
+     * right before construction — so this test can deterministically land
+     * `lock()` inside it, the same real-time window the bug lived in.
+     */
+    @Test
+    fun `a lock racing openReader's construction still aborts and does not leak the reader`() = runTest {
+        val readStarted = CountDownLatch(1)
+        val resumeConstruction = CountDownLatch(1)
+        val dir = createTempDirectory(prefix = "vaultstore-openreader-race-test").toFile()
+        dir.deleteOnExit()
+        val store = VaultStore(
+            vaultDir = dir,
+            keystoreKeyAlias = "alias",
+            keyWrapFactory = FakeHardwareKeyWrapFactory(),
+            onReaderConstructionStarted = {
+                readStarted.countDown()
+                assertTrue(resumeConstruction.await(5, TimeUnit.SECONDS), "lock() never released the paused construction")
+            },
+        )
+        store.create("1234".toCharArray(), fastParams)
+        val entry = store.importFile(ByteArrayInputStream(ByteArray(10)), 10L, "title", null, "pdf")
+
+        val lockerThread = Thread {
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS), "openReader never reached its paused construction point")
+            store.lock()
+            resumeConstruction.countDown()
+        }
+        lockerThread.start()
+
+        assertThrows<VaultLockedException>(
+            "a lock() racing openReader's construction must abort it, not hand back a reader that already escaped the close sweep",
+        ) {
+            store.openReader(entry.fileId)
+        }
+        lockerThread.join(5_000)
+        assertFalse(lockerThread.isAlive, "locker thread never finished")
+        assertFalse(store.isUnlocked, "lock() must have actually taken effect")
+    }
+
+    /** Blocks the first call to [read] until [readStarted] is signalled and
+     * [resumeRead] is released — see the regression test above for why. */
+    private class PausingInputStream(
+        content: ByteArray,
+        private val readStarted: CountDownLatch,
+        private val resumeRead: CountDownLatch,
+    ) : InputStream() {
+        private val delegate = ByteArrayInputStream(content)
+        private var alreadyPaused = false
+
+        override fun read(): Int = throw UnsupportedOperationException("not used by ChunkedVaultWriter's readFully")
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (!alreadyPaused) {
+                alreadyPaused = true
+                readStarted.countDown()
+                assertTrue(resumeRead.await(5, TimeUnit.SECONDS), "lock() never released the paused read")
+            }
+            return delegate.read(b, off, len)
+        }
     }
 }

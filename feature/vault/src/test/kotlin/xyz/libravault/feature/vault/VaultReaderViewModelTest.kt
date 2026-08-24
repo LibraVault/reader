@@ -610,6 +610,60 @@ class VaultReaderViewModelTest {
         assertEquals(VAULT_DYSLEXIA_FRIENDLY_LINE_SPACING, vm.settings.value.lineSpacing)
     }
 
+    // ── Lock observation (#526) ──────────────────────────────────────────────
+
+    @Test
+    fun `checkStillUnlocked flips wasLocked when the session manager reports the vault no longer unlocked`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertTrue(vm.wasLocked.value.not(), "wasLocked must start false")
+
+        // The vault locked out from under this screen (e.g. auto-lock firing
+        // while it was backgrounded) -- sessionManager now reports it as locked.
+        every { sessionManager.isUnlocked("vault-1") } returns false
+        vm.checkStillUnlocked()
+
+        assertTrue(vm.wasLocked.value, "checkStillUnlocked must flip wasLocked once the vault is no longer unlocked")
+    }
+
+    @Test
+    fun `checkStillUnlocked does not flip wasLocked while still loading`() = runTest {
+        // Guards the !is Loading check in checkStillUnlocked -- init hasn't
+        // resolved sessionManager.isUnlocked into a terminal state yet, so a
+        // stale "locked" read during that window must not prematurely flip.
+        every { sessionManager.isUnlocked("vault-1") } returns false
+
+        val vm = viewModel()
+        // Deliberately not calling advanceUntilIdle() -- state is still Loading.
+        vm.checkStillUnlocked()
+
+        assertTrue(vm.wasLocked.value.not(), "checkStillUnlocked must not flip wasLocked while state is still Loading")
+    }
+
+    @Test
+    fun `a mutating call that throws VaultLockedException flips wasLocked instead of crashing`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        coEvery { vaultStore.listEntries() } returns listOf(entry("PDF"))
+        every { vaultStore.openReader(fileId) } returns mockk<VaultFileReader>(relaxed = true)
+        coEvery { vaultStore.addBookmark(fileId, "page:4", null, null) } throws
+            xyz.libravault.core.vaultstore.VaultLockedException()
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertTrue(vm.wasLocked.value.not(), "wasLocked must start false")
+
+        vm.onPdfPageChanged(4)
+        vm.addBookmark()
+        advanceUntilIdle() // must not propagate the exception out of the coroutine
+
+        assertTrue(vm.wasLocked.value, "launchOrNoticeLock must catch VaultLockedException and flip wasLocked")
+        assertTrue(vm.bookmarks.value.isEmpty(), "a failed bookmark must not appear in state")
+    }
+
     @Test
     fun `onScrollModeChanged updates only the scroll mode field`() = runTest {
         every { sessionManager.isUnlocked("vault-1") } returns true
