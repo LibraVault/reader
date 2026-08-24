@@ -33,6 +33,12 @@ class LibravaultDomainBridge: ObservableObject {
     private var logger: LoggerBridge?
     private var ttsEngine: TTSEngineProtocol?
     private var ttsEngineType: TTSEngineType = .system
+    /// Mirrors `ttsEngineType` above: held here (not just in `AppState`) so
+    /// `switchTTSEngine(to:)` can reapply it to a freshly constructed engine
+    /// without `AppState` needing to resend it on every switch - see #506.
+    /// Only `TTSEngineBridge` (System Voice) does anything with this; a no-op
+    /// for Pocket/Cloud via `TTSEngineProtocol`'s default `setVoice`.
+    private var preferredSystemVoiceIdentifier: String?
     private var isInitialized = false
     private let persistence: ReadingDataPersistence
     /// Set once via `configureCloudTts(billingManager:)` — `LibravaultDomainBridge` is
@@ -107,10 +113,22 @@ class LibravaultDomainBridge: ObservableObject {
             await ttsEngine?.stop()
             ttsEngine = newEngine
             ttsEngineType = type
+            // Reapply the current voice selection to the freshly constructed
+            // engine - a no-op for Pocket/Cloud, real for System, so this
+            // needs no `type == .system` guard.
+            await newEngine.setVoice(identifier: preferredSystemVoiceIdentifier)
             logger?.d(tag: "TTS", message: "Switched TTS engine to \(type.rawValue)")
         } catch {
             logger?.e(tag: "TTS", message: "Failed to switch TTS engine to \(type.rawValue)", error: error)
         }
+    }
+
+    /// Sets (or clears, via `nil`) the user's preferred System Voice, applying
+    /// it to the currently active engine immediately and remembering it for
+    /// the next `switchTTSEngine(to:)` call. See #506.
+    func setPreferredSystemVoice(identifier: String?) async {
+        preferredSystemVoiceIdentifier = identifier
+        await ttsEngine?.setVoice(identifier: identifier)
     }
 
     // MARK: - Reading Operations
@@ -340,6 +358,10 @@ class LoggerBridge {
 // class from AppState.swift's playback controls.
 class TTSEngineBridge: TTSEngineProtocol {
     private let synthesizer = AVSpeechSynthesizer()
+    /// User's explicit choice from the new System Voice picker (#506), or nil
+    /// for "automatic" (the language-detected pick `voice(for:)` already did).
+    /// Set via `setVoice(identifier:)`.
+    private var preferredVoiceIdentifier: String?
 
     /// `xcodebuild test`'s CI Simulator has no real audio hardware, and
     /// AVAudioSession activation / AVSpeechSynthesizer there was confirmed (two
@@ -366,9 +388,32 @@ class TTSEngineBridge: TTSEngineProtocol {
         guard !Self.isRunningUnderXCTest, !text.isEmpty else { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = Self.scaledRate(for: rate)
-        utterance.voice = Self.voice(for: text)
+        utterance.voice = resolvedVoice(for: text)
         synthesizer.stopSpeaking(at: .immediate)
         synthesizer.speak(utterance)
+    }
+
+    func setVoice(identifier: String?) async {
+        preferredVoiceIdentifier = identifier
+    }
+
+    /// The explicit user choice, if one is set and still resolves to an
+    /// installed voice - `AVSpeechSynthesisVoice(identifier:)` returns nil for
+    /// a stale identifier (e.g. a language pack removed since the user picked
+    /// it), and that's treated the same as "no preference set" rather than
+    /// surfacing an error, matching this file's existing "degrade rather than
+    /// break speech" approach (see `switchTTSEngine`'s doc comment). Falls
+    /// through to the automatic language-detected pick otherwise.
+    ///
+    /// Internal, not private, so `TTSEngineBridgeTests` can exercise it
+    /// directly against `setVoice`'s stored state - matches this codebase's
+    /// established "pure helpers should be internal for testability"
+    /// convention (see e.g. `PocketTTSEngine.modelFileName`'s doc comment).
+    func resolvedVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        if let preferredVoiceIdentifier, let voice = AVSpeechSynthesisVoice(identifier: preferredVoiceIdentifier) {
+            return voice
+        }
+        return Self.voice(for: text)
     }
 
     /// Left unset, `AVSpeechUtterance.voice` defaults to whatever voice matches the

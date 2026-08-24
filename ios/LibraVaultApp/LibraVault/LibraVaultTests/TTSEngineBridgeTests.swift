@@ -83,4 +83,46 @@ final class TTSEngineBridgeTests: XCTestCase {
     func testVoiceForEmptyTextIsNil() {
         XCTAssertNil(TTSEngineBridge.voice(for: ""))
     }
+
+    // MARK: - Preferred voice override (#506)
+
+    func testResolvedVoiceFallsBackToAutomaticWhenNoPreferenceIsSet() async {
+        let bridge = TTSEngineBridge()
+        let english = "The quick brown fox jumps over the lazy dog near the riverbank at dawn."
+        XCTAssertEqual(bridge.resolvedVoice(for: english)?.identifier, TTSEngineBridge.voice(for: english)?.identifier)
+    }
+
+    func testResolvedVoiceUsesThePreferredIdentifierWhenSet() async throws {
+        guard let englishVoice = AVSpeechSynthesisVoice(language: "en-US") else {
+            throw XCTSkip("No en-US voice installed on this runner")
+        }
+        let bridge = TTSEngineBridge()
+        await bridge.setVoice(identifier: englishVoice.identifier)
+
+        // Deliberately pass Dutch text - if the override weren't taking
+        // priority, the automatic language-detected pick would return a
+        // Dutch voice instead, not the preferred English one.
+        let dutch = "Het was de beste tijd, het was de slechtste tijd."
+        XCTAssertEqual(bridge.resolvedVoice(for: dutch)?.identifier, englishVoice.identifier)
+    }
+
+    func testResolvedVoiceFallsBackToAutomaticForAStalePreferredIdentifier() async {
+        let bridge = TTSEngineBridge()
+        await bridge.setVoice(identifier: "not-a-real-voice-identifier")
+
+        let english = "The quick brown fox jumps over the lazy dog near the riverbank at dawn."
+        XCTAssertEqual(bridge.resolvedVoice(for: english)?.identifier, TTSEngineBridge.voice(for: english)?.identifier)
+    }
+
+    func testSetVoiceNilClearsAPreviouslySetPreference() async throws {
+        guard let englishVoice = AVSpeechSynthesisVoice(language: "en-US") else {
+            throw XCTSkip("No en-US voice installed on this runner")
+        }
+        let bridge = TTSEngineBridge()
+        await bridge.setVoice(identifier: englishVoice.identifier)
+        await bridge.setVoice(identifier: nil)
+
+        let english = "The quick brown fox jumps over the lazy dog near the riverbank at dawn."
+        XCTAssertEqual(bridge.resolvedVoice(for: english)?.identifier, TTSEngineBridge.voice(for: english)?.identifier)
+    }
 }
