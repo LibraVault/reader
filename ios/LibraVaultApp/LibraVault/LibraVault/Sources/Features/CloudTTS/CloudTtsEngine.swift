@@ -62,7 +62,8 @@ final class CloudTtsEngine: TTSEngineProtocol {
     func speak(text: String, rate: Double) async {
         activeTask?.cancel()
         let task = Task { [weak self] in
-            await self?.performSpeak(text: text, rate: rate)
+            guard let self else { return }
+            await self.performSpeak(text: text, rate: rate)
         }
         activeTask = task
         await task.value
