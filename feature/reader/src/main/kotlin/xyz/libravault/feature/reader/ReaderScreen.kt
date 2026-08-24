@@ -328,7 +328,9 @@ fun ReaderScreen(
                                     val activity = LocalContext.current as? FragmentActivity
                                     if (activity != null) {
                                         EpubReaderScreen(
-                                            fileUri           = uri,
+                                            // TODO(#505): temporary RealFile wrap, removed once this
+                                            // screen itself takes a ContentSource (commit 7).
+                                            contentSource     = ContentSource.RealFile(uri.toString()),
                                             initialCfi        = state.progress?.positionCfi,
                                             settings          = state.settings,
                                             bookmarks         = bookmarks,

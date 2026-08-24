@@ -1,6 +1,5 @@
 package xyz.libravault.feature.reader.epub
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,7 +12,10 @@ import kotlinx.coroutines.withContext
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.hexToFileId
 import javax.inject.Inject
 
 /**
@@ -32,6 +34,7 @@ import javax.inject.Inject
 @HiltViewModel
 class EpubReaderViewModel @Inject constructor(
     private val readiumProvider: ReadiumProvider,
+    private val sessionManager: VaultSessionManager,
     private val logger: LibravaultLogger,
 ) : ViewModel() {
 
@@ -81,13 +84,14 @@ class EpubReaderViewModel @Inject constructor(
         get() = (_state.value as? EpubPublicationState.Ready)?.publication?.readingOrder?.size ?: 0
 
     /**
-     * Opens the EPUB at [uri]. Idempotent — if a publication is already open
-     * for the same URI, does nothing. If a different URI is passed (e.g. on
+     * Opens the EPUB from [source] (#505 — a real file or an Encrypted Vault
+     * entry). Idempotent — if a publication is already open for the same
+     * [ContentSource], does nothing. If a different one is passed (e.g. on
      * re-use of the ViewModel), the old publication is closed first.
      */
-    fun openPublication(uri: Uri) {
+    fun openPublication(source: ContentSource) {
         val current = _state.value
-        if (current is EpubPublicationState.Ready && current.uri == uri) return
+        if (current is EpubPublicationState.Ready && current.source == source) return
 
         // Close any previously open publication before opening a new one
         if (current is EpubPublicationState.Ready) {
@@ -97,13 +101,22 @@ class EpubReaderViewModel @Inject constructor(
         _state.value = EpubPublicationState.Loading
 
         viewModelScope.launch {
-            readiumProvider.open(uri)
+            val result = when (source) {
+                is ContentSource.RealFile -> readiumProvider.open(source.uriString)
+                is ContentSource.VaultEntry -> runCatching {
+                    sessionManager.requireUnlocked(source.vaultId).openReader(source.fileIdHex.hexToFileId())
+                }.fold(
+                    onSuccess = { reader -> readiumProvider.openVaultFile(reader, source.fileIdHex) },
+                    onFailure = { Result.failure(it) },
+                )
+            }
+            result
                 .onSuccess { publication ->
                     logger.i(TAG, "Opened publication: ${publication.metadata.title}")
-                    _state.value = EpubPublicationState.Ready(uri, publication)
+                    _state.value = EpubPublicationState.Ready(source, publication)
                 }
                 .onFailure { error ->
-                    logger.e(TAG, "Failed to open publication at $uri", error)
+                    logger.e(TAG, "Failed to open publication from $source", error)
                     _state.value = if (error is DrmProtectedException) {
                         EpubPublicationState.DrmProtected(error.schemeName)
                     } else {
@@ -269,7 +282,7 @@ sealed class EpubPublicationState {
 
     /** Publication is open and ready to display. */
     data class Ready(
-        val uri: Uri,
+        val source: ContentSource,
         val publication: Publication,
     ) : EpubPublicationState()
 
