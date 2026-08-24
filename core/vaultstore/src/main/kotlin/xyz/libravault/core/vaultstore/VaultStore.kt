@@ -10,6 +10,7 @@ import xyz.libravault.core.vaultcrypto.VaultFormat
 import xyz.libravault.core.vaultcrypto.VaultKeyManager
 import java.io.File
 import java.io.InputStream
+import java.security.KeyStoreException
 import java.security.SecureRandom
 
 /** Outcome of an unlock attempt. Deliberately does not distinguish "wrong PIN"
@@ -171,6 +172,15 @@ class VaultStore(
             UnlockOutcome.Success
         } catch (e: VaultAuthenticationException) {
             UnlockOutcome.WrongCredential
+        } catch (e: KeyStoreException) {
+            // The Keystore key existed when forExisting() checked above, but was deleted
+            // before this unwrap() call ran — same failure case (implementation plan §A.4
+            // failure case (c)) as the forExisting() catch above, just lost in the race
+            // instead of caught up front. Route to the same recovery-key fallback rather
+            // than letting this escape as a raw crash. Doesn't count toward the throttle
+            // below, for the same reason the early return above doesn't: the user didn't
+            // supply a wrong credential here.
+            return@withContext UnlockOutcome.KeystoreKeyLost
         }
 
         val newFailedAttempts = if (outcome is UnlockOutcome.Success) 0 else dto.failedAttempts + 1

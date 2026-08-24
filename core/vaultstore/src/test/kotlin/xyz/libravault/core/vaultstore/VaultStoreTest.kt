@@ -10,6 +10,7 @@ import org.junit.jupiter.api.assertThrows
 import xyz.libravault.core.vaultcrypto.Argon2Params
 import xyz.libravault.core.vaultstore.testing.FakeHardwareKeyWrapFactory
 import java.io.ByteArrayInputStream
+import java.security.KeyStoreException
 import java.security.SecureRandom
 import kotlin.io.path.createTempDirectory
 
@@ -20,7 +21,7 @@ class VaultStoreTest {
     private val fastParams = Argon2Params(memoryKiB = 8 * 1024, iterations = 1, parallelism = 1)
 
     private fun newStore(
-        keyWrapFactory: FakeHardwareKeyWrapFactory = FakeHardwareKeyWrapFactory(),
+        keyWrapFactory: HardwareKeyWrapFactory = FakeHardwareKeyWrapFactory(),
         now: () -> Long = { 0L },
         usableSpace: () -> Long = { Long.MAX_VALUE / 2 },
     ): VaultStore {
@@ -144,6 +145,32 @@ class VaultStoreTest {
         store.lock()
 
         factory.forgetKey("test-vault-alias")
+
+        assertEquals(UnlockOutcome.KeystoreKeyLost, store.unlockWithPin("1234".toCharArray()))
+    }
+
+    @Test
+    fun `PIN unlock reports KeystoreKeyLost when the Keystore key is deleted between forExisting and unwrap`() = runTest {
+        // Regression guard: a KeyStoreException thrown by unwrap() itself (not by
+        // forExisting()) used to escape uncaught instead of mapping to KeystoreKeyLost —
+        // the race is the key surviving the forExisting() existence check but being
+        // deleted before the subsequent unwrap() call actually runs.
+        val factory = object : HardwareKeyWrapFactory {
+            val delegate = FakeHardwareKeyWrapFactory()
+            override fun createNew(keyAlias: String): HardwareKeyWrap = delegate.createNew(keyAlias)
+            override fun forExisting(keyAlias: String): HardwareKeyWrap {
+                delegate.forExisting(keyAlias) // key still exists at this point
+                return object : HardwareKeyWrap {
+                    override val isHardwareBacked = true
+                    override fun wrap(plaintext: ByteArray) = error("not used by this test")
+                    override fun unwrap(wrapped: WrappedBlob): ByteArray =
+                        throw KeyStoreException("key deleted mid-unlock")
+                }
+            }
+        }
+        val store = newStore(factory)
+        store.create("1234".toCharArray(), fastParams)
+        store.lock()
 
         assertEquals(UnlockOutcome.KeystoreKeyLost, store.unlockWithPin("1234".toCharArray()))
     }
