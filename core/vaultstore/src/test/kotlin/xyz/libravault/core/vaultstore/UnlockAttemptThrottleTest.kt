@@ -20,6 +20,14 @@ class UnlockAttemptThrottleTest {
     }
 
     @Test
+    fun `exactly three failures is the last free attempt, the fourth is throttled`() {
+        // Regression guard: `failedAttempts <= FREE_ATTEMPTS` used to make the first FOUR
+        // failures free (0, 1, 2, 3 all passed), contradicting FREE_ATTEMPTS = 3.
+        assertFalse(UnlockAttemptThrottle.isThrottled(2, lastAttemptEpochMillis = 1_000L, nowEpochMillis = 1_000L))
+        assertTrue(UnlockAttemptThrottle.isThrottled(3, lastAttemptEpochMillis = 1_000L, nowEpochMillis = 1_000L))
+    }
+
+    @Test
     fun `no longer throttled once enough time has passed`() {
         val delay = UnlockAttemptThrottle.remainingDelayMillis(4, lastAttemptEpochMillis = 0L, nowEpochMillis = 0L)
         assertTrue(delay > 0)
