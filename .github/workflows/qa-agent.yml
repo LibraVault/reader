@@ -111,6 +111,25 @@ jobs:
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Mint pipeline App token
+        # Moved ahead of "Run QA agent" (rather than only after it, which
+        # is where this step used to sit) — the backstop step right below
+        # now needs this available too. See that step's comment and issue
+        # #547: `gh pr ready` triggers a real `ready_for_review` event that
+        # crosses into jvm-tests.yml/ios-app-build.yml's draft-gated jobs,
+        # and GitHub Actions never creates a workflow run for that event
+        # when attributed to GITHUB_TOKEN (its own anti-recursion
+        # protection) — the same failure mode issue #433/PR #483 already
+        # fixed for dev-agent.yml's equivalent call. "Advance PR based on
+        # QA verdict" further down still needs this same token for its own
+        # cross-workflow label calls; minting it here once covers both.
+        if: steps.guard.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
       - name: Backstop — take the PR out of draft if it's still one
         # dev-agent.yml's own tail step is normally the only place that
         # calls `gh pr ready` (see .claude/agents/dev-agent.md's "mark it
@@ -127,13 +146,19 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # gh pr ready specifically needs the App token, not the default
+          # one — see this step's header comment and issue #547 (a
+          # recurrence of #433/PR #483's same bug class). The comment call
+          # right after it stays on the default token; it's not a
+          # cross-workflow-triggering call.
+          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           PR_NUMBER="${{ steps.guard.outputs.pr_number }}"
           IS_DRAFT=$(gh pr view "$PR_NUMBER" --json isDraft -q .isDraft)
           if [ "$IS_DRAFT" = "true" ]; then
             echo "PR #$PR_NUMBER is still marked draft at the QA gate — taking it out of draft (see issue #460)." >&2
-            gh pr ready "$PR_NUMBER"
+            GH_TOKEN="$APP_GH_TOKEN" gh pr ready "$PR_NUMBER"
             gh pr comment "$PR_NUMBER" --body "This PR was still marked draft when it reached \`status:needs-qa\` — normally \`dev-agent.yml\`'s own tail step calls \`gh pr ready\` before handing off, but a crashed-run recovery can skip that step (see issue #460). Took it out of draft here so the draft-gated real test/build jobs (\`jvm-tests.yml\`, \`ios-app-build.yml\`) actually run for this commit instead of silently skipping."
           fi
 
@@ -280,19 +305,10 @@ jobs:
             --allowedTools "Read,Grep,Glob,Bash,WebSearch"
             --max-turns 70
 
-      - name: Mint pipeline App token
-        # !cancelled(): must still run even if "Run QA agent" failed/crashed
-        # (see that step's continue-on-error comment) — "Advance PR" needs
-        # this token either way, to route a crash to status:needs-info just
-        # as much as a real pass/fail verdict.
-        if: steps.guard.outputs.skip != 'true' && !cancelled()
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.PIPELINE_APP_ID }}
-          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
-
       - name: Advance PR based on QA verdict
+        # steps.app-token is minted earlier now (before "Run QA agent" —
+        # see that step's comment), so it's already available here
+        # regardless of how "Run QA agent" went, including a crash.
         if: steps.guard.outputs.skip != 'true' && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
