@@ -55,13 +55,21 @@ import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
  * - `availablePlayerCommands` is the full Player.Commands set with every command we publish
  *   ourselves as a custom button removed: [Player.COMMAND_SEEK_BACK],
  *   [Player.COMMAND_SEEK_FORWARD], [Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM],
- *   [Player.COMMAND_SEEK_TO_PREVIOUS], [Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM], and
- *   [Player.COMMAND_SEEK_TO_NEXT]. Leaving these in `availablePlayerCommands` would make
- *   `PlayerWrapper.createPlaybackStateCompat` *also* derive standard `ACTION_REWIND` /
- *   `ACTION_FAST_FORWARD` / `ACTION_SKIP_TO_PREVIOUS` / `ACTION_SKIP_TO_NEXT` bits from the
- *   standard-actions bitmask, duplicating the five custom buttons below on a tile that only
- *   has room for five slots. [Player.COMMAND_PLAY_PAUSE] is kept, since the system tile's
- *   central glyph is driven by `PlaybackStateCompat.state`, not by a separate action slot.
+ *   [Player.COMMAND_SEEK_TO_PREVIOUS], [Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM],
+ *   [Player.COMMAND_SEEK_TO_NEXT], and [Player.COMMAND_PLAY_PAUSE]. Leaving these in
+ *   `availablePlayerCommands` would make `PlayerWrapper.createPlaybackStateCompat` *also*
+ *   derive standard `ACTION_REWIND` / `ACTION_FAST_FORWARD` / `ACTION_SKIP_TO_PREVIOUS` /
+ *   `ACTION_SKIP_TO_NEXT` / `ACTION_PLAY_PAUSE` bits from the standard-actions bitmask,
+ *   duplicating the five custom buttons below on a tile that only has room for five slots.
+ *   [Player.COMMAND_PLAY_PAUSE] used to be kept in, on the assumption that the system
+ *   tile's central glyph is driven by `PlaybackStateCompat.state` alone, not by a
+ *   separate action slot — issue #509 showed that assumption doesn't hold on every
+ *   device/Android version: the system additionally derived a standalone play/pause
+ *   action bit from `COMMAND_PLAY_PAUSE` being present here, producing a duplicate Play
+ *   button alongside the custom-layout's own Play/Pause button and pushing "Next" out of
+ *   the five-slot row. The central glyph still tracks `PlaybackStateCompat.state`
+ *   correctly with the command removed, since that state is set independently of
+ *   `availablePlayerCommands`.
  * - `customLayout` is the five-button strip built by [buildStandardStrip]
  *   ([Prev | −seek | PlayPause | +seek | Next]). These buttons reach
  *   `PlaybackStateCompat.customActions` (via the filter above) on the system tile.
@@ -138,7 +146,11 @@ internal class LibravaultMediaCallback(
         // AntennaPod's `addAllCommands()` on Media3 1.9. We then *remove* every command we
         // publish ourselves as a custom button in `customLayout` — leaving them in would make
         // the system tile derive standard actions for the same controls, duplicating our
-        // five custom buttons on a tile that only has room for five slots.
+        // five custom buttons on a tile that only has room for five slots. COMMAND_PLAY_PAUSE
+        // is removed too (issue #509): on some devices/Android versions the system tile
+        // derives its own standalone play/pause action bit from this command being present,
+        // duplicating the custom-layout's Play/Pause button and pushing "Next" out of the row.
+        // The tile's central glyph still tracks PlaybackStateCompat.state independently.
         val playerCommands = Player.Commands.Builder()
             .addAllCommands()
             .remove(Player.COMMAND_SEEK_BACK)
@@ -147,6 +159,7 @@ internal class LibravaultMediaCallback(
             .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
             .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
             .remove(Player.COMMAND_SEEK_TO_NEXT)
+            .remove(Player.COMMAND_PLAY_PAUSE)
             .build()
 
         val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
