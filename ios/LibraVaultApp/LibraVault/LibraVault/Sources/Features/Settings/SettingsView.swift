@@ -225,12 +225,28 @@ struct SettingsView: View {
     /// on actually being configured.
     private var ttsSection: some View {
         Section {
-            Picker("Voice", selection: $appState.ttsEngineType) {
-                ForEach(TTSEngineType.allCases.filter { $0 != .cloud }, id: \.self) { type in
-                    Text(type.displayName).tag(type)
+            if Self.showsCloudVoicesActiveLabel(engineType: appState.ttsEngineType) {
+                // Issue #495: when `.cloud` is active, its bound selection doesn't
+                // match any of the segmented Picker's own options below (`.cloud` is
+                // deliberately excluded, see #491's doc comment above), which SwiftUI
+                // renders as nothing highlighted — visually disagreeing with
+                // `CloudVoicesSection`'s own "Use Cloud Voices" toggle right below it.
+                // Swap to a fixed label instead of a picker with nothing selected.
+                HStack {
+                    Text("Voice")
+                        .foregroundStyle(LibraVaultColor.onSurface)
+                    Spacer()
+                    Text(TTSEngineType.cloud.displayName)
+                        .foregroundStyle(LibraVaultColor.onSurfaceVariant)
                 }
+            } else {
+                Picker("Voice", selection: $appState.ttsEngineType) {
+                    ForEach(TTSEngineType.allCases.filter { $0 != .cloud }, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
         } header: {
             sectionHeader("Text-to-Speech")
         } footer: {
@@ -357,6 +373,14 @@ struct SettingsView: View {
         } header: {
             sectionHeader("Support Development")
         }
+    }
+
+    /// Whether `ttsSection` should render its fixed "Cloud Voices" label instead of
+    /// the on-device engine Picker — issue #495. Extracted as a pure `static`
+    /// predicate so it's directly testable without standing up SwiftUI, matching
+    /// this file's own `appVersion` precedent (see `SettingsAppVersionTests`).
+    static func showsCloudVoicesActiveLabel(engineType: TTSEngineType) -> Bool {
+        engineType == .cloud
     }
 
     private func sectionHeader(_ title: String) -> some View {
