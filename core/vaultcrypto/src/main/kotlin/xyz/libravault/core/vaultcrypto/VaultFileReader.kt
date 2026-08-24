@@ -49,7 +49,7 @@ import java.nio.ByteBuffer
  */
 class VaultFileReader(
     file: java.io.File,
-    private val vmk: ByteArray,
+    vmk: ByteArray,
     expectedFileId: ByteArray?,
 ) : Closeable {
 
@@ -204,5 +204,10 @@ class VaultFileReader(
         return if (produced == want) result else result.copyOf(produced)
     }
 
-    override fun close() = raf.close()
+    override fun close() {
+        raf.close()
+        fileContentKey.fill(0)
+        cachedChunk?.fill(0)
+        cachedChunk = null
+    }
 }
