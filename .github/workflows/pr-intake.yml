@@ -337,14 +337,24 @@ jobs:
           pip install --quiet pyyaml
 
           ALL_PRS=$(gh pr list --state open --json number,labels,baseRefName,headRefName --limit 200)
+          # Excludes PRs carrying status:blocked, the same hard stop every
+          # other entry point in this pipeline (intake's own guard step
+          # above, dev-agent.yml, qa-agent.yml, principal-review.yml) applies
+          # before acting on a PR. Unlike sweep-missing-status's filter
+          # ("risk:* present, status:* absent entirely"), this job's filter
+          # is "any status:* present, risk:* absent" — and status:blocked is
+          # itself a status:* label, so without this exclusion a PR a human
+          # parked specifically on status:blocked would still match and get
+          # relabeled/commented on here.
           MATCHES=$(echo "$ALL_PRS" | jq -c '
             [.[] | select(
               (.labels | map(.name) | any(startswith("status:"))) and
-              (.labels | map(.name) | any(startswith("risk:")) | not)
+              (.labels | map(.name) | any(startswith("risk:")) | not) and
+              (.labels | map(.name) | any(. == "status:blocked") | not)
             )]
           ')
           COUNT=$(echo "$MATCHES" | jq 'length')
-          echo "Found $COUNT open PR(s) carrying status:* but no risk:* label."
+          echo "Found $COUNT open PR(s) carrying status:* but no risk:* label (excluding status:blocked)."
 
           if [ "$COUNT" -eq 0 ]; then
             exit 0

@@ -352,7 +352,12 @@ already carries whatever status label got it into the pipeline; this just
 backfills the classification it should already have. Also a pure
 deterministic backstop, no agent involved, and no App token needed (nothing
 in this pipeline triggers on a `risk:*` label event, see "Risk
-classification" above).
+classification" above). Its filter explicitly excludes PRs carrying
+`status:blocked` — that label is itself a `status:*` label, so without the
+exclusion a PR a human parked specifically on `status:blocked` (with no
+`risk:*` yet applied) would match "any status:* present, risk:* absent"
+and get relabeled/commented on, unlike every other entry point in this
+pipeline, which treats `status:blocked` as a hard stop.
 
 ## `claude-code-action` gotchas
 
