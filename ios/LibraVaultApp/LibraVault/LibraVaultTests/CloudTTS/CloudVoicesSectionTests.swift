@@ -119,6 +119,45 @@ final class CloudVoicesSectionTests: XCTestCase {
         XCTAssertNil(keyStore.load(provider: .openAI))
     }
 
+    // MARK: - canActivateCloudEngine (issue #491)
+
+    func testCannotActivateWhenNoProviderIsSelected() {
+        XCTAssertFalse(CloudVoicesSection.canActivateCloudEngine(
+            selectedProvider: nil, configuredProviders: [], voiceID: "alloy"
+        ))
+    }
+
+    func testCannotActivateWhenSelectedProviderIsNotConfigured() {
+        XCTAssertFalse(CloudVoicesSection.canActivateCloudEngine(
+            selectedProvider: .openAI, configuredProviders: [], voiceID: "alloy"
+        ))
+    }
+
+    func testCannotActivateWhenVoiceIDIsEmpty() {
+        XCTAssertFalse(CloudVoicesSection.canActivateCloudEngine(
+            selectedProvider: .openAI, configuredProviders: [.openAI], voiceID: ""
+        ))
+    }
+
+    func testCannotActivateWhenVoiceIDIsWhitespaceOnly() {
+        XCTAssertFalse(CloudVoicesSection.canActivateCloudEngine(
+            selectedProvider: .openAI, configuredProviders: [.openAI], voiceID: "   "
+        ))
+    }
+
+    func testCanActivateWhenSelectedProviderIsConfiguredAndVoiceIDIsSet() {
+        XCTAssertTrue(CloudVoicesSection.canActivateCloudEngine(
+            selectedProvider: .openAI, configuredProviders: [.openAI], voiceID: "alloy"
+        ))
+    }
+
+    /// A different provider being configured doesn't count — must be the SELECTED one.
+    func testCannotActivateWhenADifferentProviderIsConfiguredInstead() {
+        XCTAssertFalse(CloudVoicesSection.canActivateCloudEngine(
+            selectedProvider: .openAI, configuredProviders: [.elevenLabs], voiceID: "alloy"
+        ))
+    }
+
     // MARK: - loadConfiguredProviders
 
     func testLoadConfiguredProvidersReturnsOnlyProvidersWithSavedCredentials() throws {
