@@ -53,13 +53,37 @@ class LibravaultLogger @Inject constructor(
     fun w(tag: String, message: String, throwable: Throwable? = null) = write("W", tag, message, throwable)
     fun e(tag: String, message: String, throwable: Throwable? = null) = write("E", tag, message, throwable)
 
-    private fun write(level: String, tag: String, message: String, throwable: Throwable?) {
-        // Always log to Logcat in debug builds
-        when (level) {
-            "D" -> Log.d(TAG, "[$tag] $message")
-            "I" -> Log.i(TAG, "[$tag] $message")
-            "W" -> Log.w(TAG, "[$tag] $message", throwable)
-            "E" -> Log.e(TAG, "[$tag] $message", throwable)
+    /**
+     * [debugBuild] defaults to [BuildConfig.DEBUG] and exists as a seam so
+     * [LibravaultLoggerTest] can exercise both branches directly — Gradle
+     * only runs `testDebugUnitTest` in CI (AGENTS.md), where the real
+     * `BuildConfig.DEBUG` is always `true`, so a test relying on the actual
+     * constant could never observe the release-gated branch.
+     *
+     * Internal rather than private for exactly that reason — see AGENTS.md's
+     * "Test conventions" on marking pure helpers `internal`.
+     *
+     * The Logcat sink is a no-op entirely outside debug builds (issue #528):
+     * Logcat is a system-wide, cross-app-readable log, and book/vault
+     * content and metadata (e.g. `MetadataExtractor`'s `file.displayName`)
+     * flow through this logger. `proguard-rules.pro` also strips
+     * `android.util.Log.*` calls in release as belt-and-suspenders on top of
+     * this gate.
+     */
+    internal fun write(
+        level: String,
+        tag: String,
+        message: String,
+        throwable: Throwable?,
+        debugBuild: Boolean = BuildConfig.DEBUG,
+    ) {
+        if (debugBuild) {
+            when (level) {
+                "D" -> Log.d(TAG, "[$tag] $message")
+                "I" -> Log.i(TAG, "[$tag] $message")
+                "W" -> Log.w(TAG, "[$tag] $message", throwable)
+                "E" -> Log.e(TAG, "[$tag] $message", throwable)
+            }
         }
 
         if (!isEnabled) return
