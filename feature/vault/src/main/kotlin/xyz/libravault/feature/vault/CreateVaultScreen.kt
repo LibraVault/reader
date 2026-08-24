@@ -50,6 +50,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import xyz.libravault.core.ui.SecureScreenEffect
 
 /**
  * Create-vault wizard: name → PIN → confirm PIN → recovery key (shown once).

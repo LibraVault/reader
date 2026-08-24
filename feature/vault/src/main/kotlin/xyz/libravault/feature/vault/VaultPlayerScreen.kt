@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import xyz.libravault.core.storage.VaultScreenSecurityPreference
+import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.feature.player.components.PlaybackControls
 import xyz.libravault.feature.player.components.PlayerSeekBar
 

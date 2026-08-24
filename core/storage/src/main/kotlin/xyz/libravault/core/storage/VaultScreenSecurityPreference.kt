@@ -1,8 +1,7 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.storage
 
 import android.content.Context
 import android.content.SharedPreferences
-import xyz.libravault.core.storage.LibravaultPreferences
 
 /**
  * Reads the user's "Screen Security" setting (PRD §7.3 — `FLAG_SECURE` while
@@ -14,13 +13,18 @@ import xyz.libravault.core.storage.LibravaultPreferences
  * Gradle module. Same no-cross-module-dependency pattern
  * `feature:player`'s `SkipDurationPreference` already uses for
  * `defaultSkipDurationSec`: the key constant lives in
- * [LibravaultPreferences] (`:core:storage`, already a dependency of both
- * `feature:vault` and `feature:settings`), so there's no manual
- * cross-module constant to keep in sync.
+ * [LibravaultPreferences] (this module, already a dependency of
+ * `feature:vault`, `feature:reader`, and `feature:settings`), so there's no
+ * manual cross-module constant to keep in sync.
  *
  * Default is on (matches `UserPreferences.screenSecurityEnabled`'s default) —
  * a device with no explicit preference recorded yet gets the safer default,
  * not the weaker one.
+ *
+ * Moved here from `feature:vault` by #505 — `feature:reader` needs it too
+ * (a `ContentSource.VaultEntry`-backed `ReaderScreen` gates `SecureScreenEffect`
+ * on it the same way `feature:vault`'s screens already did), and this type
+ * has no vault-specific dependency, only [LibravaultPreferences].
  */
 object VaultScreenSecurityPreference {
 

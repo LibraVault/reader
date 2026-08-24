@@ -1,4 +1,4 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.storage
 
 import android.content.SharedPreferences
 import io.mockk.every
@@ -6,7 +6,6 @@ import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import xyz.libravault.core.storage.LibravaultPreferences
 
 class VaultScreenSecurityPreferenceTest {
 
