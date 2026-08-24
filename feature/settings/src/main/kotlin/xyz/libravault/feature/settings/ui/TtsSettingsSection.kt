@@ -62,7 +62,9 @@ fun TtsSettingsSection(
         if (engineType == TtsEngineType.POCKET_TTS) {
             HorizontalDivider()
             PocketTtsModelSection(modelStatus)
+        }
 
+        if (engineType == TtsEngineType.POCKET_TTS || engineType == TtsEngineType.ANDROID) {
             HorizontalDivider()
             VoicePickerSection(
                 voices = availableVoices,
@@ -179,7 +181,7 @@ private fun VoicePickerSection(
         )
         if (voices.isEmpty()) {
             Text(
-                text = "Voices become available once the model is ready.",
+                text = "Voices become available once the TTS engine is ready.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -210,7 +212,13 @@ private fun VoiceRadioOption(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         RadioButton(selected = isSelected, onClick = onClick)
-        Text(text = "${voice.displayName} (${voice.locale})")
+        Text(
+            text = if (voice.requiresNetwork) {
+                "${voice.displayName} (${voice.locale}) — requires network"
+            } else {
+                "${voice.displayName} (${voice.locale})"
+            },
+        )
     }
 }
 
