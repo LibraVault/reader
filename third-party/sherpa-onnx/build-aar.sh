@@ -50,5 +50,10 @@ mkdir -p empty_jar_src
 zip -r -q sherpa-onnx-android.aar AndroidManifest.xml classes.jar jni
 cp sherpa-onnx-android.aar "${SCRIPT_DIR}/sherpa-onnx-android.aar"
 
+cd "${SCRIPT_DIR}"
+sha256sum sherpa-onnx-android.aar > sherpa-onnx-android.aar.sha256
+
 echo "✓ Built AAR: ${SCRIPT_DIR}/sherpa-onnx-android.aar"
+echo "✓ Wrote provenance hash: ${SCRIPT_DIR}/sherpa-onnx-android.aar.sha256"
 echo "  Verify with: ./gradlew :core:tts:assembleDebug"
+echo "  Commit both the .aar and the updated .sha256 together."

@@ -31,7 +31,36 @@ Downloads `sherpa-onnx-vX.Y.Z-android.tar.bz2` (~45 MB), extracts the
 
 Edit `SHERPA_ONNX_VERSION` in `build-aar.sh` and rebuild. Check
 https://github.com/k2-fsa/sherpa-onnx/releases for available versions and
-confirm the `android.tar.bz2` asset exists for that tag.
+confirm the `android.tar.bz2` asset exists for that tag. Rebuilding also
+regenerates `sherpa-onnx-android.aar.sha256` (see "Provenance" below) —
+commit both files together so the hash always matches what's checked in.
+
+## Provenance
+
+`sherpa-onnx-android.aar` is a **binary blob committed to git** (~11 MB), which
+is a classic supply-chain soft spot: nothing about the repo itself proves what
+went into it. This is addressed two ways:
+
+- **Upstream source and version** are pinned in `build-aar.sh`'s
+  `SHERPA_ONNX_VERSION` (currently `v1.13.4`) and traceable to the exact
+  upstream release asset it came from — see "Building" above.
+- **Content integrity** is checked in as
+  `sherpa-onnx-android.aar.sha256` (standard `sha256sum` checksum-file format).
+  Verify the committed binary matches it at any time with:
+
+  ```bash
+  sha256sum -c sherpa-onnx-android.aar.sha256
+  ```
+
+  A mismatch means the `.aar` was modified without rebuilding via
+  `build-aar.sh` and regenerating the hash — treat that as a signal to
+  investigate before trusting the binary, not something to silently
+  re-hash away.
+
+This doesn't make the binary itself more trustworthy than sherpa-onnx's own
+GitHub Release artifact is — it makes *tampering with the committed copy*
+detectable, and keeps the upstream version this repo is actually running
+traceable instead of implicit. See issue #531.
 
 ## The voice model is separate
 
