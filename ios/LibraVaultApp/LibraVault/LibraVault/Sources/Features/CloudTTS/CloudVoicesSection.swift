@@ -118,7 +118,7 @@ struct CloudVoicesSection: View {
     private func providerRow(_ provider: CloudProviderId) -> some View {
         VStack(alignment: .leading, spacing: LibraVaultSpacing.xs) {
             Button {
-                voiceID = Self.voiceID(afterSelecting: provider, previousProvider: selectedProvider, currentVoiceID: voiceID)
+                voiceID = Self.nextVoiceID(afterSelecting: provider, previousProvider: selectedProvider, currentVoiceID: voiceID)
                 preferences.save(selectedVoiceID: voiceID.isEmpty ? nil : voiceID)
                 selectedProvider = provider
                 preferences.save(selectedProvider: provider)
@@ -185,7 +185,7 @@ struct CloudVoicesSection: View {
     /// selected provider changes" rule (`CloudVoicesSection.kt`'s field comment).
     /// Re-selecting the SAME provider (e.g. re-tapping the already-selected row) must
     /// NOT clear it.
-    static func voiceID(afterSelecting provider: CloudProviderId, previousProvider: CloudProviderId?, currentVoiceID: String) -> String {
+    static func nextVoiceID(afterSelecting provider: CloudProviderId, previousProvider: CloudProviderId?, currentVoiceID: String) -> String {
         provider == previousProvider ? currentVoiceID : ""
     }
 

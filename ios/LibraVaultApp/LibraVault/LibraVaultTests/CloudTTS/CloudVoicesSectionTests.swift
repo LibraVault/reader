@@ -20,20 +20,20 @@ final class CloudVoicesSectionTests: XCTestCase {
         XCTAssertTrue(CloudVoicesSection.isSecureField(.secretAccessKey))
     }
 
-    // MARK: - voiceID(afterSelecting:previousProvider:currentVoiceID:)
+    // MARK: - nextVoiceID(afterSelecting:previousProvider:currentVoiceID:)
 
     func testVoiceIDClearsWhenSwitchingToADifferentProvider() {
-        let result = CloudVoicesSection.voiceID(afterSelecting: .openAI, previousProvider: .elevenLabs, currentVoiceID: "rachel-123")
+        let result = CloudVoicesSection.nextVoiceID(afterSelecting: .openAI, previousProvider: .elevenLabs, currentVoiceID: "rachel-123")
         XCTAssertEqual(result, "")
     }
 
     func testVoiceIDClearsWhenSelectingAProviderForTheFirstTime() {
-        let result = CloudVoicesSection.voiceID(afterSelecting: .openAI, previousProvider: nil, currentVoiceID: "leftover")
+        let result = CloudVoicesSection.nextVoiceID(afterSelecting: .openAI, previousProvider: nil, currentVoiceID: "leftover")
         XCTAssertEqual(result, "")
     }
 
     func testVoiceIDPersistsWhenReselectingTheSameProvider() {
-        let result = CloudVoicesSection.voiceID(afterSelecting: .elevenLabs, previousProvider: .elevenLabs, currentVoiceID: "rachel-123")
+        let result = CloudVoicesSection.nextVoiceID(afterSelecting: .elevenLabs, previousProvider: .elevenLabs, currentVoiceID: "rachel-123")
         XCTAssertEqual(result, "rachel-123")
     }
 
