@@ -16,6 +16,7 @@ struct UserPreferencesPersistence {
         static let skipDurationSeconds = "xyz.libravault.skipDurationSeconds"
         static let ttsEngineType = "xyz.libravault.ttsEngineType"
         static let miniPlayerAutoHideEnabled = "xyz.libravault.miniPlayerAutoHideEnabled"
+        static let selectedSystemVoiceIdentifier = "xyz.libravault.selectedSystemVoiceIdentifier"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -64,6 +65,26 @@ struct UserPreferencesPersistence {
 
     func save(ttsEngineType: TTSEngineType) {
         defaults.set(ttsEngineType.rawValue, forKey: Key.ttsEngineType)
+    }
+
+    /// The `AVSpeechSynthesisVoice.identifier` the user picked in Settings' System
+    /// Voice picker (issue #506), or `nil` if they never picked one — `nil` (rather
+    /// than a stored default identifier) is what lets `TTSEngineBridge.voice(for:)`
+    /// keep falling back to its existing auto-detect-from-text-language behaviour for
+    /// anyone who hasn't opened the picker. Scoped to the System engine only,
+    /// deliberately a separate key from Cloud TTS's voice id
+    /// (`CloudVoicePreferences.selectedVoiceID`) — see that property's own doc comment
+    /// for why those two must never collide.
+    func loadSelectedSystemVoiceIdentifier() -> String? {
+        defaults.string(forKey: Key.selectedSystemVoiceIdentifier)
+    }
+
+    func save(selectedSystemVoiceIdentifier: String?) {
+        if let selectedSystemVoiceIdentifier {
+            defaults.set(selectedSystemVoiceIdentifier, forKey: Key.selectedSystemVoiceIdentifier)
+        } else {
+            defaults.removeObject(forKey: Key.selectedSystemVoiceIdentifier)
+        }
     }
 
     /// Whether the mini-player collapses to a small hint strip after a few seconds
