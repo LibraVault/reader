@@ -7,10 +7,13 @@ contributors don't mistake them for gaps, and so users don't ask
 
 ## Networking
 
-- **No cloud sync.** Bookmarks, highlights, and reading progress stay
-  on-device. Backup/restore via Android's device-transfer mechanism is
-  supported (see `app/src/main/res/xml/data_extraction_rules.xml`) but
-  not via Drive / iCloud / a LibraVault server.
+- **No cloud sync, no backup at all.** Bookmarks, highlights, and reading
+  progress stay on-device. `android:allowBackup="false"` in
+  `app/src/main/AndroidManifest.xml` disables both Google Drive
+  auto-backup and Android's device-transfer (phone-to-phone) migration
+  outright — there's no OS-level path to move data to a new device,
+  cloud or cable. (This is deliberate, not the same tradeoff as the
+  Coil/OkHttp note below — see #570.)
 - **Zero outbound network calls on F-Droid, and on `play`/iOS unless you
   explicitly opt into Premium Cloud TTS Voices.** `app/src/main` still
   declares no `INTERNET` permission, and F-Droid still has no
