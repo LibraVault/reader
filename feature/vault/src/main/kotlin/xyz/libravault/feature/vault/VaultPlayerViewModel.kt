@@ -38,6 +38,18 @@ private const val SKIP_MS = 30_000L
 internal fun vaultPlayerDataSourceFactory(store: VaultStore, fileId: ByteArray): VaultDataSource.Factory =
     VaultDataSource.Factory { store.openReader(fileId) }
 
+/**
+ * Pure skip-forward target computation, extracted so it's unit-testable
+ * without a real ExoPlayer. [durationMs] is `C.TIME_UNSET` (negative) while
+ * the duration isn't known yet — clamping against it would collapse the
+ * target to 0 instead of leaving the skip a no-op-sized nudge forward.
+ */
+internal fun skipForwardTarget(currentPositionMs: Long, durationMs: Long, skipMs: Long): Long {
+    val target = currentPositionMs + skipMs
+    val clamped = if (durationMs > 0) target.coerceAtMost(durationMs) else target
+    return clamped.coerceAtLeast(0)
+}
+
 data class VaultPlayerUiState(
     val title: String = "",
     val isLoading: Boolean = true,
@@ -163,7 +175,7 @@ class VaultPlayerViewModel @Inject constructor(
     }
 
     fun onSkipForward() {
-        player?.let { exo -> exo.seekTo((exo.currentPosition + SKIP_MS).coerceAtMost(exo.duration.coerceAtLeast(0))) }
+        player?.let { exo -> exo.seekTo(skipForwardTarget(exo.currentPosition, exo.duration, SKIP_MS)) }
     }
 
     /**
