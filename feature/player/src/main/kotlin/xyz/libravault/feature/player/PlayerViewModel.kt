@@ -46,6 +46,7 @@ import xyz.libravault.core.vaultstore.hexToFileId
 import xyz.libravault.feature.player.service.Chapter
 import xyz.libravault.feature.player.service.ChapterExtractor
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SleepTimer
 import xyz.libravault.feature.player.service.SleepTimerState
 import xyz.libravault.feature.player.service.VAULT_MEDIA_URI_SCHEME
@@ -515,9 +516,22 @@ class PlayerViewModel @Inject constructor(
         syncPlaybackStateHolder(isPlaying = !wasPlaying)
     }
 
+    /**
+     * Uses [SeekClamp.clamp] rather than a naive `.coerceAtMost(ctrl.duration)` —
+     * found via a merge conflict with #573, which fixed the identical bug
+     * independently in the now-deleted `VaultPlayerViewModel` (duration is
+     * `C.TIME_UNSET`, a large negative sentinel, while still buffering; clamping
+     * against it directly forces the seek target hugely negative instead of
+     * treating "unknown duration" as "no upper bound"). [SeekClamp] already
+     * existed and was already used by `LibraryViewModel`/`ReaderViewModel`'s own
+     * ±seek controls — this ViewModel's `skipForward` was the one holdout still
+     * doing the clamp inline, so this fixes a real, pre-existing (not #493-
+     * introduced) latent bug in the audiobook player screen's own seek buttons,
+     * not just vault audio.
+     */
     fun skipForward() {
         val ctrl = controller ?: return
-        ctrl.seekTo((ctrl.currentPosition + SKIP_MS).coerceAtMost(ctrl.duration))
+        ctrl.seekTo(SeekClamp.clamp(ctrl.currentPosition, SKIP_MS, ctrl.duration))
     }
 
     /**
@@ -540,7 +554,7 @@ class PlayerViewModel @Inject constructor(
 
     fun skipBack() {
         val ctrl = controller ?: return
-        ctrl.seekTo((ctrl.currentPosition - SKIP_MS).coerceAtLeast(0L))
+        ctrl.seekTo(SeekClamp.clamp(ctrl.currentPosition, -SKIP_MS, ctrl.duration))
     }
 
     fun seekTo(positionMs: Long) {
