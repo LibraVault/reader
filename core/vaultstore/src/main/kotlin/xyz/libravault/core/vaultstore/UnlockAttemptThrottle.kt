@@ -15,6 +15,13 @@ package xyz.libravault.core.vaultstore
  *
  * Pure function of ([failedAttempts], [lastAttemptEpochMillis], [nowEpochMillis])
  * — no I/O, fully unit-testable.
+ *
+ * Wall-clock based, not monotonic: an attacker with physical access to the
+ * device could roll the system clock forward to skip the backoff entirely.
+ * Accepted deliberately — the hardware Keystore/TEE binding (PRD §7.1) is
+ * the real gate here, this throttle is only ever a speed-bump on top of it
+ * (see the class doc above), so a clock-rollback bypass doesn't defeat the
+ * actual security boundary.
  */
 object UnlockAttemptThrottle {
 
@@ -29,7 +36,7 @@ object UnlockAttemptThrottle {
      *   allowed, or 0 if an attempt is allowed right now.
      */
     fun remainingDelayMillis(failedAttempts: Int, lastAttemptEpochMillis: Long, nowEpochMillis: Long): Long {
-        if (failedAttempts <= FREE_ATTEMPTS) return 0L
+        if (failedAttempts < FREE_ATTEMPTS) return 0L
         val exponent = (failedAttempts - FREE_ATTEMPTS).coerceAtMost(20) // avoid overflow in the shift
         val delay = (BASE_DELAY_MILLIS shl exponent).coerceAtMost(MAX_DELAY_MILLIS)
         val elapsed = nowEpochMillis - lastAttemptEpochMillis
