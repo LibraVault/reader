@@ -180,6 +180,35 @@ review (`circleci-job` label) surfaced #514 and #516 in the first place — both
 path works: label → dispatch job → CircleCI pipeline accepted → PR comment with the run link
 actually posts this time. Pipeline: https://app.circleci.com/pipelines/circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd
 
+### 1c. `ReaderScreenKt` design pass, resolved — 2026-08-25 (#607)
+
+§1b's "RE-SCOPED" note above deferred a decision on the top-level composable
+citing risk to the sibling-`hiltViewModel()` `ViewModelStoreOwner` sharing that
+Read Aloud's chapter-walk coordination depends on. That specific risk does not
+actually block a PlayerScreen-style split: `EpubReaderScreen`/`MarkdownReaderScreen`
+already accept `viewModel: XReaderViewModel = hiltViewModel()` as an overridable
+parameter, `hiltViewModel()` resolves by the ambient `LocalViewModelStoreOwner`
+plus type — not by which composable function lexically contains the call — so
+relocating where `epubViewModel`/`markdownViewModel` are obtained within the same
+composition subtree would not change instance identity.
+
+The decision **against** a full wrapper/pure-content split instead rests on
+testability: the `state.contentSource != null` branch needs a real
+`FragmentActivity` and renders native Readium/PDF/WebView-backed child screens,
+which nothing in `feature/reader`'s existing test suite renders under Robolectric.
+Extracting a "pure content" composable would not change that — it would still
+require the same native dependencies to render in a JVM test — so the split would
+add a large, high-risk diff for no coverage gain.
+
+Resolution: extracted the file's two remaining untested pure decision points —
+`bookmarkPositionRef` (the `onAddBookmark` ref encoding) and `resolveBookmarkTarget`
+(the `onBookmarkClick` prefix decoding, now a `BookmarkTarget` sealed type) — into
+`internal` functions with dedicated unit tests, same treatment as
+`selectReaderBottomBar`/`readAloudSupported`. `ReaderScreenKt`'s Phase 7 target is
+now closed; its top-level composable's remaining coverage gap is the render tree
+itself, gated on the native-rendering testability problem above, not on logic
+extraction.
+
 ---
 
 ## 2. Problem statement
@@ -421,7 +450,7 @@ unlocks both kinds of test at once:
 | Screen | Missed | Now | Notes |
 |---|---:|---:|---|
 | `SettingsScreenKt` | 261 | 0% | Largest 0% screen; `TtsSettingsSectionTest` proves the pattern works in this module |
-| `ReaderScreenKt` | 246 | 0% | |
+| `ReaderScreenKt` | 246 | 0% | Design pass resolved in #607 (§1c) — not split; render tree needs a real `FragmentActivity`/native readers, untestable under Robolectric either way |
 | `CreateVaultScreenKt` | 167 | 0% | Security-adjacent — do after the pattern is settled |
 | `EpubReaderScreenKt` | 149 | 0% | Heaviest state machine; may warrant logic extraction first |
 | `PdfReaderScreenKt` | 146 | 0% | |
