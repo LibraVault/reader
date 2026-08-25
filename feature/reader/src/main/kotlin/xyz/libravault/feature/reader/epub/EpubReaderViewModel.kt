@@ -425,7 +425,12 @@ internal fun chapterIndexForSpineIndex(
  * resolved spine index (or null title, meaning the TOC link itself had none) in TOC
  * order, plus every spine item's own title (used both as a per-entry title fallback and
  * to size the "no usable TOC" fallback), produces the deduped (spineIndex, title) pairs
- * in chapter order.
+ * in ascending spine order — *not* TOC-encounter order. A well-formed EPUB's nav
+ * doc/NCX already lists entries in spine order, so this is a no-op for the common case,
+ * but nothing about the EPUB spec guarantees that, and [chapterIndexForSpineIndex]'s
+ * "nearest preceding chapter" search assumes ascending order to be correct. Sorting here
+ * once, rather than trusting the input, keeps both that and Read Aloud's "next chapter"
+ * walking physical reading order even against a malformed/reordered TOC.
  *
  * Takes no Readium types so it's testable without a real `android.net.Uri` — see this
  * class's test file's note on why `Link`/`Url` aren't safely constructible in a plain
@@ -447,7 +452,7 @@ internal fun collapseTocToChapterSpec(
 
     return titleBySpineIndex.ifEmpty {
         spineTitles.indices.associateWith { i -> spineTitles[i] ?: "Chapter ${i + 1}" }
-    }.toList()
+    }.toList().sortedBy { (spineIndex, _) -> spineIndex }
 }
 
 /**

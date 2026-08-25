@@ -337,6 +337,23 @@ class EpubReaderViewModelTest {
         assertEquals(listOf(0 to "Real chapter"), result)
     }
 
+    @Test
+    fun `collapseTocToChapterSpec returns chapters in ascending spine order even when the TOC lists them out of order`() {
+        // A malformed/reordered nav doc — e.g. an appendix linked before the main
+        // chapters — must not make Read Aloud's "next chapter" walk out of the book's
+        // actual physical reading order, and chapterIndexForSpineIndex's "nearest
+        // preceding chapter" search depends on this ordering too.
+        val tocMatches = listOf(2 to "Chapter Two", 0 to "Chapter One", 1 to "Appendix (linked early)")
+        val spineTitles = listOf<String?>(null, null, null)
+
+        val result = collapseTocToChapterSpec(tocMatches, spineTitles)
+
+        assertEquals(
+            listOf(0 to "Chapter One", 1 to "Appendix (linked early)", 2 to "Chapter Two"),
+            result,
+        )
+    }
+
     // ── chapterIndexForSpineIndex (#596) ────────────────────────────────────────
 
     private fun chapterAt(spineIndex: Int) =
