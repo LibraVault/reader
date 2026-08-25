@@ -219,6 +219,12 @@ for. #606 shipped what the split *does* enable honestly instead:
   screenshotting the PDF pipeline) than this issue's scope warranted. Flagged as optional future work
   rather than attempted here.
 
+Measured result (Kover, `PdfReaderScreenKt` and its lambdas together): 146 missed / 0% before →
+138 missed, 39 covered (~22%) after. The remaining 138 missed lines are almost entirely inside
+`PdfPageImage`'s render path and the paginated/scrolling views' happy-path bodies — genuinely gated
+on real `PdfRenderer` content, i.e. exactly the part this investigation found isn't reachable here.
+`PdfReaderScreenLogicKt` (the new extraction) is 100% covered (12/12 lines).
+
 ---
 
 ## 2. Problem statement
