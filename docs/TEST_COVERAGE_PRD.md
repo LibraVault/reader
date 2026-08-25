@@ -173,12 +173,51 @@ the six targets and re-scoped a third; **Android moved 46.9% → 50.4%.**
   was already flagged in §6 as "may warrant logic extraction first"; given `ReaderScreenKt`'s
   surprise, treat `PdfReaderScreenKt`/`EpubReaderScreenKt` as similarly suspect until read — check
   for the same sibling-`hiltViewModel()`-sharing shape before assuming the template applies.
+  (`PdfReaderScreenKt` investigated and partially covered as #606 — see §1c.)
 
 **CircleCI fallback pipeline verified end-to-end, not just configured.** Triggering it during this
 review (`circleci-job` label) surfaced #514 and #516 in the first place — both fixed and merged
 (#517, #519). A second trigger against `dev` @ `b25a7b6`, after both fixes, confirmed the whole
 path works: label → dispatch job → CircleCI pipeline accepted → PR comment with the run link
 actually posts this time. Pipeline: https://app.circleci.com/pipelines/circleci/Vb3shupZ6E5XfRdygUxpfN/TirA73zRKDRhUGkRDEWJcd
+
+### 1c. PdfReaderScreenKt investigation — 2026-08-25
+
+`PdfReaderScreenKt` (#606, split from #521) has no sibling-`hiltViewModel()`-sharing shape — it takes
+a single `viewModel: PdfReaderViewModel = hiltViewModel()`, so the `ReaderScreenKt`-style blocker
+from §1b doesn't apply here. What #521's investigation flagged instead was whether Robolectric can
+actually drive `android.graphics.pdf.PdfRenderer`, since this screen's content is a native-bitmap
+pipeline unlike any other Phase 7 target. Answered empirically (this repo's Robolectric 4.12.2, `sdk
+= [34]`), not from documentation — Robolectric's own docs/issue tracker have no clear answer either
+way:
+
+- `PdfRenderer`'s constructor and `openPage` run without `UnsatisfiedLinkError` — Robolectric
+  instruments the real `android.graphics.pdf.PdfRenderer` class (visible in stack traces as
+  `PdfRenderer.$$robo$$...`) rather than stubbing or rejecting it outright.
+- But opening a real PDF — tried both a byte-exact hand-built minimal single-page PDF and a full
+  ReportLab-generated one, to rule out the file being the problem — consistently reports
+  `pageCount == 0`. The native PDF-parsing backend this class calls into isn't actually functional
+  under this Robolectric setup: no exception, just silently zero pages, for any real input.
+
+Consequence for the Phase 7 recipe: the "screenshot `XContent` in Dark/Light/Sepia" step can't apply
+to the actual rendered page content here the way it did for `SettingsScreenKt`/`CreateVaultScreenKt`
+— there's no way to get Robolectric to produce real page pixels to screenshot, and faking a bitmap
+inside the render step would mean baselining a placeholder, not the PDF pipeline this screen exists
+for. #606 shipped what the split *does* enable honestly instead:
+
+- Pure decision logic (page-index clamping, tap-zone resolution, rendered-page aspect ratio,
+  open-error messaging, page-indicator text) extracted to `PdfReaderScreenLogic.kt` and covered with
+  plain JUnit5 tests — no Robolectric needed. This extraction surfaced a real bug: page-index
+  clamping via `coerceIn(0, pageCount - 1)` throws for a validly-opened but empty (0-page) PDF,
+  since `coerceIn` rejects inverted bounds. Fixed.
+- A Robolectric Compose test for `PdfReaderScreen`'s error branch, driven through the real composable
+  and its real `DisposableEffect`/coroutine plumbing via a mocked `PdfReaderViewModel` — this doesn't
+  need working `PdfRenderer` content since the error path returns before ever touching `PdfRenderer`.
+- No Roborazzi baselines, and no bitmap-pipeline isolation refactor (e.g. injecting a fake page
+  renderer so the surrounding chrome could be screenshotted against placeholder content) — judged
+  higher-risk production surgery for a lower-value target (screenshotting a placeholder box isn't
+  screenshotting the PDF pipeline) than this issue's scope warranted. Flagged as optional future work
+  rather than attempted here.
 
 ---
 
