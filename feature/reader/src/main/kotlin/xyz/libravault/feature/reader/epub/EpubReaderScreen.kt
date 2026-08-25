@@ -123,8 +123,52 @@ fun EpubReaderScreen(
         viewModel.openPublication(contentSource)
     }
 
+    EpubReaderContent(
+        publicationState         = publicationState,
+        initialCfi               = initialCfi,
+        settings                 = settings,
+        highlights               = highlights,
+        pendingLocator           = pendingLocator,
+        onPendingLocatorConsumed = viewModel::clearPendingLocator,
+        fragmentManager          = fragmentManager,
+        onPositionChanged        = onPositionChanged,
+        onLocatorChanged         = viewModel::onLocatorChanged,
+        onCentreTap              = onCentreTap,
+        onAddHighlight           = onAddHighlight,
+    )
+}
+
+/**
+ * Pure state → UI mapping for [EpubReaderScreen], split out (docs/TEST_COVERAGE_PRD.md
+ * Phase 7) so the Idle/Loading/Error/DrmProtected branches are directly unit-testable
+ * without a Hilt [EpubReaderViewModel] or a real [FragmentManager]. Unlike `ReaderScreenKt`
+ * (see its doc comment), [EpubReaderScreen] does not itself obtain its [EpubReaderViewModel]
+ * via a sibling `hiltViewModel()` call shared with a downstream screen — that sharing lives
+ * one level up, in `ReaderScreen.kt`, which passes an already-created instance in as a plain
+ * parameter — so this extraction carries none of that risk.
+ *
+ * The [EpubPublicationState.Ready] branch stays untested at this level: it hands off to
+ * [EpubNavigatorView], whose behaviour lives almost entirely in imperative Fragment/Readium
+ * navigator wiring (`DisposableEffect` committing a real `EpubNavigatorFragment`) that
+ * Robolectric cannot meaningfully fake — the same category as the existing
+ * `androidTest`-only `ReadiumIntegrationTest`, not a JVM-testable gap.
+ */
+@Composable
+internal fun EpubReaderContent(
+    publicationState: EpubPublicationState,
+    initialCfi: String?,
+    settings: ReaderSettings,
+    highlights: List<Highlight>,
+    pendingLocator: Locator?,
+    onPendingLocatorConsumed: () -> Unit,
+    fragmentManager: FragmentManager,
+    onPositionChanged: (String) -> Unit,
+    onLocatorChanged: (Locator) -> Unit,
+    onCentreTap: () -> Unit,
+    onAddHighlight: (positionRef: String, selectedText: String, colorHex: String) -> Unit,
+) {
     Box(modifier = Modifier.fillMaxSize()) {
-        when (val ps = publicationState) {
+        when (publicationState) {
             is EpubPublicationState.Idle,
             is EpubPublicationState.Loading -> {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -132,7 +176,7 @@ fun EpubReaderScreen(
 
             is EpubPublicationState.Error -> {
                 Text(
-                    text  = "Could not open EPUB: ${ps.message}",
+                    text  = "Could not open EPUB: ${publicationState.message}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.align(Alignment.Center),
@@ -142,7 +186,7 @@ fun EpubReaderScreen(
             is EpubPublicationState.DrmProtected -> {
                 Text(
                     text  = "This book is protected and can't be opened" +
-                        (ps.schemeName?.let { " (protected by $it)" } ?: ""),
+                        (publicationState.schemeName?.let { " (protected by $it)" } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.align(Alignment.Center).padding(32.dp),
@@ -151,15 +195,15 @@ fun EpubReaderScreen(
 
             is EpubPublicationState.Ready -> {
                 EpubNavigatorView(
-                    publication              = ps.publication,
+                    publication              = publicationState.publication,
                     initialCfi               = initialCfi,
                     settings                 = settings,
                     highlights               = highlights,
                     pendingLocator           = pendingLocator,
-                    onPendingLocatorConsumed = viewModel::clearPendingLocator,
+                    onPendingLocatorConsumed = onPendingLocatorConsumed,
                     fragmentManager          = fragmentManager,
                     onPositionChanged        = onPositionChanged,
-                    onLocatorChanged         = viewModel::onLocatorChanged,
+                    onLocatorChanged         = onLocatorChanged,
                     onCentreTap              = onCentreTap,
                     onAddHighlight           = onAddHighlight,
                 )
