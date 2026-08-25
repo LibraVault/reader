@@ -1,21 +1,17 @@
 package xyz.libravault.feature.reader.markdown
 
+import xyz.libravault.core.domain.model.ReaderChapter
 import xyz.libravault.feature.reader.epub.EpubTextPreprocessor
 import xyz.libravault.feature.reader.markdown.toc.MarkdownTocExtractor
 
 /**
- * One narratable chapter — same shape purpose as iOS's `BookChapter`
- * (BookContentProvider.swift). Walked by [xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel]'s
- * Read Aloud chapter cursor (#276), the same way [xyz.libravault.feature.reader.epub.EpubReaderViewModel]
- * walks its own reading-order spine.
- */
-data class MarkdownTtsChapter(val title: String, val text: String)
-
-/**
  * Read Aloud text extraction for Markdown (#124) — converts raw Markdown source into
- * narratable [MarkdownTtsChapter]s, one per [MarkdownTocExtractor] section (the same
- * heading-delimited granularity iOS's `chaptersForNarration` uses, and the same one
+ * narratable [ReaderChapter]s (#591 Phase 1), one per [MarkdownTocExtractor] section (the
+ * same heading-delimited granularity iOS's `chaptersForNarration` uses, and the same one
  * MarkdownReaderScreen's own TOC/scroll-restore logic already splits the document by).
+ * [ReaderChapter.index] is the chapter's position in the *returned* (narratable-only) list,
+ * not its source section index — a blank/unspeakable section (code-only, table-only) is
+ * dropped entirely rather than leaving a gap.
  *
  * Originally landed text-extraction only (#124/#136) — the Android EPUB Read Aloud
  * playback path this was written to give parity with didn't exist yet at the time. It
@@ -31,15 +27,17 @@ data class MarkdownTtsChapter(val title: String, val text: String)
  */
 object MarkdownTtsTextExtractor {
 
-    fun chaptersForNarration(source: String): List<MarkdownTtsChapter> {
+    fun chaptersForNarration(source: String): List<ReaderChapter> {
         val sections = MarkdownTocExtractor.extractSections(source)
         return sections.mapNotNull { section ->
             val cleaned = EpubTextPreprocessor.clean(stripMarkdownSyntax(section.text))
-            if (cleaned.isBlank()) {
-                null
-            } else {
-                MarkdownTtsChapter(title = section.heading?.title ?: "Untitled", text = cleaned)
-            }
+            if (cleaned.isBlank()) null else (section.heading?.title ?: "Untitled") to cleaned
+        }.mapIndexed { index, (title, cleaned) ->
+            // Markdown's full text is already resolved synchronously above — unlike
+            // EPUB/PDF, there's no per-chapter I/O to defer, so textProvider just wraps
+            // the already-computed String (see ReaderChapter's doc comment on why the
+            // type is still a suspend lambda).
+            ReaderChapter(title = title, index = index, textProvider = { cleaned })
         }
     }
 
