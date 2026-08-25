@@ -83,7 +83,7 @@ fun MermaidDiagramView(
             notifyHeightReported = { px ->
                 Handler(Looper.getMainLooper()).post {
                     renderError = null
-                    heightDp = with(density) { px.toDp() }
+                    heightDp = with(density) { clampMermaidHeightPx(px).toDp() }
                 }
             },
             notifyRenderError = { message ->
@@ -126,9 +126,16 @@ fun MermaidDiagramView(
                     view: WebView,
                     request: WebResourceRequest,
                 ): WebResourceResponse? {
-                    // Anything the asset loader doesn't recognize is blocked outright
-                    // (an empty response), not allowed to fall through to WebView's
-                    // own default handling, which would attempt a real network fetch.
+                    // Anything the asset loader doesn't recognize, or that falls outside
+                    // the mermaid/ asset subfolder this page actually needs, is blocked
+                    // outright (an empty response) rather than allowed to fall through to
+                    // WebView's own default handling (a real network fetch) or served from
+                    // the full app assets root — AssetsPathHandler itself has no concept of
+                    // a scoped subfolder, so this prefix check is what confines it. See
+                    // isMermaidAssetPath's doc comment.
+                    if (!isMermaidAssetPath(request.url.path)) {
+                        return WebResourceResponse("text/plain", "utf-8", null)
+                    }
                     return assetLoader.shouldInterceptRequest(request.url)
                         ?: WebResourceResponse("text/plain", "utf-8", null)
                 }
@@ -192,6 +199,30 @@ fun MermaidDiagramView(
         )
     }
 }
+
+/**
+ * Sanity cap on `AndroidBridge.reportHeight`'s reported CSS pixel height, applied before
+ * it's converted to a Compose [Dp] height. Mermaid diagram source is untrusted Markdown
+ * content (see the class doc above), and `scrollHeight` is otherwise attacker-controllable
+ * — e.g. a gantt/sequence diagram with an absurd number of rows — with nothing in
+ * mermaid_host.html or Mermaid itself bounding it. 4000px comfortably fits any diagram a
+ * real document would contain while bounding the layout cost of a hostile one.
+ */
+internal const val MAX_MERMAID_HEIGHT_PX = 4_000f
+
+internal fun clampMermaidHeightPx(px: Float): Float = px.coerceIn(0f, MAX_MERMAID_HEIGHT_PX)
+
+/**
+ * The mermaid/ asset subfolder is the only thing this WebView's page ever needs
+ * (mermaid_host.html and mermaid.min.js, both loaded relative to it) — but
+ * [WebViewAssetLoader.AssetsPathHandler] has no built-in way to scope itself to a
+ * subfolder; registered against the "/assets/" prefix, it will happily serve *any*
+ * bundled app asset (from any module, not just this one) that a request path names.
+ * This prefix check is what actually confines the virtual origin to the mermaid/
+ * subfolder, applied before a request ever reaches the asset loader.
+ */
+internal fun isMermaidAssetPath(path: String?): Boolean =
+    path != null && path.startsWith("/assets/mermaid/")
 
 @Composable
 private fun MermaidLoading(modifier: Modifier = Modifier) {
