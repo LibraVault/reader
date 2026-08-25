@@ -1,19 +1,26 @@
 name: List TestFlight Beta Groups (diagnostic)
 
 # One-off, cheap diagnostic — no Xcode build, no IPA upload. Authenticates with
-# the same App Store Connect API key ios-testflight.yml already uses and lists
-# every beta group fastlane's own spaceship layer sees for this app: real
-# name, id, and whether it's the internal group. Exists because
-# ios-testflight.yml's `fastlane pilot upload --groups "LibraVault Alpha/Beta"`
-# has twice now (see project_testflight_group_distribution_noop_fix.md) looked
-# like it succeeded (job green, "Successfully distributed build to Internal
-# testers") while silently never reaching the external group — and fastlane's
-# own group-matching is a plain `options[:groups].include?(group.name)` exact
-# string compare that fails silently (empty result, no error) on any mismatch.
-# Run this before assuming a code fix is right, not after.
+# the same App Store Connect API key ios-testflight.yml already uses. See
+# project_testflight_external_group_intermittent_failure.md for why this
+# exists and what it already caught (a build stuck at
+# externalState=READY_FOR_BETA_SUBMISSION despite being in the right group —
+# group membership and "actually live to external testers" are different
+# states in Apple's model, and pilot's own upload-success log wording is
+# cosmetic, not proof of anything). Run this before assuming a code fix is
+# right, not after.
 
 on:
   workflow_dispatch:
+    inputs:
+      focus_build_number:
+        description: "Optional: a specific build number to inspect in extra detail (e.g. 40)"
+        required: false
+        type: string
+      focus_tester_email:
+        description: "Optional: a specific tester email to check invite/accept state for"
+        required: false
+        type: string
 
 jobs:
   list-groups:
@@ -28,6 +35,8 @@ jobs:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+          FOCUS_BUILD_NUMBER: ${{ inputs.focus_build_number }}
+          FOCUS_TESTER_EMAIL: ${{ inputs.focus_tester_email }}
         run: |
           echo "$PRIVATE_KEY" > AuthKey.p8
 
@@ -52,17 +61,11 @@ jobs:
               builds = g.fetch_builds
               puts "    build numbers in this group (#{builds.size}): " + builds.map { |b| b.version }.join(", ")
 
-              # Note::ready_for_external_testing? is broken in fastlane 2.237.0 itself
-              # (calls a method BuildBetaDetail does not define) -- do not call it.
               next if g.is_internal_group
-              # app.get_beta_testers always adds filter[:apps] = app.id itself --
-              # combined with betaGroups that is TWO relationship filters, which
-              # the API rejects outright ("Only one relationship filter can be
-              # applied"). Call the client directly with only the group filter.
               testers = Spaceship::ConnectAPI.get_beta_testers(filter: { betaGroups: g.id }).all_pages.flat_map(&:to_models)
               puts "    testers in this group (#{testers.size}):"
               testers.each do |t|
-                puts "      #{t.email} state=#{t.beta_tester_state} inviteType=#{t.invite_type}"
+                puts "      email=#{t.email.inspect} state=#{t.beta_tester_state.inspect} inviteType=#{t.invite_type.inspect} id=#{t.id}"
               end
             end
 
@@ -73,8 +76,41 @@ jobs:
               d = b.build_beta_detail
               puts "  build=#{b.version} processingState=#{b.processing_state} " \
                    "internalState=#{d&.internal_build_state} externalState=#{d&.external_build_state} " \
-                   "autoNotifyEnabled=#{d&.auto_notify_enabled} didNotify=#{d&.did_notify} " \
+                   "autoNotifyEnabled=#{d&.auto_notify_enabled} didNotify=#{d&.did_notify.inspect} " \
                    "uploadedDate=#{b.uploaded_date}"
+            end
+
+            if ENV["FOCUS_BUILD_NUMBER"] && !ENV["FOCUS_BUILD_NUMBER"].empty?
+              puts ""
+              puts "=== Focused check: build #{ENV["FOCUS_BUILD_NUMBER"]} ==="
+              focus_builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: ENV["FOCUS_BUILD_NUMBER"], limit: 5)
+              if focus_builds.empty?
+                puts "No build found with that number."
+              else
+                b = focus_builds.first
+                d = b.build_beta_detail
+                puts "id=#{b.id} version=#{b.version} processingState=#{b.processing_state}"
+                puts "internalState=#{d&.internal_build_state} externalState=#{d&.external_build_state}"
+                puts "autoNotifyEnabled=#{d&.auto_notify_enabled.inspect} didNotify=#{d&.did_notify.inspect}"
+                puts "expired=#{b.expired.inspect} expirationDate=#{b.expiration_date}"
+
+                localizations = b.get_beta_build_localizations rescue []
+                puts "beta build localizations (#{localizations.size}):"
+                localizations.each { |l| puts "  locale=#{l.locale} whatsNew=#{l.whats_new.inspect}" }
+              end
+            end
+
+            if ENV["FOCUS_TESTER_EMAIL"] && !ENV["FOCUS_TESTER_EMAIL"].empty?
+              puts ""
+              puts "=== Focused check: tester #{ENV["FOCUS_TESTER_EMAIL"]} ==="
+              testers = Spaceship::ConnectAPI.get_beta_testers(filter: { email: ENV["FOCUS_TESTER_EMAIL"] }).all_pages.flat_map(&:to_models)
+              if testers.empty?
+                puts "No tester found with that email at all (not on the app in any group)."
+              else
+                testers.each do |t|
+                  puts "email=#{t.email.inspect} state=#{t.beta_tester_state.inspect} inviteType=#{t.invite_type.inspect} isDeleted=#{t.is_deleted.inspect} id=#{t.id}"
+                end
+              end
             end
           '
 
