@@ -2,11 +2,11 @@ package xyz.libravault.core.domain.model
 
 /**
  * A single chapter/TOC entry shared across every narratable format's Read Aloud path
- * (#591 Phase 0). Markdown, EPUB, and PDF each currently produce their own unrelated
- * chapter shape ([xyz.libravault.feature.reader.markdown.MarkdownTtsChapter], Readium
- * `Link`/spine items, and nothing at all for PDF) — this is the one currency Phases 1–3
- * adapt each format onto, so the reader ViewModel and a future TOC sidebar only need to
- * deal with a single type.
+ * (#591 Phase 0). Before this, Markdown, EPUB, and PDF each produced their own unrelated
+ * chapter shape (Markdown's own now-deleted `MarkdownTtsChapter`, Readium `Link`/spine
+ * items, and nothing at all for PDF) — this is the one currency Phases 1–3 adapt each
+ * format onto (Markdown done in Phase 1, #595), so the reader ViewModel and a future TOC
+ * sidebar only need to deal with a single type.
  *
  * A book's full table of contents is just `List<ReaderChapter>`, in reading order — no
  * separate wrapper type, since a plain list already carries that and nothing here needs
