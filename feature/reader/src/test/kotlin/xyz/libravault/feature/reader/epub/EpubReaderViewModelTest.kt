@@ -276,4 +276,165 @@ class EpubReaderViewModelTest {
 
         assertNull(vm.getPreviousChapterText())
     }
+
+    // ── collapseTocToChapterSpec (#596) ─────────────────────────────────────────
+    //
+    // Pure-data logic extracted from EpubReaderViewModel.buildChapters specifically so
+    // it's testable without a real Link/Url — see the class-level comment above on why
+    // those aren't safely constructible in a plain JVM unit test here.
+
+    @Test
+    fun `collapseTocToChapterSpec keeps one chapter per TOC entry when each targets a distinct spine item`() {
+        val tocMatches = listOf(0 to "Preface", 1 to "Chapter One", 2 to "Chapter Two")
+        val spineTitles = listOf<String?>(null, null, null)
+
+        val result = collapseTocToChapterSpec(tocMatches, spineTitles)
+
+        assertEquals(listOf(0 to "Preface", 1 to "Chapter One", 2 to "Chapter Two"), result)
+    }
+
+    @Test
+    fun `collapseTocToChapterSpec collapses TOC entries landing on the same spine item, keeping the first title`() {
+        // A single "chapter1.xhtml" spine file with two nav-doc sub-headings pointing
+        // into it (different anchors, both stripped to the same spine index upstream).
+        val tocMatches = listOf(0 to "Chapter One", 0 to "Chapter One — Section 2", 1 to "Chapter Two")
+        val spineTitles = listOf<String?>(null, null)
+
+        val result = collapseTocToChapterSpec(tocMatches, spineTitles)
+
+        assertEquals(listOf(0 to "Chapter One", 1 to "Chapter Two"), result)
+    }
+
+    @Test
+    fun `collapseTocToChapterSpec falls back to one chapter per spine item when no TOC entry resolves`() {
+        val spineTitles = listOf<String?>("Cover", null, "Appendix")
+
+        val result = collapseTocToChapterSpec(emptyList(), spineTitles)
+
+        assertEquals(
+            listOf(0 to "Cover", 1 to "Chapter 2", 2 to "Appendix"),
+            result,
+        )
+    }
+
+    @Test
+    fun `collapseTocToChapterSpec falls back to the spine link's own title when the TOC entry has none`() {
+        val tocMatches = listOf<Pair<Int, String?>>(0 to null)
+        val spineTitles = listOf<String?>("Spine Title")
+
+        val result = collapseTocToChapterSpec(tocMatches, spineTitles)
+
+        assertEquals(listOf(0 to "Spine Title"), result)
+    }
+
+    @Test
+    fun `collapseTocToChapterSpec ignores a TOC match pointing outside the spine's range`() {
+        val tocMatches = listOf(5 to "Ghost chapter", 0 to "Real chapter")
+        val spineTitles = listOf<String?>(null)
+
+        val result = collapseTocToChapterSpec(tocMatches, spineTitles)
+
+        assertEquals(listOf(0 to "Real chapter"), result)
+    }
+
+    @Test
+    fun `collapseTocToChapterSpec returns chapters in ascending spine order even when the TOC lists them out of order`() {
+        // A malformed/reordered nav doc — e.g. an appendix linked before the main
+        // chapters — must not make Read Aloud's "next chapter" walk out of the book's
+        // actual physical reading order, and chapterIndexForSpineIndex's "nearest
+        // preceding chapter" search depends on this ordering too.
+        val tocMatches = listOf(2 to "Chapter Two", 0 to "Chapter One", 1 to "Appendix (linked early)")
+        val spineTitles = listOf<String?>(null, null, null)
+
+        val result = collapseTocToChapterSpec(tocMatches, spineTitles)
+
+        assertEquals(
+            listOf(0 to "Chapter One", 1 to "Appendix (linked early)", 2 to "Chapter Two"),
+            result,
+        )
+    }
+
+    // ── chapterIndexForSpineIndex (#596) ────────────────────────────────────────
+
+    private fun chapterAt(spineIndex: Int) =
+        EpubReaderViewModel.EpubChapter(
+            chapter = xyz.libravault.core.domain.model.ReaderChapter(title = "t", index = spineIndex) { "" },
+            spineIndex = spineIndex,
+        )
+
+    @Test
+    fun `chapterIndexForSpineIndex returns 0 when there are no chapters`() {
+        assertEquals(0, chapterIndexForSpineIndex(emptyList(), spineIndex = 3))
+    }
+
+    @Test
+    fun `chapterIndexForSpineIndex finds the chapter starting exactly at the given spine index`() {
+        val chapters = listOf(chapterAt(0), chapterAt(2), chapterAt(5))
+
+        assertEquals(1, chapterIndexForSpineIndex(chapters, spineIndex = 2))
+    }
+
+    @Test
+    fun `chapterIndexForSpineIndex attributes a spine item with no chapter of its own to the nearest preceding chapter`() {
+        // e.g. a cover or copyright page (spine index 1) between chapter 0 and chapter 2,
+        // neither of which has its own TOC entry.
+        val chapters = listOf(chapterAt(0), chapterAt(2), chapterAt(5))
+
+        assertEquals(0, chapterIndexForSpineIndex(chapters, spineIndex = 1))
+    }
+
+    @Test
+    fun `chapterIndexForSpineIndex attributes a spine item before the first chapter to the first chapter`() {
+        val chapters = listOf(chapterAt(2), chapterAt(5))
+
+        assertEquals(0, chapterIndexForSpineIndex(chapters, spineIndex = 0))
+    }
+
+    // ── buildTocEntries (#596) ───────────────────────────────────────────────────
+    //
+    // Same "extract the pure part" approach as collapseTocToChapterSpec — the 3-arg
+    // overload here takes a plain (Link) -> String? lambda instead of calling
+    // Publication.locatorFromLink directly, so the recursion/level/fallback-title
+    // logic is testable without a real Locator/Url.
+
+    @Test
+    fun `buildTocEntries skips a link its locator lambda can't resolve`() {
+        val link = mockk<Link>(relaxed = true)
+        every { link.title } returns "Untitled Chapter"
+
+        val result = buildTocEntries(listOf(link), level = 0) { null }
+
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun `buildTocEntries walks children depth-first, immediately after their parent`() {
+        val child = mockk<Link>(relaxed = true)
+        every { child.title } returns "Section 1.1"
+        every { child.children } returns emptyList()
+        val parent = mockk<Link>(relaxed = true)
+        every { parent.title } returns "Chapter 1"
+        every { parent.children } returns listOf(child)
+        val sibling = mockk<Link>(relaxed = true)
+        every { sibling.title } returns "Chapter 2"
+        every { sibling.children } returns emptyList()
+
+        val result = buildTocEntries(listOf(parent, sibling), level = 0) { "loc:${it.title}" }
+
+        assertEquals(
+            listOf("Chapter 1" to 0, "Section 1.1" to 1, "Chapter 2" to 0),
+            result.map { it.title to it.level },
+        )
+    }
+
+    @Test
+    fun `buildTocEntries falls back to Untitled for a link with a blank title`() {
+        val link = mockk<Link>(relaxed = true)
+        every { link.title } returns "   "
+        every { link.children } returns emptyList()
+
+        val result = buildTocEntries(listOf(link), level = 0) { "loc" }
+
+        assertEquals("Untitled", result.single().title)
+    }
 }

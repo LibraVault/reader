@@ -64,6 +64,7 @@ import xyz.libravault.core.ui.components.WarmthOverlay
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.components.BookmarksSheet
+import xyz.libravault.feature.reader.components.EpubTocSheet
 import xyz.libravault.feature.reader.components.MarkdownTocSheet
 import xyz.libravault.feature.reader.components.ReaderSettingsSheet
 import xyz.libravault.feature.reader.components.ReaderTopBar
@@ -216,6 +217,7 @@ fun ReaderScreen(
 
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
                 val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
+                val epubToc by epubViewModel.tocEntries.collectAsState()
                 // Sibling hiltViewModel(), same pattern as epubViewModel above — the
                 // instance is shared with the one MarkdownReaderScreen would otherwise
                 // create for itself (same ViewModelStoreOwner), so Read Aloud (#276) can
@@ -265,7 +267,10 @@ fun ReaderScreen(
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
-                                onShowToc       = if (format == MediaFormat.MARKDOWN || format == MediaFormat.PDF) {
+                                onShowToc       = if (format == MediaFormat.MARKDOWN ||
+                                    format == MediaFormat.EPUB ||
+                                    format == MediaFormat.PDF
+                                ) {
                                     viewModel::showToc
                                 } else {
                                     null
@@ -440,20 +445,38 @@ fun ReaderScreen(
                     }
                 }
 
-                // ── TOC sheet (Markdown headings / PDF pages, #591 Phase 3) ────
+                // ── TOC sheet (Markdown headings / EPUB nav doc / PDF pages) ───
                 if (state.showTocSheet) {
-                    MarkdownTocSheet(
-                        entries      = if (format == MediaFormat.PDF) pdfToc.value else markdownToc.value,
-                        onEntryClick = { entry ->
-                            if (format == MediaFormat.PDF) {
-                                pendingPdfPage.value = entry.sectionIndex
-                            } else {
+                    when (format) {
+                        MediaFormat.MARKDOWN -> MarkdownTocSheet(
+                            entries      = markdownToc.value,
+                            onEntryClick = { entry ->
                                 pendingMarkdownSectionIndex.value = entry.sectionIndex
-                            }
-                            viewModel.hideToc()
-                        },
-                        onDismiss    = viewModel::hideToc,
-                    )
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        MediaFormat.EPUB -> EpubTocSheet(
+                            entries      = epubToc,
+                            onEntryClick = { entry ->
+                                epubViewModel.goToLocatorJson(entry.locatorJson)
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        // PDF (#591 Phase 3) reuses MarkdownTocSheet's flat-list UI —
+                        // one entry per page, no nesting needed — rather than a third
+                        // near-identical sheet.
+                        MediaFormat.PDF -> MarkdownTocSheet(
+                            entries      = pdfToc.value,
+                            onEntryClick = { entry ->
+                                pendingPdfPage.value = entry.sectionIndex
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        else -> {}
+                    }
                 }
 
                 // ── Settings sheet ────────────────────────────────────────────
