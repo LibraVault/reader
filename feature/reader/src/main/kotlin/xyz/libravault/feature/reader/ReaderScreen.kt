@@ -125,6 +125,55 @@ fun readAloudSupported(format: MediaFormat): Boolean =
     format == MediaFormat.EPUB || format == MediaFormat.MARKDOWN || format == MediaFormat.PDF
 
 /**
+ * The position reference stored for a new bookmark, based on the format currently
+ * open. PDF and Markdown have no Readium locator to fall back on, so they encode a
+ * synthetic ref instead ("page:"/"scroll:", decoded by [resolveBookmarkTarget]); EPUB
+ * falls back to the reader's last-reported [currentLocatorJson] when no persisted
+ * progress locator exists yet (e.g. bookmarking before the navigator has reported its
+ * first position).
+ */
+internal fun bookmarkPositionRef(
+    format: MediaFormat,
+    pageIndex: Int?,
+    markdownScrollFraction: Double?,
+    positionCfi: String?,
+    currentLocatorJson: String?,
+): String? =
+    when (format) {
+        MediaFormat.PDF      -> "page:${pageIndex ?: 0}"
+        MediaFormat.MARKDOWN -> "scroll:${markdownScrollFraction ?: 0.0}"
+        else                 -> positionCfi ?: currentLocatorJson
+    }
+
+/** Where tapping a bookmark in [BookmarksSheet] should navigate, decoded from its stored positionRef. */
+internal sealed interface BookmarkTarget {
+    data class PdfPage(val pageIndex: Int) : BookmarkTarget
+    data class MarkdownScroll(val fraction: Double) : BookmarkTarget
+    data class EpubLocator(val locatorJson: String) : BookmarkTarget
+
+    /** Carried a "page:"/"scroll:" prefix, but the payload after it didn't parse. */
+    data object Malformed : BookmarkTarget
+}
+
+/**
+ * Inverse of [bookmarkPositionRef]. A prefixed ref whose payload fails to parse
+ * (corrupt data, or a future format change) resolves to [BookmarkTarget.Malformed]
+ * rather than throwing — the caller still dismisses the bookmarks sheet but skips
+ * navigating anywhere, same as the pre-extraction inline `toIntOrNull()`/
+ * `toDoubleOrNull()` behaviour this preserves.
+ */
+internal fun resolveBookmarkTarget(positionRef: String): BookmarkTarget =
+    when {
+        positionRef.startsWith("page:") ->
+            positionRef.removePrefix("page:").toIntOrNull()
+                ?.let { BookmarkTarget.PdfPage(it) } ?: BookmarkTarget.Malformed
+        positionRef.startsWith("scroll:") ->
+            positionRef.removePrefix("scroll:").toDoubleOrNull()
+                ?.let { BookmarkTarget.MarkdownScroll(it) } ?: BookmarkTarget.Malformed
+        else -> BookmarkTarget.EpubLocator(positionRef)
+    }
+
+/**
  * Entry point for the reader feature.
  * Routes to [EpubReaderScreen] or [PdfReaderScreen] based on the item's format,
  * and wraps both in a shared [Scaffold] with an animated toolbar.
@@ -280,14 +329,13 @@ fun ReaderScreen(
                                 onFontIncrease    = viewModel::increaseFontSize,
                                 showFontControls  = format != MediaFormat.PDF,
                                 onAddBookmark     = {
-                                    val ref: String? = when (format) {
-                                        MediaFormat.PDF ->
-                                            "page:${state.progress?.pageIndex ?: 0}"
-                                        MediaFormat.MARKDOWN ->
-                                            "scroll:${state.progress?.markdownScrollFraction ?: 0.0}"
-                                        else ->
-                                            state.progress?.positionCfi ?: currentLocatorJson
-                                    }
+                                    val ref = bookmarkPositionRef(
+                                        format                 = format,
+                                        pageIndex              = state.progress?.pageIndex,
+                                        markdownScrollFraction = state.progress?.markdownScrollFraction,
+                                        positionCfi            = state.progress?.positionCfi,
+                                        currentLocatorJson     = currentLocatorJson,
+                                    )
                                     ref?.let { viewModel.addBookmark(it) }
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
@@ -528,26 +576,16 @@ fun ReaderScreen(
                     BookmarksSheet(
                         bookmarks       = bookmarks,
                         onBookmarkClick = { bookmark ->
-                            when {
-                                bookmark.positionRef.startsWith("page:") -> {
-                                    bookmark.positionRef
-                                        .removePrefix("page:")
-                                        .toIntOrNull()
-                                        ?.let { pendingPdfPage.value = it }
-                                    viewModel.hideBookmarks()
-                                }
-                                bookmark.positionRef.startsWith("scroll:") -> {
-                                    bookmark.positionRef
-                                        .removePrefix("scroll:")
-                                        .toDoubleOrNull()
-                                        ?.let { pendingMarkdownScrollFraction.value = it }
-                                    viewModel.hideBookmarks()
-                                }
-                                else -> {
-                                    epubViewModel.goToLocatorJson(bookmark.positionRef)
-                                    viewModel.hideBookmarks()
-                                }
+                            when (val target = resolveBookmarkTarget(bookmark.positionRef)) {
+                                is BookmarkTarget.PdfPage ->
+                                    pendingPdfPage.value = target.pageIndex
+                                is BookmarkTarget.MarkdownScroll ->
+                                    pendingMarkdownScrollFraction.value = target.fraction
+                                is BookmarkTarget.EpubLocator ->
+                                    epubViewModel.goToLocatorJson(target.locatorJson)
+                                BookmarkTarget.Malformed -> {}
                             }
+                            viewModel.hideBookmarks()
                         },
                         onBookmarkDelete = viewModel::removeBookmark,
                         onEditNote       = viewModel::updateBookmarkNote,
