@@ -97,10 +97,8 @@ fun PdfReaderScreen(
                 val r = PdfRenderer(pfd!!)
                 renderer  = r
                 pageCount = r.pageCount
-            } catch (e: SecurityException) {
-                openError = "Permission denied — the file cannot be read from this source."
             } catch (e: Exception) {
-                openError = "Could not open the PDF: ${e.message}"
+                openError = pdfOpenErrorMessage(e)
             }
         }
         onDispose {
@@ -187,7 +185,7 @@ private fun PdfScrollingView(
     // Bookmark navigation: animate to the requested page then clear the request
     LaunchedEffect(scrollToPage) {
         if (scrollToPage != null) {
-            val target = scrollToPage.coerceIn(0, pageCount - 1)
+            val target = coercePageIndex(scrollToPage, pageCount)
             listState.animateScrollToItem(target)
             onScrollConsumed()
         }
@@ -211,7 +209,7 @@ private fun PdfScrollingView(
                 detectTapGestures { offset ->
                     val xDp = offset.x / density
                     val width = size.width / density
-                    if (xDp in (width * 0.33f)..(width * 0.67f)) onCentreTap()
+                    if (isCentreTapZone(xDp, width)) onCentreTap()
                 }
             },
     ) {
@@ -246,12 +244,12 @@ private fun PdfPaginatedView(
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
 ) {
-    var currentPage by remember { mutableIntStateOf(initialPage.coerceIn(0, pageCount - 1)) }
+    var currentPage by remember { mutableIntStateOf(coercePageIndex(initialPage, pageCount)) }
 
     // Bookmark navigation: jump directly to the requested page
     LaunchedEffect(scrollToPage) {
         if (scrollToPage != null) {
-            currentPage = scrollToPage.coerceIn(0, pageCount - 1)
+            currentPage = coercePageIndex(scrollToPage, pageCount)
             onScrollConsumed()
         }
     }
@@ -268,14 +266,10 @@ private fun PdfPaginatedView(
                 detectTapGestures { tapOffset ->
                     val xDp    = tapOffset.x / density
                     val width  = size.width / density
-                    when {
-                        xDp < width * 0.33f -> {
-                            if (currentPage > 0) currentPage--
-                        }
-                        xDp > width * 0.67f -> {
-                            if (currentPage < pageCount - 1) currentPage++
-                        }
-                        else -> onCentreTap()
+                    when (resolvePaginatedTapZone(xDp, width)) {
+                        PdfTapZone.PREVIOUS -> if (currentPage > 0) currentPage--
+                        PdfTapZone.NEXT     -> if (currentPage < pageCount - 1) currentPage++
+                        PdfTapZone.CENTRE   -> onCentreTap()
                     }
                 }
             },
@@ -299,7 +293,7 @@ private fun PdfPaginatedView(
 
         // Page indicator
         Text(
-            text  = "${currentPage + 1} / $pageCount",
+            text  = pageIndicatorText(currentPage, pageCount),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             modifier = Modifier
@@ -355,8 +349,7 @@ private fun PdfPageImage(
 
 private fun renderPage(renderer: PdfRenderer, pageIndex: Int, widthPx: Int): Bitmap {
     val page   = renderer.openPage(pageIndex)
-    val ratio  = page.height.toFloat() / page.width.toFloat()
-    val height = (widthPx * ratio).toInt()
+    val height = renderedPageHeightPx(page.width, page.height, widthPx)
 
     val bitmap = Bitmap.createBitmap(widthPx, height, Bitmap.Config.ARGB_8888)
     bitmap.eraseColor(android.graphics.Color.WHITE)
