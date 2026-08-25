@@ -1,6 +1,5 @@
 package xyz.libravault.feature.reader.epub
 
-import android.net.Uri
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import io.mockk.coEvery
@@ -22,11 +21,14 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.vaultstore.VaultSessionManager
 
 class EpubReaderViewModelTest {
 
     private val readiumProvider = mockk<ReadiumProvider>()
+    private val sessionManager = mockk<VaultSessionManager>()
     private val logger = mockk<LibravaultLogger>(relaxed = true)
 
     // Owns every ViewModel this test class creates so tearDown() can clear() them —
@@ -48,7 +50,7 @@ class EpubReaderViewModelTest {
     }
 
     private fun viewModel(): EpubReaderViewModel =
-        EpubReaderViewModel(readiumProvider, logger).also {
+        EpubReaderViewModel(readiumProvider, sessionManager, logger).also {
             viewModelStore.put(it.toString(), it)
         }
 
@@ -94,30 +96,35 @@ class EpubReaderViewModelTest {
         assertNull(vm.pendingLocator.value)
     }
 
-    // ── openPublication ───────────────────────────────────────────────────────
+    // ── openPublication (ContentSource.RealFile — #505) ─────────────────────
+    //
+    // ContentSource.RealFile.uriString is a plain String, so these tests
+    // never need to construct a real android.net.Uri — ReadiumProvider.open
+    // itself takes a String for the same reason (see its doc comment).
+    // ContentSource.VaultEntry resolution is covered separately below.
 
     @Test
     fun `openPublication moves to Ready state on success`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
+        val source = ContentSource.RealFile("content://test/book.epub")
         val publication = mockk<Publication>(relaxed = true)
         every { publication.metadata.title } returns "Test Book"
-        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+        coEvery { readiumProvider.open(source.uriString) } returns Result.success(publication)
 
         val vm = viewModel()
-        vm.openPublication(uri)
+        vm.openPublication(source)
 
         val state = vm.state.value
         assertTrue(state is EpubPublicationState.Ready, "expected Ready, got $state")
-        assertEquals(uri, (state as EpubPublicationState.Ready).uri)
+        assertEquals(source, (state as EpubPublicationState.Ready).source)
     }
 
     @Test
     fun `openPublication moves to Error state on failure`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        coEvery { readiumProvider.open(uri) } returns Result.failure(RuntimeException("corrupt epub"))
+        val source = ContentSource.RealFile("content://test/book.epub")
+        coEvery { readiumProvider.open(source.uriString) } returns Result.failure(RuntimeException("corrupt epub"))
 
         val vm = viewModel()
-        vm.openPublication(uri)
+        vm.openPublication(source)
 
         val state = vm.state.value
         assertTrue(state is EpubPublicationState.Error, "expected Error, got $state")
@@ -126,11 +133,11 @@ class EpubReaderViewModelTest {
 
     @Test
     fun `openPublication moves to DrmProtected state when the publication is DRM-restricted`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
-        coEvery { readiumProvider.open(uri) } returns Result.failure(DrmProtectedException("Adobe ADEPT"))
+        val source = ContentSource.RealFile("content://test/book.epub")
+        coEvery { readiumProvider.open(source.uriString) } returns Result.failure(DrmProtectedException("Adobe ADEPT"))
 
         val vm = viewModel()
-        vm.openPublication(uri)
+        vm.openPublication(source)
 
         val state = vm.state.value
         assertTrue(state is EpubPublicationState.DrmProtected, "expected DrmProtected, got $state")
@@ -138,17 +145,50 @@ class EpubReaderViewModelTest {
     }
 
     @Test
-    fun `openPublication is a no-op when already Ready for the same uri`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
+    fun `openPublication is a no-op when already Ready for the same source`() = runTest {
+        val source = ContentSource.RealFile("content://test/book.epub")
         val publication = mockk<Publication>(relaxed = true)
         every { publication.metadata.title } returns "Test Book"
-        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+        coEvery { readiumProvider.open(source.uriString) } returns Result.success(publication)
 
         val vm = viewModel()
-        vm.openPublication(uri)
-        vm.openPublication(uri)
+        vm.openPublication(source)
+        vm.openPublication(source)
 
-        coVerify(exactly = 1) { readiumProvider.open(uri) }
+        coVerify(exactly = 1) { readiumProvider.open(source.uriString) }
+    }
+
+    // ── openPublication (ContentSource.VaultEntry — #505) ───────────────────
+
+    @Test
+    fun `openPublication resolves a vault reader then opens it via openVaultFile`() = runTest {
+        val source = ContentSource.VaultEntry("vault-1", "aabbcc", xyz.libravault.core.domain.model.MediaFormat.EPUB)
+        val store = mockk<xyz.libravault.core.vaultstore.VaultStore>()
+        val reader = mockk<xyz.libravault.core.vaultcrypto.VaultFileReader>()
+        val publication = mockk<Publication>(relaxed = true)
+        every { publication.metadata.title } returns "Vault Book"
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        every { store.openReader(any()) } returns reader
+        coEvery { readiumProvider.openVaultFile(reader, "aabbcc") } returns Result.success(publication)
+
+        val vm = viewModel()
+        vm.openPublication(source)
+
+        val state = vm.state.value
+        assertTrue(state is EpubPublicationState.Ready, "expected Ready, got $state")
+        assertEquals(source, (state as EpubPublicationState.Ready).source)
+    }
+
+    @Test
+    fun `openPublication surfaces a locked vault as an Error state, not a crash`() = runTest {
+        val source = ContentSource.VaultEntry("vault-1", "aabbcc", xyz.libravault.core.domain.model.MediaFormat.EPUB)
+        every { sessionManager.requireUnlocked("vault-1") } throws IllegalStateException("Vault vault-1 is not unlocked")
+
+        val vm = viewModel()
+        vm.openPublication(source)
+
+        val state = vm.state.value
+        assertTrue(state is EpubPublicationState.Error, "expected Error, got $state")
     }
 
     // ── Chapter index/count + previous-chapter nav (#138) ──────────────────────
@@ -170,16 +210,16 @@ class EpubReaderViewModelTest {
 
     @Test
     fun `ttsChapterCount reflects the reading order once the publication is ready`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
+        val source = ContentSource.RealFile("content://test/book.epub")
         val publication = mockk<Publication>(relaxed = true)
         every { publication.metadata.title } returns "Test Book"
         every { publication.readingOrder } returns listOf(
             mockk<Link>(relaxed = true), mockk<Link>(relaxed = true), mockk<Link>(relaxed = true),
         )
-        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+        coEvery { readiumProvider.open(source.uriString) } returns Result.success(publication)
 
         val vm = viewModel()
-        vm.openPublication(uri)
+        vm.openPublication(source)
 
         assertEquals(3, vm.ttsChapterCount)
         assertEquals(0, vm.ttsChapterIndex)
@@ -187,17 +227,17 @@ class EpubReaderViewModelTest {
 
     @Test
     fun `getNextChapterText then getPreviousChapterText returns the cursor to where it started`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
+        val source = ContentSource.RealFile("content://test/book.epub")
         val publication = mockk<Publication>(relaxed = true)
         every { publication.metadata.title } returns "Test Book"
         every { publication.readingOrder } returns listOf(
             mockk<Link>(relaxed = true), mockk<Link>(relaxed = true),
         )
         every { publication.get(any<Link>()) } returns null
-        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+        coEvery { readiumProvider.open(source.uriString) } returns Result.success(publication)
 
         val vm = viewModel()
-        vm.openPublication(uri)
+        vm.openPublication(source)
 
         vm.getNextChapterText() // ttsSpineIndex: -1 -> 0
         assertEquals(0, vm.ttsChapterIndex)
@@ -211,17 +251,17 @@ class EpubReaderViewModelTest {
 
     @Test
     fun `getPreviousChapterText returns null and leaves the cursor unmoved at the start of the book`() = runTest {
-        val uri = mockk<Uri>(relaxed = true)
+        val source = ContentSource.RealFile("content://test/book.epub")
         val publication = mockk<Publication>(relaxed = true)
         every { publication.metadata.title } returns "Test Book"
         every { publication.readingOrder } returns listOf(
             mockk<Link>(relaxed = true), mockk<Link>(relaxed = true),
         )
         every { publication.get(any<Link>()) } returns null
-        coEvery { readiumProvider.open(uri) } returns Result.success(publication)
+        coEvery { readiumProvider.open(source.uriString) } returns Result.success(publication)
 
         val vm = viewModel()
-        vm.openPublication(uri)
+        vm.openPublication(source)
         vm.getNextChapterText() // anchors at chapter 0
 
         val previous = vm.getPreviousChapterText()

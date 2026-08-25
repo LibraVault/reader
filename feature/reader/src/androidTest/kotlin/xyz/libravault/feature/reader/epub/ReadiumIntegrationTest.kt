@@ -47,7 +47,7 @@ class ReadiumIntegrationTest {
         }
 
         val uri = Uri.fromFile(assetFile)
-        val result = readiumProvider.open(uri)
+        val result = readiumProvider.open(uri.toString())
 
         assertTrue("Expected success but got $result", result.isSuccess)
 

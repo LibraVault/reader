@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.flow.distinctUntilChanged
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.markdown.mermaid.rememberMermaidMarkdownComponents
 import xyz.libravault.feature.reader.markdown.toc.MarkdownTocExtractor
@@ -70,7 +71,7 @@ import kotlin.math.roundToInt
  * unlike the old pixel-offset version — a fraction can't become a pixel position before
  * the document's total scrollable height is known, which only happens after layout.
  *
- * @param fileUri              SAF content URI of the Markdown file.
+ * @param contentSource        A real file or a vault entry (#505).
  * @param initialScrollFraction Restored scroll position (0.0..1.0 fraction through the
  *                             document) from Room, or null if never opened.
  * @param onScrollChanged      Reports scroll position changes (as a fraction) for Room
@@ -90,7 +91,7 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun MarkdownReaderScreen(
-    fileUri: Uri,
+    contentSource: ContentSource,
     initialScrollFraction: Double?,
     settings: ReaderSettings,
     onScrollChanged: (Double) -> Unit,
@@ -103,7 +104,7 @@ fun MarkdownReaderScreen(
     vaultTreeUri: Uri? = null,
     viewModel: MarkdownReaderViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(fileUri, vaultTreeUri) { viewModel.load(fileUri, vaultTreeUri) }
+    LaunchedEffect(contentSource, vaultTreeUri) { viewModel.load(contentSource, vaultTreeUri) }
     val state by viewModel.state.collectAsState()
 
     when (val current = state) {

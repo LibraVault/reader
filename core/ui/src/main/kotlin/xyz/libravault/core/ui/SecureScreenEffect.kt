@@ -1,4 +1,4 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.ui
 
 import android.app.Activity
 import android.view.WindowManager
@@ -16,13 +16,19 @@ import androidx.compose.ui.platform.LocalContext
  * Two call shapes, both from implementation plan §A.5/PRD §7.3:
  *  - `SecureScreenEffect()` (default `enabled = true`) — used
  *    **unconditionally**, not gated on the user's "Screen Security" setting,
- *    on the recovery-key display/entry steps ([CreateVaultScreen],
- *    [UnlockVaultScreen]'s recovery-key path): those must stay secure
- *    regardless of the toggle, since the recovery key is the one thing that
- *    can never be reconstructed if leaked.
+ *    on the recovery-key display/entry steps (`feature:vault`'s
+ *    `CreateVaultScreen`, `UnlockVaultScreen`'s recovery-key path): those
+ *    must stay secure regardless of the toggle, since the recovery key is
+ *    the one thing that can never be reconstructed if leaked.
  *  - `SecureScreenEffect(enabled = VaultScreenSecurityPreference.isEnabled(context))` —
- *    the general, toggle-driven use on vault content screens
- *    ([VaultContentsScreen], [VaultReaderScreen], [VaultPlayerScreen]).
+ *    the general, toggle-driven use on any screen rendering decrypted vault
+ *    content (`feature:vault`'s `VaultContentsScreen`/`VaultPlayerScreen`,
+ *    and `feature:reader`'s `ReaderScreen` for a `ContentSource.VaultEntry`,
+ *    see issue #505).
+ *
+ * Lives in `core:ui` (moved from `feature:vault` by #505) since it has no
+ * vault-specific types and both `feature:vault` and `feature:reader` need
+ * it — pure Activity-window plumbing, not vault domain logic.
  */
 @Composable
 fun SecureScreenEffect(enabled: Boolean = true) {
@@ -44,8 +50,9 @@ fun SecureScreenEffect(enabled: Boolean = true) {
  * composition, even while another was still active.
  *
  * That is reachable on a plain navigation, not just in theory: going from
- * [VaultContentsScreen] to [VaultReaderScreen] or [VaultPlayerScreen] has both
- * destinations composed at once during the transition (both call this effect).
+ * one screen calling this effect to another (e.g. `VaultContentsScreen` to
+ * a vault-backed `ReaderScreen`) has both destinations composed at once
+ * during the transition (both call this effect).
  * The incoming screen's effect runs first, then the outgoing screen's
  * `onDispose` cleared the flag — leaving the reader or player showing
  * decrypted vault content with screenshots and recents-thumbnail capture

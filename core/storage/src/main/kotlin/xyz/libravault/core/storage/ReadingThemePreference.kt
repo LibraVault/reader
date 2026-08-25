@@ -13,7 +13,7 @@ import xyz.libravault.core.domain.model.AppReadingTheme
  * module that neither `feature:reader` nor `feature:vault` depend on. Same
  * no-cross-module-dependency pattern as
  * [xyz.libravault.feature.player.service.SkipDurationPreference] and
- * [xyz.libravault.feature.vault.VaultScreenSecurityPreference]: the key constant
+ * [VaultScreenSecurityPreference]: the key constant
  * lives in [LibravaultPreferences] (already a dependency of `feature:settings`,
  * `feature:reader` and `feature:vault`), so there is no manual cross-module
  * constant to keep in sync.

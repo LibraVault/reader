@@ -2,7 +2,7 @@ package xyz.libravault.feature.reader.pdf
 
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
-import android.net.Uri
+import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -39,12 +39,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.feature.reader.ScrollMode
 import xyz.libravault.feature.reader.ReaderSettings
 
@@ -61,18 +63,20 @@ import xyz.libravault.feature.reader.ReaderSettings
  * via [Image]. Rendered bitmaps are cached for the visible window to
  * avoid re-rendering on every recomposition.
  *
- * @param fileUri      SAF content URI of the PDF.
- * @param initialPage  Restored page index from Room — 0-based.
+ * @param contentSource A real file or a vault entry (#505) — resolved to a
+ *                       [ParcelFileDescriptor] by [PdfReaderViewModel].
+ * @param initialPage    Restored page index from Room — 0-based.
  */
 @Composable
 fun PdfReaderScreen(
-    fileUri: Uri,
+    contentSource: ContentSource,
     initialPage: Int,
     settings: ReaderSettings,
     onPageChanged: (Int) -> Unit,
     onCentreTap: () -> Unit,
     scrollToPage: Int? = null,
     onScrollConsumed: () -> Unit = {},
+    viewModel: PdfReaderViewModel = hiltViewModel(),
 ) {
     val context       = LocalContext.current
     val scope         = rememberCoroutineScope()
@@ -85,23 +89,22 @@ fun PdfReaderScreen(
     var openError   by remember { mutableStateOf<String?>(null) }
     val renderMutex = remember { Mutex() }
 
-    DisposableEffect(fileUri) {
-        var pfd: android.os.ParcelFileDescriptor? = null
-        try {
-            pfd       = context.contentResolver.openFileDescriptor(fileUri, "r")
-            if (pfd != null) {
-                val r = PdfRenderer(pfd)
+    DisposableEffect(contentSource) {
+        var pfd: ParcelFileDescriptor? = null
+        val job = scope.launch {
+            try {
+                pfd = viewModel.openFileDescriptor(contentSource)
+                val r = PdfRenderer(pfd!!)
                 renderer  = r
                 pageCount = r.pageCount
-            } else {
-                openError = "Could not open the PDF — file may be inaccessible."
+            } catch (e: SecurityException) {
+                openError = "Permission denied — the file cannot be read from this source."
+            } catch (e: Exception) {
+                openError = "Could not open the PDF: ${e.message}"
             }
-        } catch (e: SecurityException) {
-            openError = "Permission denied — the file cannot be read from this source."
-        } catch (e: Exception) {
-            openError = "Could not open the PDF: ${e.message}"
         }
         onDispose {
+            job.cancel()
             renderer?.close()
             pfd?.close()
         }

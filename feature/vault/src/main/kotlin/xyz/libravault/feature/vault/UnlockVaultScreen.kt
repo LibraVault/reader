@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
+import xyz.libravault.core.ui.SecureScreenEffect
 
 /**
  * Unlock one vault. [UnlockMode.PIN] is the default; the "use recovery key

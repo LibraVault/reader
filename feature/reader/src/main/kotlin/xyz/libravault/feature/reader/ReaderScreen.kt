@@ -1,6 +1,5 @@
 package xyz.libravault.feature.reader
 
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -39,19 +38,25 @@ import xyz.libravault.core.ui.components.GeneratedCover
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.tts.TtsStatus
 import xyz.libravault.core.ui.components.BookmarkAddedToast
@@ -127,6 +132,25 @@ fun ReaderScreen(
     val readAloud   by viewModel.readAloudState.collectAsState()
     val readAloudPlayback by viewModel.readAloudPlayback.collectAsState()
 
+    // #526 (ported here from the deleted VaultReaderScreen when #505 unified onto this
+    // screen) — re-check lock state every time this screen comes back to the
+    // foreground, same DisposableEffect+ON_RESUME idiom VaultListScreen/VaultPlayerScreen
+    // already use, since nothing else here observes VaultSessionManager continuously. A
+    // no-op for a non-vault contentSource (ReaderViewModel.checkStillUnlocked() early-
+    // returns when vaultRef is null).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentViewModel = rememberUpdatedState(viewModel)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentViewModel.value.checkStillUnlocked()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    androidx.compose.runtime.LaunchedEffect(state.wasLocked) {
+        if (state.wasLocked) onBack()
+    }
+
     // Shared scroll-to-page channel between BookmarksSheet and PdfReaderScreen.
     val pendingPdfPage = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
@@ -178,9 +202,9 @@ fun ReaderScreen(
         when {
             state.isLoading -> LoadingScreen()
             state.error != null -> ErrorScreen(state.error!!, onBack)
-            state.item != null -> {
-                val item = state.item!!
-                val uri  = Uri.parse(item.filePath)
+            state.contentSource != null -> {
+                val contentSource = state.contentSource!!
+                val format        = state.format!!
 
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
                 val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
@@ -211,13 +235,13 @@ fun ReaderScreen(
                             exit  = fadeOut() + slideOutVertically { -it },
                         ) {
                             ReaderTopBar(
-                                title             = item.title,
+                                title             = state.title,
                                 onBack            = onBack,
                                 onFontDecrease    = viewModel::decreaseFontSize,
                                 onFontIncrease    = viewModel::increaseFontSize,
-                                showFontControls  = item.format != MediaFormat.PDF,
+                                showFontControls  = format != MediaFormat.PDF,
                                 onAddBookmark     = {
-                                    val ref: String? = when (item.format) {
+                                    val ref: String? = when (format) {
                                         MediaFormat.PDF ->
                                             "page:${state.progress?.pageIndex ?: 0}"
                                         MediaFormat.MARKDOWN ->
@@ -229,17 +253,17 @@ fun ReaderScreen(
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
-                                onShowToc       = if (item.format == MediaFormat.MARKDOWN) viewModel::showToc else null,
+                                onShowToc       = if (format == MediaFormat.MARKDOWN) viewModel::showToc else null,
                                 // Read Aloud (#137/#276) — a prominent toolbar action rather
                                 // than a row buried in the settings sheet. See
                                 // ReaderTopBar.showReadAloud's doc for why.
-                                showReadAloud    = readAloudSupported(item.format),
+                                showReadAloud    = readAloudSupported(format),
                                 readAloudActive  = showReadAloudBar,
                                 onReadAloudClick = {
                                     if (showReadAloudBar) {
                                         viewModel.stopReadAloud()
                                     } else {
-                                        when (item.format) {
+                                        when (format) {
                                             MediaFormat.EPUB -> viewModel.startReadAloud(
                                                 getInitialText  = epubViewModel::getChapterTextFromProgression,
                                                 getNextText     = epubViewModel::getNextChapterText,
@@ -322,12 +346,12 @@ fun ReaderScreen(
                                     bottom = BOTTOM_BAR_HEIGHT + navBarPadding,
                                 )
                         ) {
-                            when (item.format) {
+                            when (format) {
                                 MediaFormat.EPUB -> {
                                     val activity = LocalContext.current as? FragmentActivity
                                     if (activity != null) {
                                         EpubReaderScreen(
-                                            fileUri           = uri,
+                                            contentSource     = contentSource,
                                             initialCfi        = state.progress?.positionCfi,
                                             settings          = state.settings,
                                             bookmarks         = bookmarks,
@@ -345,7 +369,7 @@ fun ReaderScreen(
 
                                 MediaFormat.PDF -> {
                                     PdfReaderScreen(
-                                        fileUri          = uri,
+                                        contentSource    = contentSource,
                                         initialPage      = state.progress?.pageIndex ?: 0,
                                         scrollToPage     = pendingPdfPage.value,
                                         onScrollConsumed = { pendingPdfPage.value = null },
@@ -357,7 +381,7 @@ fun ReaderScreen(
 
                                 MediaFormat.MARKDOWN -> {
                                     MarkdownReaderScreen(
-                                        fileUri          = uri,
+                                        contentSource    = contentSource,
                                         initialScrollFraction = state.progress?.markdownScrollFraction,
                                         scrollToFraction = pendingMarkdownScrollFraction.value,
                                         onScrollConsumed = { pendingMarkdownScrollFraction.value = null },
@@ -402,7 +426,7 @@ fun ReaderScreen(
                 if (state.showSettingsSheet) {
                     ReaderSettingsSheet(
                         settings             = state.settings,
-                        showFontControls     = item.format != MediaFormat.PDF,
+                        showFontControls     = format != MediaFormat.PDF,
                         onThemeChanged       = viewModel::onThemeChanged,
                         onFontSizeChanged    = viewModel::onFontSizeChanged,
                         onFontFamilyChanged  = viewModel::onFontFamilyChanged,
@@ -412,7 +436,7 @@ fun ReaderScreen(
                         onDismiss            = viewModel::hideSettings,
                         // Margins/justification/hyphenation (#421) — EPUB only, see
                         // ReaderSettingsSheet.showEpubLayoutControls's doc.
-                        showEpubLayoutControls = item.format == MediaFormat.EPUB,
+                        showEpubLayoutControls = format == MediaFormat.EPUB,
                         onMarginScaleChanged   = viewModel::onMarginScaleChanged,
                         onJustifyTextChanged   = viewModel::onJustifyTextChanged,
                         onHyphenationChanged   = viewModel::onHyphenationChanged,
@@ -454,8 +478,8 @@ fun ReaderScreen(
                 // ── Read Aloud Player screen (#138) ───────────────────────────
                 if (state.showReadAloudPlayer) {
                     ReadAloudPlayerScreen(
-                        title               = item.title,
-                        author              = item.author,
+                        title               = state.title,
+                        author              = state.author,
                         isPlaying           = readAloud.status == TtsStatus.PLAYING,
                         elapsedMs           = readAloudPlayback.elapsedMs,
                         durationMs          = readAloudPlayback.durationMs,

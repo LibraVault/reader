@@ -9,6 +9,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import xyz.libravault.core.vaultstore.VAULT_AUDIO_FORMAT_NAMES
+import xyz.libravault.core.vaultstore.toHexString
 import xyz.libravault.feature.library.LibraryScreen
 import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
@@ -16,12 +18,9 @@ import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
 import xyz.libravault.feature.vault.CreateVaultScreen
 import xyz.libravault.feature.vault.UnlockVaultScreen
-import xyz.libravault.feature.vault.VAULT_AUDIO_FORMAT_NAMES
 import xyz.libravault.feature.vault.VaultContentsScreen
 import xyz.libravault.feature.vault.VaultListScreen
 import xyz.libravault.feature.vault.VaultPlayerScreen
-import xyz.libravault.feature.vault.VaultReaderScreen
-import xyz.libravault.feature.vault.toHexString
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
@@ -175,7 +174,14 @@ fun LibravaultNavHost(
                 navArgument("fileId") { type = NavType.StringType },
             ),
         ) {
-            VaultReaderScreen(onBack = { navController.popBackStack() })
+            // #505 — vault EPUB/PDF/Markdown now render through the same ReaderScreen
+            // as plain files; ReaderViewModel reads vaultId/fileId off this composable's
+            // own SavedStateHandle (same Hilt nav-arg auto-population that already makes
+            // itemId/encodedUri work below), exactly like VaultReaderScreen used to.
+            ReaderScreen(
+                onBack            = { navController.popBackStack() },
+                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
+            )
         }
 
         composable(

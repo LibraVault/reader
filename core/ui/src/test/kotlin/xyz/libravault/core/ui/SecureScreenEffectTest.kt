@@ -1,4 +1,4 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.ui
 
 import android.app.Activity
 import android.view.WindowManager

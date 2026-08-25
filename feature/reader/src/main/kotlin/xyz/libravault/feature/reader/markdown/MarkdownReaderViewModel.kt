@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.MarkdownAssetResolver
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.hexToFileId
 import javax.inject.Inject
 
 /**
@@ -35,6 +38,7 @@ import javax.inject.Inject
 class MarkdownReaderViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val assetResolver: MarkdownAssetResolver,
+    private val sessionManager: VaultSessionManager,
     private val logger: LibravaultLogger,
 ) : ViewModel() {
 
@@ -55,33 +59,43 @@ class MarkdownReaderViewModel @Inject constructor(
     val ttsChapterCount: Int get() = ttsChapters.size
 
     /**
-     * Reads the Markdown file at [uri]. Idempotent — if the same URI is already
-     * loaded (or loading), does nothing. [vaultTreeUri] is the item's vault folder
-     * (null for items with no vault association, e.g. opened via external intent) —
-     * used to resolve the file's parent directory for relative image loading.
+     * Reads the Markdown file at [source] (#505 — a real file or an Encrypted
+     * Vault entry). Idempotent — if the same [ContentSource] is already loaded
+     * (or loading), does nothing. [vaultTreeUri] is the item's *unencrypted*
+     * SAF vault folder (a different, unrelated concept from
+     * [ContentSource.VaultEntry] — see the naming-collision note on
+     * [xyz.libravault.feature.reader.ReaderUiState.vaultTreeUri]; only ever
+     * non-null for [ContentSource.RealFile]) — used to resolve the file's
+     * parent directory for relative image loading.
      *
      * Returns the launched [Job] so tests can `.join()` it — the body hops onto a
      * real [Dispatchers.IO] thread for the file read, which `runTest`'s virtual
      * scheduler can't wait for automatically since it isn't a child of the test's
      * own coroutine scope.
      */
-    fun load(uri: Uri, vaultTreeUri: Uri? = null): Job {
+    fun load(source: ContentSource, vaultTreeUri: Uri? = null): Job {
         val current = _state.value
-        if (current is MarkdownPublicationState.Ready && current.uri == uri) return Job().apply { complete() }
+        if (current is MarkdownPublicationState.Ready && current.source == source) return Job().apply { complete() }
         if (current is MarkdownPublicationState.Loading) return Job().apply { complete() }
 
         _state.value = MarkdownPublicationState.Loading
 
         return viewModelScope.launch {
-            val text = withContext(Dispatchers.IO) { readText(uri) }
+            val text = withContext(Dispatchers.IO) { readText(source) }
             _state.value = if (text != null) {
-                logger.i(TAG, "Loaded Markdown file: $uri (${text.length} chars)")
-                val parentDirectory = vaultTreeUri?.let {
-                    withContext(Dispatchers.IO) { assetResolver.findParentDirectory(it, uri) }
+                logger.i(TAG, "Loaded Markdown file: $source (${text.length} chars)")
+                val parentDirectory = if (source is ContentSource.RealFile) {
+                    vaultTreeUri?.let {
+                        withContext(Dispatchers.IO) {
+                            assetResolver.findParentDirectory(it, Uri.parse(source.uriString))
+                        }
+                    }
+                } else {
+                    null // encrypted vault content: no relative-image resolution (#442 v1 scope)
                 }
-                MarkdownPublicationState.Ready(uri, text, parentDirectory)
+                MarkdownPublicationState.Ready(source, text, parentDirectory)
             } else {
-                logger.e(TAG, "Failed to read Markdown file: $uri")
+                logger.e(TAG, "Failed to read Markdown file: $source")
                 MarkdownPublicationState.Error("Couldn't read this file.")
             }
         }
@@ -128,7 +142,12 @@ class MarkdownReaderViewModel @Inject constructor(
         return chapter.text
     }
 
-    private fun readText(uri: Uri): String? = runCatching {
+    private fun readText(source: ContentSource): String? = when (source) {
+        is ContentSource.RealFile -> readRealFileText(Uri.parse(source.uriString))
+        is ContentSource.VaultEntry -> readVaultText(source)
+    }
+
+    private fun readRealFileText(uri: Uri): String? = runCatching {
         context.contentResolver.openInputStream(uri)?.use { stream ->
             // Hard cap, mirroring EpubReaderViewModel.MAX_CHAPTER_BYTES — a
             // maliciously huge "Markdown" file shouldn't be able to exhaust memory
@@ -139,6 +158,27 @@ class MarkdownReaderViewModel @Inject constructor(
                 return@runCatching null
             }
             String(bytes, Charsets.UTF_8)
+        }
+    }.getOrNull()
+
+    /**
+     * Vault-native counterpart to [readRealFileText] — a verbatim port of
+     * `VaultReaderViewModel`'s (feature:vault, deleted by #505) Markdown
+     * dispatch, plus one real fix: applies [MAX_FILE_BYTES], which that
+     * vault-only path never had.
+     */
+    private fun readVaultText(source: ContentSource.VaultEntry): String? = runCatching {
+        val store = sessionManager.requireUnlocked(source.vaultId)
+        store.openReader(source.fileIdHex.hexToFileId()).use { reader ->
+            if (reader.plainSize > MAX_FILE_BYTES) {
+                logger.w(
+                    TAG,
+                    "Vault Markdown file exceeds ${MAX_FILE_BYTES / (1024 * 1024)} MB cap " +
+                        "(${reader.plainSize} B); refusing",
+                )
+                return@runCatching null
+            }
+            reader.readAt(0L, reader.plainSize.toInt()).toString(Charsets.UTF_8)
         }
     }.getOrNull()
 

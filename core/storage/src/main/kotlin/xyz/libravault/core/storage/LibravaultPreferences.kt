@@ -11,7 +11,7 @@ package xyz.libravault.core.storage
  *
  * @see xyz.libravault.feature.settings.UserPreferencesRepository
  * @see xyz.libravault.feature.player.service.SkipDurationPreference
- * @see xyz.libravault.feature.vault.VaultScreenSecurityPreference
+ * @see VaultScreenSecurityPreference
  * @see ReadingThemePreference
  */
 object LibravaultPreferences {

@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import xyz.libravault.core.storage.VaultScreenSecurityPreference
+import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.feature.player.components.PlaybackControls
 import xyz.libravault.feature.player.components.PlayerSeekBar
 

@@ -1,7 +1,6 @@
 package xyz.libravault.feature.reader.epub
 
 import android.graphics.Color as AndroidColor
-import android.net.Uri
 import android.util.Log
 import android.view.ActionMode
 import android.view.Menu
@@ -61,6 +60,7 @@ import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import xyz.libravault.core.domain.model.Bookmark
+import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.Highlight
 import xyz.libravault.core.ui.theme.ReadingTheme
 import xyz.libravault.core.ui.theme.resolved
@@ -89,7 +89,7 @@ private val HIGHLIGHT_COLORS = listOf(
  *  - Tap routing: the navigator's [EpubNavigatorFragment.Listener.onTap] callback
  *      routes centre-third taps to [onCentreTap]; left/right are handled by Readium natively.
  *
- * @param fileUri          SAF content URI of the EPUB file.
+ * @param contentSource    A real file or a vault entry (#505).
  * @param initialCfi       Stored locator JSON from Room (or bare CFI for legacy entries).
  *                         Null if the book has never been opened before.
  * @param settings         Current reader settings (theme, font, scroll mode).
@@ -104,7 +104,7 @@ private val HIGHLIGHT_COLORS = listOf(
  */
 @Composable
 fun EpubReaderScreen(
-    fileUri: Uri,
+    contentSource: ContentSource,
     initialCfi: String?,
     settings: ReaderSettings,
     bookmarks: List<Bookmark>,
@@ -119,8 +119,8 @@ fun EpubReaderScreen(
     val pendingLocator   by viewModel.pendingLocator.collectAsState()
 
     // Open the publication when this composable first enters the composition
-    LaunchedEffect(fileUri) {
-        viewModel.openPublication(fileUri)
+    LaunchedEffect(contentSource) {
+        viewModel.openPublication(contentSource)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

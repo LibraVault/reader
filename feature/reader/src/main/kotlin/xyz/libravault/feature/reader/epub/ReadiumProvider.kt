@@ -1,7 +1,6 @@
 package xyz.libravault.feature.reader.epub
 
 import android.content.Context
-import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.services.isRestricted
@@ -10,8 +9,11 @@ import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
+import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.epub.EpubParser
+import xyz.libravault.core.vaultcontent.VaultReadiumResource
+import xyz.libravault.core.vaultcrypto.VaultFileReader
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,7 +68,11 @@ class ReadiumProvider @Inject constructor(
     )
 
     /**
-     * Opens an EPUB from a SAF content URI or file URI.
+     * Opens an EPUB from a SAF content URI or file URI, given as a plain
+     * string (matches [xyz.libravault.core.domain.model.ContentSource.RealFile.uriString] —
+     * takes a [String] rather than [android.net.Uri] so this ViewModel-facing
+     * entry point never needs a real Android `Uri` object constructed, which
+     * would be unmockable in a plain JVM unit test).
      *
      * Returns [Result.success] with the opened [Publication], or
      * [Result.failure] with a descriptive exception on any error.
@@ -74,19 +80,19 @@ class ReadiumProvider @Inject constructor(
      * Callers **must** call [Publication.close] when the publication is
      * no longer needed to free native resources held by the parser.
      */
-    suspend fun open(uri: Uri): Result<Publication> {
+    suspend fun open(uriString: String): Result<Publication> {
         // AbsoluteUrl is Readium's typed URL wrapper. Content URIs (content://)
         // and file URIs (file://) are both valid absolute URLs.
-        val url = AbsoluteUrl(uri.toString())
+        val url = AbsoluteUrl(uriString)
             ?: return Result.failure(
-                IllegalArgumentException("Cannot form an absolute URL from: $uri")
+                IllegalArgumentException("Cannot form an absolute URL from: $uriString")
             )
 
         // Step 1 — retrieve asset (detects format, wraps into Readium's Asset type)
         val asset = assetRetriever.retrieve(url)
             .getOrNull()
             ?: return Result.failure(
-                Exception("Failed to retrieve asset at $uri")
+                Exception("Failed to retrieve asset at $uriString")
             )
 
         // Step 2 — open publication (parses OPF, builds Publication object)
@@ -109,6 +115,39 @@ class ReadiumProvider @Inject constructor(
                     Exception("Failed to open publication: ${it.message}")
                 )
             }
+        )
+    }
+
+    /**
+     * Opens an EPUB from an Encrypted Vault entry (#505) — the vault-native
+     * counterpart to [open], folded in from the now-deleted
+     * `feature:vault.VaultReadiumProvider` per [VaultReadiumResource]'s own
+     * doc comment, which named this exact entry point.
+     *
+     * Uses `AssetRetriever.retrieve(Resource, MediaType)` instead of the
+     * URL-based [open] path — skips URL/`ResourceFactory` resolution
+     * entirely, so no synthetic URI scheme needs registering anywhere.
+     *
+     * [fileIdHex] is only used to build [VaultReadiumResource]'s synthetic
+     * `vault://` source URL (Readium requires one); it never leaves the
+     * device or touches anything persisted.
+     */
+    suspend fun openVaultFile(reader: VaultFileReader, fileIdHex: String): Result<Publication> {
+        val resource = VaultReadiumResource(reader, fileIdHex)
+        val asset = assetRetriever.retrieve(resource, MediaType.EPUB).getOrNull()
+            ?: return Result.failure(Exception("Failed to retrieve vault EPUB asset for $fileIdHex"))
+
+        return publicationOpener.open(asset = asset, allowUserInteraction = false).fold(
+            onSuccess = { publication ->
+                if (publication.isRestricted) {
+                    val schemeName = publication.protectionName
+                    publication.close()
+                    Result.failure(DrmProtectedException(schemeName))
+                } else {
+                    Result.success(publication)
+                }
+            },
+            onFailure = { Result.failure(Exception("Failed to open vault EPUB publication: ${it.message}")) },
         )
     }
 }
