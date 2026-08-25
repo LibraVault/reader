@@ -34,6 +34,18 @@
 -keep class androidx.pdf.** { *; }
 -dontwarn androidx.pdf.**
 
+# androidx.pdf:pdf-viewer transitively depends on com.tom-roush:pdfbox-android,
+# whose optional JPEG2000 image-filter path (JPXFilter) references
+# com.gemalto.jp2.JP2Decoder -- a separate, non-bundled JP2 codec library.
+# The app never adds that codec and never hits this path (JP2 is a rare
+# encoding for embedded PDF images), but R8 fails minifyPlayReleaseWithR8
+# outright on the unresolved reference unless told it's known-safe to skip.
+# Found 2026-08-25: this had apparently never been exercised by any real
+# assemblePlayRelease/assembleFdroidRelease build since pdf-viewer was added,
+# only surfaced when actually cutting a release build again.
+-dontwarn com.tom_roush.pdfbox.**
+-dontwarn com.gemalto.jp2.**
+
 # ── sherpa-onnx JNI (Pocket TTS) ──────────────────────────────────────────────
 # libsherpa-onnx-jni.so uses *static* JNI registration: the runtime resolves
 # each `external fun` to a symbol built from the fully-qualified class name
