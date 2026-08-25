@@ -125,4 +125,30 @@ final class TTSEngineBridgeTests: XCTestCase {
         let english = "The quick brown fox jumps over the lazy dog near the riverbank at dawn."
         XCTAssertEqual(bridge.resolvedVoice(for: english)?.identifier, TTSEngineBridge.voice(for: english)?.identifier)
     }
+
+    // MARK: - Segment-aware narration (#499 v2a Phase A)
+    //
+    // speak(segments:rate:)'s real work (SSML construction, the parse-failure
+    // fallback) is guarded behind isRunningUnderXCTest the same way
+    // speak(text:rate:) already is — real synthesis isn't practical to unit
+    // test in a headless CI Simulator. SSMLRenderer itself (the pure logic
+    // that would build the SSML string) is covered directly in
+    // SSMLRendererTests; this just confirms the entry point doesn't crash on
+    // the two edge inputs that matter here.
+
+    func testSpeakSegmentsOnEmptyArrayDoesNotCrash() async {
+        let bridge = TTSEngineBridge()
+        await bridge.speak(segments: [], rate: 1.0)
+    }
+
+    func testSpeakSegmentsOnRealSegmentsDoesNotCrash() async {
+        let bridge = TTSEngineBridge()
+        await bridge.speak(
+            segments: [
+                NarrationSegment(text: "Chapter One", kind: .heading, pauseBefore: .paragraph),
+                NarrationSegment(text: "Some emphasized text.", kind: .emphasis),
+            ],
+            rate: 1.0
+        )
+    }
 }

@@ -159,6 +159,26 @@ final class AppState: ObservableObject {
         return TtsTextNormalizer.clean(raw)
     }
 
+    /// Segment-aware counterpart to `chapterText(for:)` (#499 v2a Phase A) —
+    /// nil for EPUB/PDF chapters (Phases B/D, not built yet; `BookChapter
+    /// .segments` is empty for those, see its own doc comment), non-nil for
+    /// Markdown, whose parser already produces segments. `startPlayback`
+    /// checks this to decide which of `bridge.startSpeaking(text:)`/
+    /// `startSpeaking(segments:)` to call — nil means "no segment awareness
+    /// for this chapter, use the flat-text path exactly as before".
+    ///
+    /// Each segment's own `.text` is cleaned individually via the same
+    /// `TtsTextNormalizer` the flat-text path uses — its regexes are
+    /// per-string, not dependent on segment boundaries lining up with its
+    /// own line/paragraph assumptions, so running it per-segment rather than
+    /// on one joined string is safe and keeps segment boundaries intact.
+    private func chapterSegments(for chapter: Int) -> [NarrationSegment]? {
+        guard let nowPlayingChapters, !nowPlayingChapters.isEmpty else { return nil }
+        let bookChapter = nowPlayingChapters[(chapter - 1) % nowPlayingChapters.count]
+        guard !bookChapter.segments.isEmpty else { return nil }
+        return bookChapter.segments.map { $0.cleaned(via: TtsTextNormalizer.clean) }
+    }
+
     /// Set by PlayerView's onAppear/onDisappear so the global mini-player can hide
     /// itself while the full Player screen is already showing the same controls.
     @Published var isPlayerScreenActive = false
@@ -628,7 +648,14 @@ final class AppState: ObservableObject {
             let text = chapterText(for: nowPlayingChapter)
             totalEstimatedSeconds = Self.estimateDuration(for: text, speed: playbackSpeed)
             elapsedSeconds = 0
-            Task { try? await bridge.startSpeaking(text: text, rate: playbackSpeed) }
+            // Segments (#499 v2a Phase A) when the current chapter has them
+            // (Markdown today), otherwise the flat-text path exactly as
+            // before (EPUB/PDF — Phases B/D, not built yet).
+            if let segments = chapterSegments(for: nowPlayingChapter) {
+                Task { try? await bridge.startSpeaking(segments: segments, rate: playbackSpeed) }
+            } else {
+                Task { try? await bridge.startSpeaking(text: text, rate: playbackSpeed) }
+            }
             startTimer()
         }
     }

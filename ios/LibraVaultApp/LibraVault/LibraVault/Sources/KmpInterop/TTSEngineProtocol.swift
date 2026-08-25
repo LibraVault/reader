@@ -23,10 +23,26 @@ protocol TTSEngineProtocol: AnyObject {
     /// Only `TTSEngineBridge` (System Voice) does anything with this today -
     /// see #506.
     func setVoice(identifier: String?) async
+
+    /// Segment-aware narration (#499 v2a Phase A) — carries prosody hints
+    /// (pause/emphasis) derived from source document structure, instead of
+    /// the one flat `String` `speak(text:rate:)` gets. Only `TTSEngineBridge`
+    /// (System Voice) can do anything real with this today, by rendering to
+    /// SSML — see its own override. Pocket TTS has no markup lever at all in
+    /// its bound API (issue #638) and Cloud isn't in scope for this phase, so
+    /// both fall through to the default extension below, which just narrates
+    /// the segments' flattened plain text exactly as `speak(text:rate:)`
+    /// already would have — never a regression for either engine, just no
+    /// new capability yet.
+    func speak(segments: [NarrationSegment], rate: Double) async
 }
 
 extension TTSEngineProtocol {
     func setVoice(identifier: String?) async {}
+
+    func speak(segments: [NarrationSegment], rate: Double) async {
+        await speak(text: segments.plainText, rate: rate)
+    }
 }
 
 /// Mirrors Android's `TtsEngineType` (core/tts/TtsEngineFactory.kt). `.cloud` added for

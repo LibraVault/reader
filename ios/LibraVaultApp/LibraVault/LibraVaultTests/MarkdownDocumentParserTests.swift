@@ -315,6 +315,113 @@ final class MarkdownDocumentParserTests: XCTestCase {
         XCTAssertEqual(chapters[0].text, "Preamble text.")
         XCTAssertEqual(chapters[1].text, "First Heading\n\nBody.")
     }
+
+    // MARK: - Narration segments (#499 v2a Phase A)
+
+    func testHeadingProducesAHeadingKindSegmentWithAParagraphPause() {
+        let blocks = MarkdownDocumentParser.parse("# Chapter One")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        XCTAssertEqual(chapters.first?.segments, [
+            NarrationSegment(text: "Chapter One", kind: .heading, pauseBefore: .paragraph),
+        ])
+    }
+
+    func testEmphasisRunsSplitIntoTheirOwnSegmentDistinctFromSurroundingPlainText() {
+        let blocks = MarkdownDocumentParser.parse("# T\n*emph* text and **bold** text")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        // Heading segment first (its own test above), then the paragraph's
+        // runs split at each emphasis-state boundary. The paragraph's own
+        // first segment ("emph") picks up a .paragraph pause since it's a
+        // new top-level block following the heading — only the *internal*
+        // emphasis-state splits within the same paragraph stay .none.
+        let bodySegments = chapters.first?.segments.dropFirst() ?? []
+        XCTAssertEqual(Array(bodySegments), [
+            NarrationSegment(text: "emph", kind: .emphasis, pauseBefore: .paragraph),
+            NarrationSegment(text: " text and ", kind: .plain, pauseBefore: .none),
+            NarrationSegment(text: "bold", kind: .emphasis, pauseBefore: .none),
+            NarrationSegment(text: " text", kind: .plain, pauseBefore: .none),
+        ])
+    }
+
+    func testBlockQuoteContentIsKindQuoteWithAParagraphPauseOnEntry() {
+        let blocks = MarkdownDocumentParser.parse("# T\n> Wise words here.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        let quoteSegment = chapters.first?.segments.last
+        XCTAssertEqual(quoteSegment, NarrationSegment(text: "Wise words here.", kind: .quote, pauseBefore: .paragraph))
+    }
+
+    func testMultiParagraphBlockQuoteGetsAParagraphPauseBetweenItsOwnParagraphsToo() {
+        // Regression coverage for the same "block-to-block transition with no
+        // pause hint runs the two together" bug the top-level chapter loop
+        // guards against — blockQuote's own nested paragraphs go through
+        // joinedSegments for exactly this reason.
+        let blocks = MarkdownDocumentParser.parse("# T\n> Para one.\n>\n> Para two.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        let quoteSegments = chapters.first?.segments.dropFirst() ?? []
+        XCTAssertEqual(Array(quoteSegments), [
+            NarrationSegment(text: "Para one.", kind: .quote, pauseBefore: .paragraph),
+            NarrationSegment(text: "Para two.", kind: .quote, pauseBefore: .paragraph),
+        ])
+    }
+
+    func testThematicBreakAttachesASceneBreakPauseToTheNextSegmentInsteadOfBeingDropped() {
+        // The exact gap #499's design writeup flagged: narrationText(for:)
+        // returns nil for .thematicBreak, silently dropping the scene-break
+        // signal entirely. narrationSegments (via chaptersForNarration)
+        // should instead carry it forward onto whatever comes next.
+        let blocks = MarkdownDocumentParser.parse("# T\nBefore rule.\n\n---\n\nAfter rule.")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        let segments = chapters.first?.segments ?? []
+        // "Before rule." is a new top-level paragraph following the heading,
+        // so it carries its own .paragraph pause — the scene break's signal
+        // is specifically that "After rule." gets the *stronger* .sceneBreak
+        // instead of the .paragraph it would otherwise have gotten too.
+        XCTAssertTrue(segments.contains(NarrationSegment(text: "Before rule.", kind: .plain, pauseBefore: .paragraph)))
+        XCTAssertTrue(segments.contains(NarrationSegment(text: "After rule.", kind: .plain, pauseBefore: .sceneBreak)))
+    }
+
+    func testListItemsGetASentencePauseBetweenThemMirroringTheFlatTextJoiner() {
+        let blocks = MarkdownDocumentParser.parse("# T\n- First\n- Second")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        // "First" (the list's own first segment) carries .paragraph — the
+        // list itself is a new top-level block following the heading, same
+        // as any other top-level block would. "Second" carries the .sentence
+        // pause that's specific to being a later item within the same list.
+        let listSegments = chapters.first?.segments.dropFirst() ?? []
+        XCTAssertEqual(Array(listSegments), [
+            NarrationSegment(text: "First", kind: .plain, pauseBefore: .paragraph),
+            NarrationSegment(text: "Second", kind: .plain, pauseBefore: .sentence),
+        ])
+    }
+
+    func testCodeBlocksTablesThematicBreaksProduceNoSegmentsOfTheirOwn() {
+        let blocks = MarkdownDocumentParser.parse("# T\n```\nsome code\n```")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        // Only the heading segment — the code block contributes nothing.
+        XCTAssertEqual(chapters.first?.segments.count, 1)
+    }
+
+    func testImageAltTextBecomesAPlainSegment() {
+        let blocks = MarkdownDocumentParser.parse("# Photo\n![A sunset over the ocean](./sunset.png)")
+        let chapters = MarkdownDocumentParser.chaptersForNarration(from: blocks)
+
+        // .paragraph, not .none — it's a new top-level block following the
+        // heading, same top-level normalization every other block gets.
+        XCTAssertTrue(chapters.first?.segments.contains(
+            NarrationSegment(text: "A sunset over the ocean", kind: .plain, pauseBefore: .paragraph)
+        ) ?? false)
+    }
+
+    func testEmptyDocumentProducesNoSegments() {
+        XCTAssertTrue(MarkdownDocumentParser.chaptersForNarration(from: []).isEmpty)
+    }
 }
 
 private extension Array {
