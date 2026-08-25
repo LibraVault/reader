@@ -434,6 +434,8 @@ fun ReaderScreen(
                         onScrollModeChanged  = viewModel::onScrollModeChanged,
                         onWarmthChanged      = viewModel::onWarmthChanged,
                         onDismiss            = viewModel::hideSettings,
+                        onAutoScrollEnabledChanged = viewModel::onAutoScrollEnabledChanged,
+                        onAutoScrollSpeedChanged   = viewModel::onAutoScrollSpeedChanged,
                         // Margins/justification/hyphenation (#421) — EPUB only, see
                         // ReaderSettingsSheet.showEpubLayoutControls's doc.
                         showEpubLayoutControls = format == MediaFormat.EPUB,
