@@ -7,9 +7,8 @@ import org.junit.jupiter.api.Test
 
 /**
  * Unit tests for [MarkdownTtsTextExtractor] — the Markdown-syntax-stripping half of
- * #124's text-extraction layer. See that object's own doc comment for why this is not
- * (yet) wired into a real playback path on Android, unlike its iOS counterpart in the
- * same change.
+ * #124's text-extraction layer, wired into a real playback path via #276 and rebuilt
+ * onto the shared [xyz.libravault.core.domain.model.ReaderChapter] model in #591 Phase 1.
  */
 class MarkdownTtsTextExtractorTest {
 
@@ -47,6 +46,30 @@ class MarkdownTtsTextExtractorTest {
         // unlike a near-empty EPUB/PDF, which isn't realistic.
         val source = "```\nsome code\n```\n\n---\n\n| A | B |\n|---|---|\n| 1 | 2 |"
         assertTrue(MarkdownTtsTextExtractor.chaptersForNarration(source).isEmpty())
+    }
+
+    @Test
+    fun `a dropped blank section between two real ones leaves no gap in index`() = runTest {
+        // #591 Phase 4 mutation-check: the class doc's "index is the chapter's position
+        // in the *returned* list, not its source section index" claim had no test
+        // exercising a *mixed* document — every existing case here is either all-real
+        // or all-blank, so a regression that indexed from the pre-filter section list
+        // instead (e.g. `sections.mapIndexedNotNull` before dropping blanks) would
+        // silently pass every test above while making chapter index 2 (with a gap at
+        // 1) instead of the correct 1 — a real Read Aloud bug (wrong chapter counts,
+        // "next chapter" skipping or misnumbering), confirmed by deliberately
+        // reproducing that exact regression against this suite before adding this test.
+        // The middle section's own heading is a bare image with no alt text — the one
+        // realistic way a section with a heading still has nothing speakable, since a
+        // heading with real title text is itself always speakable content (see "code-
+        // only... produces no chapters" above, which needs a headingless document for
+        // exactly this reason).
+        val source = "# One\nFirst body.\n# ![](banner.png)\n```\ncode only\n```\n# Two\nSecond body."
+
+        val chapters = MarkdownTtsTextExtractor.chaptersForNarration(source)
+
+        assertEquals(listOf("One", "Two"), chapters.map { it.title })
+        assertEquals(listOf(0, 1), chapters.map { it.index })
     }
 
     @Test

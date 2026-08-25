@@ -1,14 +1,13 @@
 package xyz.libravault.feature.reader
 
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import xyz.libravault.core.domain.model.MediaFormat
 
 /**
  * Coverage for [readAloudSupported] — the gate deciding which formats expose the
- * "Read Aloud" entry point in the settings sheet. EPUB (#137) and Markdown (#276)
- * are supported; PDF is explicitly out of scope for both.
+ * "Read Aloud" entry point in the settings sheet. EPUB (#137), Markdown (#276), and
+ * now PDF (#591 Phase 3, one chapter per page) are all supported.
  */
 class ReaderReadAloudSupportedTest {
 
@@ -23,7 +22,7 @@ class ReaderReadAloudSupportedTest {
     }
 
     @Test
-    fun `PDF does not support Read Aloud`() {
-        assertFalse(readAloudSupported(MediaFormat.PDF))
+    fun `PDF supports Read Aloud`() {
+        assertTrue(readAloudSupported(MediaFormat.PDF))
     }
 }

@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -14,6 +15,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import xyz.libravault.core.vaultstore.VaultSessionManager
 import javax.inject.Singleton
 
 @SuppressLint("UnsafeOptInUsageError")
@@ -34,10 +36,19 @@ object PlayerModule {
      * callbacks — both read [SkipDurationPreference] directly. The legacy
      * `MediaController.seekBack`/`seekForward` transport commands used by the
      * lockscreen / Quick-Settings compact strip use this initial value.
+     *
+     * [VaultAwareMediaSourceFactory] is installed so an Encrypted Vault
+     * `vault://` [androidx.media3.common.MediaItem] (#493) resolves to a real
+     * `MediaSource` against [sessionManager]; every other URI falls through to
+     * [DefaultMediaSourceFactory] unmodified, same as before this player gained
+     * vault awareness.
      */
     @Provides
     @Singleton
-    fun provideExoPlayer(@ApplicationContext context: Context): ExoPlayer =
+    fun provideExoPlayer(
+        @ApplicationContext context: Context,
+        sessionManager: VaultSessionManager,
+    ): ExoPlayer =
         ExoPlayer.Builder(context)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -49,6 +60,9 @@ object PlayerModule {
             .setHandleAudioBecomingNoisy(true)
             .setSeekBackIncrementMs(SkipDurationPreference.getSkipDurationMs(context))
             .setSeekForwardIncrementMs(SkipDurationPreference.getSkipDurationMs(context))
+            .setMediaSourceFactory(
+                VaultAwareMediaSourceFactory(sessionManager, DefaultMediaSourceFactory(context))
+            )
             .build()
 
     /**

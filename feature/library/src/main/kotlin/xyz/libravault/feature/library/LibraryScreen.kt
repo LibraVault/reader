@@ -68,13 +68,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.ui.theme.Dimens
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     onItemClick: (LibraryItem) -> Unit,
     onSettingsClick: () -> Unit,
-    onNowPlayingClick: (Long) -> Unit,
+    // #493 — the full holder state, not just an itemId, so the caller can route to
+    // either Screen.Player (real file) or Screen.VaultPlay (vaultEntry != null).
+    onNowPlayingClick: (PlaybackStateHolder.State) -> Unit,
     onBookmarkItemClick: (LibraryItem, Long) -> Unit = { item, _ -> onItemClick(item) },
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -256,13 +259,13 @@ fun LibraryScreen(
             }
         },
         bottomBar = {
-            if (nowPlaying.itemId != null) {
+            if (shouldShowMiniPlayer(nowPlaying)) {
                 MiniPlayerBar(
                     title        = nowPlaying.title,
                     author       = nowPlaying.author,
                     coverArtPath = nowPlaying.coverArtPath,
                     isPlaying    = nowPlaying.isPlaying,
-                    onArtClick   = { nowPlaying.itemId?.let(onNowPlayingClick) },
+                    onArtClick   = { onNowPlayingClick(nowPlaying) },
                     onPrevious   = viewModel::skipPrevious,
                     onSeekBack   = viewModel::seekBack,
                     onPlayPause  = viewModel::playPause,

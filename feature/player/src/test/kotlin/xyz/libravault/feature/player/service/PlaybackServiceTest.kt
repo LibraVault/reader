@@ -190,4 +190,56 @@ class PlaybackServiceTest {
             service.onGetSession(mockk(relaxed = true)),
         )
     }
+
+    /**
+     * #493, scope decision 2 — stop-on-lock is required for correctness, not
+     * opinionated: [xyz.libravault.core.vaultcontent.VaultDataSource] has no
+     * cross-thread signal from a locking `VaultStore` to an already-playing
+     * `MediaSource`, so the service must pause proactively when the app
+     * backgrounds ([androidx.lifecycle.ProcessLifecycleOwner]'s `onStop()`) while
+     * a vault item is loaded, before `VaultSessionManager`'s own observer can
+     * zero the VMK out from under a mid-stream read.
+     *
+     * Robolectric doesn't drive a real app-background transition through
+     * [androidx.lifecycle.ProcessLifecycleOwner] from a plain service unit test
+     * (that needs a full Activity lifecycle simulation), so this invokes the
+     * service's own registered observer directly via reflection — the same unit
+     * `ProcessLifecycleOwner`'s real dispatch would call.
+     */
+    @Test
+    fun `backgrounding the app pauses playback when a vault item is loaded`() {
+        val service = buildService()
+        service.playbackStateHolder.updateVault(
+            vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry(
+                vaultId = "vault-1",
+                fileIdHex = "aa",
+                format = xyz.libravault.core.domain.model.MediaFormat.MP3,
+            ),
+            title = "Title", author = "Author", coverArtPath = null, isPlaying = true,
+        )
+
+        vaultAutoStopObserverOf(service).onStop(mockk(relaxed = true))
+
+        verify(exactly = 1) { player.pause() }
+    }
+
+    /** A no-op for a real-file (non-vault) `PlaybackStateHolder` state. */
+    @Test
+    fun `backgrounding the app does not pause a real-file item`() {
+        val service = buildService()
+        service.playbackStateHolder.update(
+            itemId = 1L, vaultFolderId = 1L, filePath = "content://x",
+            title = "Title", author = "Author", coverArtPath = null, isPlaying = true,
+        )
+
+        vaultAutoStopObserverOf(service).onStop(mockk(relaxed = true))
+
+        verify(exactly = 0) { player.pause() }
+    }
+
+    private fun vaultAutoStopObserverOf(service: PlaybackService): androidx.lifecycle.DefaultLifecycleObserver {
+        val field = PlaybackService::class.java.getDeclaredField("vaultAutoStopObserver")
+        field.isAccessible = true
+        return field.get(service) as androidx.lifecycle.DefaultLifecycleObserver
+    }
 }

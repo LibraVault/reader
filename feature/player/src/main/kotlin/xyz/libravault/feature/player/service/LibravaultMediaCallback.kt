@@ -259,11 +259,21 @@ internal class LibravaultMediaCallback(
 
     /**
      * Switches playback to the next/previous sibling file in the current item's vault
-     * folder (see [GetAdjacentLibraryItemUseCase]). No-ops if no item is currently loaded
-     * ([PlaybackStateHolder] is empty) or there is no sibling file in that direction (already
-     * at the first/last file). Saves the outgoing item's progress, resumes the incoming item
-     * from its last saved position (or the start), and mirrors the switch into
-     * [PlaybackStateHolder] so the tile's title/author/artwork update immediately.
+     * folder (see [GetAdjacentLibraryItemUseCase] — a SAF-watched-folder concept,
+     * unrelated to the Encrypted Vault feature despite the name). No-ops if no item is
+     * currently loaded ([PlaybackStateHolder] is empty) or there is no sibling file in
+     * that direction (already at the first/last file). Saves the outgoing item's
+     * progress, resumes the incoming item from its last saved position (or the start),
+     * and mirrors the switch into [PlaybackStateHolder] so the tile's title/author/
+     * artwork update immediately.
+     *
+     * The same null-guard also covers an Encrypted Vault item (#493) — there is no
+     * "next item in a vault" concept (explicit v1 scope, matching the deleted
+     * `VaultPlayerScreen`'s existing no-skip UI), and [PlaybackStateHolder.State]
+     * deliberately leaves [PlaybackStateHolder.State.itemId]/[PlaybackStateHolder.State.vaultFolderId]/
+     * [PlaybackStateHolder.State.filePath] null for a vault-sourced state (see
+     * [PlaybackStateHolder.State.vaultEntry]'s doc), so this guard no-ops the lockscreen
+     * Prev/Next tile buttons for vault audio without needing its own vault branch.
      */
     private suspend fun switchToAdjacentItem(forward: Boolean): SessionResult {
         val current = playbackStateHolder.state.value
@@ -271,7 +281,7 @@ internal class LibravaultMediaCallback(
         val vaultFolderId = current.vaultFolderId
         val filePath = current.filePath
         if (itemId == null || vaultFolderId == null || filePath == null) {
-            Log.w(TAG, "switchToAdjacentItem: no item currently loaded, ignoring")
+            Log.w(TAG, "switchToAdjacentItem: no item currently loaded (or a vault item, #493), ignoring")
             return SessionResult(SessionResult.RESULT_SUCCESS)
         }
 

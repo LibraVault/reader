@@ -94,7 +94,8 @@ fun ReaderTopBar(
     // control that starts a headline feature three taps deep — Settings sheet
     // > Customize > scroll — made it read as a minor setting rather than the
     // primary action it is). Gated the same way the settings-sheet row used to
-    // be, via the caller's readAloudSupported() check; PDF passes false. Given
+    // be, via the caller's readAloudSupported() check — true for EPUB, Markdown,
+    // and (#591 Phase 3) PDF. Given
     // a filled (not outlined/plain) treatment and placed first among actions,
     // deliberately louder than the icon-only controls beside it — the one
     // action in this bar meant to be seen immediately, not discovered.
@@ -641,9 +642,13 @@ fun BookmarksSheet(
 }
 
 /**
- * Table of contents sheet for the Markdown reader — the first TOC UI in the app
- * (neither EPUB nor PDF has one). Mirrors [BookmarksSheet]'s `ModalBottomSheet`
- * pattern; indentation reflects each entry's heading level (H1..H6).
+ * Table of contents sheet — originally Markdown-only (heading levels H1..H6), now
+ * reused verbatim for PDF's page-based TOC (#591 Phase 3: one flat [TocEntry] per
+ * page, `level` always 1) rather than introducing a second near-identical sheet.
+ * EPUB uses its own [EpubTocSheet] instead (#596) — its entries need real
+ * Locator-based navigation, not a plain section index, so it isn't a fit for this
+ * one. Mirrors [BookmarksSheet]'s `ModalBottomSheet` pattern; indentation reflects
+ * each entry's [TocEntry.level].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

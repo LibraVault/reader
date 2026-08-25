@@ -59,6 +59,8 @@ import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.tts.TtsStatus
+import xyz.libravault.core.ui.SecureScreenEffect
+import xyz.libravault.core.ui.rememberScreenSecurityEnabled
 import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.components.WarmthOverlay
 import xyz.libravault.core.ui.theme.LibravaultTheme
@@ -74,6 +76,7 @@ import xyz.libravault.feature.reader.markdown.MarkdownReaderScreen
 import xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
+import xyz.libravault.feature.reader.pdf.PdfReaderViewModel
 import xyz.libravault.feature.reader.readaloud.ReadAloudPlayerScreen
 
 // Height reserved at the bottom of the reader content for the bottom bars.
@@ -86,14 +89,25 @@ enum class ReaderBottomBar { NONE, AUDIOBOOK, READ_ALOUD }
 
 /**
  * Picks which mini-bar wins when both an audiobook and a Read Aloud session look
- * "loaded" at the same time. [PlaybackStateHolder.State.itemId] is never cleared
- * once an audiobook has been loaded ([PlaybackStateHolder.clear] exists but is never
- * called in production), so `showMiniPlayer` alone stays true forever after the first
- * audiobook play — including while the audiobook is merely paused/backgrounded and a
- * Read Aloud session is the thing actually producing audio. Read Aloud must win
- * whenever it's active, or its mini-bar becomes unreachable and the stale audiobook
- * bar's controls end up silently stopping it instead.
+ * "loaded" at the same time. [PlaybackStateHolder.State.isActive] is never cleared
+ * once an audiobook (real-file or, since #493, vault-sourced) has been loaded
+ * ([PlaybackStateHolder.clear] exists but is never called in production), so
+ * `showMiniPlayer` alone stays true forever after the first audiobook play —
+ * including while the audiobook is merely paused/backgrounded and a Read Aloud
+ * session is the thing actually producing audio. Read Aloud must win whenever it's
+ * active, or its mini-bar becomes unreachable and the stale audiobook bar's controls
+ * end up silently stopping it instead.
  */
+/**
+ * Whether the audiobook mini-player should show — `isActive`, not `itemId != null`
+ * (#493): `itemId` stays null by design for a vault-sourced item (see
+ * [PlaybackStateHolder.State.vaultEntry]'s doc), which would otherwise leave the
+ * mini-player never showing for vault audio. Extracted (matching
+ * [selectReaderBottomBar]'s own precedent) so this one-line derivation has direct
+ * test coverage instead of only being reachable through a full screen render.
+ */
+fun shouldShowAudiobookMiniPlayer(nowPlaying: PlaybackStateHolder.State): Boolean = nowPlaying.isActive
+
 fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): ReaderBottomBar =
     when {
         showReadAloudBar -> ReaderBottomBar.READ_ALOUD
@@ -103,11 +117,61 @@ fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): R
 
 /**
  * Which formats expose the "Read Aloud" entry point in the settings sheet — EPUB
- * (#137) and Markdown (#276). Matches iOS's `ReaderSettingsSheet.showReadAloud`,
- * which already gates both formats. PDF Read Aloud is out of scope for both issues.
+ * (#137), Markdown (#276), and PDF (#591 Phase 3, one chapter per page). Now matches
+ * iOS's `ReaderSettingsAvailability.showReadAloud`, which has supported PDF (via
+ * `PDFParser`'s page-based chapters) since before this Android phase landed.
  */
 fun readAloudSupported(format: MediaFormat): Boolean =
-    format == MediaFormat.EPUB || format == MediaFormat.MARKDOWN
+    format == MediaFormat.EPUB || format == MediaFormat.MARKDOWN || format == MediaFormat.PDF
+
+/**
+ * The position reference stored for a new bookmark, based on the format currently
+ * open. PDF and Markdown have no Readium locator to fall back on, so they encode a
+ * synthetic ref instead ("page:"/"scroll:", decoded by [resolveBookmarkTarget]); EPUB
+ * falls back to the reader's last-reported [currentLocatorJson] when no persisted
+ * progress locator exists yet (e.g. bookmarking before the navigator has reported its
+ * first position).
+ */
+internal fun bookmarkPositionRef(
+    format: MediaFormat,
+    pageIndex: Int?,
+    markdownScrollFraction: Double?,
+    positionCfi: String?,
+    currentLocatorJson: String?,
+): String? =
+    when (format) {
+        MediaFormat.PDF      -> "page:${pageIndex ?: 0}"
+        MediaFormat.MARKDOWN -> "scroll:${markdownScrollFraction ?: 0.0}"
+        else                 -> positionCfi ?: currentLocatorJson
+    }
+
+/** Where tapping a bookmark in [BookmarksSheet] should navigate, decoded from its stored positionRef. */
+internal sealed interface BookmarkTarget {
+    data class PdfPage(val pageIndex: Int) : BookmarkTarget
+    data class MarkdownScroll(val fraction: Double) : BookmarkTarget
+    data class EpubLocator(val locatorJson: String) : BookmarkTarget
+
+    /** Carried a "page:"/"scroll:" prefix, but the payload after it didn't parse. */
+    data object Malformed : BookmarkTarget
+}
+
+/**
+ * Inverse of [bookmarkPositionRef]. A prefixed ref whose payload fails to parse
+ * (corrupt data, or a future format change) resolves to [BookmarkTarget.Malformed]
+ * rather than throwing — the caller still dismisses the bookmarks sheet but skips
+ * navigating anywhere, same as the pre-extraction inline `toIntOrNull()`/
+ * `toDoubleOrNull()` behaviour this preserves.
+ */
+internal fun resolveBookmarkTarget(positionRef: String): BookmarkTarget =
+    when {
+        positionRef.startsWith("page:") ->
+            positionRef.removePrefix("page:").toIntOrNull()
+                ?.let { BookmarkTarget.PdfPage(it) } ?: BookmarkTarget.Malformed
+        positionRef.startsWith("scroll:") ->
+            positionRef.removePrefix("scroll:").toDoubleOrNull()
+                ?.let { BookmarkTarget.MarkdownScroll(it) } ?: BookmarkTarget.Malformed
+        else -> BookmarkTarget.EpubLocator(positionRef)
+    }
 
 /**
  * Entry point for the reader feature.
@@ -123,7 +187,9 @@ fun ReaderScreen(
     itemId: Long? = null,
     fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
-    onNowPlayingClick: ((Long) -> Unit)? = null,
+    // #493 — the full holder state, not just an itemId, so the caller can route to
+    // either Screen.Player (real file) or Screen.VaultPlay (vaultEntry != null).
+    onNowPlayingClick: ((PlaybackStateHolder.State) -> Unit)? = null,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val state       by viewModel.uiState.collectAsState()
@@ -168,11 +234,17 @@ fun ReaderScreen(
     val pendingMarkdownSectionIndex = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
     }
+    // Page-based TOC for the currently-open PDF (#591 Phase 3) — one entry per page,
+    // reusing MarkdownTocSheet's UI and the existing pendingPdfPage scroll channel
+    // (already used for bookmark navigation) rather than a second PDF-specific one.
+    val pdfToc = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<List<TocEntry>>(emptyList())
+    }
 
     // Show audiobook mini player whenever an audiobook is loaded.
     // Independent of toolbar visibility — stays pinned at the bottom even when the
     // toolbar hides on centre-tap (same behaviour as the Library screen mini-player).
-    val showMiniPlayer = nowPlaying.itemId != null
+    val showMiniPlayer = shouldShowAudiobookMiniPlayer(nowPlaying)
 
     // Read Aloud mini-bar (#137). This and showMiniPlayer are NOT mutually exclusive —
     // see selectReaderBottomBar's doc for why an audiobook can look "loaded" long after
@@ -207,6 +279,16 @@ fun ReaderScreen(
                 val contentSource = state.contentSource!!
                 val format        = state.format!!
 
+                // SecureScreenEffect's own doc comment (and VaultScreenSecurityPreference's)
+                // already claimed ReaderScreen does this for a ContentSource.VaultEntry
+                // (#505) — it never actually did. Real gap: decrypted vault EPUB/PDF/
+                // Markdown content had no FLAG_SECURE protection. rememberScreenSecurityEnabled
+                // (not a one-shot remember{}) — same live-observing pattern #571 already
+                // fixed VaultContentsScreen onto, called unconditionally each recomposition
+                // so short-circuiting on contentSource doesn't skip the composable call.
+                val screenSecurityEnabled = rememberScreenSecurityEnabled(LocalContext.current)
+                SecureScreenEffect(enabled = contentSource is ContentSource.VaultEntry && screenSecurityEnabled)
+
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
                 val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
                 val epubToc by epubViewModel.tocEntries.collectAsState()
@@ -216,6 +298,10 @@ fun ReaderScreen(
                 // drive its chapter walk from here regardless of which composable first
                 // triggered the ViewModel's creation.
                 val markdownViewModel: MarkdownReaderViewModel = hiltViewModel()
+                // Same pattern again for PDF (#591 Phase 3) — shared with PdfReaderScreen
+                // so Read Aloud's page-based chapter walk (PdfReaderViewModel.getChapterTextFromPage/
+                // getNextChapterText/getPreviousChapterText) can be driven from here.
+                val pdfViewModel: PdfReaderViewModel = hiltViewModel()
 
                 val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -243,19 +329,21 @@ fun ReaderScreen(
                                 onFontIncrease    = viewModel::increaseFontSize,
                                 showFontControls  = format != MediaFormat.PDF,
                                 onAddBookmark     = {
-                                    val ref: String? = when (format) {
-                                        MediaFormat.PDF ->
-                                            "page:${state.progress?.pageIndex ?: 0}"
-                                        MediaFormat.MARKDOWN ->
-                                            "scroll:${state.progress?.markdownScrollFraction ?: 0.0}"
-                                        else ->
-                                            state.progress?.positionCfi ?: currentLocatorJson
-                                    }
+                                    val ref = bookmarkPositionRef(
+                                        format                 = format,
+                                        pageIndex              = state.progress?.pageIndex,
+                                        markdownScrollFraction = state.progress?.markdownScrollFraction,
+                                        positionCfi            = state.progress?.positionCfi,
+                                        currentLocatorJson     = currentLocatorJson,
+                                    )
                                     ref?.let { viewModel.addBookmark(it) }
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
-                                onShowToc       = if (format == MediaFormat.MARKDOWN || format == MediaFormat.EPUB) {
+                                onShowToc       = if (format == MediaFormat.MARKDOWN ||
+                                    format == MediaFormat.EPUB ||
+                                    format == MediaFormat.PDF
+                                ) {
                                     viewModel::showToc
                                 } else {
                                     null
@@ -288,6 +376,18 @@ fun ReaderScreen(
                                                 chapterIndex    = { markdownViewModel.ttsChapterIndex },
                                                 chapterCount    = { markdownViewModel.ttsChapterCount },
                                             )
+                                            MediaFormat.PDF -> viewModel.startReadAloud(
+                                                getInitialText = {
+                                                    pdfViewModel.getChapterTextFromPage(
+                                                        contentSource,
+                                                        state.progress?.pageIndex,
+                                                    )
+                                                },
+                                                getNextText     = pdfViewModel::getNextChapterText,
+                                                getPreviousText = pdfViewModel::getPreviousChapterText,
+                                                chapterIndex    = { pdfViewModel.ttsChapterIndex },
+                                                chapterCount    = { pdfViewModel.ttsChapterCount },
+                                            )
                                             else -> {}
                                         }
                                     }
@@ -299,11 +399,7 @@ fun ReaderScreen(
                         when (selectReaderBottomBar(showMiniPlayer, showReadAloudBar)) {
                             ReaderBottomBar.AUDIOBOOK -> ReaderMiniPlayerBar(
                                 nowPlaying       = nowPlaying,
-                                onNowPlayingClick = {
-                                    nowPlaying.itemId?.let { id ->
-                                        onNowPlayingClick?.invoke(id)
-                                    }
-                                },
+                                onNowPlayingClick = { onNowPlayingClick?.invoke(nowPlaying) },
                                 onPrevious    = viewModel::skipPreviousAudiobook,
                                 onSeekBack    = viewModel::seekBackAudiobook,
                                 onPlayPause   = viewModel::playPauseAudiobook,
@@ -382,6 +478,8 @@ fun ReaderScreen(
                                         settings         = state.settings,
                                         onPageChanged    = viewModel::onPdfPageChanged,
                                         onCentreTap      = viewModel::onCentreTap,
+                                        onTocExtracted   = { pdfToc.value = it },
+                                        viewModel        = pdfViewModel,
                                     )
                                 }
 
@@ -416,7 +514,7 @@ fun ReaderScreen(
                     }
                 }
 
-                // ── TOC sheet (Markdown and EPUB — #596) ────────────────────────
+                // ── TOC sheet (Markdown headings / EPUB nav doc / PDF pages) ───
                 if (state.showTocSheet) {
                     when (format) {
                         MediaFormat.MARKDOWN -> MarkdownTocSheet(
@@ -431,6 +529,17 @@ fun ReaderScreen(
                             entries      = epubToc,
                             onEntryClick = { entry ->
                                 epubViewModel.goToLocatorJson(entry.locatorJson)
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        // PDF (#591 Phase 3) reuses MarkdownTocSheet's flat-list UI —
+                        // one entry per page, no nesting needed — rather than a third
+                        // near-identical sheet.
+                        MediaFormat.PDF -> MarkdownTocSheet(
+                            entries      = pdfToc.value,
+                            onEntryClick = { entry ->
+                                pendingPdfPage.value = entry.sectionIndex
                                 viewModel.hideToc()
                             },
                             onDismiss    = viewModel::hideToc,
@@ -467,26 +576,16 @@ fun ReaderScreen(
                     BookmarksSheet(
                         bookmarks       = bookmarks,
                         onBookmarkClick = { bookmark ->
-                            when {
-                                bookmark.positionRef.startsWith("page:") -> {
-                                    bookmark.positionRef
-                                        .removePrefix("page:")
-                                        .toIntOrNull()
-                                        ?.let { pendingPdfPage.value = it }
-                                    viewModel.hideBookmarks()
-                                }
-                                bookmark.positionRef.startsWith("scroll:") -> {
-                                    bookmark.positionRef
-                                        .removePrefix("scroll:")
-                                        .toDoubleOrNull()
-                                        ?.let { pendingMarkdownScrollFraction.value = it }
-                                    viewModel.hideBookmarks()
-                                }
-                                else -> {
-                                    epubViewModel.goToLocatorJson(bookmark.positionRef)
-                                    viewModel.hideBookmarks()
-                                }
+                            when (val target = resolveBookmarkTarget(bookmark.positionRef)) {
+                                is BookmarkTarget.PdfPage ->
+                                    pendingPdfPage.value = target.pageIndex
+                                is BookmarkTarget.MarkdownScroll ->
+                                    pendingMarkdownScrollFraction.value = target.fraction
+                                is BookmarkTarget.EpubLocator ->
+                                    epubViewModel.goToLocatorJson(target.locatorJson)
+                                BookmarkTarget.Malformed -> {}
                             }
+                            viewModel.hideBookmarks()
                         },
                         onBookmarkDelete = viewModel::removeBookmark,
                         onEditNote       = viewModel::updateBookmarkNote,

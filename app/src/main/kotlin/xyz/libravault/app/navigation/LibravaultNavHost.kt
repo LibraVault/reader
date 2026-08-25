@@ -14,13 +14,13 @@ import xyz.libravault.core.vaultstore.toHexString
 import xyz.libravault.feature.library.LibraryScreen
 import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
 import xyz.libravault.feature.vault.CreateVaultScreen
 import xyz.libravault.feature.vault.UnlockVaultScreen
 import xyz.libravault.feature.vault.VaultContentsScreen
 import xyz.libravault.feature.vault.VaultListScreen
-import xyz.libravault.feature.vault.VaultPlayerScreen
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
@@ -65,6 +65,21 @@ sealed class Screen(val route: String) {
     }
 }
 
+/**
+ * Routes a mini-player tap to the right player destination — [Screen.Player] for a
+ * real-file item, [Screen.VaultPlay] for an Encrypted Vault one (#493). One shared
+ * helper for the four `onNowPlayingClick` call sites below (Library + three
+ * ReaderScreen entry points) rather than duplicating the branch four times.
+ */
+private fun navigateToNowPlaying(navController: NavHostController, state: PlaybackStateHolder.State) {
+    val itemId = state.itemId
+    val vault = state.vaultEntry
+    when {
+        itemId != null -> navController.navigate(Screen.Player.createRoute(itemId))
+        vault != null -> navController.navigate(Screen.VaultPlay.createRoute(vault.vaultId, vault.fileIdHex))
+    }
+}
+
 @Composable
 fun LibravaultNavHost(
     navController: NavHostController,
@@ -96,9 +111,7 @@ fun LibravaultNavHost(
                     navController.navigate(route)
                 },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
-                onNowPlayingClick = { itemId ->
-                    navController.navigate(Screen.Player.createRoute(itemId))
-                },
+                onNowPlayingClick = { state -> navigateToNowPlaying(navController, state) },
                 onBookmarkItemClick = { item, seekMs ->
                     navController.navigate(Screen.Player.createRouteWithSeek(item.id, seekMs))
                 },
@@ -180,7 +193,7 @@ fun LibravaultNavHost(
             // itemId/encodedUri work below), exactly like VaultReaderScreen used to.
             ReaderScreen(
                 onBack            = { navController.popBackStack() },
-                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
+                onNowPlayingClick = { state -> navigateToNowPlaying(navController, state) },
             )
         }
 
@@ -191,7 +204,12 @@ fun LibravaultNavHost(
                 navArgument("fileId") { type = NavType.StringType },
             ),
         ) {
-            VaultPlayerScreen(onBack = { navController.popBackStack() })
+            // #493 — vault audio now plays through the same shared PlaybackService/
+            // MediaSession as real files; PlayerViewModel reads vaultId/fileId off this
+            // composable's own SavedStateHandle (same Hilt nav-arg auto-population
+            // ReaderScreen's VaultRead route above already relies on), exactly like
+            // VaultPlayerScreen used to.
+            PlayerScreen(onBack = { navController.popBackStack() })
         }
 
         // ── Library-item routes (by Room ID) ──────────────────────────────
@@ -203,7 +221,7 @@ fun LibravaultNavHost(
             ReaderScreen(
                 itemId           = backStackEntry.arguments!!.getLong("itemId"),
                 onBack           = { navController.popBackStack() },
-                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
+                onNowPlayingClick = { state -> navigateToNowPlaying(navController, state) },
             )
         }
 
@@ -232,7 +250,7 @@ fun LibravaultNavHost(
                 fileUri           = uri,
                 itemId            = null,
                 onBack            = { navController.popBackStack() },
-                onNowPlayingClick = { id -> navController.navigate(Screen.Player.createRoute(id)) },
+                onNowPlayingClick = { state -> navigateToNowPlaying(navController, state) },
             )
         }
 

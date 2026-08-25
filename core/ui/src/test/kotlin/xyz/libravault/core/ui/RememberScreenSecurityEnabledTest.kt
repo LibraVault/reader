@@ -1,4 +1,4 @@
-package xyz.libravault.feature.vault
+package xyz.libravault.core.ui
 
 import android.app.Activity
 import android.content.Context
@@ -13,7 +13,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import xyz.libravault.core.storage.LibravaultPreferences
-import xyz.libravault.core.ui.SecureScreenEffect
 
 /**
  * Regression guard for issue #530 L5 / #569: the vault content screens used
