@@ -1,10 +1,14 @@
 package xyz.libravault.feature.reader.epub
 
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -27,6 +31,13 @@ class EpubReaderViewModelTest {
     private val sessionManager = mockk<VaultSessionManager>()
     private val logger = mockk<LibravaultLogger>(relaxed = true)
 
+    // Owns every ViewModel this test class creates so tearDown() can clear() them —
+    // same fix as MarkdownReaderViewModelTest's (#554/#553): openPublication()'s
+    // viewModelScope.launch can still be mid-flight when Dispatchers.resetMain() runs,
+    // and a later exception on that leaked coroutine gets misattributed to whichever
+    // test runs next (kotlinx.coroutines.test.UncaughtExceptionsBeforeTest). See #562.
+    private val viewModelStore = ViewModelStore()
+
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -34,10 +45,26 @@ class EpubReaderViewModelTest {
 
     @AfterEach
     fun tearDown() {
+        viewModelStore.clear()
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = EpubReaderViewModel(readiumProvider, sessionManager, logger)
+    private fun viewModel(): EpubReaderViewModel =
+        EpubReaderViewModel(readiumProvider, sessionManager, logger).also {
+            viewModelStore.put(it.toString(), it)
+        }
+
+    // ── tearDown cancels leaked ViewModel coroutines (#562) ─────────────────────
+
+    @Test
+    fun `tearDown cancels a leaked ViewModel coroutine`() = runTest {
+        val vm = viewModel()
+        val leaked = vm.viewModelScope.launch { awaitCancellation() }
+
+        tearDown()
+
+        assertTrue(leaked.isCancelled)
+    }
 
     // ── Locator / pending-navigation state ───────────────────────────────────
     //
