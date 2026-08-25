@@ -319,13 +319,33 @@ class EpubReaderViewModel @Inject constructor(
         // log instead of pegging the IO thread (review finding #17 / WS3.6).
         internal const val MAX_CHAPTER_BYTES = 2 * 1024 * 1024
 
+        // Block-level tags (plus <br>) whose closing boundary becomes a '\n' in
+        // stripHtml's output — see that function's doc for why this can't just
+        // be doc.text(). Deliberately an explicit allowlist rather than Jsoup's
+        // internal Tag.isBlock() so the set stays self-evident from this file
+        // alone and matches iOS's EPUBParser.strippingTags(from:) block-tag list.
+        private val BLOCK_TAGS = setOf(
+            "address", "article", "aside", "blockquote", "br", "caption", "dd",
+            "details", "div", "dl", "dt", "fieldset", "figcaption", "figure",
+            "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr",
+            "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table",
+            "tbody", "tfoot", "thead", "tr", "ul",
+        )
+
         /**
-         * Strips HTML to plain text for TTS, using Jsoup's safe cleaner.
+         * Strips HTML to plain text for TTS, using Jsoup's parser.
          *
          * Replaces a regex-based stripper (review finding #10) that was
          * O(n²) on long chapters and silently mishandled `<style>` blocks
          * containing `<` inside CSS comments, CDATA sections, etc. Jsoup
          * parses the HTML once in O(n) and handles all the edge cases.
+         *
+         * Reinserts a `\n` at each [BLOCK_TAGS] element's closing boundary
+         * (mirroring iOS's `EPUBParser.strippingTags(from:)`) instead of calling
+         * `doc.text()` directly, which collapses every block boundary —
+         * paragraphs, headings, `<hr>`, etc. — into a single space and leaves
+         * nothing for [EpubTextPreprocessor.removeDecorativeSeparators]'s
+         * per-line regex to anchor on (issue #630).
          *
          * Returns null if [html] is malformed beyond repair or exceeds
          * [MAX_CHAPTER_BYTES]; caller should surface that to the UI.
@@ -342,7 +362,26 @@ class EpubReaderViewModel @Inject constructor(
                 // content. Safelist.none() in Jsoup.clean strips the tags
                 // but keeps the inner text — we want to drop the text too.
                 doc.select("script, style, iframe, object, embed, noscript, svg").remove()
-                doc.text()
+                val sb = StringBuilder()
+                // NodeTraversor.traverse is iterative (not recursive), unlike a
+                // hand-rolled tree walk — load-bearing here since MAX_CHAPTER_BYTES
+                // only bounds total size, not nesting depth, and a pathologically
+                // nested chapter within that cap could otherwise stack-overflow.
+                org.jsoup.select.NodeTraversor.traverse(
+                    object : org.jsoup.select.NodeVisitor {
+                        override fun head(node: org.jsoup.nodes.Node, depth: Int) {
+                            if (node is org.jsoup.nodes.TextNode) sb.append(node.text())
+                        }
+
+                        override fun tail(node: org.jsoup.nodes.Node, depth: Int) {
+                            if (node is org.jsoup.nodes.Element && node.tagName().lowercase() in BLOCK_TAGS) {
+                                sb.append('\n')
+                            }
+                        }
+                    },
+                    doc,
+                )
+                sb.toString()
             } catch (e: Exception) {
                 stripHtmlLog("parse failure (${e.javaClass.simpleName}): ${e.message}")
                 null
