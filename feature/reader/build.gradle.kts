@@ -77,6 +77,11 @@ dependencies {
     // AndroidX PDF Viewer — PDF rendering (API 31+, confirmed stable for v1)
     implementation("androidx.pdf:pdf-viewer:1.0.0-alpha04")
 
+    // PDF text extraction for Read Aloud (#591 Phase 3) — offline, on-device only, no
+    // network. Separate from the AndroidX PDF Viewer above, which only rasterizes pages
+    // to bitmaps and has no text-extraction API of its own.
+    implementation(libs.pdfbox.android)
+
     // Markdown rendering — Compose-native CommonMark renderer. Chosen over Markwon
     // (TextView/AndroidView-based) since this codebase is Compose throughout; wraps
     // commonmark-java, whose AST we also reuse for TOC extraction. Pinned to 0.32.0

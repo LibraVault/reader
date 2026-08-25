@@ -42,6 +42,8 @@ roborazzi           = "1.43.1"     # JVM screenshot baselines — docs/TEST_COVE
 kxml2               = "2.3.0"
 webkit              = "1.17.0"
 zxing               = "3.5.3"
+pdfbox-android      = "2.0.27.0"    # feature:reader PDF text extraction (#591 Phase 3) — Apache PDFBox
+                                    # ported to Android (Apache 2.0), fully on-device, no network.
 desugar-jdk-libs    = "2.0.4"      # coreLibraryDesugaring — required by any module depending on Readium
 datastore           = "1.0.0"      # androidx.datastore:datastore-preferences (core:cloudtts; matches core:tts's existing, still-hardcoded usage)
 okhttp              = "4.12.0"     # core:cloudtts, play flavour only — vendor TTS HTTP adapters.
@@ -136,6 +138,8 @@ androidx-documentfile           = { group = "androidx.documentfile",      name =
 # network request, without relying on raw file:// URLs (blocked/deprecated for WebView
 # content loading on modern Android).
 androidx-webkit                  = { group = "androidx.webkit",            name = "webkit",                      version.ref = "webkit" }
+# PDF text extraction (#591 Phase 3) — offline, on-device only; see version comment above.
+pdfbox-android                   = { group = "com.tom-roush",             name = "pdfbox-android",              version.ref = "pdfbox-android" }
 
 # Core
 androidx-splashscreen           = { group = "androidx.core",              name = "core-splashscreen",          version.ref = "splashscreen" }
