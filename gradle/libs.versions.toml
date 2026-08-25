@@ -47,8 +47,8 @@ datastore           = "1.0.0"      # androidx.datastore:datastore-preferences (c
 okhttp              = "4.12.0"     # core:cloudtts, play flavour only — vendor TTS HTTP adapters.
                                     # Pinned to the 4.x line deliberately, not the latest 5.x:
                                     # okhttp 5.x's okhttp-android artifact requires compileSdk 37,
-                                    # which this project isn't on (compileSdk 36, AGP 8.9.1's own
-                                    # recommended max) — found via a real build failure
+                                    # which this project isn't on (compileSdk 36) — found via a
+                                    # real build failure
                                     # (:feature:settings:checkPlayDebugUnitTestAarMetadata) once
                                     # core:cloudtts was first wired into a module the app actually
                                     # depends on. 4.12.0 also matches the OkHttp version Coil

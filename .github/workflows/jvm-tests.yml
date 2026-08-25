@@ -66,7 +66,16 @@ jobs:
   test:
     name: Unit & Integration Tests (JVM)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 wasn't enough headroom for a cold Gradle cache: any PR that bumps a
+    # toolchain/dependency pin (e.g. #582's AGP 8.9.1 -> 8.10.1) invalidates
+    # cached task outputs for every module, and the resulting full recompile
+    # pushed the JVM-tests step alone from its usual ~3.5min to ~11.5min on
+    # PR #592's first CI run — leaving too little of the 15min budget for
+    # coverage + Lint to finish, so Lint got killed mid-run and the whole job
+    # read as a failure even though every real test passed. 30 gives enough
+    # room for a full cold-cache run (tests + coverage + lint) without
+    # masking a genuine hang.
+    timeout-minutes: 30
     needs: changes
     # Skip for draft PRs — see ios-app-build.yml's identical guard for
     # why. Also skip when the PR's diff doesn't touch `android` per the
