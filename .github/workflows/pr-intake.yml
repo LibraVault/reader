@@ -103,26 +103,56 @@ jobs:
           set -euo pipefail
           PR_NUMBER="${{ github.event.pull_request.number }}"
 
-          # No early exit when this comes back empty — see the top-of-file
-          # comment. issue_number is still exported (possibly empty) so
-          # the classify step below knows which label to hand off to.
-          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER")
-          if [ -z "$ISSUE_NUMBER" ]; then
-            echo "PR #$PR_NUMBER doesn't link an issue (no 'Closes #N' etc in its body) — proceeding anyway as a manually-opened, issue-less PR (see top-of-file comment)." >&2
-          fi
-          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-
           # Idempotency / re-entry guard: `reopened` can fire on a PR this
           # workflow (or a human) already labeled once. Any existing
           # pipeline status label means intake already happened (or a
           # human/qa/review round has since moved it on) — don't relabel
-          # over that state. Applies whether or not an issue is linked.
+          # over that state, and don't re-resolve/re-comment below either.
+          # Applies whether or not an issue is linked. Runs before we even
+          # try to resolve the linked issue, so a reopened PR that already
+          # landed on status:needs-info (e.g. via the ambiguous-issue path
+          # below) doesn't get a duplicate comment on every reopen.
           PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels -q '[.labels[].name] | join(",")')
           if echo ",$PR_LABELS," | grep -qE ",status:(needs-qa|needs-review|needs-info|needs-human-merge|blocked|in-progress),"; then
             echo "PR #$PR_NUMBER already carries a pipeline status label ($PR_LABELS) — already picked up, nothing to do." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # No early exit when this comes back empty — see the top-of-file
+          # comment. issue_number is still exported (possibly empty) so
+          # the classify step below knows which label to hand off to.
+          #
+          # Guarded with `||` rather than left to bare `set -e`: a PR body
+          # linking more than one distinct issue (e.g. "Fixes #A" +
+          # "Fixes #B") makes resolve_linked_issue.sh exit 1, which would
+          # otherwise hard-fail this whole step with no comment and no
+          # label applied — confirmed live on PR #539, which legitimately
+          # fixed two related issues sharing one root cause (issue #546).
+          # resolve_linked_issue.sh still echoes the ambiguous issue
+          # numbers to stdout on that path, so they're captured here too
+          # instead of just landing in the (dropped) stderr log.
+          ISSUE_NUMBER=$(.github/scripts/resolve_linked_issue.sh "$PR_NUMBER") || {
+            RESOLVE_EXIT=$?
+            if [ -n "$ISSUE_NUMBER" ]; then
+              AMBIGUOUS_ISSUES=$(echo "$ISSUE_NUMBER" | sed 's/^/#/' | tr '\n' ' ' | sed 's/ *$//')
+              echo "PR #$PR_NUMBER's body links multiple distinct issues ($AMBIGUOUS_ISSUES) — resolve_linked_issue.sh can't pick one automatically, routing to a human instead of hard-failing this job." >&2
+              gh pr comment "$PR_NUMBER" --body "This PR's body links more than one distinct issue via a closing keyword ($AMBIGUOUS_ISSUES) — this pipeline's automated intake only supports a single linked issue per PR (see \`resolve_linked_issue.sh\`), so it can't route this automatically. Applying \`status:needs-info\` so a human can decide how to handle it (see issue #546)."
+              gh pr edit "$PR_NUMBER" --add-label status:needs-info
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Empty capture means resolve_linked_issue.sh failed before it
+            # ever got to the ambiguity check (its own `gh pr view` call) —
+            # a genuine infra failure (auth/rate-limit/5xx), not ambiguity.
+            # Re-raise rather than silently treating it as "no linked issue".
+            echo "resolve_linked_issue.sh failed for PR #$PR_NUMBER (exit $RESOLVE_EXIT) with no issue numbers captured — likely a genuine gh/infra failure rather than ambiguity." >&2
+            exit "$RESOLVE_EXIT"
+          }
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "PR #$PR_NUMBER doesn't link an issue (no 'Closes #N' etc in its body) — proceeding anyway as a manually-opened, issue-less PR (see top-of-file comment)." >&2
+          fi
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
           # Nothing to check here without a linked issue — an issue-less
           # PR has no status:blocked source to read besides the PR itself,

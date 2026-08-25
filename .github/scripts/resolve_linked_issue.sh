@@ -76,6 +76,12 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   RESOLVE_EXIT=$?
   if [ "$RESOLVE_EXIT" -ne 0 ]; then
     echo "resolve_linked_issue.sh: PR #$PR_NUMBER's body has multiple distinct closing-issue lines ($(echo "$ISSUE_NUMBERS" | tr '\n' ' ')) — ambiguous, not resolving one automatically. A human needs to sort this out (single-issue linkage is all downstream callers support)." >&2
+    # Still echoed to real stdout (not just named in the stderr message
+    # above) so a caller that guards this call with `|| { ... }` — e.g.
+    # pr-intake.yml's ambiguous-issue handling, issue #546 — can read
+    # which issues were ambiguous from its own captured $(...) output
+    # instead of having to re-parse the PR body itself.
+    echo "$ISSUE_NUMBERS"
     exit 1
   fi
 
