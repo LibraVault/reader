@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import xyz.libravault.core.storage.VaultScreenSecurityPreference
 import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.feature.player.components.PlaybackControls
 import xyz.libravault.feature.player.components.PlayerSeekBar
@@ -62,7 +61,7 @@ fun VaultPlayerScreen(
     val bookmarks by viewModel.bookmarks.collectAsState()
     var showBookmarksSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
+    SecureScreenEffect(enabled = rememberScreenSecurityEnabled(context))
 
     // #526 — re-check lock state every time this screen comes back to the
     // foreground, same DisposableEffect+ON_RESUME idiom VaultListScreen
