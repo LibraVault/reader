@@ -225,6 +225,19 @@ Measured result (Kover, `PdfReaderScreenKt` and its lambdas together): 146 misse
 on real `PdfRenderer` content, i.e. exactly the part this investigation found isn't reachable here.
 `PdfReaderScreenLogicKt` (the new extraction) is 100% covered (12/12 lines).
 
+**#613 (principal review on PR #610) — the `coercePageIndex` fix above was incomplete, fixed.**
+It stopped the *synchronous* crash `page.coerceIn(0, pageCount - 1)` threw during composition for a
+0-page PDF, but `ScrollMode.PAGINATED` (the default) still unconditionally composed `PdfPageImage`
+with the now-clamped `pageIndex = 0`, which calls `renderer.openPage(0)` — `PdfRenderer` throws
+`IllegalArgumentException` for any index on a document with no pages, uncaught, from a background
+coroutine. `ScrollMode.SCROLLING` was already safe (`LazyColumn.items(pageCount = 0)` composes
+nothing). Fixed by guarding both modes on `pageCount <= 0` before the `when (settings.scrollMode)`
+dispatch, showing `pdfEmptyDocumentMessage()` instead — same shape as the existing `openError` gate.
+Reproduced the crash directly before fixing it (temporarily removed the guard, watched
+`PdfReaderScreenStateTest`'s new paginated-mode case throw the exact `PdfRenderer.java:285`
+`IllegalArgumentException` #613 described, then restored the guard and watched it go green) —
+the "prove a test can fail" step this time proved the *bug*, not just the test.
+
 ---
 
 ## 2. Problem statement
