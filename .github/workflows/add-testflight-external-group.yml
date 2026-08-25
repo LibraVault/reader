@@ -1,0 +1,72 @@
+name: Add TestFlight Build to External Group (remediation)
+
+# Companion to list-testflight-groups.yml. `pilot upload --groups "LibraVault
+# Alpha/Beta"` has been confirmed (2026-08-25) to intermittently fail to add
+# the external group silently -- no error, no failed job, the build just
+# never shows up in that group (7 of the last 24 builds hit this; see
+# project_testflight_external_group_intermittent_failure.md). This directly
+# calls the same add_beta_groups API for one already-uploaded build number,
+# without re-uploading a whole new IPA or waiting on Apple's processing
+# again -- for unblocking a build stuck like this.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "The stuck build's TestFlight build number (e.g. 148)"
+        required: true
+        type: string
+
+jobs:
+  add-group:
+    name: Add build to LibraVault Alpha/Beta
+    runs-on: macos-26
+    timeout-minutes: 10
+
+    steps:
+      - name: Add external group to the given build
+        env:
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+          TARGET_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          echo "$PRIVATE_KEY" > AuthKey.p8
+
+          ruby -rspaceship -e '
+            token = Spaceship::ConnectAPI::Token.create(
+              key_id: ENV["KEY_ID"],
+              issuer_id: ENV["ISSUER_ID"],
+              filepath: "AuthKey.p8",
+            )
+            Spaceship::ConnectAPI.token = token
+
+            apps = Spaceship::ConnectAPI::App.all(filter: { bundleId: ENV["APPLE_BUNDLE_ID"] })
+            raise "No app found for bundle id #{ENV["APPLE_BUNDLE_ID"]}" if apps.empty?
+            app = apps.first
+
+            builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: ENV["TARGET_BUILD_NUMBER"], limit: 5)
+            raise "No build found with build_number=#{ENV["TARGET_BUILD_NUMBER"]}" if builds.empty?
+            build = builds.first
+            puts "Found build #{build.version} (id=#{build.id}, processingState=#{build.processing_state})"
+
+            external_group = app.get_beta_groups.find { |g| g.name == "LibraVault Alpha/Beta" }
+            raise "External group \"LibraVault Alpha/Beta\" not found" if external_group.nil?
+
+            already_in = external_group.fetch_builds.any? { |b| b.id == build.id }
+            if already_in
+              puts "Build #{build.version} is already in \"LibraVault Alpha/Beta\" -- nothing to do."
+            else
+              build.add_beta_groups(beta_groups: [external_group])
+              puts "Added build #{build.version} to \"LibraVault Alpha/Beta\"."
+
+              # Verify it actually took -- do not trust a non-raising call alone,
+              # this exact silent-failure shape is why this workflow exists.
+              now_in = external_group.fetch_builds.any? { |b| b.id == build.id }
+              raise "add_beta_groups did not raise, but build #{build.version} still is not in the group after the call." unless now_in
+              puts "Verified: build #{build.version} now appears in \"LibraVault Alpha/Beta\"."
+            end
+          '
+
+          rm -f AuthKey.p8
