@@ -19,12 +19,26 @@ struct BookChapter {
     /// can reuse the same lookup pattern Markdown's already uses. Empty when `blocks`
     /// is empty or references no images.
     let images: [String: Data]
+    /// Markdown-only for now (#499 v2a Phase A) — the same block structure `text`
+    /// was flattened from, but kept as narration-ready [NarrationSegment]s so
+    /// emphasis/quote/scene-break signal survives instead of being thrown away.
+    /// Empty for EPUB/PDF chapters (those are Phases B/D, not built yet) — `text`
+    /// stays the source of truth for those and for anything that only needs plain
+    /// text (duration estimation, chapters sheet, bookmarks).
+    let segments: [NarrationSegment]
 
-    init(title: String, text: String, blocks: [MarkdownBlock] = [], images: [String: Data] = [:]) {
+    init(
+        title: String,
+        text: String,
+        blocks: [MarkdownBlock] = [],
+        images: [String: Data] = [:],
+        segments: [NarrationSegment] = []
+    ) {
         self.title = title
         self.text = text
         self.blocks = blocks
         self.images = images
+        self.segments = segments
     }
 }
 

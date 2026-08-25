@@ -257,6 +257,17 @@ class LibravaultDomainBridge: ObservableObject {
         await ttsEngine?.speak(text: text, rate: rate)
     }
 
+    /// Segment-aware counterpart to `startSpeaking(text:rate:)` (#499 v2a
+    /// Phase A) — same shape, just routes to `TTSEngineProtocol.speak
+    /// (segments:rate:)` instead, so a Markdown chapter's emphasis/quote/
+    /// scene-break signal reaches the active engine's adapter rather than
+    /// the flattened plain text.
+    func startSpeaking(segments: [NarrationSegment], rate: Double = 1.0) async throws {
+        guard ttsEngine != nil else { throw DomainError.notInitialized }
+        logger?.d(tag: "TTS", message: "Starting segment-based speech: \(segments.count) segment(s)")
+        await ttsEngine?.speak(segments: segments, rate: rate)
+    }
+
     func stopSpeaking() async {
         await ttsEngine?.stop()
     }
@@ -395,6 +406,34 @@ class TTSEngineBridge: TTSEngineProtocol {
 
     func setVoice(identifier: String?) async {
         preferredVoiceIdentifier = identifier
+    }
+
+    /// Renders `segments` to SSML and speaks that instead of plain text
+    /// (#499 v2a Phase A) — the one engine that can do anything with
+    /// prosody hints, since `AVSpeechUtterance(ssmlRepresentation:)` exists.
+    ///
+    /// Falls back to the plain-text path (`speak(text:rate:)`, same as every
+    /// other engine's default) if SSML construction fails to produce a valid
+    /// utterance — `AVSpeechUtterance(ssmlRepresentation:)` returns `nil` for
+    /// malformed SSML rather than throwing, and degrading to flat narration
+    /// beats going silent, matching this file's established pattern (see
+    /// `resolvedVoice`'s doc comment on the same principle for a stale voice
+    /// identifier). This is a fallback for SSML *parse* failure specifically
+    /// (e.g. an escaping bug) — an individual tag like `<emphasis>` simply
+    /// being unsupported on a given OS version doesn't fail to parse, it's
+    /// just silently ignored, so it never hits this path.
+    func speak(segments: [NarrationSegment], rate: Double) async {
+        guard !Self.isRunningUnderXCTest, !segments.isEmpty else { return }
+        let languageCode = Self.detectedLanguageCode(for: segments.plainText)
+        let ssml = SSMLRenderer.ssml(for: segments, languageCode: languageCode)
+        guard let utterance = AVSpeechUtterance(ssmlRepresentation: ssml) else {
+            await speak(text: segments.plainText, rate: rate)
+            return
+        }
+        utterance.rate = Self.scaledRate(for: rate)
+        utterance.voice = resolvedVoice(for: segments.plainText)
+        synthesizer.stopSpeaking(at: .immediate)
+        synthesizer.speak(utterance)
     }
 
     /// The explicit user choice, if one is set and still resolves to an
