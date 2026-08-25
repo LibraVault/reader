@@ -72,6 +72,7 @@ import xyz.libravault.core.ui.theme.matching
 import xyz.libravault.feature.reader.FontFamily
 import xyz.libravault.feature.reader.ReaderSettings
 import xyz.libravault.feature.reader.ScrollMode
+import xyz.libravault.feature.reader.epub.EpubTocEntry
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import xyz.libravault.feature.reader.toPresetFontFamily
 import xyz.libravault.feature.reader.toFontFamily
@@ -692,6 +693,73 @@ fun MarkdownTocSheet(
                                 .clickable { onEntryClick(entry) }
                                 .padding(
                                     start = 24.dp + 16.dp * (entry.level - 1),
+                                    end = 24.dp,
+                                    top = 12.dp,
+                                    bottom = 12.dp,
+                                ),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+/**
+ * Table of contents sidebar for the EPUB reader (#596) — same `ModalBottomSheet` pattern
+ * as [MarkdownTocSheet], reading off the book's real nav doc/NCX
+ * ([xyz.libravault.feature.reader.epub.EpubReaderViewModel.tocEntries]) instead of a
+ * heading scan, so entries can be nested to [EpubTocEntry.level] rather than always flat.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EpubTocSheet(
+    entries: List<EpubTocEntry>,
+    onEntryClick: (EpubTocEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Contents",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+
+            if (entries.isEmpty()) {
+                Text(
+                    text = "No table of contents found in this book.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp),
+                )
+            } else {
+                LazyColumn {
+                    items(entries) { entry ->
+                        Text(
+                            text = entry.title,
+                            style = when (entry.level) {
+                                0 -> MaterialTheme.typography.titleMedium
+                                1 -> MaterialTheme.typography.titleSmall
+                                else -> MaterialTheme.typography.bodyMedium
+                            },
+                            fontWeight = if (entry.level == 0) FontWeight.Medium else FontWeight.Normal,
+                            color = if (entry.level <= 1) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onEntryClick(entry) }
+                                .padding(
+                                    start = 24.dp + 16.dp * entry.level,
                                     end = 24.dp,
                                     top = 12.dp,
                                     bottom = 12.dp,

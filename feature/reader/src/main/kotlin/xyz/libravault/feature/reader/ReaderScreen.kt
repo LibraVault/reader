@@ -64,6 +64,7 @@ import xyz.libravault.core.ui.components.WarmthOverlay
 import xyz.libravault.core.ui.theme.LibravaultTheme
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.reader.components.BookmarksSheet
+import xyz.libravault.feature.reader.components.EpubTocSheet
 import xyz.libravault.feature.reader.components.MarkdownTocSheet
 import xyz.libravault.feature.reader.components.ReaderSettingsSheet
 import xyz.libravault.feature.reader.components.ReaderTopBar
@@ -208,6 +209,7 @@ fun ReaderScreen(
 
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
                 val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
+                val epubToc by epubViewModel.tocEntries.collectAsState()
                 // Sibling hiltViewModel(), same pattern as epubViewModel above — the
                 // instance is shared with the one MarkdownReaderScreen would otherwise
                 // create for itself (same ViewModelStoreOwner), so Read Aloud (#276) can
@@ -253,7 +255,11 @@ fun ReaderScreen(
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
-                                onShowToc       = if (format == MediaFormat.MARKDOWN) viewModel::showToc else null,
+                                onShowToc       = if (format == MediaFormat.MARKDOWN || format == MediaFormat.EPUB) {
+                                    viewModel::showToc
+                                } else {
+                                    null
+                                },
                                 // Read Aloud (#137/#276) — a prominent toolbar action rather
                                 // than a row buried in the settings sheet. See
                                 // ReaderTopBar.showReadAloud's doc for why.
@@ -410,16 +416,27 @@ fun ReaderScreen(
                     }
                 }
 
-                // ── TOC sheet (Markdown only) ─────────────────────────────────
+                // ── TOC sheet (Markdown and EPUB — #596) ────────────────────────
                 if (state.showTocSheet) {
-                    MarkdownTocSheet(
-                        entries      = markdownToc.value,
-                        onEntryClick = { entry ->
-                            pendingMarkdownSectionIndex.value = entry.sectionIndex
-                            viewModel.hideToc()
-                        },
-                        onDismiss    = viewModel::hideToc,
-                    )
+                    when (format) {
+                        MediaFormat.MARKDOWN -> MarkdownTocSheet(
+                            entries      = markdownToc.value,
+                            onEntryClick = { entry ->
+                                pendingMarkdownSectionIndex.value = entry.sectionIndex
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        MediaFormat.EPUB -> EpubTocSheet(
+                            entries      = epubToc,
+                            onEntryClick = { entry ->
+                                epubViewModel.goToLocatorJson(entry.locatorJson)
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        else -> {}
+                    }
                 }
 
                 // ── Settings sheet ────────────────────────────────────────────
