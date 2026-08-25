@@ -2,9 +2,9 @@ package xyz.libravault.feature.reader.pdf
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
-import com.tom_roush.pdfbox.util.PDFBoxResourceLoader
 import xyz.libravault.feature.reader.epub.EpubTextPreprocessor
 
 /**
@@ -33,21 +33,23 @@ class PdfTextExtractor(private val appContext: Context) {
     /**
      * Opens [pfd] for text extraction and returns the page count, or null if the file
      * can't be parsed as a PDF. Closes any previously-open document first. Takes
-     * ownership of [pfd] (closed by [close], directly or via the input stream reaching
-     * EOF/error during [PDDocument.load]). Does real file I/O — call from a background
-     * thread.
+     * ownership of [pfd] — [PDDocument.load] reads the whole stream into its own
+     * in-memory/buffered representation synchronously before returning, so the source
+     * stream (and therefore [pfd]) is always explicitly closed here rather than left for
+     * [PDDocument.close] to release later; PDDocument.close() only releases the parsed
+     * document, not an already-independent source stream. Does real file I/O — call
+     * from a background thread.
      */
     fun open(pfd: ParcelFileDescriptor): Int? {
         close()
         return runCatching {
-            PDFBoxResourceLoader.init(appContext.applicationContext)
-            val doc = PDDocument.load(ParcelFileDescriptor.AutoCloseInputStream(pfd))
-            document = doc
-            doc.numberOfPages
-        }.getOrElse {
-            runCatching { pfd.close() }
-            null
-        }
+            PDFBoxResourceLoader.init(appContext)
+            ParcelFileDescriptor.AutoCloseInputStream(pfd).use { stream ->
+                val doc = PDDocument.load(stream)
+                document = doc
+                doc.numberOfPages
+            }
+        }.getOrNull()
     }
 
     /**

@@ -49,6 +49,7 @@ import kotlinx.coroutines.withContext
 import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.feature.reader.ScrollMode
 import xyz.libravault.feature.reader.ReaderSettings
+import xyz.libravault.feature.reader.markdown.toc.TocEntry
 
 /**
  * PDF viewer using Android's native [PdfRenderer] (API 31+).
@@ -66,6 +67,10 @@ import xyz.libravault.feature.reader.ReaderSettings
  * @param contentSource A real file or a vault entry (#505) — resolved to a
  *                       [ParcelFileDescriptor] by [PdfReaderViewModel].
  * @param initialPage    Restored page index from Room — 0-based.
+ * @param onTocExtracted Called once the page count is known, with one [TocEntry] per
+ *                        page ("Page 1", "Page 2", …) — the page-based TOC sidebar
+ *                        (#591 Phase 3), same UI pattern as Markdown's heading TOC.
+ *                        Cheap: only page count is needed, not per-page text.
  */
 @Composable
 fun PdfReaderScreen(
@@ -76,6 +81,7 @@ fun PdfReaderScreen(
     onCentreTap: () -> Unit,
     scrollToPage: Int? = null,
     onScrollConsumed: () -> Unit = {},
+    onTocExtracted: (List<TocEntry>) -> Unit = {},
     viewModel: PdfReaderViewModel = hiltViewModel(),
 ) {
     val context       = LocalContext.current
@@ -97,6 +103,9 @@ fun PdfReaderScreen(
                 val r = PdfRenderer(pfd!!)
                 renderer  = r
                 pageCount = r.pageCount
+                onTocExtracted(List(r.pageCount) { pageIndex ->
+                    TocEntry(level = 1, title = "Page ${pageIndex + 1}", sectionIndex = pageIndex)
+                })
             } catch (e: SecurityException) {
                 openError = "Permission denied — the file cannot be read from this source."
             } catch (e: Exception) {

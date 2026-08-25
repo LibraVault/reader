@@ -80,7 +80,15 @@ dependencies {
     // PDF text extraction for Read Aloud (#591 Phase 3) — offline, on-device only, no
     // network. Separate from the AndroidX PDF Viewer above, which only rasterizes pages
     // to bitmaps and has no text-extraction API of its own.
-    implementation(libs.pdfbox.android)
+    //
+    // Excludes pdfbox-android's own BouncyCastle transitive deps (bcprov/bcpkix/bcutil-
+    // jdk15to18:1.72, used only for encrypted/password-protected PDF support, which is
+    // out of scope here — same as PdfRenderer today) — they duplicate-class conflict
+    // with core:vaultcrypto's bcprov-jdk18on:1.84 (a different BC artifact line
+    // providing the same org.bouncycastle.* packages) at app assembly.
+    implementation(libs.pdfbox.android) {
+        exclude(group = "org.bouncycastle")
+    }
 
     // Markdown rendering — Compose-native CommonMark renderer. Chosen over Markwon
     // (TextView/AndroidView-based) since this codebase is Compose throughout; wraps
