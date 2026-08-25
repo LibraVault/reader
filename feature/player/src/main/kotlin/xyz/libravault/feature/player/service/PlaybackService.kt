@@ -5,6 +5,9 @@ package xyz.libravault.feature.player.service
 import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -71,10 +74,32 @@ class PlaybackService : MediaSessionService() {
     @Inject
     lateinit var saveListeningProgress: SaveListeningProgressUseCase
 
+    /**
+     * Encrypted Vault stop-on-lock (#493, scope decision 2 — required for correctness,
+     * not opinionated): [VaultDataSource][xyz.libravault.core.vaultcontent.VaultDataSource]
+     * has no cross-thread signal from a locking `VaultStore` to an already-playing
+     * `MediaSource` — once [xyz.libravault.core.vaultstore.VaultSessionManager]'s own
+     * `onStop()` observer zeroes the VMK, the next mid-stream read throws and surfaces
+     * as a raw, unpredictable player error. Pausing proactively on the same
+     * app-backgrounded signal avoids that race. Ordering relative to
+     * `VaultSessionManager`'s own observer doesn't matter — `player.pause()` is safe
+     * regardless of whether the VMK has been zeroed yet. A no-op for a real-file item
+     * (`vaultEntry == null`).
+     */
+    private val vaultAutoStopObserver = object : DefaultLifecycleObserver {
+        override fun onStop(owner: LifecycleOwner) {
+            if (playbackStateHolder.state.value.vaultEntry != null) {
+                Log.i(TAG, "onStop: app backgrounded with vault audio active — pausing")
+                player.pause()
+            }
+        }
+    }
+
     @SuppressLint("UnsafeOptInUsageError")
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "onCreate: start")
+        ProcessLifecycleOwner.get().lifecycle.addObserver(vaultAutoStopObserver)
 
         try {
             val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
@@ -134,6 +159,9 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
+        // Required — ProcessLifecycleOwner is process-wide, not service-scoped; without
+        // this, repeated service recreation would leak observers onto it.
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(vaultAutoStopObserver)
         mediaCallback?.release()
         mediaCallback = null
         mediaSession?.run {

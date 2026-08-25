@@ -330,7 +330,19 @@ class LibraryViewModel @Inject constructor(
         // Update PlaybackStateHolder immediately so the mini-player icon flips
         // without waiting for PlayerViewModel's 200ms polling tick.
         val current = playbackStateHolder.state.value
-        if (current.itemId != null) {
+        val vault = current.vaultEntry
+        if (vault != null) {
+            // #493 — a vault-sourced item leaves itemId null by design; branch on
+            // vaultEntry first so the mini-player's play/pause icon still flips for
+            // vault audio (see PlaybackStateHolder.State.vaultEntry's doc).
+            playbackStateHolder.updateVault(
+                vaultEntry   = vault,
+                title        = current.title,
+                author       = current.author,
+                coverArtPath = current.coverArtPath,
+                isPlaying    = !wasPlaying,
+            )
+        } else if (current.itemId != null) {
             playbackStateHolder.update(
                 itemId        = current.itemId,
                 vaultFolderId = current.vaultFolderId,

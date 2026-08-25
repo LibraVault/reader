@@ -32,15 +32,22 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.components.CoverFormatBadge
 import xyz.libravault.core.ui.components.GeneratedCover
@@ -51,6 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import xyz.libravault.core.storage.VaultScreenSecurityPreference
+import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.feature.player.components.BookmarksSheet
 import xyz.libravault.feature.player.components.ChapterListSheet
 import xyz.libravault.feature.player.components.PlaybackControls
@@ -73,6 +82,30 @@ fun PlayerScreen(
     val bookmarks by viewModel.bookmarks.collectAsState()
     var showChapters    by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
+
+    // #493 — same FLAG_SECURE gating the deleted VaultPlayerScreen applied directly,
+    // and the same toggle-driven pattern VaultContentsScreen/ReaderScreen use.
+    val secureScreenContext = LocalContext.current
+    SecureScreenEffect(
+        enabled = state.isVaultItem &&
+            remember { VaultScreenSecurityPreference.isEnabled(secureScreenContext) },
+    )
+
+    // #526, ported from the deleted VaultPlayerScreen — re-check lock state every time
+    // this screen comes back to the foreground. A no-op for a non-vault item
+    // (PlayerViewModel.checkStillUnlocked() early-returns when vaultRef is null).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentViewModel = rememberUpdatedState(viewModel)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentViewModel.value.checkStillUnlocked()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(state.wasLocked) {
+        if (state.wasLocked) onBack()
+    }
 
     Scaffold(
             topBar = {

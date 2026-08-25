@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -68,6 +69,7 @@ class PlayerViewModelTest {
     private val sleepTimer          = mockk<SleepTimer>(relaxed = true)
     private val logger              = mockk<LibravaultLogger>(relaxed = true)
     private val playbackStateHolder = mockk<PlaybackStateHolder>(relaxed = true)
+    private val sessionManager      = mockk<xyz.libravault.core.vaultstore.VaultSessionManager>(relaxed = true)
 
     private val mockController      = mockk<MediaController>(relaxed = true)
     private val controllerFuture = SettableFuture.create<MediaController>()
@@ -109,6 +111,7 @@ class PlayerViewModelTest {
             sleepTimer         = sleepTimer,
             logger             = logger,
             playbackStateHolder = playbackStateHolder,
+            sessionManager     = sessionManager,
         )
     }
 
@@ -144,6 +147,7 @@ class PlayerViewModelTest {
             sleepTimer       = sleepTimer,
             logger           = logger,
             playbackStateHolder = playbackStateHolder,
+            sessionManager   = sessionManager,
         )
 
         // With UnconfinedTestDispatcher, loadItem() completes synchronously.
@@ -155,6 +159,126 @@ class PlayerViewModelTest {
             // Note: error is null because the controller connected successfully
             // and cleared it. The key assertion is that item remains null.
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ── Init (Encrypted Vault, #493) ─────────────────────────────────────────
+
+    private fun vaultViewModel(vaultId: String = "vault-1", fileIdHex: String = "aabbcc"): PlayerViewModel =
+        PlayerViewModel(
+            savedStateHandle   = SavedStateHandle(mapOf("vaultId" to vaultId, "fileId" to fileIdHex)),
+            getItem            = getItem,
+            getProgress        = getProgress,
+            saveProgress       = saveProgress,
+            observeBookmarks   = observeBookmarks,
+            addBookmark        = addBookmark,
+            deleteBookmark     = deleteBookmark,
+            updateBookmarkNote = updateBookmarkNote,
+            controllerFuture   = controllerFuture,
+            chapterExtractor   = chapterExtractor,
+            sleepTimer         = sleepTimer,
+            logger             = logger,
+            playbackStateHolder = playbackStateHolder,
+            sessionManager     = sessionManager,
+        )
+
+    private val fakeVaultAudioEntry = xyz.libravault.core.vaultstore.VaultManifestEntry(
+        fileId             = byteArrayOf(0xAA.toByte(), 0xBB.toByte(), 0xCC.toByte()),
+        title              = "Vault Audiobook",
+        author             = "Vault Author",
+        format             = "MP3",
+        sizeBytes          = 1024L,
+        addedAtEpochMillis = 0L,
+    )
+
+    @Test
+    fun `vault init surfaces a locked vault as an error, not a crash`() = runTest {
+        every { sessionManager.isUnlocked("vault-1") } returns false
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertFalse(state.isLoading)
+            assertEquals("Vault is locked", state.error)
+            assertNull(state.item)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init surfaces a missing entry as an error`() = runTest {
+        val store = mockk<xyz.libravault.core.vaultstore.VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns emptyList()
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertEquals("File not found in this vault", state.error)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init rejects a non-audio entry`() = runTest {
+        val store = mockk<xyz.libravault.core.vaultstore.VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultAudioEntry.copy(format = "EPUB"))
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertEquals("This isn't an audio file — open it from the reader instead", state.error)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `vault init resolves an audio entry and builds a vault URI`() = runTest {
+        val store = mockk<xyz.libravault.core.vaultstore.VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultAudioEntry)
+
+        vaultViewModel().uiState.test {
+            val state = awaitItem()
+            assertFalse(state.isLoading)
+            assertNull(state.error)
+            assertNotNull(state.item)
+            // The synthetic item's filePath IS the vault:// URI — see loadVaultItem's
+            // doc for why nothing downstream needs its own vault branch to build one.
+            assertEquals("vault://vault-1/aabbcc", state.item!!.filePath)
+            assertEquals("Vault Audiobook", state.item!!.title)
+            assertEquals("Vault Author", state.item!!.author)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * [PlayerViewModel.syncPlaybackStateHolder]'s branch selection, exercised via
+     * [PlayerViewModel.togglePlayPause] rather than through init's controller-reattach
+     * path — `android.net.Uri.parse` isn't meaningfully mockable in this module's
+     * plain-JUnit5 (non-Robolectric) unit tests (it returns null, not a comparable
+     * `Uri`), which would make an init-time assertion here exercise a codepath this
+     * harness can't actually simulate correctly. `togglePlayPause` calls
+     * `syncPlaybackStateHolder` directly without touching `Uri.parse` at all.
+     */
+    @Test
+    fun `syncPlaybackStateHolder calls updateVault, not update, for a vault item`() = runTest {
+        val store = mockk<xyz.libravault.core.vaultstore.VaultStore>()
+        every { sessionManager.isUnlocked("vault-1") } returns true
+        every { sessionManager.requireUnlocked("vault-1") } returns store
+        coEvery { store.listEntries() } returns listOf(fakeVaultAudioEntry)
+        every { mockController.isPlaying } returns false
+
+        vaultViewModel().togglePlayPause()
+
+        // itemId must stay null for a vault item — see PlaybackStateHolder.State.vaultEntry's doc.
+        verify(exactly = 0) { playbackStateHolder.update(itemId = any(), vaultFolderId = any(), filePath = any(), title = any(), author = any(), coverArtPath = any(), isPlaying = any()) }
+        verify(atLeast = 1) {
+            playbackStateHolder.updateVault(
+                vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry("vault-1", "aabbcc", MediaFormat.MP3),
+                title = "Vault Audiobook", author = "Vault Author", coverArtPath = null, isPlaying = true,
+            )
         }
     }
 

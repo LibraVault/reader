@@ -19,16 +19,38 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
     }
+
+    // Same BouncyCastle/jspecify META-INF collision core:vaultstore's/core:vaultcontent's/
+    // feature:reader's/feature:vault's androidTest packaging already hit (issue #253) —
+    // #493 added this module's first dependency on core:vaultcrypto/core:vaultstore
+    // (VaultAwareMediaSourceFactory), which pulls in BouncyCastle transitively; jspecify
+    // is already present via media3.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/INDEX.LIST",
+            )
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:storage"))
     implementation(project(":core:logger"))
     implementation(project(":core:database"))
+    // #493: vault-backed MediaItem resolution — VaultSessionManager/VaultStore
+    // (session/lock state, bookmark round-trip) and VaultDataSource, wired into
+    // PlayerModule.provideExoPlayer via VaultAwareMediaSourceFactory.
+    implementation(project(":core:vaultstore"))
+    implementation(project(":core:vaultcontent"))
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+    // ProcessLifecycleOwner — PlaybackService's vault stop-on-lock observer (#493),
+    // same dependency core:vaultstore's own onStop() observer already uses.
+    implementation(libs.androidx.lifecycle.process)
     implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Media3 — ExoPlayer, MediaSession, UI
