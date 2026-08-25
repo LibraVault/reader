@@ -52,13 +52,19 @@ import com.google.zxing.MultiFormatWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import xyz.libravault.core.ui.SecureScreenEffect
 
-/**
- * Create-vault wizard: name → PIN → confirm PIN → recovery key (shown once).
- * [onCreated] fires only after the user has ticked "I've saved it" on the
- * recovery-key step and tapped Done — never earlier, so there's no path that
- * navigates away from the recovery key before the user has acknowledged it.
- */
-@OptIn(ExperimentalMaterial3Api::class)
+// ── Thin wrapper ─────────────────────────────────────────────────────────────
+//
+// Everything that needs a real ViewModel or Activity (SecureScreenEffect's
+// window-flag toggling) lives here. Everything else — the whole wizard body —
+// is [CreateVaultContent], a pure function of (state, actions) with no
+// Hilt/Activity dependency, so it can be rendered directly in a Robolectric
+// Compose test the same way SettingsContent already is (see
+// docs/TEST_COVERAGE_PRD.md Phase 7 — this file is one of that phase's
+// targets, split per the PlayerScreen/SettingsScreen template).
+//
+// [onCreated] fires only after the user has ticked "I've saved it" on the
+// recovery-key step and tapped Done — never earlier, so there's no path that
+// navigates away from the recovery key before the user has acknowledged it.
 @Composable
 fun CreateVaultScreen(
     onCreated: (vaultId: String) -> Unit,
@@ -72,19 +78,60 @@ fun CreateVaultScreen(
         SecureScreenEffect()
     }
 
-    // The AppBar's back arrow below and the system/gesture back action must
-    // agree on what "back" means at each wizard step — without this, gesture
-    // back would skip the wizard's own step logic entirely and pop the whole
-    // screen from the middle of PIN entry.
-    val goBack = { if (state.step == CreateVaultStep.NAME) onCancel() else viewModel.onBack() }
-    BackHandler(onBack = goBack)
+    val actions = CreateVaultActions(
+        onDisplayNameChanged = viewModel::onDisplayNameChanged,
+        onNameConfirmed = viewModel::onNameConfirmed,
+        onPinChanged = viewModel::onPinChanged,
+        onPinSubmitted = viewModel::onPinSubmitted,
+        onConfirmPinChanged = viewModel::onConfirmPinChanged,
+        onConfirmPinSubmitted = viewModel::onConfirmPinSubmitted,
+        onSavedConfirmedChanged = viewModel::onSavedConfirmedChanged,
+        // The AppBar's back arrow and the system/gesture back action must
+        // agree on what "back" means at each wizard step — without this,
+        // gesture back would skip the wizard's own step logic entirely and
+        // pop the whole screen from the middle of PIN entry.
+        onBack = { if (state.step == CreateVaultStep.NAME) onCancel() else viewModel.onBack() },
+        onCreated = onCreated,
+    )
+
+    CreateVaultContent(state = state, actions = actions)
+}
+
+// ── State & actions bundle ──────────────────────────────────────────────────
+//
+// Mirrors SettingsScreen's SettingsActions pattern: bundling every
+// collaborator into one plain data class turns the wizard body below into a
+// pure function testable without a ViewModel or Hilt graph.
+
+internal data class CreateVaultActions(
+    val onDisplayNameChanged: (String) -> Unit,
+    val onNameConfirmed: () -> Unit,
+    val onPinChanged: (String) -> Unit,
+    val onPinSubmitted: () -> Unit,
+    val onConfirmPinChanged: (String) -> Unit,
+    val onConfirmPinSubmitted: () -> Unit,
+    val onSavedConfirmedChanged: (Boolean) -> Unit,
+    val onBack: () -> Unit,
+    val onCreated: (vaultId: String) -> Unit,
+)
+
+// ── Pure content — the whole wizard body, no ViewModel/Activity ─────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CreateVaultContent(
+    state: CreateVaultUiState,
+    actions: CreateVaultActions,
+    modifier: Modifier = Modifier,
+) {
+    BackHandler(onBack = actions.onBack)
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text(stepTitle(state.step)) },
                 navigationIcon = {
-                    IconButton(onClick = goBack) {
+                    IconButton(onClick = actions.onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -98,10 +145,10 @@ fun CreateVaultScreen(
             color = MaterialTheme.colorScheme.background,
         ) {
             when (state.step) {
-                CreateVaultStep.NAME -> NameStep(state, viewModel)
-                CreateVaultStep.PIN -> PinStep(state, viewModel)
-                CreateVaultStep.CONFIRM_PIN -> ConfirmPinStep(state, viewModel)
-                CreateVaultStep.RECOVERY_KEY -> RecoveryKeyStep(state, viewModel, onCreated)
+                CreateVaultStep.NAME -> NameStep(state, actions)
+                CreateVaultStep.PIN -> PinStep(state, actions)
+                CreateVaultStep.CONFIRM_PIN -> ConfirmPinStep(state, actions)
+                CreateVaultStep.RECOVERY_KEY -> RecoveryKeyStep(state, actions)
             }
         }
     }
@@ -115,20 +162,20 @@ private fun stepTitle(step: CreateVaultStep) = when (step) {
 }
 
 @Composable
-private fun NameStep(state: CreateVaultUiState, viewModel: CreateVaultViewModel) {
+private fun NameStep(state: CreateVaultUiState, actions: CreateVaultActions) {
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text("What should this Vault be called?", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = state.displayName,
-            onValueChange = viewModel::onDisplayNameChanged,
+            onValueChange = actions.onDisplayNameChanged,
             label = { Text("Vault name") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = viewModel::onNameConfirmed,
+            onClick = actions.onNameConfirmed,
             enabled = state.displayName.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Next") }
@@ -136,7 +183,7 @@ private fun NameStep(state: CreateVaultUiState, viewModel: CreateVaultViewModel)
 }
 
 @Composable
-private fun PinStep(state: CreateVaultUiState, viewModel: CreateVaultViewModel) {
+private fun PinStep(state: CreateVaultUiState, actions: CreateVaultActions) {
     var pinVisible by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text(
@@ -152,7 +199,7 @@ private fun PinStep(state: CreateVaultUiState, viewModel: CreateVaultViewModel) 
         Spacer(Modifier.height(16.dp))
         PinField(
             value = state.pin,
-            onValueChange = viewModel::onPinChanged,
+            onValueChange = actions.onPinChanged,
             visible = pinVisible,
             onVisibleChange = { pinVisible = it },
             isError = state.pinError != null,
@@ -163,19 +210,19 @@ private fun PinStep(state: CreateVaultUiState, viewModel: CreateVaultViewModel) 
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
         Spacer(Modifier.height(24.dp))
-        Button(onClick = viewModel::onPinSubmitted, modifier = Modifier.fillMaxWidth()) { Text("Next") }
+        Button(onClick = actions.onPinSubmitted, modifier = Modifier.fillMaxWidth()) { Text("Next") }
     }
 }
 
 @Composable
-private fun ConfirmPinStep(state: CreateVaultUiState, viewModel: CreateVaultViewModel) {
+private fun ConfirmPinStep(state: CreateVaultUiState, actions: CreateVaultActions) {
     var pinVisible by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text("Enter the same PIN again to confirm.", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(16.dp))
         PinField(
             value = state.confirmPin,
-            onValueChange = viewModel::onConfirmPinChanged,
+            onValueChange = actions.onConfirmPinChanged,
             visible = pinVisible,
             onVisibleChange = { pinVisible = it },
             isError = state.pinError != null,
@@ -186,7 +233,7 @@ private fun ConfirmPinStep(state: CreateVaultUiState, viewModel: CreateVaultView
             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
         } else {
             Button(
-                onClick = viewModel::onConfirmPinSubmitted,
+                onClick = actions.onConfirmPinSubmitted,
                 enabled = state.confirmPin.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Create Vault") }
@@ -195,11 +242,7 @@ private fun ConfirmPinStep(state: CreateVaultUiState, viewModel: CreateVaultView
 }
 
 @Composable
-private fun RecoveryKeyStep(
-    state: CreateVaultUiState,
-    viewModel: CreateVaultViewModel,
-    onCreated: (String) -> Unit,
-) {
+private fun RecoveryKeyStep(state: CreateVaultUiState, actions: CreateVaultActions) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -226,12 +269,12 @@ private fun RecoveryKeyStep(
         RecoveryKeyQr(state.recoveryKeyDisplay.orEmpty())
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = state.hasConfirmedSaved, onCheckedChange = viewModel::onSavedConfirmedChanged)
+            Checkbox(checked = state.hasConfirmedSaved, onCheckedChange = actions.onSavedConfirmedChanged)
             Text("I've saved this recovery key somewhere safe, off this device.")
         }
         Spacer(Modifier.height(16.dp))
         Button(
-            onClick = { state.createdVaultId?.let(onCreated) },
+            onClick = { state.createdVaultId?.let(actions.onCreated) },
             enabled = state.hasConfirmedSaved && state.createdVaultId != null,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Done") }
