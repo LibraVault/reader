@@ -217,7 +217,7 @@ class EpubReaderViewModel @Inject constructor(
 
     // ── TOC-based chapter model (#596) ──────────────────────────────────────────
 
-    private data class EpubChapter(val chapter: ReaderChapter, val spineIndex: Int)
+    internal data class EpubChapter(val chapter: ReaderChapter, val spineIndex: Int)
 
     // Keyed by Publication identity rather than ContentSource — cheap to recompute, but
     // there's no reason to walk the TOC/spine again on every getNextChapterText() call
@@ -245,25 +245,20 @@ class EpubReaderViewModel @Inject constructor(
      * EPUB ships no usable table of contents (no nav doc/NCX, or one whose entries
      * don't resolve to any spine item) — same behaviour as before this issue.
      */
-    private fun buildChapters(pub: Publication): List<EpubChapter> {
+    internal fun buildChapters(pub: Publication): List<EpubChapter> {
         val order = pub.readingOrder
         if (order.isEmpty()) return emptyList()
 
-        val titleBySpineIndex = LinkedHashMap<Int, String>()
-        for (tocLink in pub.tableOfContents.flattenToc()) {
-            val spineIndex = order.indexOfFirstWithHref(tocLink.url().removeFragment()) ?: continue
-            if (!titleBySpineIndex.containsKey(spineIndex)) {
-                titleBySpineIndex[spineIndex] = tocLink.title?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: order[spineIndex].title
-                    ?: "Chapter ${spineIndex + 1}"
-            }
+        // The only step that needs real Readium href resolution — everything else
+        // (dedup, ordering, fallback) is the plain-data collapseTocToChapterSpec below,
+        // so it can be unit-tested without a real Uri (see this class's test file).
+        val tocMatches = pub.tableOfContents.flattenToc().mapNotNull { tocLink ->
+            val spineIndex = order.indexOfFirstWithHref(tocLink.url().removeFragment())
+                ?: return@mapNotNull null
+            spineIndex to tocLink.title?.trim()?.takeIf { it.isNotEmpty() }
         }
 
-        val chapterSpec: Map<Int, String> = titleBySpineIndex.ifEmpty {
-            order.indices.associateWith { i -> order[i].title ?: "Chapter ${i + 1}" }
-        }
-
-        return chapterSpec.entries.mapIndexed { chapterIndex, (spineIndex, title) ->
+        return collapseTocToChapterSpec(tocMatches, order.map { it.title }).mapIndexed { chapterIndex, (spineIndex, title) ->
             val link = order[spineIndex]
             EpubChapter(
                 chapter = ReaderChapter(title = title, index = chapterIndex) {
@@ -272,18 +267,6 @@ class EpubReaderViewModel @Inject constructor(
                 spineIndex = spineIndex,
             )
         }
-    }
-
-    /** Finds which built chapter "owns" the given spine index — the chapter itself if it
-     * starts there, otherwise the nearest preceding chapter (e.g. a locator pointing at
-     * a cover/copyright spine item with no TOC entry of its own is attributed to the
-     * chapter before it, or the first chapter if it's before all of them). */
-    private fun chapterIndexForSpineIndex(chapters: List<EpubChapter>, spineIndex: Int): Int {
-        if (chapters.isEmpty()) return 0
-        val exact = chapters.indexOfFirst { it.spineIndex == spineIndex }
-        if (exact >= 0) return exact
-        val preceding = chapters.indexOfLast { it.spineIndex <= spineIndex }
-        return if (preceding >= 0) preceding else 0
     }
 
     // ── TOC sidebar (#596) ───────────────────────────────────────────────────────
@@ -297,20 +280,10 @@ class EpubReaderViewModel @Inject constructor(
      * only the containing spine file. Entries whose href doesn't resolve to any resource
      * (a malformed TOC) are skipped.
      */
-    private fun buildTocEntries(pub: Publication): List<EpubTocEntry> {
-        fun walk(links: List<Link>, level: Int): List<EpubTocEntry> =
-            links.flatMap { link ->
-                val entry = pub.locatorFromLink(link)?.let { locator ->
-                    EpubTocEntry(
-                        title = link.title?.trim()?.takeIf { it.isNotEmpty() } ?: "Untitled",
-                        level = level,
-                        locatorJson = locator.toJSON().toString(),
-                    )
-                }
-                listOfNotNull(entry) + walk(link.children, level + 1)
-            }
-        return walk(pub.tableOfContents, level = 0)
-    }
+    internal fun buildTocEntries(pub: Publication): List<EpubTocEntry> =
+        buildTocEntries(pub.tableOfContents, level = 0) { link ->
+            pub.locatorFromLink(link)?.toJSON()?.toString()
+        }
 
     private suspend fun fetchAndClean(
         pub: org.readium.r2.shared.publication.Publication,
@@ -429,5 +402,74 @@ data class EpubTocEntry(
 // first) into chapter-collapsing order. Deliberately not `List<Link>.flatten()` from
 // readium-shared, which also splices in `alternates` (different-language/format variants
 // of the same resource, not sub-chapters) between a link and its children.
-private fun List<Link>.flattenToc(): List<Link> =
+internal fun List<Link>.flattenToc(): List<Link> =
     flatMap { listOf(it) + it.children.flattenToc() }
+
+/** Finds which built chapter "owns" the given spine index — the chapter itself if it
+ * starts there, otherwise the nearest preceding chapter (e.g. a locator pointing at
+ * a cover/copyright spine item with no TOC entry of its own is attributed to the
+ * chapter before it, or the first chapter if it's before all of them). */
+internal fun chapterIndexForSpineIndex(
+    chapters: List<EpubReaderViewModel.EpubChapter>,
+    spineIndex: Int,
+): Int {
+    if (chapters.isEmpty()) return 0
+    val exact = chapters.indexOfFirst { it.spineIndex == spineIndex }
+    if (exact >= 0) return exact
+    val preceding = chapters.indexOfLast { it.spineIndex <= spineIndex }
+    return if (preceding >= 0) preceding else 0
+}
+
+/**
+ * The pure part of [EpubReaderViewModel.buildChapters]: given each TOC entry's already-
+ * resolved spine index (or null title, meaning the TOC link itself had none) in TOC
+ * order, plus every spine item's own title (used both as a per-entry title fallback and
+ * to size the "no usable TOC" fallback), produces the deduped (spineIndex, title) pairs
+ * in chapter order.
+ *
+ * Takes no Readium types so it's testable without a real `android.net.Uri` — see this
+ * class's test file's note on why `Link`/`Url` aren't safely constructible in a plain
+ * JVM unit test here.
+ */
+internal fun collapseTocToChapterSpec(
+    tocMatches: List<Pair<Int, String?>>,
+    spineTitles: List<String?>,
+): List<Pair<Int, String>> {
+    val titleBySpineIndex = LinkedHashMap<Int, String>()
+    for ((spineIndex, tocTitle) in tocMatches) {
+        if (spineIndex !in spineTitles.indices) continue
+        if (!titleBySpineIndex.containsKey(spineIndex)) {
+            titleBySpineIndex[spineIndex] = tocTitle
+                ?: spineTitles[spineIndex]
+                ?: "Chapter ${spineIndex + 1}"
+        }
+    }
+
+    return titleBySpineIndex.ifEmpty {
+        spineTitles.indices.associateWith { i -> spineTitles[i] ?: "Chapter ${i + 1}" }
+    }.toList()
+}
+
+/**
+ * The pure part of [EpubReaderViewModel.buildTocEntries]: walks a TOC tree depth-first
+ * (parent immediately followed by its own children, [level] tracking nesting depth),
+ * skipping any [Link] [locatorJsonFor] can't resolve (a malformed TOC entry). Takes
+ * [locatorJsonFor] as a parameter rather than calling [Publication.locatorFromLink]
+ * directly so the recursion/level/fallback-title logic is testable without a real
+ * `android.net.Uri` — see [collapseTocToChapterSpec]'s doc for why that matters here.
+ */
+internal fun buildTocEntries(
+    links: List<Link>,
+    level: Int,
+    locatorJsonFor: (Link) -> String?,
+): List<EpubTocEntry> =
+    links.flatMap { link ->
+        val entry = locatorJsonFor(link)?.let { json ->
+            EpubTocEntry(
+                title = link.title?.trim()?.takeIf { it.isNotEmpty() } ?: "Untitled",
+                level = level,
+                locatorJson = json,
+            )
+        }
+        listOfNotNull(entry) + buildTocEntries(link.children, level + 1, locatorJsonFor)
+    }
