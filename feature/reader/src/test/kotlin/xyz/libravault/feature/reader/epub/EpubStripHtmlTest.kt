@@ -1,6 +1,7 @@
 package xyz.libravault.feature.reader.epub
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -172,5 +173,76 @@ class EpubStripHtmlTest {
         for (i in 0 until 2_100_000) builder.append("word ")
         val out = stripHtml(builder.toString())
         assertNull(out, "2.1 MB of plain text should be rejected")
+    }
+
+    // ── Block-boundary newlines (#630) ───────────────────────────────────────
+
+    @Test
+    fun `paragraphs are separated by a newline`() {
+        val out = stripHtml("<p>First para.</p><p>Second para.</p>")
+        assertNotNull(out)
+        assertEquals("First para.\nSecond para.", out!!.trim())
+    }
+
+    @Test
+    fun `issue repro- paragraphs, inline formatting, blockquote and hr all produce line boundaries`() {
+        val html = "<p>First para.</p><p>Second para.</p>" +
+            "<p><em>emph</em> text and <b>bold</b> and <blockquote>a quote</blockquote></p>" +
+            "<hr/><p>After rule</p>"
+        val out = stripHtml(html)
+        assertNotNull(out)
+        // Per HTML5 tree-construction rules, a <blockquote> implicitly closes
+        // an open <p> (it's in the "special" tag list that does this), so
+        // Jsoup's parser makes it a sibling of the third <p>, not a child —
+        // each still gets its own line.
+        val lines = out!!.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        assertEquals(
+            listOf("First para.", "Second para.", "emph text and bold and", "a quote", "After rule"),
+            lines,
+        )
+    }
+
+    @Test
+    fun `headings introduce a newline`() {
+        val out = stripHtml("<h1>Chapter One</h1><p>Body text.</p>")
+        assertNotNull(out)
+        assertEquals("Chapter One\nBody text.", out!!.trim())
+    }
+
+    @Test
+    fun `list items each get their own line`() {
+        val out = stripHtml("<ul><li>One</li><li>Two</li><li>Three</li></ul>")
+        assertNotNull(out)
+        val lines = out!!.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        assertEquals(listOf("One", "Two", "Three"), lines)
+    }
+
+    @Test
+    fun `br introduces a newline without a surrounding block`() {
+        val out = stripHtml("Line one<br>Line two")
+        assertNotNull(out)
+        val lines = out!!.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        assertEquals(listOf("Line one", "Line two"), lines)
+    }
+
+    @Test
+    fun `inline formatting alone does not introduce a newline`() {
+        val out = stripHtml("<p>Hello <b>bold</b> and <i>italic</i> world</p>")
+        assertNotNull(out)
+        assertEquals("Hello bold and italic world", out!!.trim())
+    }
+
+    @Test
+    fun `stripHtml output lets EpubTextPreprocessor actually remove a scene break separator`() {
+        // The regression this issue describes end-to-end: a scene-break line
+        // between two paragraphs must survive as its own line so
+        // EpubTextPreprocessor's per-line regex can anchor on it and strip it.
+        val html = "<p>End of chapter.</p><p>***</p><p>Next chapter begins.</p>"
+        val stripped = stripHtml(html)
+        assertNotNull(stripped)
+        val cleaned = EpubTextPreprocessor.clean(stripped!!)
+        assertFalse(cleaned.contains("*"), "scene-break separator should have been stripped, got: $cleaned")
+        assertTrue(cleaned.contains("End of chapter."))
+        assertTrue(cleaned.contains("Next chapter begins."))
     }
 }
