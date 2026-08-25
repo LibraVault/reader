@@ -291,4 +291,71 @@ class LibraryViewModelTest {
         }
         coVerify(exactly = 0) { searchLibrary(any()) }
     }
+
+    // ── Mini-player (#493) ───────────────────────────────────────────────────
+    // playPause() needs a resolved MediaController, unlike every other test above —
+    // the shared controllerFuture mock never invokes its addListener callback, so
+    // these build their own ViewModel with a real SettableFuture, same pattern
+    // PlayerViewModelTest uses.
+
+    private fun viewModelWithConnectedController(
+        mockController: androidx.media3.session.MediaController,
+    ): LibraryViewModel {
+        val future = com.google.common.util.concurrent.SettableFuture.create<androidx.media3.session.MediaController>()
+        future.set(mockController)
+        return LibraryViewModel(
+            observeVaults = observeVaults,
+            getLibrary = getLibrary,
+            observeCurrentlyReading = observeCurrentlyReading,
+            scanVault = scanVault,
+            searchLibrary = searchLibrary,
+            addVaultFolder = addVaultFolder,
+            removeVaultFolder = removeVaultFolder,
+            vaultManager = vaultManager,
+            logger = logger,
+            playbackStateHolder = playbackStateHolder,
+            observeAllBookmarks = observeAllBookmarks,
+            deleteBookmark = deleteBookmark,
+            controllerFuture = future,
+            supporterRepository = supporterRepository,
+            appContext = mockk(relaxed = true),
+        )
+    }
+
+    /** #493 — a vault-sourced PlaybackStateHolder.State leaves itemId null by
+     *  design; playPause() must branch on vaultEntry first or the mini-player's
+     *  play/pause icon would silently never flip for vault audio. */
+    @Test
+    fun `playPause flips a vault item via updateVault, not update`() = runTest(mainDispatcher) {
+        val mockController = mockk<androidx.media3.session.MediaController>(relaxed = true)
+        every { mockController.isPlaying } returns false
+        playbackStateHolder.updateVault(
+            vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry("vault-1", "aabbcc", MediaFormat.MP3),
+            title = "Vault Audiobook", author = "Vault Author", coverArtPath = null, isPlaying = false,
+        )
+
+        viewModelWithConnectedController(mockController).playPause()
+
+        val state = playbackStateHolder.state.value
+        assertEquals(xyz.libravault.core.domain.model.ContentSource.VaultEntry("vault-1", "aabbcc", MediaFormat.MP3), state.vaultEntry)
+        assertEquals(null, state.itemId)
+        assertEquals(true, state.isPlaying)
+    }
+
+    @Test
+    fun `playPause flips a real-file item via update`() = runTest(mainDispatcher) {
+        val mockController = mockk<androidx.media3.session.MediaController>(relaxed = true)
+        every { mockController.isPlaying } returns false
+        playbackStateHolder.update(
+            itemId = 1L, vaultFolderId = 1L, filePath = "content://x",
+            title = "Book", author = "Author", coverArtPath = null, isPlaying = false,
+        )
+
+        viewModelWithConnectedController(mockController).playPause()
+
+        val state = playbackStateHolder.state.value
+        assertEquals(1L, state.itemId)
+        assertEquals(null, state.vaultEntry)
+        assertEquals(true, state.isPlaying)
+    }
 }

@@ -259,10 +259,7 @@ fun LibraryScreen(
             }
         },
         bottomBar = {
-            // isActive, not itemId != null (#493) — itemId stays null by design for a
-            // vault-sourced item (see PlaybackStateHolder.State.vaultEntry's doc),
-            // which would otherwise leave the mini-player never showing for vault audio.
-            if (nowPlaying.isActive) {
+            if (shouldShowMiniPlayer(nowPlaying)) {
                 MiniPlayerBar(
                     title        = nowPlaying.title,
                     author       = nowPlaying.author,

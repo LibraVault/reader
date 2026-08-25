@@ -58,8 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import xyz.libravault.core.storage.VaultScreenSecurityPreference
 import xyz.libravault.core.ui.SecureScreenEffect
+import xyz.libravault.core.ui.rememberScreenSecurityEnabled
 import xyz.libravault.feature.player.components.BookmarksSheet
 import xyz.libravault.feature.player.components.ChapterListSheet
 import xyz.libravault.feature.player.components.PlaybackControls
@@ -83,13 +83,12 @@ fun PlayerScreen(
     var showChapters    by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
 
-    // #493 — same FLAG_SECURE gating the deleted VaultPlayerScreen applied directly,
-    // and the same toggle-driven pattern VaultContentsScreen/ReaderScreen use.
-    val secureScreenContext = LocalContext.current
-    SecureScreenEffect(
-        enabled = state.isVaultItem &&
-            remember { VaultScreenSecurityPreference.isEnabled(secureScreenContext) },
-    )
+    // #493 — same FLAG_SECURE gating the deleted VaultPlayerScreen applied directly.
+    // rememberScreenSecurityEnabled (not a one-shot remember{}) — same live-observing
+    // pattern #571 already fixed VaultContentsScreen onto, called unconditionally each
+    // recomposition so short-circuiting on isVaultItem doesn't skip the composable call.
+    val screenSecurityEnabled = rememberScreenSecurityEnabled(LocalContext.current)
+    SecureScreenEffect(enabled = state.isVaultItem && screenSecurityEnabled)
 
     // #526, ported from the deleted VaultPlayerScreen — re-check lock state every time
     // this screen comes back to the foreground. A no-op for a non-vault item

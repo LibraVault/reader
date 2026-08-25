@@ -1,6 +1,7 @@
 package xyz.libravault.feature.library
 
 import xyz.libravault.core.domain.model.LibraryItem
+import xyz.libravault.feature.player.service.PlaybackStateHolder
 
 /**
  * Pure decision logic lifted out of [LibraryScreen]'s composable body.
@@ -140,3 +141,12 @@ internal fun vaultDisplayNameFrom(lastPathSegment: String?): String =
         ?: DEFAULT_VAULT_NAME
 
 internal const val DEFAULT_VAULT_NAME = "My Vault"
+
+/**
+ * Whether the mini-player should show — `isActive`, not `itemId != null` (#493):
+ * `itemId` stays null by design for a vault-sourced item (see
+ * [PlaybackStateHolder.State.vaultEntry]'s doc), which would otherwise leave the
+ * mini-player never showing for vault audio. Extracted per this file's own doc
+ * for direct test coverage.
+ */
+internal fun shouldShowMiniPlayer(nowPlaying: PlaybackStateHolder.State): Boolean = nowPlaying.isActive

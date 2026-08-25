@@ -25,6 +25,16 @@ data class ReaderSettings(
     // #422's "Product decision" — no new UserPreferences/SharedPreferences plumbing).
     // See xyz.libravault.core.ui.components.WarmthOverlay for how this is rendered.
     val warmth: Float         = 0f,
+    // Auto-scroll (#5) — continuously advances the reading position without manual
+    // input, across all three formats (see AutoScroll.kt for the two mechanisms
+    // this drives: continuous pixel scroll where a ScrollableState exists, timed
+    // page-advance where it doesn't). Session-only, same lifecycle as scrollMode/
+    // warmth above — resets to off every time the reader screen reopens.
+    val autoScrollEnabled: Boolean = false,
+    // Speed multiplier: 0.5 (slowest) – 3.0 (fastest), 1.0 = default pace. Same
+    // multiplier shape as Read Aloud's TTS playback speed, for a consistent "speed"
+    // mental model across the app's two hands-free reading modes.
+    val autoScrollSpeed: Float = 1.0f,
 )
 
 enum class FontFamily(val displayName: String) {

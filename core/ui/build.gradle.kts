@@ -21,6 +21,9 @@ dependencies {
     api(libs.bundles.compose)
     // WindowCompat, for reactively matching status bar icon color to the active theme.
     implementation(libs.androidx.core.ktx)
+    // VaultScreenSecurityPreference — RememberScreenSecurityEnabled.kt (#493, moved
+    // here from feature:vault so feature:reader/feature:player can use it too).
+    implementation(project(":core:storage"))
 
     testImplementation(libs.bundles.testing.jvm)
     testRuntimeOnly(libs.junit5.engine)

@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
@@ -453,7 +454,7 @@ class PlayerViewModel @Inject constructor(
         // listener's myGeneration guard catches any stale false events that
         // ExoPlayer fires during the internal state machine transition.
         playGeneration++
-        val mediaItem = MediaItem.fromUri(uri)
+        val mediaItem = buildMediaItem(uri)
         ctrl.setMediaItem(mediaItem, startPositionMs)
         // Apply saved speed before prepare so playback starts at the correct speed
         ctrl.setPlaybackSpeed(startSpeed)
@@ -471,6 +472,37 @@ class PlayerViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(isPlaying = true)
         startProgressSaving()
         updateChapters()
+    }
+
+    /**
+     * #493 QA finding: no [MediaMetadata] mechanism exists anywhere in this codebase
+     * today (every real-file `MediaItem` is bare `MediaItem.fromUri(uri)`, relying
+     * entirely on the audio file's own embedded tags for the system notification's
+     * title/artist) — so leaving a vault `MediaItem` equally bare would let
+     * [VaultAwareMediaSourceFactory][xyz.libravault.feature.player.service.VaultAwareMediaSourceFactory]'s
+     * `VaultDataSource` stream the file's own embedded ID3/tag bytes straight into
+     * Media3's metadata extractor, printing the real title/author on the lock screen
+     * regardless of any future "generic placeholder" setting (PRD §8). Real-file
+     * behavior is left untouched (avoids an unrelated regression risk on the far
+     * larger non-vault user base) — only a vault `MediaItem` gets explicit
+     * [MediaMetadata] attached, which Media3 always prefers over an extracted tag.
+     * Defaults to the real title/author (Phase 3 wires the actual placeholder-vs-real
+     * toggle per PRD §8) — an explicit, intentional default per the Phase 2 plan, not
+     * an oversight; what this fixes is the *silent* embedded-tag leak, not the
+     * placeholder toggle itself.
+     */
+    private fun buildMediaItem(uri: Uri): MediaItem {
+        if (uri.scheme != VAULT_MEDIA_URI_SCHEME) return MediaItem.fromUri(uri)
+        val item = _uiState.value.item
+        return MediaItem.Builder()
+            .setUri(uri)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(item?.title)
+                    .setArtist(item?.author)
+                    .build()
+            )
+            .build()
     }
 
     fun togglePlayPause() {
