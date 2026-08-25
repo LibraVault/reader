@@ -51,13 +51,26 @@ jobs:
               puts "  name=#{g.name.inspect} id=#{g.id} isInternalGroup=#{g.is_internal_group} publicLinkEnabled=#{g.public_link_enabled}"
               builds = g.fetch_builds
               puts "    build numbers in this group (#{builds.size}): " + builds.map { |b| b.version }.join(", ")
+
+              # Note::ready_for_external_testing? is broken in fastlane 2.237.0 itself
+              # (calls a method BuildBetaDetail does not define) -- do not call it.
+              next if g.is_internal_group
+              testers = app.get_beta_testers(filter: { betaGroups: g.id })
+              puts "    testers in this group (#{testers.size}):"
+              testers.each do |t|
+                puts "      #{t.email} state=#{t.beta_tester_state} inviteType=#{t.invite_type}"
+              end
             end
 
             puts ""
-            puts "Most recent builds on the app (regardless of group):"
+            puts "Most recent builds on the app (regardless of group) -- notification status:"
             recent = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 10)
             recent.each do |b|
-              puts "  build=#{b.version} processingState=#{b.processing_state} readyInternal=#{b.ready_for_internal_testing?} readyExternal=#{b.ready_for_external_testing?} uploadedDate=#{b.uploaded_date}"
+              d = b.build_beta_detail
+              puts "  build=#{b.version} processingState=#{b.processing_state} " \
+                   "internalState=#{d&.internal_build_state} externalState=#{d&.external_build_state} " \
+                   "autoNotifyEnabled=#{d&.auto_notify_enabled} didNotify=#{d&.did_notify} " \
+                   "uploadedDate=#{b.uploaded_date}"
             end
           '
 
