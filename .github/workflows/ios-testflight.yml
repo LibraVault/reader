@@ -243,6 +243,61 @@ jobs:
 
           echo "✅ Uploaded to TestFlight"
 
+      # `pilot upload --groups` above has been observed (2026-08-25) to
+      # intermittently fail to add the external group SILENTLY -- no error,
+      # no failed job, "Successfully distributed build to Internal testers"
+      # printed regardless (that wording is cosmetic: build_manager.rb's
+      # `distribute` labels its final message purely from whether
+      # `--distribute_external` was passed, unrelated to whether the named
+      # `--groups` group-add actually succeeded). 7 of 24 recent builds were
+      # affected. Never trust the upload step's own exit code for this --
+      # verify group membership directly via the same API, retry once, and
+      # fail the job loudly if it still didn't take, rather than let this
+      # look green while testers never get notified again.
+      - name: Verify external TestFlight distribution
+        env:
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          echo "$PRIVATE_KEY" > AuthKey.p8
+
+          ruby -rspaceship -e '
+            token = Spaceship::ConnectAPI::Token.create(
+              key_id: ENV["KEY_ID"],
+              issuer_id: ENV["ISSUER_ID"],
+              filepath: "AuthKey.p8",
+            )
+            Spaceship::ConnectAPI.token = token
+
+            apps = Spaceship::ConnectAPI::App.all(filter: { bundleId: ENV["APPLE_BUNDLE_ID"] })
+            raise "No app found for bundle id #{ENV["APPLE_BUNDLE_ID"]}" if apps.empty?
+            app = apps.first
+
+            builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: ENV["BUILD_NUMBER"], limit: 5)
+            raise "No build found with build_number=#{ENV["BUILD_NUMBER"]} -- upload apparently did not really complete" if builds.empty?
+            build = builds.first
+
+            external_group = app.get_beta_groups.find { |g| g.name == "LibraVault Alpha/Beta" }
+            raise "External group \"LibraVault Alpha/Beta\" not found" if external_group.nil?
+
+            in_group = -> { external_group.fetch_builds.any? { |b| b.id == build.id } }
+
+            if in_group.call
+              puts "✅ Verified: build #{build.version} is in \"LibraVault Alpha/Beta\"."
+            else
+              puts "⚠️ Build #{build.version} is NOT in \"LibraVault Alpha/Beta\" despite --groups on upload -- retrying add_beta_groups directly."
+              build.add_beta_groups(beta_groups: [external_group])
+              if in_group.call
+                puts "✅ Retry succeeded: build #{build.version} now appears in \"LibraVault Alpha/Beta\"."
+              else
+                raise "add_beta_groups did not raise, but build #{build.version} still is not in the external group after a direct retry. Testers were NOT notified. Run .github/workflows/add-testflight-external-group.yml with build_number=#{build.version} once this is investigated, or add it manually in App Store Connect."
+              end
+            end
+          '
+
+          rm -f AuthKey.p8
+
       - name: Upload Build Artifacts
         if: always()
         uses: actions/upload-artifact@v4
