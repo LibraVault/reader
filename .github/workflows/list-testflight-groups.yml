@@ -55,7 +55,11 @@ jobs:
               # Note::ready_for_external_testing? is broken in fastlane 2.237.0 itself
               # (calls a method BuildBetaDetail does not define) -- do not call it.
               next if g.is_internal_group
-              testers = app.get_beta_testers(filter: { betaGroups: g.id })
+              # app.get_beta_testers always adds filter[:apps] = app.id itself --
+              # combined with betaGroups that is TWO relationship filters, which
+              # the API rejects outright ("Only one relationship filter can be
+              # applied"). Call the client directly with only the group filter.
+              testers = Spaceship::ConnectAPI.get_beta_testers(filter: { betaGroups: g.id }).all_pages.flat_map(&:to_models)
               puts "    testers in this group (#{testers.size}):"
               testers.each do |t|
                 puts "      #{t.email} state=#{t.beta_tester_state} inviteType=#{t.invite_type}"
