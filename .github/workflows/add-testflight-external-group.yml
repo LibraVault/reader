@@ -1,13 +1,21 @@
-name: Add TestFlight Build to External Group (remediation)
+name: Fix Stuck TestFlight Build (remediation)
 
-# Companion to list-testflight-groups.yml. `pilot upload --groups "LibraVault
-# Alpha/Beta"` has been confirmed (2026-08-25) to intermittently fail to add
-# the external group silently -- no error, no failed job, the build just
-# never shows up in that group (7 of the last 24 builds hit this; see
-# project_testflight_external_group_intermittent_failure.md). This directly
-# calls the same add_beta_groups API for one already-uploaded build number,
-# without re-uploading a whole new IPA or waiting on Apple's processing
-# again -- for unblocking a build stuck like this.
+# Companion to list-testflight-groups.yml, for unblocking one already-uploaded
+# build without re-uploading a whole new IPA. Handles two distinct, unrelated
+# ways a build can end up not reaching external testers (see
+# project_testflight_external_group_intermittent_failure.md for the full
+# investigation history):
+#   1. Not in the external "LibraVault Alpha/Beta" group at all -- affected
+#      every build uploaded before the 2026-08-11 fix (PR #97) to
+#      ios-testflight.yml; not expected going forward.
+#   2. In the group, but never actually submitted for Beta App Review (stuck
+#      at externalState=READY_FOR_BETA_SUBMISSION, "Ready to Submit" in the
+#      App Store Connect UI) -- happens for a build uploaded outside our CI
+#      pipeline entirely (e.g. manually via Xcode Organizer), since it never
+#      goes through pilot upload's own distribute_build/post_beta_app_review_
+#      submission call. Confirmed 2026-08-25 for build 148 this way: its
+#      build number (148) is wildly out of sequence with this pipeline's own
+#      1..40 run, a strong signal it wasn't uploaded through here at all.
 
 on:
   workflow_dispatch:
@@ -56,7 +64,7 @@ jobs:
 
             already_in = external_group.fetch_builds.any? { |b| b.id == build.id }
             if already_in
-              puts "Build #{build.version} is already in \"LibraVault Alpha/Beta\" -- nothing to do."
+              puts "Build #{build.version} is already in \"LibraVault Alpha/Beta\" -- skipping group add."
             else
               build.add_beta_groups(beta_groups: [external_group])
               puts "Added build #{build.version} to \"LibraVault Alpha/Beta\"."
@@ -66,6 +74,28 @@ jobs:
               now_in = external_group.fetch_builds.any? { |b| b.id == build.id }
               raise "add_beta_groups did not raise, but build #{build.version} still is not in the group after the call." unless now_in
               puts "Verified: build #{build.version} now appears in \"LibraVault Alpha/Beta\"."
+            end
+
+            # Group membership alone does not put a build in front of external
+            # testers or send any notification -- it also needs a Beta App
+            # Review submission. A build normally gets this automatically as
+            # part of `pilot upload`s own distribute_build call, but a build
+            # uploaded outside that path (e.g. manually via Xcode Organizer)
+            # never goes through it. Re-fetch to see the post-group-add state.
+            build = Spaceship::ConnectAPI::Build.get(build_id: build.id)
+            detail = build.build_beta_detail
+            puts "External state: #{detail&.external_build_state}"
+
+            if detail&.external_build_state == "READY_FOR_BETA_SUBMISSION"
+              puts "Build #{build.version} needs a Beta App Review submission -- submitting now."
+              build.post_beta_app_review_submission
+              build = Spaceship::ConnectAPI::Build.get(build_id: build.id)
+              puts "External state after submission: #{build.build_beta_detail&.external_build_state}"
+              puts "(WAITING_FOR_BETA_REVIEW/IN_BETA_REVIEW here is normal and can take time -- re-run list-testflight-groups.yml later to check whether it reached IN_BETA_TESTING.)"
+            elsif detail&.external_build_state == "IN_BETA_TESTING"
+              puts "Build #{build.version} is already IN_BETA_TESTING -- no review submission needed."
+            else
+              puts "Build #{build.version} external state is #{detail&.external_build_state.inspect} -- not a state this workflow knows how to advance, leaving as-is."
             end
           '
 
