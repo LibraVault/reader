@@ -1,0 +1,55 @@
+name: List TestFlight Beta Groups (diagnostic)
+
+# One-off, cheap diagnostic — no Xcode build, no IPA upload. Authenticates with
+# the same App Store Connect API key ios-testflight.yml already uses and lists
+# every beta group fastlane's own spaceship layer sees for this app: real
+# name, id, and whether it's the internal group. Exists because
+# ios-testflight.yml's `fastlane pilot upload --groups "LibraVault Alpha/Beta"`
+# has twice now (see project_testflight_group_distribution_noop_fix.md) looked
+# like it succeeded (job green, "Successfully distributed build to Internal
+# testers") while silently never reaching the external group — and fastlane's
+# own group-matching is a plain `options[:groups].include?(group.name)` exact
+# string compare that fails silently (empty result, no error) on any mismatch.
+# Run this before assuming a code fix is right, not after.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  list-groups:
+    name: List beta groups via App Store Connect API
+    runs-on: macos-26
+    timeout-minutes: 10
+
+    steps:
+      - name: List beta groups
+        env:
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+        run: |
+          echo "$PRIVATE_KEY" > AuthKey.p8
+
+          ruby -rspaceship -e '
+            token = Spaceship::ConnectAPI::Token.create(
+              key_id: ENV["KEY_ID"],
+              issuer_id: ENV["ISSUER_ID"],
+              filepath: "AuthKey.p8",
+            )
+            Spaceship::ConnectAPI.token = token
+
+            apps = Spaceship::ConnectAPI::App.all(filter: { bundleId: ENV["APPLE_BUNDLE_ID"] })
+            raise "No app found for bundle id #{ENV["APPLE_BUNDLE_ID"]}" if apps.empty?
+            app = apps.first
+            puts "App: #{app.name} (id=#{app.id}, bundleId=#{app.bundle_id})"
+            puts ""
+
+            groups = Spaceship::ConnectAPI::BetaGroup.all(filter: { app: app.id })
+            puts "Found #{groups.size} beta group(s):"
+            groups.each do |g|
+              puts "  name=#{g.name.inspect} id=#{g.id} isInternalGroup=#{g.is_internal_group} publicLinkEnabled=#{g.public_link_enabled}"
+            end
+          '
+
+          rm -f AuthKey.p8
