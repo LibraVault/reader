@@ -457,7 +457,7 @@ jobs:
             next, so always write it, even if something went wrong earlier.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Edit,Write,WebSearch"
-            # Raised 40->70->90->120 as issues keep getting more
+            # Raised 40->70->90->120->150 as issues keep getting more
             # cross-cutting (e.g. #370: 9+ real call sites to touch).
             # Issue #370 (2026-08-20) hit 90 after ~33 turns of legitimate
             # recon and 23 real edit calls across 7 files, all before a
@@ -465,7 +465,18 @@ jobs:
             # note. This bump buys headroom for genuinely wide changes;
             # it does not fix a run that defers branching/committing to
             # the end, which the persona change addresses separately.
-            --max-turns 120
+            #
+            # 120->150 (2026-08-25): #5 (auto-scroll across all three reader
+            # formats — EPUB/Markdown/PDF, shared plumbing plus per-format
+            # LaunchedEffect wiring) hit the 120 cap the same day #530 and
+            # #531 independently hit it too (all three genuinely
+            # multi-file/multi-format, not a run that stalled) — see #5's
+            # own thread for the confirmed max_turns crash diagnosis. #5 was
+            # also split into smaller per-format issues so no single run
+            # needs this full headroom going forward, but three same-day
+            # hits at 120 is a real, not one-off, signal that the previous
+            # ceiling was too tight for this project's current issue sizes.
+            --max-turns 150
 
       - name: Force-classify risk and advance to QA
         # !cancelled() rather than the implicit success()-only default: if
