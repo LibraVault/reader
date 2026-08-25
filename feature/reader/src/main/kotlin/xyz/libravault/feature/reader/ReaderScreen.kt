@@ -76,6 +76,7 @@ import xyz.libravault.feature.reader.markdown.MarkdownReaderScreen
 import xyz.libravault.feature.reader.markdown.MarkdownReaderViewModel
 import xyz.libravault.feature.reader.markdown.toc.TocEntry
 import xyz.libravault.feature.reader.pdf.PdfReaderScreen
+import xyz.libravault.feature.reader.pdf.PdfReaderViewModel
 import xyz.libravault.feature.reader.readaloud.ReadAloudPlayerScreen
 
 // Height reserved at the bottom of the reader content for the bottom bars.
@@ -116,11 +117,12 @@ fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): R
 
 /**
  * Which formats expose the "Read Aloud" entry point in the settings sheet — EPUB
- * (#137) and Markdown (#276). Matches iOS's `ReaderSettingsSheet.showReadAloud`,
- * which already gates both formats. PDF Read Aloud is out of scope for both issues.
+ * (#137), Markdown (#276), and PDF (#591 Phase 3, one chapter per page). Now matches
+ * iOS's `ReaderSettingsAvailability.showReadAloud`, which has supported PDF (via
+ * `PDFParser`'s page-based chapters) since before this Android phase landed.
  */
 fun readAloudSupported(format: MediaFormat): Boolean =
-    format == MediaFormat.EPUB || format == MediaFormat.MARKDOWN
+    format == MediaFormat.EPUB || format == MediaFormat.MARKDOWN || format == MediaFormat.PDF
 
 /**
  * Entry point for the reader feature.
@@ -183,6 +185,12 @@ fun ReaderScreen(
     val pendingMarkdownSectionIndex = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Int?>(null)
     }
+    // Page-based TOC for the currently-open PDF (#591 Phase 3) — one entry per page,
+    // reusing MarkdownTocSheet's UI and the existing pendingPdfPage scroll channel
+    // (already used for bookmark navigation) rather than a second PDF-specific one.
+    val pdfToc = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<List<TocEntry>>(emptyList())
+    }
 
     // Show audiobook mini player whenever an audiobook is loaded.
     // Independent of toolbar visibility — stays pinned at the bottom even when the
@@ -241,6 +249,10 @@ fun ReaderScreen(
                 // drive its chapter walk from here regardless of which composable first
                 // triggered the ViewModel's creation.
                 val markdownViewModel: MarkdownReaderViewModel = hiltViewModel()
+                // Same pattern again for PDF (#591 Phase 3) — shared with PdfReaderScreen
+                // so Read Aloud's page-based chapter walk (PdfReaderViewModel.getChapterTextFromPage/
+                // getNextChapterText/getPreviousChapterText) can be driven from here.
+                val pdfViewModel: PdfReaderViewModel = hiltViewModel()
 
                 val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -280,7 +292,10 @@ fun ReaderScreen(
                                 },
                                 onShowBookmarks = viewModel::showBookmarks,
                                 onSettings      = viewModel::showSettings,
-                                onShowToc       = if (format == MediaFormat.MARKDOWN || format == MediaFormat.EPUB) {
+                                onShowToc       = if (format == MediaFormat.MARKDOWN ||
+                                    format == MediaFormat.EPUB ||
+                                    format == MediaFormat.PDF
+                                ) {
                                     viewModel::showToc
                                 } else {
                                     null
@@ -312,6 +327,18 @@ fun ReaderScreen(
                                                 getPreviousText = markdownViewModel::getPreviousChapterText,
                                                 chapterIndex    = { markdownViewModel.ttsChapterIndex },
                                                 chapterCount    = { markdownViewModel.ttsChapterCount },
+                                            )
+                                            MediaFormat.PDF -> viewModel.startReadAloud(
+                                                getInitialText = {
+                                                    pdfViewModel.getChapterTextFromPage(
+                                                        contentSource,
+                                                        state.progress?.pageIndex,
+                                                    )
+                                                },
+                                                getNextText     = pdfViewModel::getNextChapterText,
+                                                getPreviousText = pdfViewModel::getPreviousChapterText,
+                                                chapterIndex    = { pdfViewModel.ttsChapterIndex },
+                                                chapterCount    = { pdfViewModel.ttsChapterCount },
                                             )
                                             else -> {}
                                         }
@@ -403,6 +430,8 @@ fun ReaderScreen(
                                         settings         = state.settings,
                                         onPageChanged    = viewModel::onPdfPageChanged,
                                         onCentreTap      = viewModel::onCentreTap,
+                                        onTocExtracted   = { pdfToc.value = it },
+                                        viewModel        = pdfViewModel,
                                     )
                                 }
 
@@ -437,7 +466,7 @@ fun ReaderScreen(
                     }
                 }
 
-                // ── TOC sheet (Markdown and EPUB — #596) ────────────────────────
+                // ── TOC sheet (Markdown headings / EPUB nav doc / PDF pages) ───
                 if (state.showTocSheet) {
                     when (format) {
                         MediaFormat.MARKDOWN -> MarkdownTocSheet(
@@ -452,6 +481,17 @@ fun ReaderScreen(
                             entries      = epubToc,
                             onEntryClick = { entry ->
                                 epubViewModel.goToLocatorJson(entry.locatorJson)
+                                viewModel.hideToc()
+                            },
+                            onDismiss    = viewModel::hideToc,
+                        )
+                        // PDF (#591 Phase 3) reuses MarkdownTocSheet's flat-list UI —
+                        // one entry per page, no nesting needed — rather than a third
+                        // near-identical sheet.
+                        MediaFormat.PDF -> MarkdownTocSheet(
+                            entries      = pdfToc.value,
+                            onEntryClick = { entry ->
+                                pendingPdfPage.value = entry.sectionIndex
                                 viewModel.hideToc()
                             },
                             onDismiss    = viewModel::hideToc,
