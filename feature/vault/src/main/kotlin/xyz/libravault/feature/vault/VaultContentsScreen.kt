@@ -50,7 +50,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import xyz.libravault.core.storage.VaultScreenSecurityPreference
 import xyz.libravault.core.ui.SecureScreenEffect
 import xyz.libravault.core.vaultstore.VaultManifestEntry
 import xyz.libravault.core.vaultstore.toHexString
@@ -76,7 +75,7 @@ fun VaultContentsScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    SecureScreenEffect(enabled = remember { VaultScreenSecurityPreference.isEnabled(context) })
+    SecureScreenEffect(enabled = rememberScreenSecurityEnabled(context))
 
     LaunchedEffect(state.wasLocked) {
         if (state.wasLocked) onBack()
