@@ -50,14 +50,14 @@ jobs:
             groups.each do |g|
               puts "  name=#{g.name.inspect} id=#{g.id} isInternalGroup=#{g.is_internal_group} publicLinkEnabled=#{g.public_link_enabled}"
               builds = g.fetch_builds
-              puts "    builds in this group (#{builds.size}): " + builds.map { |b| "#{b.app_version}(#{b.version})" }.join(", ")
+              puts "    build numbers in this group (#{builds.size}): " + builds.map { |b| b.version }.join(", ")
             end
 
             puts ""
             puts "Most recent builds on the app (regardless of group):"
             recent = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 10)
             recent.each do |b|
-              puts "  version=#{b.app_version} build=#{b.version} processingState=#{b.processing_state} readyInternal=#{b.ready_for_internal_testing?} readyExternal=#{b.ready_for_external_testing?} uploadedDate=#{b.uploaded_date}"
+              puts "  build=#{b.version} processingState=#{b.processing_state} readyInternal=#{b.ready_for_internal_testing?} readyExternal=#{b.ready_for_external_testing?} uploadedDate=#{b.uploaded_date}"
             end
           '
 
