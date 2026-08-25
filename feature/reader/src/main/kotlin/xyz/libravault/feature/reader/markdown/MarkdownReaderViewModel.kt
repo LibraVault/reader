@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xyz.libravault.core.domain.model.ContentSource
+import xyz.libravault.core.domain.model.ReaderChapter
 import xyz.libravault.core.logger.LibravaultLogger
 import xyz.libravault.core.storage.MarkdownAssetResolver
 import xyz.libravault.core.vaultstore.VaultSessionManager
@@ -49,7 +50,7 @@ class MarkdownReaderViewModel @Inject constructor(
     // ttsSpineIndex: the chapter list is (re)built from the current document each time
     // a session starts, and the index advances as ReaderViewModel's completion-event
     // handler calls getNextChapterText().
-    private var ttsChapters: List<MarkdownTtsChapter> = emptyList()
+    private var ttsChapters: List<ReaderChapter> = emptyList()
     private var ttsChapterIndexState: Int = 0
 
     /** 0-based current TTS chapter, for the Player screen's chapter display/nav (#138). */
@@ -114,7 +115,7 @@ class MarkdownReaderViewModel @Inject constructor(
         ttsChapters = MarkdownTtsTextExtractor.chaptersForNarration(ready.text)
         if (ttsChapters.isEmpty()) return null
         ttsChapterIndexState = sectionIndexForFraction(initialScrollFraction, ttsChapters.size) ?: 0
-        return ttsChapters[ttsChapterIndexState].text
+        return ttsChapters[ttsChapterIndexState].textProvider()
     }
 
     /**
@@ -126,7 +127,7 @@ class MarkdownReaderViewModel @Inject constructor(
         val nextIndex = ttsChapterIndexState + 1
         val chapter = ttsChapters.getOrNull(nextIndex) ?: return null
         ttsChapterIndexState = nextIndex
-        return chapter.text
+        return chapter.textProvider()
     }
 
     /**
@@ -139,7 +140,7 @@ class MarkdownReaderViewModel @Inject constructor(
         val prevIndex = ttsChapterIndexState - 1
         val chapter = ttsChapters.getOrNull(prevIndex) ?: return null
         ttsChapterIndexState = prevIndex
-        return chapter.text
+        return chapter.textProvider()
     }
 
     private fun readText(source: ContentSource): String? = when (source) {

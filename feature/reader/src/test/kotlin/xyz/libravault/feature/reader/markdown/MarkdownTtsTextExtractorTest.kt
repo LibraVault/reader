@@ -1,5 +1,6 @@
 package xyz.libravault.feature.reader.markdown
 
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -13,20 +14,21 @@ import org.junit.jupiter.api.Test
 class MarkdownTtsTextExtractorTest {
 
     @Test
-    fun `one chapter per heading section`() {
+    fun `one chapter per heading section`() = runTest {
         val chapters = MarkdownTtsTextExtractor.chaptersForNarration("# One\nFirst body.\n# Two\nSecond body.")
 
         assertEquals(listOf("One", "Two"), chapters.map { it.title })
-        assertEquals("One\nFirst body.", chapters[0].text)
-        assertEquals("Two\nSecond body.", chapters[1].text)
+        assertEquals(listOf(0, 1), chapters.map { it.index })
+        assertEquals("One\nFirst body.", chapters[0].textProvider())
+        assertEquals("Two\nSecond body.", chapters[1].textProvider())
     }
 
     @Test
-    fun `a headingless document becomes one Untitled chapter`() {
+    fun `a headingless document becomes one Untitled chapter`() = runTest {
         val chapters = MarkdownTtsTextExtractor.chaptersForNarration("Just a paragraph, no heading at all.")
 
         assertEquals(listOf("Untitled"), chapters.map { it.title })
-        assertEquals("Just a paragraph, no heading at all.", chapters.first().text)
+        assertEquals("Just a paragraph, no heading at all.", chapters.first().textProvider())
     }
 
     @Test
@@ -48,10 +50,11 @@ class MarkdownTtsTextExtractorTest {
     }
 
     @Test
-    fun `heading markers are stripped but the title text is spoken`() {
+    fun `heading markers are stripped but the title text is spoken`() = runTest {
         val chapters = MarkdownTtsTextExtractor.chaptersForNarration("###### Deep Heading\nBody.")
-        assertTrue(chapters.first().text.startsWith("Deep Heading"))
-        assertTrue(!chapters.first().text.contains("#"))
+        val text = chapters.first().textProvider()
+        assertTrue(text.startsWith("Deep Heading"))
+        assertTrue(!text.contains("#"))
     }
 
     @Test
