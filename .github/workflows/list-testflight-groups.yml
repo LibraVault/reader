@@ -45,7 +45,7 @@ jobs:
             puts "App: #{app.name} (id=#{app.id}, bundleId=#{app.bundle_id})"
             puts ""
 
-            groups = Spaceship::ConnectAPI::BetaGroup.all(filter: { app: app.id })
+            groups = app.get_beta_groups
             puts "Found #{groups.size} beta group(s):"
             groups.each do |g|
               puts "  name=#{g.name.inspect} id=#{g.id} isInternalGroup=#{g.is_internal_group} publicLinkEnabled=#{g.public_link_enabled}"
