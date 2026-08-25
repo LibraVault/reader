@@ -1,0 +1,48 @@
+name: Dependency Audit
+
+# Recurring OSV.dev check against every Maven dependency in
+# gradle/libs.versions.toml, plus a content-integrity check on the vendored
+# sherpa-onnx AAR. Replaces the one-off manual OSV query from issue #531's
+# dependency audit (zero known vulns at the time — a single point-in-time
+# check, not something to keep relying on) with something that actually
+# re-runs.
+#
+# Weekly schedule (new CVEs land against unchanged dependency versions all
+# the time) plus a pull_request trigger on the two files this can actually
+# say something new about — no point running on every unrelated PR.
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays, 06:00 UTC
+  workflow_dispatch: {}
+  pull_request:
+    branches: [ "**" ]
+    paths:
+      - "gradle/libs.versions.toml"
+      - "third-party/sherpa-onnx/sherpa-onnx-android.aar"
+      - "third-party/sherpa-onnx/sherpa-onnx-android.aar.sha256"
+      - "scripts/osv_dependency_audit.py"
+      - ".github/workflows/dependency-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  osv-scan:
+    name: OSV dependency scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Query OSV.dev for known vulnerabilities
+        run: python3 scripts/osv_dependency_audit.py
+
+  sherpa-onnx-provenance:
+    name: sherpa-onnx AAR integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify vendored AAR matches its checked-in SHA-256
+        working-directory: third-party/sherpa-onnx
+        run: |
+          sha256sum -c sherpa-onnx-android.aar.sha256
