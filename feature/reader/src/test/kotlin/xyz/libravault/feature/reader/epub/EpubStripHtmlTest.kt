@@ -173,4 +173,70 @@ class EpubStripHtmlTest {
         val out = stripHtml(builder.toString())
         assertNull(out, "2.1 MB of plain text should be rejected")
     }
+
+    // MARK: - Block boundaries survive as newlines (#630)
+
+    @Test
+    fun `paragraph boundaries become newlines instead of collapsing to a space`() {
+        val out = stripHtml("<p>First para.</p><p>Second para.</p>")
+        assertNotNull(out)
+        assertEquals("First para.\nSecond para.", out!!.trim())
+    }
+
+    @Test
+    fun `hr scene break survives as its own line`() {
+        // This is the exact structural cue
+        // EpubTextPreprocessor.removeDecorativeSeparators needs — without a
+        // line boundary around it, a decorative separator can never match on
+        // real multi-paragraph content (#630).
+        val out = stripHtml("<p>Before rule</p><hr/><p>After rule</p>")
+        assertNotNull(out)
+        val lines = out!!.trim().lines()
+        assertTrue(lines.contains("Before rule"), "line-anchored content survives: $lines")
+        assertTrue(lines.contains("After rule"), "line-anchored content survives: $lines")
+    }
+
+    @Test
+    fun `heading and blockquote boundaries also produce newlines`() {
+        val out = stripHtml("<h1>Chapter One</h1><p>Body text.</p><blockquote>A quote.</blockquote><p>More body.</p>")
+        assertNotNull(out)
+        val lines = out!!.trim().lines()
+        assertEquals(listOf("Chapter One", "Body text.", "A quote.", "More body."), lines)
+    }
+
+    @Test
+    fun `inline emphasis tags do not force a line break`() {
+        // em/b/i/strong etc. aren't in LINE_BREAK_TAGS — they're inline
+        // emphasis, not structural boundaries, so they should stay on the
+        // same line as their surrounding text.
+        val out = stripHtml("<p><em>emph</em> text and <b>bold</b> text</p>")
+        assertNotNull(out)
+        assertEquals("emph text and bold text", out!!.trim())
+    }
+
+    @Test
+    fun `explicit br line break is preserved`() {
+        val out = stripHtml("Line one<br/>Line two")
+        assertNotNull(out)
+        assertEquals(listOf("Line one", "Line two"), out!!.trim().lines())
+    }
+
+    @Test
+    fun `full example from issue 630 round-trips with real line boundaries`() {
+        val html = "<p>First para.</p><p>Second para.</p>" +
+            "<p><em>emph</em> text and <b>bold</b> and <blockquote>a quote</blockquote></p>" +
+            "<hr/><p>After rule</p>"
+        val out = stripHtml(html)
+        assertNotNull(out)
+        // The specific line-count/format isn't the contract — what matters
+        // is that every real content fragment is recoverable as its own
+        // line-delimited unit, unlike the old doc.text() output which
+        // collapsed everything onto a single line with no boundaries at all.
+        val lines = out!!.trim().lines().filter { it.isNotBlank() }
+        assertTrue(lines.any { it == "First para." })
+        assertTrue(lines.any { it == "Second para." })
+        assertTrue(lines.any { it.contains("emph text and bold and") })
+        assertTrue(lines.any { it == "a quote" })
+        assertTrue(lines.any { it == "After rule" })
+    }
 }

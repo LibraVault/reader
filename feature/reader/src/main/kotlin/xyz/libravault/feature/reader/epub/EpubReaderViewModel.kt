@@ -342,11 +342,62 @@ class EpubReaderViewModel @Inject constructor(
                 // content. Safelist.none() in Jsoup.clean strips the tags
                 // but keeps the inner text — we want to drop the text too.
                 doc.select("script, style, iframe, object, embed, noscript, svg").remove()
-                doc.text()
+                blockAwareText(doc.body())
             } catch (e: Exception) {
                 stripHtmlLog("parse failure (${e.javaClass.simpleName}): ${e.message}")
                 null
             }
+        }
+
+        // Tags whose closing boundary should become a newline in the output,
+        // rather than the single space plain doc.text() collapses every
+        // boundary to. p/h1-6/li/tr/blockquote are paragraph-ish content
+        // boundaries; hr is a scene-break separator (the exact structural
+        // cue EpubTextPreprocessor.removeDecorativeSeparators needs to see);
+        // br is an explicit inline line break.
+        private val LINE_BREAK_TAGS = setOf(
+            "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
+            "li", "tr", "blockquote", "hr", "br",
+        )
+
+        /**
+         * Like [org.jsoup.nodes.Element.text], but inserts a newline at
+         * block-level element boundaries instead of collapsing every one of
+         * them to a single space.
+         *
+         * `doc.text()` alone destroys every structural boundary in the
+         * document (paragraphs, headings, `<hr>` scene breaks, ...) —
+         * confirmed empirically to make
+         * [EpubTextPreprocessor.removeDecorativeSeparators]'s line-anchored
+         * regex effectively non-functional on real multi-paragraph EPUB
+         * content, since there are no line boundaries left for it to match
+         * against (#630). [EpubTextPreprocessor] otherwise expects
+         * newline-delimited lines; this restores that signal at the only
+         * point it's still available — before the DOM is thrown away.
+         *
+         * Deliberately does *not* try to reproduce Jsoup's own inline
+         * smart-spacing (inserting a space between adjacent inline tags with
+         * no whitespace in the source) — Jsoup's own `text()` doesn't do
+         * that either for non-block tags, so skipping it here isn't a
+         * regression, just staying consistent with the same edge case.
+         */
+        private fun blockAwareText(root: org.jsoup.nodes.Element): String {
+            val sb = StringBuilder()
+            org.jsoup.select.NodeTraversor.traverse(
+                object : org.jsoup.select.NodeVisitor {
+                    override fun head(node: org.jsoup.nodes.Node, depth: Int) {
+                        if (node is org.jsoup.nodes.TextNode) sb.append(node.text())
+                    }
+
+                    override fun tail(node: org.jsoup.nodes.Node, depth: Int) {
+                        if (node is org.jsoup.nodes.Element && node.tagName().lowercase() in LINE_BREAK_TAGS) {
+                            sb.append('\n')
+                        }
+                    }
+                },
+                root,
+            )
+            return sb.toString()
         }
 
         // android.util.Log is a no-op stub in JVM unit tests — wrap so the
