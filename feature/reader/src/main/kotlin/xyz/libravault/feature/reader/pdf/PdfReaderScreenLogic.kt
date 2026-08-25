@@ -46,6 +46,16 @@ internal fun pdfOpenErrorMessage(error: Throwable): String = when (error) {
     else -> "Could not open the PDF: ${error.message}"
 }
 
+/**
+ * Shown instead of [PdfPaginatedView]/[PdfScrollingView] when [PdfRenderer] opened
+ * the file successfully but reports zero pages. A validly-opened, 0-page PDF is not
+ * an open failure ([pdfOpenErrorMessage] doesn't apply — [PdfReaderViewModel] never
+ * throws for it), but composing either view unguarded means [PdfPageImage] calls
+ * `renderer.openPage(0)` on a document with no valid page index, which
+ * `android.graphics.pdf.PdfRenderer` throws `IllegalArgumentException` for — see #613.
+ */
+internal fun pdfEmptyDocumentMessage(): String = "This PDF has no pages to display."
+
 /** "<n> / <total>" page indicator text shown in paginated mode. */
 internal fun pageIndicatorText(currentPage: Int, pageCount: Int): String =
     "${currentPage + 1} / $pageCount"

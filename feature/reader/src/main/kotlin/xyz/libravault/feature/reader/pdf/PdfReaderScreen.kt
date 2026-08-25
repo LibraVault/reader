@@ -136,6 +136,22 @@ fun PdfReaderScreen(
         return
     }
 
+    // A validly-opened, 0-page PDF is not an open failure (openError doesn't cover
+    // it), but PdfPaginatedView/PdfScrollingView both unconditionally compose
+    // PdfPageImage, which calls renderer.openPage(0) — PdfRenderer throws for any
+    // index on a document with no pages. Guard here rather than let that surface as
+    // an uncaught crash from a background coroutine. See #613.
+    if (pageCount <= 0) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text  = pdfEmptyDocumentMessage(),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(32.dp),
+            )
+        }
+        return
+    }
+
     when (settings.scrollMode) {
         ScrollMode.SCROLLING   -> PdfScrollingView(
             renderer         = r,
