@@ -82,10 +82,15 @@ dependencies {
     // to bitmaps and has no text-extraction API of its own.
     //
     // Excludes pdfbox-android's own BouncyCastle transitive deps (bcprov/bcpkix/bcutil-
-    // jdk15to18:1.72, used only for encrypted/password-protected PDF support, which is
-    // out of scope here — same as PdfRenderer today) — they duplicate-class conflict
-    // with core:vaultcrypto's bcprov-jdk18on:1.84 (a different BC artifact line
-    // providing the same org.bouncycastle.* packages) at app assembly.
+    // jdk15to18:1.72) — they duplicate-class conflict with core:vaultcrypto's
+    // bcprov-jdk18on:1.84 (a different BC artifact line providing the same
+    // org.bouncycastle.* packages) at app assembly. Confirmed safe to drop: of
+    // pdfbox-android 2.0.27.0's classes, only PublicKeySecurityHandler/SecurityProvider
+    // reference org.bouncycastle at all (verified via `unzip -l`/`strings` over the
+    // AAR's classes.jar) — the standard password/RC4/AES security handler used by
+    // ordinary encrypted PDFs (StandardSecurityHandler) uses plain javax.crypto and
+    // never touches BC. Only certificate/public-key-encrypted PDFs are affected, which
+    // PdfRenderer can't open today either — not a new regression.
     implementation(libs.pdfbox.android) {
         exclude(group = "org.bouncycastle")
     }
