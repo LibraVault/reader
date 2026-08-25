@@ -51,6 +51,8 @@ class ReaderSettingsSheetUiTest {
         onMarginScaleChanged: (Float) -> Unit = {},
         onJustifyTextChanged: (Boolean) -> Unit = {},
         onHyphenationChanged: (Boolean) -> Unit = {},
+        onAutoScrollEnabledChanged: (Boolean) -> Unit = {},
+        onAutoScrollSpeedChanged: (Float) -> Unit = {},
     ) {
         composeTestRule.setContent {
             LibravaultTheme {
@@ -68,6 +70,8 @@ class ReaderSettingsSheetUiTest {
                     onMarginScaleChanged = onMarginScaleChanged,
                     onJustifyTextChanged = onJustifyTextChanged,
                     onHyphenationChanged = onHyphenationChanged,
+                    onAutoScrollEnabledChanged = onAutoScrollEnabledChanged,
+                    onAutoScrollSpeedChanged = onAutoScrollSpeedChanged,
                 )
             }
         }
@@ -295,5 +299,42 @@ class ReaderSettingsSheetUiTest {
         composeTestRule.onNodeWithText("Customize").click()
 
         composeTestRule.onNodeWithText("0%").assertExists()
+    }
+
+    // ── Auto-scroll (#5) ─────────────────────────────────────────────────────
+
+    @Test
+    fun `Auto-scroll row remains visible without expanding Customize`() {
+        setSheet()
+
+        composeTestRule.onNodeWithText("Auto-scroll").assertExists()
+    }
+
+    @Test
+    fun `tapping the Auto-scroll row invokes onAutoScrollEnabledChanged with the flipped value`() {
+        var applied: Boolean? = null
+        setSheet(
+            settings = ReaderSettings(autoScrollEnabled = false),
+            onAutoScrollEnabledChanged = { applied = it },
+        )
+
+        composeTestRule.onNodeWithText("Auto-scroll").click()
+
+        assert(applied == true)
+    }
+
+    @Test
+    fun `Speed slider is hidden while auto-scroll is off`() {
+        setSheet(settings = ReaderSettings(autoScrollEnabled = false))
+
+        composeTestRule.onNodeWithText("Speed").assertDoesNotExist()
+    }
+
+    @Test
+    fun `Speed slider appears and reflects the current setting once auto-scroll is on`() {
+        setSheet(settings = ReaderSettings(autoScrollEnabled = true, autoScrollSpeed = 2.0f))
+
+        composeTestRule.onNodeWithText("Speed").assertExists()
+        composeTestRule.onNodeWithText("2.0×").assertExists()
     }
 }

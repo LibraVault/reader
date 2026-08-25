@@ -216,6 +216,8 @@ fun ReaderSettingsSheet(
     onScrollModeChanged: (ScrollMode) -> Unit,
     onWarmthChanged: (Float) -> Unit,
     onDismiss: () -> Unit,
+    onAutoScrollEnabledChanged: (Boolean) -> Unit = {},
+    onAutoScrollSpeedChanged: (Float) -> Unit = {},
     // Margins/justification/hyphenation (#421) — EPUB only. These map to native
     // Readium EpubPreferences fields with no Markdown/PDF equivalent (Markdown's
     // typography is Compose TextStyle, not Readium CSS; PDF pages here are
@@ -418,6 +420,36 @@ fun ReaderSettingsSheet(
                         },
                     )
                 }
+            }
+
+            HorizontalDivider()
+
+            // ── Auto-scroll (#5) ──────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onAutoScrollEnabledChanged(!settings.autoScrollEnabled) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Auto-scroll", style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f))
+                Switch(checked = settings.autoScrollEnabled, onCheckedChange = null)
+            }
+            if (settings.autoScrollEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Speed", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
+                    Text("%.1f×".format(settings.autoScrollSpeed),
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                Slider(
+                    value = settings.autoScrollSpeed,
+                    onValueChange = onAutoScrollSpeedChanged,
+                    valueRange = 0.5f..3.0f,
+                    steps = 4,
+                )
             }
 
             // Read Aloud used to have its row here (#137/#276). It's now a
