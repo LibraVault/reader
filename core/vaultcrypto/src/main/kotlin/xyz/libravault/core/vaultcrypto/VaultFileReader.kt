@@ -49,7 +49,7 @@ import java.nio.ByteBuffer
  */
 open class VaultFileReader(
     file: java.io.File,
-    private val vmk: ByteArray,
+    vmk: ByteArray,
     expectedFileId: ByteArray?,
 ) : Closeable {
 
