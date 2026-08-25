@@ -141,6 +141,31 @@ class LibravaultMediaCallbackDispatchTest {
         coVerify(exactly = 0) { getAdjacentItem.previous(any(), any()) }
     }
 
+    /**
+     * #493 — a vault-sourced [PlaybackStateHolder.State] leaves itemId/vaultFolderId/
+     * filePath null by design (see [PlaybackStateHolder.State.vaultEntry]'s doc), so
+     * this exercises the same null-guard as "no item loaded" rather than needing its
+     * own vault branch in [LibravaultMediaCallback.switchToAdjacentItem].
+     */
+    @Test
+    fun `PREVIOUS with a vault item loaded is a no-op`() {
+        val player = mockk<ExoPlayer>(relaxed = true)
+        playbackStateHolder.updateVault(
+            vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry(
+                vaultId = "vault-1", fileIdHex = "aa", format = MediaFormat.MP3,
+            ),
+            title = "Vault item", author = "Author", coverArtPath = null, isPlaying = true,
+        )
+
+        val result = callback(player)
+            .onCustomCommand(session, controller, SessionCommand(CustomCommandActions.PREVIOUS, android.os.Bundle()), android.os.Bundle())
+            .get()
+
+        assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
+        verify(exactly = 0) { player.setMediaItem(any(), any<Long>()) }
+        coVerify(exactly = 0) { getAdjacentItem.previous(any(), any()) }
+    }
+
     @Test
     fun `PREVIOUS with no sibling file in that direction is a no-op`() {
         val player = mockk<ExoPlayer>(relaxed = true)

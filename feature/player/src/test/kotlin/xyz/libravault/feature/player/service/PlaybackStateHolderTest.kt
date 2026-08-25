@@ -77,6 +77,30 @@ class PlaybackStateHolderTest {
         assertTrue(state.isPlaying)
     }
 
+    /** #493 — updateVault's counterpart to `update`, keeping itemId/vaultFolderId/
+     *  filePath null so LibravaultMediaCallback's existing Room-lookup guard keeps
+     *  no-op'ing for a vault item without needing its own vault branch. */
+    @Test
+    fun `updateVault sets vaultEntry and leaves itemId, vaultFolderId, filePath null`() {
+        val holder = PlaybackStateHolder()
+        val vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry(
+            vaultId = "vault-1", fileIdHex = "aa", format = xyz.libravault.core.domain.model.MediaFormat.MP3,
+        )
+
+        holder.updateVault(
+            vaultEntry = vaultEntry, title = "T", author = "A", coverArtPath = "cover.jpg", isPlaying = true,
+        )
+
+        val state = holder.state.value
+        assertEquals(vaultEntry, state.vaultEntry)
+        assertNull(state.itemId)
+        assertNull(state.vaultFolderId)
+        assertNull(state.filePath)
+        assertEquals("T", state.title)
+        assertTrue(state.isPlaying)
+        assertTrue(state.isActive)
+    }
+
     @Test
     fun `clear resets to the initial inactive state`() {
         val holder = PlaybackStateHolder()

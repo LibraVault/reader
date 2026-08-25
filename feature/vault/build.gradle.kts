@@ -49,10 +49,6 @@ dependencies {
     implementation(project(":core:vaultcontent"))
     implementation(project(":core:storage"))
     implementation(project(":core:logger"))
-    // PlayerSeekBar/PlaybackControls reuse for the vault audio player —
-    // precedent for a feature module depending on feature:player already
-    // exists (feature:reader, feature:library).
-    implementation(project(":feature:player"))
     // hilt-android/hilt-android-compiler come from the libravault.android.hilt
     // convention plugin (applied via libravault.android.feature above).
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
@@ -82,11 +78,6 @@ dependencies {
     implementation("org.readium.kotlin-toolkit:readium-streamer:${libs.versions.readium.get()}")
     implementation("org.readium.kotlin-toolkit:readium-navigator:${libs.versions.readium.get()}")
     implementation(libs.androidx.fragment.ktx)
-    // Local, screen-scoped ExoPlayer instance for vault audio — deliberately
-    // NOT feature:player's shared singleton (PlayerModule.provideExoPlayer),
-    // which is wired to PlaybackService/MediaSession/lockscreen controls keyed
-    // off a Room itemId that vault content doesn't have. See VaultPlayerViewModel.
-    implementation(libs.media3.exoplayer)
 
     testImplementation(libs.bundles.testing.jvm)
     testImplementation(libs.junit5.engine)

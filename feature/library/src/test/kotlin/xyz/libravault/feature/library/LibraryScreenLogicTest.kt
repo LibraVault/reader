@@ -272,4 +272,31 @@ class LibraryScreenLogicTest {
         assertEquals(DEFAULT_VAULT_NAME, vaultDisplayNameFrom("   "))
         assertEquals(DEFAULT_VAULT_NAME, vaultDisplayNameFrom("primary:Books/"))
     }
+
+    // ── shouldShowMiniPlayer (#493) ──────────────────────────────────────────
+
+    @Test
+    fun `mini-player shows for an active vault item even though itemId stays null`() {
+        val holder = xyz.libravault.feature.player.service.PlaybackStateHolder()
+        holder.updateVault(
+            vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry("vault-1", "aabbcc", MediaFormat.MP3),
+            title = "Vault Audiobook", author = "Author", coverArtPath = null, isPlaying = true,
+        )
+        assertTrue(shouldShowMiniPlayer(holder.state.value))
+    }
+
+    @Test
+    fun `mini-player shows for an active real-file item`() {
+        val holder = xyz.libravault.feature.player.service.PlaybackStateHolder()
+        holder.update(
+            itemId = 1L, vaultFolderId = 1L, filePath = "content://x",
+            title = "Book", author = "Author", coverArtPath = null, isPlaying = true,
+        )
+        assertTrue(shouldShowMiniPlayer(holder.state.value))
+    }
+
+    @Test
+    fun `mini-player does not show when nothing has ever loaded`() {
+        assertFalse(shouldShowMiniPlayer(xyz.libravault.feature.player.service.PlaybackStateHolder().state.value))
+    }
 }

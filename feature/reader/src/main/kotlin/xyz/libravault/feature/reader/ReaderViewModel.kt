@@ -658,18 +658,7 @@ class ReaderViewModel @Inject constructor(
         // is already false — but we still need to update PlaybackStateHolder so the
         // Library mini-player icon reflects the paused state immediately.
         controller?.let { if (it.isPlaying) it.pause() }
-        val current = playbackStateHolder.state.value
-        if (current.itemId != null) {
-            playbackStateHolder.update(
-                itemId        = current.itemId,
-                vaultFolderId = current.vaultFolderId,
-                filePath      = current.filePath,
-                title         = current.title,
-                author        = current.author,
-                coverArtPath  = current.coverArtPath,
-                isPlaying     = false,
-            )
-        }
+        syncNowPlayingHolder(isPlaying = false)
     }
 
     fun playPauseAudiobook() {
@@ -681,8 +670,28 @@ class ReaderViewModel @Inject constructor(
         // handled in startReadAloud() via pauseAudiobook().
         if (!wasPlaying) stopReadAloud()
         if (wasPlaying) ctrl.pause() else ctrl.play()
+        syncNowPlayingHolder(isPlaying = !wasPlaying)
+    }
+
+    /** [PlaybackStateHolder.update]/[PlaybackStateHolder.updateVault]'s single call
+     *  site for this ViewModel's mini-player controls (#493) — mirrors
+     *  [xyz.libravault.feature.player.PlayerViewModel.syncPlaybackStateHolder],
+     *  branching on the holder's *own* current [PlaybackStateHolder.State.vaultEntry]
+     *  rather than this ViewModel's [vaultRef], since the audiobook currently loaded
+     *  in the mini-player is a different item from whatever this reader screen has
+     *  open (its own [vaultRef], if any). */
+    private fun syncNowPlayingHolder(isPlaying: Boolean) {
         val current = playbackStateHolder.state.value
-        if (current.itemId != null) {
+        val vault = current.vaultEntry
+        if (vault != null) {
+            playbackStateHolder.updateVault(
+                vaultEntry   = vault,
+                title        = current.title,
+                author       = current.author,
+                coverArtPath = current.coverArtPath,
+                isPlaying    = isPlaying,
+            )
+        } else if (current.itemId != null) {
             playbackStateHolder.update(
                 itemId        = current.itemId,
                 vaultFolderId = current.vaultFolderId,
@@ -690,7 +699,7 @@ class ReaderViewModel @Inject constructor(
                 title         = current.title,
                 author        = current.author,
                 coverArtPath  = current.coverArtPath,
-                isPlaying     = !wasPlaying,
+                isPlaying     = isPlaying,
             )
         }
     }

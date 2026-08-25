@@ -59,6 +59,8 @@ import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.ContentSource
 import xyz.libravault.core.domain.model.MediaFormat
 import xyz.libravault.core.tts.TtsStatus
+import xyz.libravault.core.ui.SecureScreenEffect
+import xyz.libravault.core.ui.rememberScreenSecurityEnabled
 import xyz.libravault.core.ui.components.BookmarkAddedToast
 import xyz.libravault.core.ui.components.WarmthOverlay
 import xyz.libravault.core.ui.theme.LibravaultTheme
@@ -86,14 +88,25 @@ enum class ReaderBottomBar { NONE, AUDIOBOOK, READ_ALOUD }
 
 /**
  * Picks which mini-bar wins when both an audiobook and a Read Aloud session look
- * "loaded" at the same time. [PlaybackStateHolder.State.itemId] is never cleared
- * once an audiobook has been loaded ([PlaybackStateHolder.clear] exists but is never
- * called in production), so `showMiniPlayer` alone stays true forever after the first
- * audiobook play — including while the audiobook is merely paused/backgrounded and a
- * Read Aloud session is the thing actually producing audio. Read Aloud must win
- * whenever it's active, or its mini-bar becomes unreachable and the stale audiobook
- * bar's controls end up silently stopping it instead.
+ * "loaded" at the same time. [PlaybackStateHolder.State.isActive] is never cleared
+ * once an audiobook (real-file or, since #493, vault-sourced) has been loaded
+ * ([PlaybackStateHolder.clear] exists but is never called in production), so
+ * `showMiniPlayer` alone stays true forever after the first audiobook play —
+ * including while the audiobook is merely paused/backgrounded and a Read Aloud
+ * session is the thing actually producing audio. Read Aloud must win whenever it's
+ * active, or its mini-bar becomes unreachable and the stale audiobook bar's controls
+ * end up silently stopping it instead.
  */
+/**
+ * Whether the audiobook mini-player should show — `isActive`, not `itemId != null`
+ * (#493): `itemId` stays null by design for a vault-sourced item (see
+ * [PlaybackStateHolder.State.vaultEntry]'s doc), which would otherwise leave the
+ * mini-player never showing for vault audio. Extracted (matching
+ * [selectReaderBottomBar]'s own precedent) so this one-line derivation has direct
+ * test coverage instead of only being reachable through a full screen render.
+ */
+fun shouldShowAudiobookMiniPlayer(nowPlaying: PlaybackStateHolder.State): Boolean = nowPlaying.isActive
+
 fun selectReaderBottomBar(showMiniPlayer: Boolean, showReadAloudBar: Boolean): ReaderBottomBar =
     when {
         showReadAloudBar -> ReaderBottomBar.READ_ALOUD
@@ -123,7 +136,9 @@ fun ReaderScreen(
     itemId: Long? = null,
     fileUri: android.net.Uri? = null,
     onBack: () -> Unit,
-    onNowPlayingClick: ((Long) -> Unit)? = null,
+    // #493 — the full holder state, not just an itemId, so the caller can route to
+    // either Screen.Player (real file) or Screen.VaultPlay (vaultEntry != null).
+    onNowPlayingClick: ((PlaybackStateHolder.State) -> Unit)? = null,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val state       by viewModel.uiState.collectAsState()
@@ -172,7 +187,7 @@ fun ReaderScreen(
     // Show audiobook mini player whenever an audiobook is loaded.
     // Independent of toolbar visibility — stays pinned at the bottom even when the
     // toolbar hides on centre-tap (same behaviour as the Library screen mini-player).
-    val showMiniPlayer = nowPlaying.itemId != null
+    val showMiniPlayer = shouldShowAudiobookMiniPlayer(nowPlaying)
 
     // Read Aloud mini-bar (#137). This and showMiniPlayer are NOT mutually exclusive —
     // see selectReaderBottomBar's doc for why an audiobook can look "loaded" long after
@@ -206,6 +221,16 @@ fun ReaderScreen(
             state.contentSource != null -> {
                 val contentSource = state.contentSource!!
                 val format        = state.format!!
+
+                // SecureScreenEffect's own doc comment (and VaultScreenSecurityPreference's)
+                // already claimed ReaderScreen does this for a ContentSource.VaultEntry
+                // (#505) — it never actually did. Real gap: decrypted vault EPUB/PDF/
+                // Markdown content had no FLAG_SECURE protection. rememberScreenSecurityEnabled
+                // (not a one-shot remember{}) — same live-observing pattern #571 already
+                // fixed VaultContentsScreen onto, called unconditionally each recomposition
+                // so short-circuiting on contentSource doesn't skip the composable call.
+                val screenSecurityEnabled = rememberScreenSecurityEnabled(LocalContext.current)
+                SecureScreenEffect(enabled = contentSource is ContentSource.VaultEntry && screenSecurityEnabled)
 
                 val epubViewModel: EpubReaderViewModel = hiltViewModel()
                 val currentLocatorJson by epubViewModel.currentLocatorJson.collectAsState()
@@ -299,11 +324,7 @@ fun ReaderScreen(
                         when (selectReaderBottomBar(showMiniPlayer, showReadAloudBar)) {
                             ReaderBottomBar.AUDIOBOOK -> ReaderMiniPlayerBar(
                                 nowPlaying       = nowPlaying,
-                                onNowPlayingClick = {
-                                    nowPlaying.itemId?.let { id ->
-                                        onNowPlayingClick?.invoke(id)
-                                    }
-                                },
+                                onNowPlayingClick = { onNowPlayingClick?.invoke(nowPlaying) },
                                 onPrevious    = viewModel::skipPreviousAudiobook,
                                 onSeekBack    = viewModel::seekBackAudiobook,
                                 onPlayPause   = viewModel::playPauseAudiobook,

@@ -3,6 +3,7 @@ package xyz.libravault.feature.player.service
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import xyz.libravault.core.domain.model.ContentSource
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,6 +24,11 @@ class PlaybackStateHolder @Inject constructor() {
         val itemId: Long? = null,
         val vaultFolderId: Long? = null,
         val filePath: String? = null,
+        // Set instead of itemId/vaultFolderId/filePath when the loaded item is an
+        // Encrypted Vault entry (#493) — those three stay null for a vault item so
+        // LibravaultMediaCallback's existing Room-lookup guard keeps no-op'ing for
+        // next/previous instead of needing its own vault branch.
+        val vaultEntry: ContentSource.VaultEntry? = null,
         val title: String = "",
         val author: String = "",
         val coverArtPath: String? = null,
@@ -51,6 +57,24 @@ class PlaybackStateHolder @Inject constructor() {
             itemId = itemId,
             vaultFolderId = vaultFolderId,
             filePath = filePath,
+            title = title,
+            author = author,
+            coverArtPath = coverArtPath,
+            isPlaying = isPlaying,
+            isActive = true,
+        )
+    }
+
+    /** [update]'s counterpart for a vault-sourced item — see [State.vaultEntry]'s doc. */
+    fun updateVault(
+        vaultEntry: ContentSource.VaultEntry,
+        title: String,
+        author: String,
+        coverArtPath: String?,
+        isPlaying: Boolean,
+    ) {
+        _state.value = State(
+            vaultEntry = vaultEntry,
             title = title,
             author = author,
             coverArtPath = coverArtPath,
