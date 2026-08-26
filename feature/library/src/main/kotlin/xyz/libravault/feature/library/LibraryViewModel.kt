@@ -213,13 +213,16 @@ class LibraryViewModel @Inject constructor(
 
     /** Triggered on cold start and on vault addition. */
     fun triggerScan() {
+        android.util.Log.i("DIAG-SettingsStall", "triggerScan() entered @ ${System.currentTimeMillis()}")
         // Capture the old job before overwriting scanJob. cancelAndJoin() waits
         // for the old flow's finally-block to run, which releases the AtomicBoolean
         // lock inside LibraryScannerImpl. Starting the new scan only after that
         // guarantees the scanner isn't skipped due to a stale "in progress" flag.
         val previousJob = scanJob
         scanJob = viewModelScope.launch {
+            android.util.Log.i("DIAG-SettingsStall", "launch block started @ ${System.currentTimeMillis()}, previousJob=$previousJob active=${previousJob?.isActive}")
             previousJob?.cancelAndJoin()
+            android.util.Log.i("DIAG-SettingsStall", "cancelAndJoin() returned @ ${System.currentTimeMillis()}")
             _scanning.value  = true
             _scanError.value = null
 

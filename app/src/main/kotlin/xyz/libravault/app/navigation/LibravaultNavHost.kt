@@ -108,7 +108,11 @@ fun LibravaultNavHost(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    android.util.Log.i("DIAG-SettingsStall", "onBack tapped, calling popBackStack() @ ${System.currentTimeMillis()}")
+                    navController.popBackStack()
+                    android.util.Log.i("DIAG-SettingsStall", "popBackStack() returned @ ${System.currentTimeMillis()}")
+                },
                 onEncryptedVaultsClick = { navController.navigate(Screen.VaultList.route) },
             )
         }

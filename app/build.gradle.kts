@@ -60,8 +60,11 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix   = "-debug"
+            // Diagnostic-only suffix bump (throwaway branch diag/baseline-pre-vault-unification)
+            // so this pre-#543/#604 baseline build can install side-by-side with the current-dev
+            // diagnostic build for #653's A/B repro, instead of overwriting it.
+            applicationIdSuffix = ".debug.baseline"
+            versionNameSuffix   = "-debug-baseline"
             isDebuggable        = true
         }
         release {
