@@ -15,6 +15,8 @@ struct LibraVaultApp: App {
     /// each run their own StoreKit product load/entitlement refresh and silently
     /// diverge from one another.
     init() {
+        LibraVaultNavigationBarAppearance.apply()
+
         let billing = StoreKitBillingManager()
         _billingManager = StateObject(wrappedValue: billing)
         _appState = StateObject(wrappedValue: AppState(billingManager: billing))
