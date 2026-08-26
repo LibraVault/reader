@@ -5,10 +5,19 @@ import SwiftUI
 /// `VaultManifestEntry.format` — see `VaultContentFormat.isAudio`.
 ///
 /// `.secureVaultScreen()` for the same reason `VaultReaderView` applies it —
-/// vault content should stay off a screen recording.
+/// vault content should stay off a screen recording. `.vaultContentSecurity()`
+/// layers on the same additional coverage described on `VaultReaderView`'s
+/// own doc comment (#668): app-switcher-snapshot blanking, plus actually
+/// locking the vault on capture rather than just blanking the live view.
 struct VaultPlayerView: View {
     @StateObject private var viewModel: VaultPlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showBookmarksSheet = false
+    // Read once per screen appearance, matching `EncryptedVaultContentsView`'s
+    // identical `@State` — see that property's own doc comment for why this
+    // isn't live-observed.
+    @State private var screenSecurityEnabled = VaultScreenSecurityPreference.isEnabled()
 
     init(vaultId: String, fileId: Data, sessionManager: VaultSessionManager) {
         _viewModel = StateObject(wrappedValue: VaultPlayerViewModel(vaultId: vaultId, fileId: fileId, sessionManager: sessionManager))
@@ -38,6 +47,15 @@ struct VaultPlayerView: View {
             }
             .task { await viewModel.load() }
             .onDisappear { viewModel.stop() }
+            // #526: notice a lock that happened while this screen was
+            // backgrounded as soon as the app comes back to the foreground —
+            // see `VaultReaderView`'s identical `scenePhase` observer.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await viewModel.checkStillUnlocked() } }
+            }
+            .onChange(of: viewModel.wasLocked) { _, wasLocked in
+                if wasLocked { dismiss() }
+            }
             .sheet(isPresented: $showBookmarksSheet) {
                 VaultBookmarksSheet(
                     bookmarks: viewModel.bookmarks,
@@ -50,6 +68,12 @@ struct VaultPlayerView: View {
                 )
             }
             .secureVaultScreen(contentKind: .vaultContent)
+            // #668: screenshot/recording protection above is unconditional,
+            // but has no app-switcher-snapshot coverage and doesn't lock the
+            // vault on capture — this toggle-gated layer adds both.
+            .vaultContentSecurity(enabled: screenSecurityEnabled) {
+                Task { await viewModel.lock() }
+            }
     }
 
     @ViewBuilder

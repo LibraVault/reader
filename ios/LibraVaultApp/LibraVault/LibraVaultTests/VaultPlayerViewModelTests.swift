@@ -131,6 +131,56 @@ final class VaultPlayerViewModelTests: XCTestCase {
         vm2.stop()
     }
 
+    // MARK: - Lock lifecycle (#526/#668)
+
+    /// Player-side counterpart of `VaultReaderViewModelTests`' identical
+    /// test — the core regression this reopens #526 for.
+    func testCheckStillUnlockedFlipsWasLockedWhenTheVaultLockedWhileOpen() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureAudio(into: manager, vaultId: id)
+        let vm = VaultPlayerViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+        XCTAssertFalse(vm.wasLocked)
+
+        await manager.lock(id) // simulates VaultForegroundLockObserver firing while this screen is open
+
+        await vm.checkStillUnlocked()
+        XCTAssertTrue(vm.wasLocked)
+        vm.stop()
+    }
+
+    func testLockActuallyLocksTheVaultAndFlipsWasLocked() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureAudio(into: manager, vaultId: id)
+        let vm = VaultPlayerViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+
+        await vm.lock()
+
+        XCTAssertTrue(vm.wasLocked)
+        let stillUnlocked = await manager.isUnlocked(id)
+        XCTAssertFalse(stillUnlocked)
+        vm.stop()
+    }
+
+    /// Player-side counterpart of `VaultReaderViewModelTests`'s identical
+    /// test — a mutating call racing a lock must surface as `wasLocked`, not
+    /// a generic `errorMessage`.
+    func testAddBookmarkAfterVaultLocksWhileScreenIsOpenSurfacesWasLockedNotAGenericError() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureAudio(into: manager, vaultId: id)
+        let vm = VaultPlayerViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+        await manager.lock(id)
+
+        await vm.addBookmark(label: "too late")
+
+        XCTAssertTrue(vm.wasLocked)
+        XCTAssertNil(vm.errorMessage)
+        XCTAssertTrue(vm.bookmarks.isEmpty)
+        vm.stop()
+    }
+
     func testOnSeekClampsToDurationAndZero() async throws {
         let (manager, id) = try await makeUnlockedVault()
         let fileId = try await importFixtureAudio(into: manager, vaultId: id, seconds: 1.0)

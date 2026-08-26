@@ -27,6 +27,10 @@ final class VaultPlayerViewModel: ObservableObject {
     @Published private(set) var elapsed: Double = 0
     @Published private(set) var duration: Double = 0
     @Published private(set) var bookmarks: [VaultBookmark] = []
+    /// Flips when the vault locks while this screen is open — see
+    /// `VaultReaderViewModel.wasLocked`'s identical doc comment, this is the
+    /// player-side counterpart of the same #526/#668 gap.
+    @Published private(set) var wasLocked = false
 
     private let sessionManager: VaultSessionManager
     private let engine: VaultAudioPlaybackEngine
@@ -87,6 +91,27 @@ final class VaultPlayerViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Vault lock observation (#526/#668)
+
+    /// Re-checks vault lock state when this screen returns to the
+    /// foreground — see `VaultReaderViewModel.checkStillUnlocked()`'s
+    /// identical doc comment. No-op while still loading — `load()` itself
+    /// already handles the locked case for the initial open.
+    func checkStillUnlocked() async {
+        guard !isLoading else { return }
+        if await !sessionManager.isUnlocked(vaultId) {
+            wasLocked = true
+        }
+    }
+
+    /// Actively locks the vault and notices it via the same `wasLocked` path
+    /// `checkStillUnlocked()` uses — see `VaultReaderViewModel.lock()`'s
+    /// identical doc comment.
+    func lock() async {
+        await sessionManager.lock(vaultId)
+        wasLocked = true
+    }
+
     func onPlayPause() {
         if engine.isPlaying {
             engine.pause()
@@ -121,6 +146,8 @@ final class VaultPlayerViewModel: ObservableObject {
         do {
             let bookmark = try store.addBookmark(fileId: fileId, positionRef: "ms:\(positionMs)", label: label)
             bookmarks.append(bookmark)
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -131,6 +158,8 @@ final class VaultPlayerViewModel: ObservableObject {
         do {
             try store.removeBookmark(fileId: fileId, bookmarkId: id)
             bookmarks.removeAll { $0.id == id }
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -143,6 +172,8 @@ final class VaultPlayerViewModel: ObservableObject {
             if let index = bookmarks.firstIndex(where: { $0.id == id }) {
                 bookmarks[index].note = note
             }
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }

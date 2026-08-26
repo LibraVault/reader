@@ -72,6 +72,13 @@ final class VaultReaderViewModel: ObservableObject {
     @Published var currentChapterIndex: Int = 0
     @Published var currentPageIndex: Int = 0
     @Published var errorMessage: String?
+    /// Flips when the vault locks while this screen is open — either
+    /// noticed passively via `checkStillUnlocked()` (#526) or triggered
+    /// actively via `lock()` (#668). `VaultReaderView` observes this and
+    /// pops back to the unlock flow; nothing here does that itself, mirroring
+    /// `EncryptedVaultContentsViewModel.isLocked`'s split between model and
+    /// view.
+    @Published private(set) var wasLocked = false
 
     private let sessionManager: VaultSessionManager
     private var store: VaultStore?
@@ -131,6 +138,36 @@ final class VaultReaderViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Vault lock observation (#526/#668)
+
+    /// Re-checks vault lock state when this screen returns to the
+    /// foreground — called from `VaultReaderView`'s `scenePhase` observer,
+    /// the SwiftUI equivalent of the `DisposableEffect`+`ON_RESUME` idiom
+    /// the unified Android `ReaderScreen` uses for the identical gap (ported
+    /// from the deleted `VaultReaderScreen`, see that Kotlin file's own
+    /// `checkStillUnlocked()` doc comment). Nothing else here observes
+    /// `VaultSessionManager` continuously, so a lock that fired while this
+    /// screen was backgrounded (`VaultForegroundLockObserver`) would
+    /// otherwise go unnoticed until the user tried and failed to read/mutate
+    /// something. No-op while still loading — `load()` itself already
+    /// handles the locked case for the initial open.
+    func checkStillUnlocked() async {
+        guard state != .loading else { return }
+        if await !sessionManager.isUnlocked(vaultId) {
+            wasLocked = true
+        }
+    }
+
+    /// Actively locks the vault and notices it via the same `wasLocked` path
+    /// `checkStillUnlocked()` uses — called when `.vaultContentSecurity()`
+    /// detects a screen recording/AirPlay mirror or an imminent app-switcher
+    /// snapshot while vault content is on screen (#668), not just reacting
+    /// passively to a lock that already happened elsewhere.
+    func lock() async {
+        await sessionManager.lock(vaultId)
+        wasLocked = true
+    }
+
     // MARK: - Position tracking
 
     private var currentPositionRef: String {
@@ -154,6 +191,8 @@ final class VaultReaderViewModel: ObservableObject {
         do {
             let bookmark = try store.addBookmark(fileId: fileId, positionRef: ref, label: label)
             bookmarks.append(bookmark)
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -164,6 +203,8 @@ final class VaultReaderViewModel: ObservableObject {
         do {
             try store.removeBookmark(fileId: fileId, bookmarkId: id)
             bookmarks.removeAll { $0.id == id }
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -176,6 +217,8 @@ final class VaultReaderViewModel: ObservableObject {
             if let index = bookmarks.firstIndex(where: { $0.id == id }) {
                 bookmarks[index].note = note
             }
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -219,6 +262,8 @@ final class VaultReaderViewModel: ObservableObject {
         do {
             let highlight = try store.addHighlight(fileId: fileId, positionRef: ref, highlightedText: text, colorHex: colorHex)
             highlights.append(highlight)
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -229,6 +274,8 @@ final class VaultReaderViewModel: ObservableObject {
         do {
             try store.removeHighlight(fileId: fileId, highlightId: id)
             highlights.removeAll { $0.id == id }
+        } catch VaultStoreError.vaultLocked {
+            wasLocked = true
         } catch {
             errorMessage = error.localizedDescription
         }
