@@ -86,6 +86,28 @@ final class VaultEPUBParserTests: XCTestCase {
         XCTAssertTrue(chapters[0].text.contains("bold"))
     }
 
+    /// Before #635, `VaultEPUBParser` never called `EPUBParser.parseBlocks` at all —
+    /// `blocks`/`segments` stayed empty forever regardless of source markup, silently
+    /// keeping vault EPUBs on the old flat-text-only narration path. This is the
+    /// regression guard: a vault EPUB with real structure must produce non-empty
+    /// `blocks` and `segments`, with emphasis preserved, the same as a non-vault one.
+    func testParseCarriesBlocksAndNarrationSegments() throws {
+        let data = try makeFixtureEPUBData(chapterBodies: [
+            "<h1>Title</h1><p>Plain <b>bold</b> text.</p>",
+        ])
+
+        let chapters = try VaultEPUBParser.parse(data: data)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertFalse(chapters[0].blocks.isEmpty)
+        XCTAssertEqual(chapters[0].segments, [
+            NarrationSegment(text: "Title", kind: .heading, pauseBefore: .paragraph),
+            NarrationSegment(text: "Plain ", kind: .plain, pauseBefore: .paragraph),
+            NarrationSegment(text: "bold", kind: .emphasis, pauseBefore: .none),
+            NarrationSegment(text: " text.", kind: .plain, pauseBefore: .none),
+        ])
+    }
+
     func testParseThrowsForMissingContainer() throws {
         let sourceDir = tempDir.appendingPathComponent("empty-source", isDirectory: true)
         try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)

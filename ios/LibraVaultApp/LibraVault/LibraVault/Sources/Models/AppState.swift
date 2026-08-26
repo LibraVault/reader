@@ -159,13 +159,14 @@ final class AppState: ObservableObject {
         return TtsTextNormalizer.clean(raw)
     }
 
-    /// Segment-aware counterpart to `chapterText(for:)` (#499 v2a Phase A) —
-    /// nil for EPUB/PDF chapters (Phases B/D, not built yet; `BookChapter
-    /// .segments` is empty for those, see its own doc comment), non-nil for
-    /// Markdown, whose parser already produces segments. `startPlayback`
-    /// checks this to decide which of `bridge.startSpeaking(text:)`/
-    /// `startSpeaking(segments:)` to call — nil means "no segment awareness
-    /// for this chapter, use the flat-text path exactly as before".
+    /// Segment-aware counterpart to `chapterText(for:)` (#499 v2a) — nil for
+    /// PDF chapters (Phase D, not built yet; `BookChapter.segments` is empty
+    /// for those, see its own doc comment), non-nil for Markdown (Phase A)
+    /// and EPUB (Phase B, #635), whose parsers both produce segments.
+    /// `startPlayback` checks this to decide which of
+    /// `bridge.startSpeaking(text:)`/`startSpeaking(segments:)` to call —
+    /// nil means "no segment awareness for this chapter, use the flat-text
+    /// path exactly as before".
     ///
     /// Each segment's own `.text` is cleaned individually via the same
     /// `TtsTextNormalizer` the flat-text path uses — its regexes are
@@ -648,9 +649,9 @@ final class AppState: ObservableObject {
             let text = chapterText(for: nowPlayingChapter)
             totalEstimatedSeconds = Self.estimateDuration(for: text, speed: playbackSpeed)
             elapsedSeconds = 0
-            // Segments (#499 v2a Phase A) when the current chapter has them
-            // (Markdown today), otherwise the flat-text path exactly as
-            // before (EPUB/PDF — Phases B/D, not built yet).
+            // Segments (#499 v2a) when the current chapter has them
+            // (Markdown, EPUB), otherwise the flat-text path exactly as
+            // before (PDF — Phase D, not built yet).
             if let segments = chapterSegments(for: nowPlayingChapter) {
                 Task { try? await bridge.startSpeaking(segments: segments, rate: playbackSpeed) }
             } else {
