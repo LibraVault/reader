@@ -587,6 +587,60 @@ final class EPUBParserTests: XCTestCase {
         XCTAssertEqual(EPUBParser.parseBlocks(fromHTML: Data()), [])
     }
 
+    /// Same malformed-but-real-world shape as `awkwardXHTML` (an `&nbsp;` entity
+    /// XMLParser won't accept undeclared, forcing the fallback), but with `<b>`/`<em>`
+    /// spans — the real gap #635 closes: before this, the fallback flattened to one
+    /// `MarkdownInlineRun` with `bold`/`italic` always `false`, discarding emphasis
+    /// signal that the primary `parseXHTMLBlocks` path already preserves.
+    private static let awkwardXHTMLWithEmphasis = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <!DOCTYPE html>
+    <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 8</title>\
+    <style>p { color: red }</style></head><body><h1>Foreword</h1>\
+    <p>Plain&nbsp;then <b>bold</b> and <em>italic</em> words.</p></body></html>
+    """
+
+    func testParseBlocksFallbackPreservesEmphasis() {
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(Self.awkwardXHTMLWithEmphasis.utf8))
+
+        XCTAssertEqual(blocks.count, 1)
+        guard case let .paragraph(runs) = blocks[0] else {
+            return XCTFail("expected a single fallback paragraph block, got \(blocks)")
+        }
+        XCTAssertFalse(runs.isEmpty)
+        XCTAssertTrue(
+            runs.contains { $0.text.contains("bold") && $0.bold && !$0.italic },
+            "expected a bold run, got \(runs)"
+        )
+        XCTAssertTrue(
+            runs.contains { $0.text.contains("italic") && $0.italic && !$0.bold },
+            "expected an italic run, got \(runs)"
+        )
+        XCTAssertTrue(
+            runs.contains { !$0.bold && !$0.italic && $0.text.contains("Plain") },
+            "expected a plain, unstyled run, got \(runs)"
+        )
+        XCTAssertFalse(runs.contains { $0.text.contains("<") }, "tags leaked into a run: \(runs)")
+    }
+
+    /// Same fixture, exercised through the whole-chapter `NarrationSegmenter` walk —
+    /// the bold/italic runs the fallback now preserves must actually reach
+    /// `BookChapter.segments` as `.emphasis`, not just survive as flagged
+    /// `MarkdownInlineRun`s with nothing downstream reading them.
+    func testParseBlocksFallbackSegmentsCarryEmphasisKind() {
+        let blocks = EPUBParser.parseBlocks(fromHTML: Data(Self.awkwardXHTMLWithEmphasis.utf8))
+        let segments = NarrationSegmenter.segments(forBlocks: blocks)
+
+        XCTAssertTrue(
+            segments.contains { $0.kind == .emphasis && $0.text.contains("bold") },
+            "expected an emphasis segment for the bold run, got \(segments)"
+        )
+        XCTAssertTrue(
+            segments.contains { $0.kind == .emphasis && $0.text.contains("italic") },
+            "expected an emphasis segment for the italic run, got \(segments)"
+        )
+    }
+
     // MARK: - BookChapter blocks + resolved images (#357)
 
     /// A 1x1 PNG — real bytes, not a placeholder, so an equality check against the
@@ -619,6 +673,30 @@ final class EPUBParserTests: XCTestCase {
             .image(url: "images/cover.png", altText: "Cover art"),
         ])
         XCTAssertEqual(chapters[0].images["images/cover.png"], Self.onePixelPNG)
+    }
+
+    // MARK: - BookChapter narration segments (#635)
+
+    /// `EPUBParser.parse` must populate `BookChapter.segments` from the same
+    /// `blocks` it already computes — the literal thing #635 wires up. Checks
+    /// emphasis (bold), a thematic break's scene-break pause landing on the next
+    /// segment, and a heading's segment, matching `NarrationSegmenterTests`'s
+    /// direct-input coverage but through the real parse path.
+    func testParseCarriesNarrationSegmentsForChapter() throws {
+        let epubURL = try makeFixtureEPUB(chapterBodies: [
+            "<h1>Title</h1><p>Plain <b>bold</b> text.</p><hr/><p>After break.</p>",
+        ])
+
+        let chapters = try EPUBParser.parse(fileURL: epubURL)
+
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertEqual(chapters[0].segments, [
+            NarrationSegment(text: "Title", kind: .heading, pauseBefore: .paragraph),
+            NarrationSegment(text: "Plain ", kind: .plain, pauseBefore: .paragraph),
+            NarrationSegment(text: "bold", kind: .emphasis, pauseBefore: .none),
+            NarrationSegment(text: " text.", kind: .plain, pauseBefore: .none),
+            NarrationSegment(text: "After break.", kind: .plain, pauseBefore: .sceneBreak),
+        ])
     }
 
     /// Plain-text-only EPUBs (the overwhelming majority today) must still load fine —
