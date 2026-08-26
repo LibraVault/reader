@@ -173,18 +173,28 @@ jobs:
           path: /tmp/artifacts
           destination: reports
 
-  # Mirrors .github/workflows/ui-tests.yml. Least certain of the three new
-  # jobs here: GH Actions gets emulator hardware acceleration via
-  # reactivecircus/android-emulator-runner + manually-enabled KVM on
-  # ubuntu-latest, which has no direct CircleCI equivalent. This uses
-  # CircleCI's own android-machine executor + the android orb's
-  # start-emulator-and-run-tests command instead (documented nested-KVM
-  # emulator path — see https://circleci.com/docs/android-machine-image and
-  # https://circleci.com/developer/orbs/orb/circleci/android), which is a
-  # different mechanism, not a line-for-line port. Treat the first real
-  # trigger of this job as a shakeout run, same as jvm-tests' first run
-  # above — verify the orb's current command/parameter names and the
-  # android-machine image tag before relying on this.
+  # Mirrors .github/workflows/ui-tests.yml. This uses CircleCI's own
+  # android-machine executor + the android orb's start-emulator-and-run-tests
+  # command (documented nested-KVM emulator path — see
+  # https://circleci.com/docs/guides/execution-managed/android-machine-image/
+  # and https://github.com/CircleCI-Public/android-orb), which is a different
+  # mechanism from GH Actions' reactivecircus/android-emulator-runner +
+  # manually-enabled KVM, not a line-for-line port.
+  #
+  # Issue #538: the first real shakeout trigger of this job (2026-08) hung
+  # and was killed by the orb's own default 10m no_output_timeout on the
+  # "Run tests with max tries of 2" step, ~58 minutes in, with no
+  # BUILD FAILED/assertion/OOM in the captured output — just Gradle's
+  # internal build-operation traces, then silence. CircleCI's own docs
+  # confirm the android-machine executor gets real nested-virtualization
+  # (KVM) acceleration, recommended at `large`+ (already what's configured
+  # below), so the mechanism itself isn't the suspect the original comment
+  # here flagged it as. Two concrete gaps addressed below, neither confirmed
+  # as *the* root cause (that needs a re-trigger via the `circleci-job`
+  # label to observe), but both real and worth closing regardless: extra
+  # cache resilience (see the restore_cache/save_cache comment below — the
+  # orb already caches, but not in a way that survives a timeout) and no
+  # visibility into what the emulator itself was doing during the silence.
   ui-tests:
     executor:
       name: android/android-machine
@@ -192,6 +202,25 @@ jobs:
       tag: 2024.01.1
     steps:
       - checkout
+
+      # Added for #538. The android orb's start-emulator-and-run-tests
+      # command below already does its own Gradle caching by default
+      # (restore-gradle-cache-post-emulator-launch / save-gradle-cache), so
+      # this job was not actually cold on every run before this change —
+      # correcting an inaccurate claim in this PR's original description.
+      # This manual cache still earns its place for two reasons the orb's
+      # own cache doesn't cover: (1) same cache key as jvm-tests below, so a
+      # same-day jvm-tests run on this branch already warms it; (2) the
+      # orb's save-gradle-cache step runs *after* run-tests with no
+      # `when: always` (verified against the orb's pinned source), so a
+      # timeout on run-tests — exactly what happened in #538 — skips it,
+      # leaving the orb's own cache permanently cold across repeated hangs.
+      # This save_cache below has no such failure mode.
+      - restore_cache:
+          keys:
+            - gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+            - gradle-cache-
+
       - run:
           name: Grant execute permission for gradlew
           command: chmod +x gradlew
@@ -203,6 +232,18 @@ jobs:
           system-image: system-images;android-34;google_apis;x86_64
           post-emulator-launch-assemble-command: ""
           test-command: "./gradlew connectedDebugAndroidTest --continue"
+          # Added for #538: the shakeout run's only signal was Gradle's own
+          # sparse internal traces — nothing from the emulator/device side.
+          # This streams `adb logcat` to its own step in the job UI for the
+          # duration of the run, so a future hang has an actual device-side
+          # log to diagnose from instead of just silence.
+          run-logcat: true
+
+      - save_cache:
+          key: gradle-cache-{{ checksum "gradle/libs.versions.toml" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
       # Same trap jvm-tests' own "Collect reports for upload" step documents:
       # each module writes its own build/reports/androidTests and
       # build/outputs/androidTest-results, never one top-level dir, and
