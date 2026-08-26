@@ -1,6 +1,7 @@
 package xyz.libravault.feature.reader.markdown
 
 import xyz.libravault.core.domain.model.ReaderChapter
+import xyz.libravault.core.tts.NarrationSegment
 import xyz.libravault.feature.reader.epub.EpubTextPreprocessor
 import xyz.libravault.feature.reader.markdown.toc.MarkdownTocExtractor
 
@@ -106,5 +107,110 @@ object MarkdownTtsTextExtractor {
             collapsed.add(line)
         }
         return collapsed.joinToString("\n").trim()
+    }
+
+    // ── Narration segments (#499 v2a Phase C, #636) ──────────────────────────────
+    //
+    // Alongside [stripMarkdownSyntax], not replacing it — reuses the same regex
+    // matches, it just keeps the classification (bold/italic/blockquote/thematic-break)
+    // that [stripMarkdownSyntax] throws away instead of flattening to one plain string.
+    // Kotlin counterpart of iOS's `MarkdownDocumentParser.narrationSegments(from:)`
+    // (#634/#640) — same [NarrationSegment] shape, but line-oriented like the rest of
+    // this file rather than an AST walk, since that's what iOS's own AST gives it for
+    // free and this file's regex scanner doesn't have.
+
+    private class PendingBlock(val kind: NarrationSegment.Kind) {
+        val lines = mutableListOf<String>()
+    }
+
+    internal fun extractNarrationSegments(text: String): List<NarrationSegment> {
+        val segments = mutableListOf<NarrationSegment>()
+        var inFence = false
+        var pendingPause = NarrationSegment.PauseHint.NONE
+        var block: PendingBlock? = null
+
+        fun flush() {
+            val current = block ?: return
+            block = null
+            val joined = current.lines.joinToString(" ").trim()
+            if (joined.isEmpty()) return
+            segments += NarrationSegment(text = joined, kind = current.kind, pauseBefore = pendingPause)
+            pendingPause = NarrationSegment.PauseHint.NONE
+        }
+
+        for (rawLine in text.lineSequence()) {
+            if (fenceLine.containsMatchIn(rawLine.trimStart())) {
+                flush()
+                inFence = !inFence
+                continue
+            }
+            if (inFence) continue
+
+            // Checked before tableRow/tableSeparator: a bare "---"-style line matches
+            // both this and tableSeparator's char class (which allows a pipe-less
+            // run of hyphens), but a scene-break pause is the far more useful signal
+            // to keep for narration than "this happened to also look like a
+            // (pipe-less, single-column) table separator".
+            if (thematicBreak.matches(rawLine.trim())) {
+                flush()
+                pendingPause = NarrationSegment.PauseHint.SCENE_BREAK
+                continue
+            }
+            if (tableRow.matches(rawLine) || tableSeparator.matches(rawLine)) {
+                flush()
+                continue
+            }
+            if (rawLine.isBlank()) {
+                flush()
+                if (pendingPause == NarrationSegment.PauseHint.NONE) {
+                    pendingPause = NarrationSegment.PauseHint.PARAGRAPH
+                }
+                continue
+            }
+
+            val isHeading = headingLine.containsMatchIn(rawLine)
+            val isQuote = blockQuoteMarker.containsMatchIn(rawLine)
+            val isListItem = unorderedListMarker.containsMatchIn(rawLine) || orderedListMarker.containsMatchIn(rawLine)
+
+            var line = rawLine
+            line = headingLine.replace(line, "")
+            line = blockQuoteMarker.replace(line, "")
+            line = unorderedListMarker.replace(line, "")
+            line = orderedListMarker.replace(line, "")
+            line = image.replace(line) { it.groupValues[1] }
+            line = link.replace(line) { it.groupValues[1] }
+            val hasEmphasis = boldItalic.containsMatchIn(line) || bold.containsMatchIn(line) || italic.containsMatchIn(line)
+            line = boldItalic.replace(line) { it.groupValues[1].ifEmpty { it.groupValues[2] } }
+            line = bold.replace(line) { it.groupValues[1].ifEmpty { it.groupValues[2] } }
+            line = italic.replace(line) { it.groupValues[1].ifEmpty { it.groupValues[2] } }
+            line = inlineCode.replace(line) { it.groupValues[1] }
+
+            if (line.isBlank()) continue
+
+            val kind = when {
+                isHeading -> NarrationSegment.Kind.HEADING
+                isQuote -> NarrationSegment.Kind.QUOTE
+                hasEmphasis -> NarrationSegment.Kind.EMPHASIS
+                else -> NarrationSegment.Kind.PLAIN
+            }
+
+            // Headings and list items are always exactly one source line each;
+            // everything else (paragraphs, multi-line block quotes) merges consecutive
+            // lines of the same kind into one segment, so a soft-wrapped block comes out
+            // as one spoken unit instead of several separately-paused fragments.
+            val isSingleLineBlock = isHeading || isListItem
+            if (isSingleLineBlock || block?.kind != kind) flush()
+            // Only separates a list item from something that came before it — the
+            // very first segment in the whole document gets no pause just for being
+            // a list item.
+            if (isListItem && segments.isNotEmpty() && pendingPause == NarrationSegment.PauseHint.NONE) {
+                pendingPause = NarrationSegment.PauseHint.SENTENCE
+            }
+            if (block == null) block = PendingBlock(kind)
+            block!!.lines += line
+            if (isSingleLineBlock) flush()
+        }
+        flush()
+        return segments
     }
 }
