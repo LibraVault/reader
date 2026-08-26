@@ -9,6 +9,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -84,6 +85,13 @@ class PlayerViewModelTest {
         controllerFuture.set(mockController)
         every { mockController.addListener(any()) } returns Unit
         every { sleepTimer.state } returns sleepTimerState
+        // A relaxed mock of playbackStateHolder.state.value returns a raw, un-castable
+        // Object (mockk can't synthesize a StateFlow<State>'s generic value out of thin
+        // air) — every real-file attach path (attachOrPlay's reattach branch, play())
+        // reads this, so leaving it un-stubbed makes that whole path silently throw a
+        // ClassCastException inside a swallowed coroutine, invisible to any test that
+        // doesn't assert specifically on what happens after it.
+        every { playbackStateHolder.state } returns MutableStateFlow(PlaybackStateHolder.State()).asStateFlow()
         // Stub chapterExtractor so connectWithRetry → play → updateChapters doesn't throw
         coEvery { chapterExtractor.extract(any(), any()) } returns fakeChapters
     }
@@ -126,6 +134,49 @@ class PlayerViewModelTest {
             assertEquals("Test Audiobook", loaded.item!!.title)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * #642 regression. In production, `connectWithRetry`'s first attempt can
+     * assign `controller` and then throw (a genuinely-null `playerListener` did
+     * exactly this — #642 bug 1, fixed by declaring it before `init{}`), forcing
+     * a retry. Bug 2 was that both `loadItem()` and `connectWithRetry()`
+     * independently ran their own copy of the "reattach or play" tail — so by
+     * the time the retry's second, successful attempt ran
+     * [PlayerViewModel.tryAttachToController], `loadItem()` had *already* run it
+     * once for the same item load, double-bumping `playGeneration` and
+     * swallowing the next genuine `onIsPlayingChanged(false)` (see that
+     * function's doc for the full trace).
+     *
+     * Exercises the fix — [attachedToController][PlayerViewModel.tryAttachToController]
+     * making a second call a no-op — directly, by calling `tryAttachToController()`
+     * again after construction, rather than reproducing the exact async
+     * `MediaController`/retry timing that triggers it in production. That
+     * timing needs a scheduler-advanced `TestDispatcher`, which would also
+     * surface this non-Robolectric harness's unrelated `android.net.Uri.parse`
+     * limitation (returns `null`, not a comparable `Uri` — see the
+     * `syncPlaybackStateHolder` test's doc above) as a fatal "uncaught
+     * exception" failure — happening on every attach regardless of this fix,
+     * and not what's under test here.
+     */
+    @Test
+    fun `#642 tryAttachToController is idempotent — a second call does not re-run the attach tail`() = runTest {
+        val vm = viewModel()
+
+        // Construction's own init{} flow already attached once via the normal
+        // (non-buggy) path.
+        verify(exactly = 1) { mockController.setPlaybackSpeed(any()) }
+
+        // Simulates connectWithRetry's retry firing a second, independent call
+        // into tryAttachToController() for the same item load.
+        vm.tryAttachToController()
+
+        // setPlaybackSpeed() is called exactly once per "reattach or play" tail
+        // invocation on both its branches (reattach and fresh play()) — so this
+        // count is a direct, branch-agnostic proxy for how many times that tail
+        // actually ran. Pre-fix, this second call would have re-run it, making
+        // this exactly 2.
+        verify(exactly = 1) { mockController.setPlaybackSpeed(any()) }
     }
 
     @Test

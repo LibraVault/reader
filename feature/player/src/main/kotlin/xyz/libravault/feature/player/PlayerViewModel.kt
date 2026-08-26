@@ -160,6 +160,68 @@ class PlayerViewModel @Inject constructor(
      */
     private var playGeneration: Long = 0
 
+    // #642 — set by loadItem() once the item/progress is resolved; consumed by
+    // tryAttachToController() once the controller is also ready. See that
+    // function's doc for why this replaced two independent copies of the same
+    // "reattach or play" logic.
+    private var pendingLoadedItem: LoadedItem? = null
+    private var attachedToController = false
+
+    // #642 root cause (bug 1): this must be declared *before* init{} below.
+    // Kotlin initializes properties and init{} blocks in textual order — init{}
+    // calls connectController() -> connectWithRetry(), which calls
+    // controllerFuture.addListener(_, MoreExecutors.directExecutor()). The
+    // controllerFuture is @Singleton and stays resolved across ViewModel
+    // instances, so on every Player-screen open after the first one this
+    // session, that listener runs *synchronously*, inside this constructor,
+    // before a playerListener declared after init{} would have been assigned —
+    // passing null into Media3's addListener(), which throws
+    // "listener must not be null" and forces a ~500ms retry every time.
+    private val playerListener = object : Player.Listener {
+        private var myGeneration: Long = 0L
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // Only accept false events that match the current play generation.
+            // During media transitions, ExoPlayer fires onIsPlayingChanged(false)
+            // after setMediaItem(), which would overwrite the optimistic
+            // isPlaying=true set by play(). The generation counter ensures
+            // stale false events are ignored.
+            if (!isPlaying && myGeneration < playGeneration) {
+                myGeneration = playGeneration
+                logger.d(TAG, "Ignoring stale onIsPlayingChanged(false) — gen $myGeneration < current $playGeneration")
+                return
+            }
+            _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
+            // Mirror to PlaybackStateHolder so the mini-player icon updates immediately
+            // even when the polling loop is stopped (e.g. after pause).
+            syncPlaybackStateHolder(isPlaying = isPlaying)
+            if (isPlaying) startPolling() else stopPolling()
+        }
+
+        override fun onPlaybackParametersChanged(
+            playbackParameters: androidx.media3.common.PlaybackParameters,
+        ) {
+            _uiState.value = _uiState.value.copy(
+                playbackSpeed = snapPlaybackSpeed(playbackParameters.speed)
+            )
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            updateChapters()
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            logger.e(TAG, "Player error: ${error.message}")
+            _uiState.value = _uiState.value.copy(error = "Playback error: ${error.message}")
+        }
+
+        override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
+            if (error == null) {
+                _uiState.value = _uiState.value.copy(error = null)
+            }
+        }
+    }
+
     // Observe sleep timer state
     init {
         viewModelScope.launch {
@@ -191,35 +253,11 @@ class PlayerViewModel @Inject constructor(
             val (item, startPositionMs, savedSpeed) = loaded
 
             logger.i(TAG, "Loaded: ${item.title} — resume at ${startPositionMs}ms, speed ${savedSpeed}x")
-            // If the controller was already connected before loadItem() finished,
-            // connectController's play() attempt was a no-op (item was null). Trigger it now.
-            // If the controller already has this URI loaded (re-open case), reattach without
-            // calling setMediaItem() — that resets ExoPlayer's decode buffer and causes stutter.
-            controller?.let { ctrl ->
-                val uri = android.net.Uri.parse(item.filePath)
-                if (ctrl.currentMediaItem?.localConfiguration?.uri == uri) {
-                    val holder = playbackStateHolder.state.value
-                    val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
-                    val resumePos = initialSeekMs ?: livePos ?: startPositionMs
-                    if (initialSeekMs != null || ctrl.currentPosition < resumePos) {
-                        ctrl.seekTo(resumePos)
-                    }
-                    ctrl.setPlaybackSpeed(savedSpeed)
-                    if (!ctrl.isPlaying) ctrl.play()
-                    playedItemUri = uri.toString()
-                    playGeneration++
-                    _uiState.value = _uiState.value.copy(
-                        isPlaying  = true,
-                        positionMs = ctrl.currentPosition,
-                    )
-                    syncPlaybackStateHolder(isPlaying = true)
-                    startPolling()
-                    startProgressSaving()
-                    updateChapters()
-                } else {
-                    play(uri, startPositionMs = startPositionMs, startSpeed = savedSpeed)
-                }
-            }
+            // Hand off to tryAttachToController() rather than attaching directly here —
+            // see #642 and that function's doc for why this can't independently race
+            // connectWithRetry()'s own "controller just connected" tail.
+            pendingLoadedItem = loaded
+            tryAttachToController()
         }
     }
 
@@ -323,10 +361,6 @@ class PlayerViewModel @Inject constructor(
                 controller = ctrl
                 controller?.addListener(playerListener)
                 logger.i(TAG, "MediaController connected (attempt $attempt)")
-                // Item may have loaded before the controller was ready — play now.
-                // Check if the controller already has this item loaded (same URI) to avoid
-                // reinitializing ExoPlayer's media pipeline, which causes audio stutter.
-                //
                 // #493 bug found during vault testing: this used to clear any existing
                 // error unconditionally, before checking whether an item even loaded —
                 // a successful MediaController (re)connection would silently wipe out a
@@ -336,43 +370,12 @@ class PlayerViewModel @Inject constructor(
                 // regardless of whether loadItem() succeeded. Only clear the error once
                 // there's actually an item to play — same rationale as the retry-recovery
                 // UX this line originally existed for, just gated correctly now.
-                val item = _uiState.value.item ?: return@addListener
-                if (_uiState.value.error != null) {
+                if (_uiState.value.item != null && _uiState.value.error != null) {
                     _uiState.value = _uiState.value.copy(error = null)
                 }
-                val uri = android.net.Uri.parse(item.filePath)
-                val savedPos = _uiState.value.savedStartPositionMs
-                val currentMedia = ctrl.currentMediaItem
-                if (currentMedia?.localConfiguration?.uri == uri) {
-                    // Same item already loaded — reattach without resetting the pipeline.
-                    // Only use livePos if it belongs to THIS item; a cross-book navigation
-                    // leaves lastKnownPositionMs from the previous book in the holder.
-                    val holder = playbackStateHolder.state.value
-                    val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
-                    val resumePos = initialSeekMs ?: livePos ?: savedPos
-                    // Only seek when necessary: avoid flushing ExoPlayer's decode buffer
-                    // (causes stutter) unless a bookmark seek is requested or we're behind.
-                    if (initialSeekMs != null || ctrl.currentPosition < resumePos) {
-                        ctrl.seekTo(resumePos)
-                    }
-                    // Restore saved speed for this book
-                    val savedSpeed = _uiState.value.playbackSpeed
-                    ctrl.setPlaybackSpeed(savedSpeed)
-                    if (!ctrl.isPlaying) ctrl.play()
-                    // onIsPlayingChanged won't fire if already playing — start polling manually.
-                    playedItemUri = uri.toString()
-                    playGeneration++
-                    _uiState.value = _uiState.value.copy(
-                        isPlaying  = true,
-                        positionMs = ctrl.currentPosition,
-                    )
-                    syncPlaybackStateHolder(isPlaying = true)
-                    startPolling()
-                    startProgressSaving()
-                    updateChapters()
-                } else {
-                    play(uri, startPositionMs = savedPos, startSpeed = _uiState.value.playbackSpeed)
-                }
+                // Item may have loaded before the controller was ready (or vice versa) —
+                // tryAttachToController() only actually attaches once both are ready.
+                tryAttachToController()
             }.onFailure { e ->
                 if (attempt >= MAX_RETRIES) {
                     logger.e(TAG, "MediaController connection exhausted after $MAX_RETRIES attempts", e)
@@ -389,50 +392,71 @@ class PlayerViewModel @Inject constructor(
         }, MoreExecutors.directExecutor())
     }
 
-    // ── Player listener ───────────────────────────────────────────────────────
+    /**
+     * #642 — the single place that runs the "reattach or play" tail, once both
+     * [loadItem] (which sets [pendingLoadedItem]) and [connectWithRetry] (which
+     * sets [controller]) are ready. Previously this logic was duplicated at each
+     * of those two call sites and could fire from *both* of them for the same
+     * item load — e.g. bug 1 above forced a synchronous first-attempt failure
+     * inside the constructor, leaving `controller` assigned before that attempt
+     * threw; by the time [loadItem]'s coroutine resumed, `controller` was
+     * already non-null, so it ran its own copy of this tail — and then the
+     * retry's successful attempt ran its copy too, double-bumping
+     * [playGeneration] for one real item load. That let a genuine
+     * `onIsPlayingChanged(false)` ("playback did not actually start") get
+     * swallowed as if it were just an internal ExoPlayer transition blip,
+     * leaving [PlayerUiState.isPlaying] stuck at `true` with a
+     * non-responsive play/pause button. Guarding attachment with
+     * [attachedToController] makes it structurally impossible for this to run
+     * more than once per [PlayerViewModel] instance.
+     *
+     * `internal` rather than `private` so a test can call it a second time
+     * directly, exercising the guard without having to reproduce the exact
+     * async `MediaController`/retry interleaving that triggers it in production
+     * (see `AGENTS.md`'s "Pure helpers... should be marked internal" convention).
+     */
+    internal fun tryAttachToController() {
+        if (attachedToController) return
+        val ctrl = controller ?: return
+        val loaded = pendingLoadedItem ?: return
+        attachedToController = true
+        attachOrPlay(ctrl, loaded.item, startPositionMs = loaded.startPositionMs, startSpeed = loaded.savedSpeed)
+    }
 
-    private val playerListener = object : Player.Listener {
-        private var myGeneration: Long = 0L
-
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            // Only accept false events that match the current play generation.
-            // During media transitions, ExoPlayer fires onIsPlayingChanged(false)
-            // after setMediaItem(), which would overwrite the optimistic
-            // isPlaying=true set by play(). The generation counter ensures
-            // stale false events are ignored.
-            if (!isPlaying && myGeneration < playGeneration) {
-                myGeneration = playGeneration
-                logger.d(TAG, "Ignoring stale onIsPlayingChanged(false) — gen $myGeneration < current $playGeneration")
-                return
+    /**
+     * If [ctrl] already has this [item]'s URI loaded (re-open case), reattach
+     * without calling `setMediaItem()` — that resets ExoPlayer's decode buffer
+     * and causes stutter. Otherwise, delegate to [play] to load it fresh.
+     */
+    private fun attachOrPlay(ctrl: MediaController, item: LibraryItem, startPositionMs: Long, startSpeed: Float) {
+        val uri = android.net.Uri.parse(item.filePath)
+        if (ctrl.currentMediaItem?.localConfiguration?.uri == uri) {
+            // Same item already loaded — reattach without resetting the pipeline.
+            // Only use livePos if it belongs to THIS item; a cross-book navigation
+            // leaves lastKnownPositionMs from the previous book in the holder.
+            val holder = playbackStateHolder.state.value
+            val livePos = if (holder.itemId == item.id) holder.lastKnownPositionMs else null
+            val resumePos = initialSeekMs ?: livePos ?: startPositionMs
+            // Only seek when necessary: avoid flushing ExoPlayer's decode buffer
+            // (causes stutter) unless a bookmark seek is requested or we're behind.
+            if (initialSeekMs != null || ctrl.currentPosition < resumePos) {
+                ctrl.seekTo(resumePos)
             }
-            _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
-            // Mirror to PlaybackStateHolder so the mini-player icon updates immediately
-            // even when the polling loop is stopped (e.g. after pause).
-            syncPlaybackStateHolder(isPlaying = isPlaying)
-            if (isPlaying) startPolling() else stopPolling()
-        }
-
-        override fun onPlaybackParametersChanged(
-            playbackParameters: androidx.media3.common.PlaybackParameters,
-        ) {
+            ctrl.setPlaybackSpeed(startSpeed)
+            if (!ctrl.isPlaying) ctrl.play()
+            // onIsPlayingChanged won't fire if already playing — start polling manually.
+            playedItemUri = uri.toString()
+            playGeneration++
             _uiState.value = _uiState.value.copy(
-                playbackSpeed = snapPlaybackSpeed(playbackParameters.speed)
+                isPlaying  = true,
+                positionMs = ctrl.currentPosition,
             )
-        }
-
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            syncPlaybackStateHolder(isPlaying = true)
+            startPolling()
+            startProgressSaving()
             updateChapters()
-        }
-
-        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            logger.e(TAG, "Player error: ${error.message}")
-            _uiState.value = _uiState.value.copy(error = "Playback error: ${error.message}")
-        }
-
-        override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) {
-            if (error == null) {
-                _uiState.value = _uiState.value.copy(error = null)
-            }
+        } else {
+            play(uri, startPositionMs = startPositionMs, startSpeed = startSpeed)
         }
     }
 
