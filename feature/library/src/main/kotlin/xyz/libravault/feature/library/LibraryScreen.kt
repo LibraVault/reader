@@ -572,5 +572,9 @@ fun LibraryScreen(
  */
 internal fun libraryResumeObserver(onResume: () -> Unit): LifecycleEventObserver =
     LifecycleEventObserver { _, event ->
-        if (event == Lifecycle.Event.ON_RESUME) onResume()
+        if (event == Lifecycle.Event.ON_RESUME) {
+            android.util.Log.i("DIAG-SettingsStall", "ON_RESUME fired @ ${System.currentTimeMillis()}")
+            onResume()
+            android.util.Log.i("DIAG-SettingsStall", "onResume() callback returned @ ${System.currentTimeMillis()}")
+        }
     }

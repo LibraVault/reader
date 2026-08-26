@@ -227,6 +227,148 @@ jobs:
           destination: reports
           when: always
 
+  # Throwaway diagnostic job for issue #653 — NOT part of the permanent
+  # fallback pipeline, exists only on this diagnostic branch
+  # (diag/settings-back-nav-stall). Runs the same black-box adb/uiautomator
+  # repro as the manual ab-test-settings-stall.sh script, but against a real
+  # CircleCI-hosted emulator instead of a physical phone, to see what a
+  # generic (non-Samsung) device shows for the same Settings<->Library
+  # back-nav transition. Cannot reproduce the actual root-caused mechanism
+  # (a Samsung One UI RefreshRateModeManager display-HAL renegotiation —
+  # OEM code, doesn't exist on a stock emulator image) — this only checks
+  # whether composition itself is measurably heavier, same caveat as the
+  # (separately, #582-blocked) SettingsNavJankTest attempt.
+  #
+  # Builds BOTH diagnostic APKs in one job: the current branch's own
+  # checkout (this branch, built via post-emulator-launch-assemble-command
+  # while the emulator boots) and the baseline commit (fetched + built in a
+  # sibling git worktree during post-emulator-wait-steps, since a single
+  # CircleCI pipeline only checks out one ref). Deliberately gated on the
+  # existing run_ui_tests parameter rather than a new one — this job only
+  # exists on a throwaway branch, not worth wiring into circleci-dispatch.yml
+  # or the permanent parameter list for something never meant to merge.
+  ab-test-emulator-repro:
+    executor:
+      name: android/android-machine
+      resource-class: large
+      tag: 2024.01.1
+    steps:
+      - checkout
+      - run:
+          name: Grant execute permission for gradlew
+          command: chmod +x gradlew
+      - android/create-avd:
+          avd-name: test
+          system-image: system-images;android-34;google_apis;x86_64
+          install: true
+      - android/start-emulator:
+          avd-name: test
+          post-emulator-launch-assemble-command: "./gradlew :app:assembleFdroidDebug -q"
+          post-emulator-wait-steps:
+            - run:
+                name: Build baseline APK, install both, run repro, capture logcat
+                no_output_timeout: 15m
+                command: |
+                  set -euo pipefail
+                  mkdir -p /tmp/artifacts
+
+                  echo "--- Building baseline APK (diag/baseline-pre-vault-unification, commit 2f2ed85) ---"
+                  git fetch --depth 1 origin diag/baseline-pre-vault-unification:refs/remotes/origin/diag/baseline-pre-vault-unification
+                  git worktree add /tmp/baseline-src origin/diag/baseline-pre-vault-unification
+                  (cd /tmp/baseline-src && chmod +x gradlew && ./gradlew :app:assembleFdroidDebug -q)
+
+                  CURRENT_APK=$(find app/build/outputs/apk/fdroid/debug -name "*.apk" | head -1)
+                  BASELINE_APK=$(find /tmp/baseline-src/app/build/outputs/apk/fdroid/debug -name "*.apk" | head -1)
+                  echo "current APK:  $CURRENT_APK"
+                  echo "baseline APK: $BASELINE_APK"
+
+                  CURRENT_PKG="xyz.libravault.app.debug"
+                  BASELINE_PKG="xyz.libravault.app.debug.baseline"
+
+                  adb wait-for-device
+                  adb install -r "$BASELINE_APK"
+                  adb install -r "$CURRENT_APK"
+
+                  seed_onboarded() {
+                    local pkg="$1"
+                    adb shell "run-as $pkg sh -c 'mkdir -p shared_prefs && cat > shared_prefs/libravault_prefs.xml'" <<'ONBOARDXML'
+                  <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+                  <map>
+                      <boolean name="onboarded" value="true" />
+                  </map>
+                  ONBOARDXML
+                  }
+                  seed_onboarded "$BASELINE_PKG"
+                  seed_onboarded "$CURRENT_PKG"
+
+                  # Same technique as ab-test-settings-stall.sh: live uiautomator-dump
+                  # lookup by exact text=/content-desc=, not hardcoded pixel coordinates.
+                  tap_node() {
+                    local needle="$1"
+                    local xml="/sdcard/ab_dump.xml"
+                    for _ in $(seq 1 20); do
+                      adb shell uiautomator dump "$xml" >/dev/null 2>&1 || true
+                      local line
+                      line=$(adb shell cat "$xml" 2>/dev/null | grep -o "[^>]*\(text=\"$needle\"\|content-desc=\"$needle\"\)[^>]*" | head -1 || true)
+                      if [ -n "$line" ]; then
+                        local bounds x1 y1 x2 y2 cx cy
+                        bounds=$(echo "$line" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
+                        x1=$(echo "$bounds" | sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1/')
+                        y1=$(echo "$bounds" | sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\2/')
+                        x2=$(echo "$bounds" | sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\3/')
+                        y2=$(echo "$bounds" | sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\4/')
+                        cx=$(( (x1 + x2) / 2 ))
+                        cy=$(( (y1 + y2) / 2 ))
+                        adb shell input tap "$cx" "$cy"
+                        return 0
+                      fi
+                      sleep 0.5
+                    done
+                    echo "WARN: could not find node '$needle' after 10s"
+                    return 1
+                  }
+
+                  mark() { adb shell log -t AB-MARKER "$*"; }
+
+                  run_cycle() {
+                    local pkg="$1"
+                    local label="$2"
+                    adb shell am force-stop "$pkg" || true
+                    sleep 1
+                    adb shell monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+                    sleep 3
+                    for n in 1 2; do
+                      mark "=== $label: begin cycle $n ==="
+                      tap_node "More"
+                      sleep 0.5
+                      tap_node "Settings"
+                      sleep 2
+                      tap_node "Back"
+                      sleep 2
+                      mark "=== $label: cycle $n done ==="
+                    done
+                    adb shell am force-stop "$pkg" || true
+                    sleep 1
+                  }
+
+                  adb logcat -c
+                  adb logcat -v time > /tmp/artifacts/ab_test_emulator.txt &
+                  LOGCAT_PID=$!
+                  sleep 1
+
+                  run_cycle "$BASELINE_PKG" "BASELINE (pre-#543/#604, commit 2f2ed85)"
+                  run_cycle "$CURRENT_PKG"  "CURRENT (dev HEAD, diag/settings-back-nav-stall)"
+
+                  sleep 1
+                  kill "$LOGCAT_PID" 2>/dev/null || true
+                  wait "$LOGCAT_PID" 2>/dev/null || true
+
+                  echo "=== Preview (AB-MARKER + DIAG-SettingsStall) ==="
+                  grep -E "AB-MARKER|DIAG-SettingsStall" /tmp/artifacts/ab_test_emulator.txt || true
+      - store_artifacts:
+          path: /tmp/artifacts
+          destination: reports
+
   # Mirrors .github/workflows/android-keystore-hardware-test.yml. Unlike
   # ui-tests above, this doesn't need an emulator at all — it builds an
   # instrumentation APK on any Linux host and dispatches it to a real
@@ -807,6 +949,13 @@ workflows:
     when: << pipeline.parameters.run_ui_tests >>
     jobs:
       - ui-tests
+  # Throwaway, diagnostic-branch-only — see ab-test-emulator-repro's own
+  # comment above. Piggybacks on run_ui_tests rather than a dedicated
+  # parameter since this never merges.
+  manual-ab-test-emulator-repro:
+    when: << pipeline.parameters.run_ui_tests >>
+    jobs:
+      - ab-test-emulator-repro
   manual-keystore-hardware-test:
     when: << pipeline.parameters.run_keystore_hw_test >>
     jobs:
