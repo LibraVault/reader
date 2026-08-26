@@ -247,4 +247,112 @@ final class PocketTTSEngineTests: XCTestCase {
 
         XCTAssertEqual(result, 1)
     }
+
+    // MARK: - pauseGroups(for:) (#638 pause-splicing)
+
+    func testPauseGroupsOnEmptyArrayIsEmpty() {
+        XCTAssertEqual(PocketTTSEngine.pauseGroups(for: []), [])
+    }
+
+    func testPauseGroupsConcatenatesNonePauseSegmentsIntoOneGroupWithNoSeparator() {
+        let segments = [
+            NarrationSegment(text: "emph", kind: .emphasis),
+            NarrationSegment(text: " text and ", kind: .plain),
+            NarrationSegment(text: "bold", kind: .emphasis),
+        ]
+        XCTAssertEqual(
+            PocketTTSEngine.pauseGroups(for: segments),
+            [PocketTTSEngine.PauseGroup(text: "emph text and bold", pauseBefore: .none)])
+    }
+
+    func testPauseGroupsJoinsSentencePauseSegmentsWithPeriodSpaceInTheSameGroup() {
+        // No hard cut for .sentence - the model's own end-of-period pause
+        // does the work, matching "Sentence ≈ 0 extra" in issue #638.
+        let segments = [
+            NarrationSegment(text: "First", pauseBefore: .none),
+            NarrationSegment(text: "Second", pauseBefore: .sentence),
+        ]
+        XCTAssertEqual(
+            PocketTTSEngine.pauseGroups(for: segments),
+            [PocketTTSEngine.PauseGroup(text: "First. Second", pauseBefore: .none)])
+    }
+
+    func testPauseGroupsStartsANewGroupAtParagraphAndSceneBreakBoundaries() {
+        let segments = [
+            NarrationSegment(text: "Chapter One", kind: .heading, pauseBefore: .paragraph),
+            NarrationSegment(text: "Before rule.", pauseBefore: .paragraph),
+            NarrationSegment(text: "After rule.", pauseBefore: .sceneBreak),
+        ]
+        XCTAssertEqual(
+            PocketTTSEngine.pauseGroups(for: segments),
+            [
+                PocketTTSEngine.PauseGroup(text: "Chapter One", pauseBefore: .paragraph),
+                PocketTTSEngine.PauseGroup(text: "Before rule.", pauseBefore: .paragraph),
+                PocketTTSEngine.PauseGroup(text: "After rule.", pauseBefore: .sceneBreak),
+            ])
+    }
+
+    func testPauseGroupsOnASingleSceneBreakPauseSegmentStillCarriesThePause() {
+        // Unlike plainText's leading-separator suppression, a pause hint on
+        // the very first segment does cut its own group here - matching
+        // SSMLRenderer, which likewise never special-cases the first
+        // segment. The two are meant to feel consistent (see SSMLRenderer's
+        // own doc comment), not to silently drop a leading pause on Pocket
+        // while the system engine still renders it.
+        let segments = [NarrationSegment(text: "Only", pauseBefore: .sceneBreak)]
+        XCTAssertEqual(
+            PocketTTSEngine.pauseGroups(for: segments),
+            [PocketTTSEngine.PauseGroup(text: "Only", pauseBefore: .sceneBreak)])
+    }
+
+    func testPauseGroupsResumingAfterAParagraphContinuesAppendingToTheNewGroup() {
+        let segments = [
+            NarrationSegment(text: "Para one.", pauseBefore: .paragraph),
+            NarrationSegment(text: " more.", pauseBefore: .none),
+        ]
+        XCTAssertEqual(
+            PocketTTSEngine.pauseGroups(for: segments),
+            [PocketTTSEngine.PauseGroup(text: "Para one. more.", pauseBefore: .paragraph)])
+    }
+
+    // MARK: - silenceSeconds(for:)
+
+    func testSilenceSecondsIsZeroForNoneAndSentence() {
+        XCTAssertEqual(PocketTTSEngine.silenceSeconds(for: .none), 0)
+        XCTAssertEqual(PocketTTSEngine.silenceSeconds(for: .sentence), 0)
+    }
+
+    func testSilenceSecondsMatchesTheDeclaredConstantsForParagraphAndSceneBreak() {
+        XCTAssertEqual(PocketTTSEngine.silenceSeconds(for: .paragraph), PocketTTSEngine.paragraphPauseSeconds)
+        XCTAssertEqual(PocketTTSEngine.silenceSeconds(for: .sceneBreak), PocketTTSEngine.sceneBreakPauseSeconds)
+        XCTAssertEqual(PocketTTSEngine.paragraphPauseSeconds, 0.3)
+        XCTAssertEqual(PocketTTSEngine.sceneBreakPauseSeconds, 0.9)
+    }
+
+    // MARK: - silenceBuffer(seconds:format:)
+
+    func testSilenceBufferForZeroSecondsIsNil() {
+        XCTAssertNil(PocketTTSEngine.silenceBuffer(seconds: 0, format: makeFormat()))
+    }
+
+    func testSilenceBufferForNegativeSecondsIsNil() {
+        XCTAssertNil(PocketTTSEngine.silenceBuffer(seconds: -1, format: makeFormat()))
+    }
+
+    func testSilenceBufferFrameLengthMatchesSampleRateTimesDuration() throws {
+        let format = makeFormat() // 22050 Hz
+        let buffer = try XCTUnwrap(PocketTTSEngine.silenceBuffer(seconds: 0.3, format: format))
+
+        XCTAssertEqual(buffer.frameLength, AVAudioFrameCount(22050 * 0.3))
+    }
+
+    func testSilenceBufferChannelDataIsAllZero() throws {
+        let format = makeFormat()
+        let buffer = try XCTUnwrap(PocketTTSEngine.silenceBuffer(seconds: 0.9, format: format))
+        let channelData = try XCTUnwrap(buffer.floatChannelData)
+
+        for index in 0..<Int(buffer.frameLength) {
+            XCTAssertEqual(channelData[0][index], 0)
+        }
+    }
 }

@@ -47,6 +47,15 @@ final class PocketTTSEngine: TTSEngineProtocol {
     /// model filenames above.
     static let silenceScale: Float = 1.0
 
+    /// Extra silence spliced between two separately-synthesized chunks for
+    /// `.paragraph`/`.sceneBreak` pause hints (issue #638). `.sentence` gets
+    /// no entry here — it doesn't get a hard cut at all, see
+    /// `pauseGroups(for:)`. Values chosen to roughly match
+    /// `SSMLRenderer`'s break durations for the system engine, so switching
+    /// between the two engines feels consistent (see its own doc comment).
+    static let paragraphPauseSeconds: Double = 0.3
+    static let sceneBreakPauseSeconds: Double = 0.9
+
     /// `xcodebuild test`'s CI Simulator has no real audio hardware and hangs
     /// on AVAudioSession/AVFoundation activation - see TTSEngineBridge's
     /// identical guard in DomainBridge.swift for the full story (two
@@ -115,6 +124,46 @@ final class PocketTTSEngine: TTSEngineProtocol {
         playerNode.stop()
         playerNode.play()
 
+        await synthesize(text: text, rate: rate, tts: tts, format: format)
+    }
+
+    /// Pause-splicing (#638): `NarrationSegment`'s `pauseBefore` hints are
+    /// the only lever PocketTTS's bound API has any way to honor at all —
+    /// there's no phoneme-level markup or per-call inline pause API, so
+    /// `.paragraph`/`.sceneBreak` become a silent chunk spliced between two
+    /// separately-synthesized `generateWithConfig()` calls instead
+    /// (`PocketPlayback`'s Android equivalent streams chunk-by-chunk the
+    /// same way, once its own segment plumbing lands). `.emphasis`/`.quote`
+    /// have no realizable lever here at all — a permanent capability gap,
+    /// not a v1 scoping choice — so their text is narrated exactly as
+    /// plain text would be; only the pause hint before a segment does
+    /// anything on this engine.
+    func speak(segments: [NarrationSegment], rate: Double) async {
+        guard !Self.isRunningUnderXCTest,
+              let tts, let format = playbackFormat, !segments.isEmpty
+        else { return }
+
+        ensureAudioEngineRunning()
+        playerNode.stop()
+        playerNode.play()
+
+        for group in Self.pauseGroups(for: segments) {
+            let seconds = Self.silenceSeconds(for: group.pauseBefore)
+            if let silence = Self.silenceBuffer(seconds: seconds, format: format) {
+                playerNode.scheduleBuffer(silence, completionHandler: nil)
+            }
+            await synthesize(text: group.text, rate: rate, tts: tts, format: format)
+        }
+    }
+
+    /// Shared per-chunk synthesis call used by both `speak(text:rate:)` and
+    /// `speak(segments:rate:)` — the latter just calls this once per
+    /// pause-separated group instead of once for the whole chapter.
+    private func synthesize(
+        text: String, rate: Double, tts: SherpaOnnxOfflineTtsWrapper, format: AVAudioFormat
+    ) async {
+        guard !text.isEmpty else { return }
+
         let context = PlaybackContext(node: playerNode, format: format)
         let arg = Unmanaged.passRetained(context).toOpaque()
 
@@ -137,6 +186,68 @@ final class PocketTTSEngine: TTSEngineProtocol {
                 continuation.resume()
             }
         }
+    }
+
+    /// One `generateWithConfig()` call's worth of text, plus the pause that
+    /// should precede it. Internal (not private) so `PocketTTSEngineTests`
+    /// can pin the grouping/joining behaviour directly, per AGENTS.md's
+    /// "pure helpers should be internal" convention.
+    struct PauseGroup: Equatable {
+        let text: String
+        let pauseBefore: NarrationSegment.PauseHint
+    }
+
+    /// Regroups fine-grained `NarrationSegment`s into the coarser chunks
+    /// `generateWithConfig()` is actually called once per. `.none` and
+    /// `.sentence` join into the current group's text exactly like
+    /// `[NarrationSegment].plainText` does (straight concatenation / `". "`
+    /// join) rather than starting a new synthesis call — a `.sentence` hint
+    /// gets no extra spliced silence at all, since the model already pauses
+    /// on the period that join inserts (see issue #638's design). Only
+    /// `.paragraph`/`.sceneBreak` cut a new group, since only those get an
+    /// audible spliced silence in `silenceSeconds(for:)`.
+    static func pauseGroups(for segments: [NarrationSegment]) -> [PauseGroup] {
+        var groups: [PauseGroup] = []
+        for segment in segments {
+            switch segment.pauseBefore {
+            case .none, .sentence:
+                if let last = groups.last {
+                    let joiner = segment.pauseBefore == .sentence && !last.text.isEmpty ? ". " : ""
+                    groups[groups.count - 1] = PauseGroup(
+                        text: last.text + joiner + segment.text, pauseBefore: last.pauseBefore)
+                } else {
+                    groups.append(PauseGroup(text: segment.text, pauseBefore: .none))
+                }
+            case .paragraph, .sceneBreak:
+                groups.append(PauseGroup(text: segment.text, pauseBefore: segment.pauseBefore))
+            }
+        }
+        return groups
+    }
+
+    /// Maps a `PauseGroup`'s leading pause hint to seconds of silence to
+    /// splice before it. `.none`/`.sentence` never reach here as a group's
+    /// own `pauseBefore` (see `pauseGroups(for:)`), but are handled
+    /// explicitly rather than via `default` so a future new `PauseHint`
+    /// case fails to compile here instead of silently getting zero pause.
+    static func silenceSeconds(for pause: NarrationSegment.PauseHint) -> Double {
+        switch pause {
+        case .none, .sentence: return 0
+        case .paragraph: return paragraphPauseSeconds
+        case .sceneBreak: return sceneBreakPauseSeconds
+        }
+    }
+
+    /// Builds a silent `AVAudioPCMBuffer` of the given duration via the same
+    /// `pcmBuffer(from:format:)` transform real synthesized chunks go
+    /// through — a `zeros(sampleRate * pauseSeconds)` array, per issue
+    /// #638's design. Returns `nil` for zero/negative duration so callers
+    /// can skip scheduling anything for `.none`/`.sentence` groups.
+    static func silenceBuffer(seconds: Double, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard seconds > 0 else { return nil }
+        let frameCount = Int(seconds * format.sampleRate)
+        guard frameCount > 0 else { return nil }
+        return pcmBuffer(from: [Float](repeating: 0, count: frameCount), format: format)
     }
 
     private func ensureAudioEngineRunning() {
