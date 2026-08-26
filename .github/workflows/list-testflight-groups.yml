@@ -75,6 +75,15 @@ jobs:
             end
 
             puts ""
+            puts "All preReleaseVersion records on this app (checking for a split \"1.0\"):"
+            prv_resps = Spaceship::ConnectAPI.get_pre_release_versions(filter: { app: app.id }).all_pages
+            prvs = prv_resps.flat_map(&:to_models)
+            prvs.each do |prv|
+              builds_for_prv = Spaceship::ConnectAPI.get_builds(filter: { app: app.id, preReleaseVersion: prv.id }, includes: nil, limit: 30, sort: "-uploadedDate").all_pages.flat_map(&:to_models)
+              puts "  id=#{prv.id} version=#{prv.version.inspect} platform=#{prv.platform.inspect} -- builds (#{builds_for_prv.size}): " + builds_for_prv.map(&:version).join(", ")
+            end
+
+            puts ""
             puts "Most recent builds on the app (regardless of group) -- notification status:"
             recent = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 10)
             recent.each do |b|
