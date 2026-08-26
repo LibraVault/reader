@@ -432,9 +432,10 @@ enum EPUBParser {
     /// to flat text — reuses `MarkdownBlock`'s shape (`MarkdownDocumentParser.swift`)
     /// rather than a parallel type, since the subset of XHTML real EPUBs use (headings,
     /// paragraphs, lists, images) maps directly onto cases that type already defines
-    /// for Markdown, and `MarkdownBlockView` can render it with no changes. Wiring this
-    /// into `BookChapter`/`ReaderView` is out of scope here (see #356) — this is only
-    /// the parsing half.
+    /// for Markdown, and `MarkdownBlockView` can render it with no changes. Wired into
+    /// `BookChapter.blocks`/`.images` since #357 and `.segments` since #635 (narration);
+    /// on-screen block-based rendering in `ReaderView` is still separate, tracked by
+    /// #360.
     ///
     /// `XMLParser`, not `NSAttributedString`, drives the primary path: it can express
     /// `<img>` structurally (`NSAttributedString`'s HTML importer discards `src`), and
