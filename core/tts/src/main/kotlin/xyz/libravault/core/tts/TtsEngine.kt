@@ -21,6 +21,20 @@ interface TtsEngine {
 
     fun initialize()
     fun speak(text: String)
+
+    /**
+     * Segment-aware overload (#499 v2a, #636) — carries prosody hints
+     * ([NarrationSegment.kind]/[NarrationSegment.pauseBefore]) that [speak] alone can't
+     * express. Defaults to flattening back to plain text and calling [speak]: an engine
+     * that hasn't been taught to render segments (Pocket/Cloud today — see #638 for why
+     * Pocket's gap is permanent, not a v1 scoping choice) gets this for free, with no
+     * regression and no new capability. [xyz.libravault.core.tts.AndroidTtsEngine] is
+     * the one real override.
+     */
+    fun speak(segments: List<NarrationSegment>) {
+        speak(segments.joinToNarrationText())
+    }
+
     fun pause()
     fun resume()
     fun stop()
