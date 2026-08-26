@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test
 class AndroidTtsEngineTest {
 
     private fun split(text: String) = AndroidTtsEngine.splitIntoUtterances(text)
+    private fun items(segments: List<NarrationSegment>) = AndroidTtsEngine.buildPlaybackItems(segments)
 
     // ── Audio focus (#137 mutual exclusion via lockscreen/notification) ────
     //
@@ -198,5 +199,78 @@ class AndroidTtsEngineTest {
             locale = "en-US",
         )
         assertFalse(voice.requiresNetwork)
+    }
+
+    // ── Segment-aware playback queue (#499 v2a Phase C, #636) ───────────────────
+    //
+    // buildPlaybackItems is the one piece of the segment-rendering path this file can
+    // reach — AndroidTtsEngineTest can't construct a real android.speech.tts.TextToSpeech
+    // (see the top-of-file note), so speak(segments)'s own queueing can't be exercised
+    // here at all; this only verifies the pure translation from segments to the queue
+    // this class hands TextToSpeech.
+
+    @Test
+    fun `a segment with no pause becomes a single Speech item`() {
+        val result = items(listOf(NarrationSegment("Hello.")))
+        assertEquals(listOf(PlaybackItem.Speech("Hello.")), result)
+    }
+
+    @Test
+    fun `a pause hint becomes a Silence item ahead of the segment's Speech item`() {
+        val result = items(
+            listOf(NarrationSegment("Below.", pauseBefore = NarrationSegment.PauseHint.SCENE_BREAK)),
+        )
+        assertEquals(2, result.size)
+        assertTrue(result[0] is PlaybackItem.Silence)
+        assertEquals(PlaybackItem.Speech("Below."), result[1])
+    }
+
+    @Test
+    fun `Sentence, Paragraph, and SceneBreak pauses produce increasingly long silences`() {
+        val sentence = items(listOf(NarrationSegment("x", pauseBefore = NarrationSegment.PauseHint.SENTENCE)))
+        val paragraph = items(listOf(NarrationSegment("x", pauseBefore = NarrationSegment.PauseHint.PARAGRAPH)))
+        val sceneBreak = items(listOf(NarrationSegment("x", pauseBefore = NarrationSegment.PauseHint.SCENE_BREAK)))
+
+        val sentenceMs = (sentence[0] as PlaybackItem.Silence).durationMs
+        val paragraphMs = (paragraph[0] as PlaybackItem.Silence).durationMs
+        val sceneBreakMs = (sceneBreak[0] as PlaybackItem.Silence).durationMs
+
+        assertTrue(sentenceMs < paragraphMs, "expected sentence ($sentenceMs) < paragraph ($paragraphMs)")
+        assertTrue(paragraphMs < sceneBreakMs, "expected paragraph ($paragraphMs) < sceneBreak ($sceneBreakMs)")
+    }
+
+    @Test
+    fun `a blank segment contributes no Speech item but keeps its pause`() {
+        val result = items(listOf(NarrationSegment("  ", pauseBefore = NarrationSegment.PauseHint.PARAGRAPH)))
+        assertEquals(listOf(PlaybackItem.Silence(500L)), result)
+    }
+
+    @Test
+    fun `a long segment still splits into multiple Speech items with only one leading pause`() {
+        val longText = ("This is a sentence. ").repeat(500) // ~10 000 chars, well over MAX_UTTERANCE_CHARS
+        val result = items(listOf(NarrationSegment(longText, pauseBefore = NarrationSegment.PauseHint.PARAGRAPH)))
+
+        assertTrue(result.first() is PlaybackItem.Silence)
+        val speechItems = result.drop(1)
+        assertTrue(speechItems.size > 1, "expected the long segment to split into multiple Speech items")
+        assertTrue(speechItems.all { it is PlaybackItem.Speech })
+    }
+
+    @Test
+    fun `multiple segments concatenate their items in order`() {
+        val result = items(
+            listOf(
+                NarrationSegment("First."),
+                NarrationSegment("Second.", pauseBefore = NarrationSegment.PauseHint.SENTENCE),
+            ),
+        )
+        assertEquals(
+            listOf(
+                PlaybackItem.Speech("First."),
+                PlaybackItem.Silence(150L),
+                PlaybackItem.Speech("Second."),
+            ),
+            result,
+        )
     }
 }
