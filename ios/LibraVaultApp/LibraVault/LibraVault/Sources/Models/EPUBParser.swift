@@ -495,7 +495,7 @@ enum EPUBParser {
         )
 
         guard let emphasisTagRegex = try? NSRegularExpression(pattern: #"(?is)<(/?)(em|i|b|strong)\b[^>]*>"#) else {
-            let flat = collapsingWhitespace(decodingEntities(stripRemainingTags(text)))
+            let flat = decodingEntities(stripRemainingTags(text))
             return flat.isEmpty ? [] : [MarkdownInlineRun(text: flat, bold: false, italic: false, code: false)]
         }
 
@@ -505,13 +505,19 @@ enum EPUBParser {
         var italic = false
         var cursor = 0
 
+        // No collapsingWhitespace/trimmingCharacters(in: .whitespaces) here — both
+        // treat U+00A0 (non-breaking space) as whitespace to collapse/strip, which
+        // would silently turn a real, meaningful `&nbsp;` (already decoded to
+        // U+00A0 by this point) into an ordinary space or drop it outright. Matches
+        // strippingTags's own behavior, which never collapses inline whitespace
+        // either — only a fragment that's *entirely* whitespace is dropped, and
+        // only from the decision to keep it, not from the text itself.
         func appendRun(upTo location: Int) {
             guard location > cursor else { return }
             let fragment = nsText.substring(with: NSRange(location: cursor, length: location - cursor))
-            let plain = collapsingWhitespace(decodingEntities(stripRemainingTags(fragment))).trimmingCharacters(in: .whitespaces)
-            if !plain.isEmpty {
-                runs.append(MarkdownInlineRun(text: plain, bold: bold, italic: italic, code: false))
-            }
+            let plain = decodingEntities(stripRemainingTags(fragment))
+            guard !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            runs.append(MarkdownInlineRun(text: plain, bold: bold, italic: italic, code: false))
         }
 
         let matches = emphasisTagRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
