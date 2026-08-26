@@ -11,6 +11,9 @@ on:
         description: "Firebase tester group(s), comma-separated (use group alias, not display name)"
         required: false
         default: "libravault-alphabeta"
+      version_code:
+        description: "Version code (default: auto-increment via github.run_number)"
+        required: false
 
 concurrency:
   group: android-firebase-distribution-${{ github.ref }}
@@ -67,8 +70,17 @@ jobs:
             "${{ secrets.KEY_PASSWORD }}" \
             > keystore.properties
 
+      - name: Determine Version Code
+        id: version-code
+        env:
+          VERSION_CODE_INPUT: ${{ inputs.version_code }}
+        run: |
+          VERSION_CODE="${VERSION_CODE_INPUT:-${{ github.run_number }}}"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "Using version code: $VERSION_CODE"
+
       - name: Build Play release APK
-        run: ./gradlew assemblePlayRelease
+        run: ./gradlew assemblePlayRelease -PlibravaultVersionCode="$VERSION_CODE"
 
       # Decoded only for the duration of the upload step below, then removed.
       - name: Set up Firebase credentials
