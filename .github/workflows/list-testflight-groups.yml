@@ -62,7 +62,7 @@ jobs:
             groups = app.get_beta_groups
             puts "Found #{groups.size} beta group(s):"
             groups.each do |g|
-              puts "  name=#{g.name.inspect} id=#{g.id} isInternalGroup=#{g.is_internal_group} publicLinkEnabled=#{g.public_link_enabled}"
+              puts "  name=#{g.name.inspect} id=#{g.id} isInternalGroup=#{g.is_internal_group} publicLinkEnabled=#{g.public_link_enabled} hasAccessToAllBuilds=#{g.has_access_to_all_builds.inspect}"
               builds = g.fetch_builds
               puts "    build numbers in this group (#{builds.size}): " + builds.map { |b| b.version }.join(", ")
 
@@ -122,6 +122,8 @@ jobs:
                 puts "minOsVersion=#{b.min_os_version.inspect} iconAssetToken=#{b.icon_asset_token.inspect}"
                 puts "expired=#{b.expired.inspect} expirationDate=#{b.expiration_date.inspect} uploadedDate=#{b.uploaded_date.inspect}"
                 puts "buildBetaDetail: autoNotifyEnabled=#{d&.auto_notify_enabled.inspect} didNotify=#{d&.did_notify.inspect} internalState=#{d&.internal_build_state.inspect} externalState=#{d&.external_build_state.inspect}"
+                prv = b.pre_release_version
+                puts "preReleaseVersion: id=#{prv&.id.inspect} version=#{prv&.version.inspect} platform=#{prv&.platform.inspect}"
 
                 submission = b.beta_app_review_submission
                 if submission.nil?
