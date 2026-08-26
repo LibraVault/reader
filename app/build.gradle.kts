@@ -42,7 +42,11 @@ android {
 
     defaultConfig {
         applicationId = "xyz.libravault.app"
-        versionCode   = 12
+        // Firebase App Distribution builds pass -PlibravaultVersionCode so each
+        // dispatch gets a distinct version code (see android-firebase-distribution.yml's
+        // "Determine Version Code" step); F-Droid release.yml and local builds fall back
+        // to the literal below for reproducibility (see the "Reproducible builds" note above).
+        versionCode   = (project.findProperty("libravaultVersionCode") as String?)?.toInt() ?: 12
         versionName   = "0.4.6.1-alpha"
     }
 
