@@ -11,6 +11,10 @@ on:
         description: "Firebase tester group(s), comma-separated (use group alias, not display name)"
         required: false
         default: "libravault-alphabeta"
+      version_code:
+        description: 'Version code / build number (default: auto-increment via run number)'
+        required: false
+        type: string
 
 concurrency:
   group: android-firebase-distribution-${{ github.ref }}
@@ -53,6 +57,24 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # app/build.gradle.kts's defaultConfig hardcodes versionCode = 12 as the
+      # source of truth for local/F-Droid builds. Without an override here, every
+      # build this workflow produces reused that same literal, so Firebase App
+      # Distribution showed multiple genuinely different uploads (different
+      # dates, sizes, release notes) all labeled "0.4.6.1-alpha (12)" -- there
+      # was nothing distinguishing them in the tester-facing UI (issue #655).
+      # Same pattern as ios-testflight.yml's "Determine Build Number" step:
+      # auto-increment via the workflow's own run number unless a specific
+      # value is passed explicitly.
+      - name: Determine Version Code
+        id: version-code
+        env:
+          VERSION_CODE_INPUT: ${{ inputs.version_code }}
+        run: |
+          VERSION_CODE="${VERSION_CODE_INPUT:-${{ github.run_number }}}"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "Using version code: $VERSION_CODE"
+
       # Same pattern as release.yml: decode the base64-encoded keystore and
       # write keystore.properties so the existing signing config in
       # app/build.gradle.kts picks it up directly. No new signing secrets —
@@ -68,7 +90,7 @@ jobs:
             > keystore.properties
 
       - name: Build Play release APK
-        run: ./gradlew assemblePlayRelease
+        run: ./gradlew assemblePlayRelease -PlibravaultVersionCode="$VERSION_CODE"
 
       # Decoded only for the duration of the upload step below, then removed.
       - name: Set up Firebase credentials

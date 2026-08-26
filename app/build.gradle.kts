@@ -42,8 +42,14 @@ android {
 
     defaultConfig {
         applicationId = "xyz.libravault.app"
-        versionCode   = 12
-        versionName   = "0.4.6.1-alpha"
+        // versionCode defaults to this literal for local/F-Droid builds (F-Droid's
+        // reproducible build must match what's committed here). CI test-distribution
+        // builds (android-firebase-distribution.yml) override it per-run via
+        // -PlibravaultVersionCode so consecutive uploads get distinct build numbers —
+        // without an override, every Firebase App Distribution build shared this same
+        // "12" regardless of when it was actually built (issue #655).
+        versionCode = (project.findProperty("libravaultVersionCode") as String?)?.toIntOrNull() ?: 12
+        versionName = "0.4.6.1-alpha"
     }
 
     signingConfigs {
