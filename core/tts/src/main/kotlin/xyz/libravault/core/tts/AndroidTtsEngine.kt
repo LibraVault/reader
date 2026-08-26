@@ -22,6 +22,25 @@ private const val TAG = "AndroidTtsEngine"
 // Android TTS has a hard limit of 4000 chars per utterance.
 private const val MAX_UTTERANCE_CHARS = 3900
 
+// Silence durations for NarrationSegment.PauseHint (#499 v2a Phase C, #636) — ordinal
+// hints translated to concrete gaps via TextToSpeech.playSilentUtterance. Tuned by ear
+// against ordinary sentence-final pauses the engine already inserts on its own; not
+// derived from any spec.
+private const val PAUSE_SENTENCE_MS = 150L
+private const val PAUSE_PARAGRAPH_MS = 500L
+private const val PAUSE_SCENE_BREAK_MS = 900L
+
+/**
+ * One queued unit of Android `TextToSpeech` playback — either speakable text or a
+ * deliberate silence. [AndroidTtsEngine.speak] (both the flat-text and the segment-aware
+ * overload) reduce down to a `List<PlaybackItem>` so pause/resume/stop/rate-change only
+ * need to reason about one queue shape instead of two.
+ */
+internal sealed interface PlaybackItem {
+    data class Speech(val text: String) : PlaybackItem
+    data class Silence(val durationMs: Long) : PlaybackItem
+}
+
 @Singleton
 class AndroidTtsEngine @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -45,9 +64,10 @@ class AndroidTtsEngine @Inject constructor(
     // OLD utterances list with the NEW generation, which Samsung fires onError for.
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // Full text split into speakable chunks.
-    private var utterances: List<String> = emptyList()
-    private var currentUtteranceIndex: Int = 0
+    // The full queued sequence for the current speak() call — speech chunks and, for
+    // the segment-aware overload, silences interleaved between them per PauseHint.
+    private var items: List<PlaybackItem> = emptyList()
+    private var currentItemIndex: Int = 0
     // Incremented on every speak() / stop() / pause() call so that onDone
     // callbacks from a previous utterance run are silently ignored.
     private var utteranceGeneration: Int = 0
@@ -83,23 +103,11 @@ class AndroidTtsEngine @Inject constructor(
     }
 
     override fun speak(text: String) {
-        val engine = tts ?: return
-        val status = _state.value.status
-        if (status == TtsStatus.UNINITIALIZED || status == TtsStatus.INITIALIZING) return
+        speakItems(splitIntoUtterances(text).map { PlaybackItem.Speech(it) })
+    }
 
-        val validationError = validateSelectedVoiceInternal(engine)
-        if (validationError != null) {
-            _state.value = _state.value.copy(status = TtsStatus.ERROR, error = validationError)
-            return
-        }
-
-        audioFocusManager.requestFocus { stop() }
-        utteranceGeneration++
-        engine.stop()
-        utterances = splitIntoUtterances(text)
-        currentUtteranceIndex = 0
-        _state.value = _state.value.copy(status = TtsStatus.PLAYING, error = null)
-        speakNext(engine)
+    override fun speak(segments: List<NarrationSegment>) {
+        speakItems(buildPlaybackItems(segments))
     }
 
     override fun pause() {
@@ -114,15 +122,15 @@ class AndroidTtsEngine @Inject constructor(
         if (_state.value.status != TtsStatus.PAUSED) return
         audioFocusManager.requestFocus { stop() }
         _state.value = _state.value.copy(status = TtsStatus.PLAYING)
-        speakNext(engine)
+        enqueueFrom(engine, currentItemIndex)
     }
 
     override fun stop() {
         utteranceGeneration++
         tts?.stop()
         audioFocusManager.abandonFocus()
-        utterances = emptyList()
-        currentUtteranceIndex = 0
+        items = emptyList()
+        currentItemIndex = 0
         _state.value = _state.value.copy(status = TtsStatus.IDLE)
         _stopEvent.tryEmit(Unit)
     }
@@ -143,7 +151,7 @@ class AndroidTtsEngine @Inject constructor(
         if (_state.value.status == TtsStatus.PLAYING) {
             utteranceGeneration++
             engine.stop()
-            speakNext(engine)
+            enqueueFrom(engine, currentItemIndex)
         }
     }
 
@@ -156,15 +164,55 @@ class AndroidTtsEngine @Inject constructor(
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    private fun speakNext(engine: TextToSpeech) {
-        val chunk = utterances.getOrNull(currentUtteranceIndex) ?: run {
+    private fun speakItems(newItems: List<PlaybackItem>) {
+        val engine = tts ?: return
+        val status = _state.value.status
+        if (status == TtsStatus.UNINITIALIZED || status == TtsStatus.INITIALIZING) return
+
+        val validationError = validateSelectedVoiceInternal(engine)
+        if (validationError != null) {
+            _state.value = _state.value.copy(status = TtsStatus.ERROR, error = validationError)
+            return
+        }
+
+        audioFocusManager.requestFocus { stop() }
+        utteranceGeneration++
+        engine.stop()
+        items = newItems
+        currentItemIndex = 0
+        _state.value = _state.value.copy(status = TtsStatus.PLAYING, error = null)
+        enqueueFrom(engine, 0)
+    }
+
+    /**
+     * Enqueues every remaining item from [fromIndex] onward via `QUEUE_ADD`, so Android's
+     * own utterance queue plays the whole sequence — silences and speech chunks
+     * interleaved in queue order — without this class re-triggering the next item from
+     * `onDone` (the model the single-utterance-at-a-time [speak] path used before #636;
+     * that doesn't generalize to a pre-computed silence/speech sequence, since a silence
+     * item has no next item to chain from other than the queue itself).
+     *
+     * Called fresh (from index 0, or from [currentItemIndex] on resume/rate-change)
+     * every time playback needs to (re)start, since [TextToSpeech.stop] — called by
+     * [pause], [setSpeechRate], and before a new [speakItems] call — flushes Android's
+     * entire queue, not just the item currently playing.
+     */
+    private fun enqueueFrom(engine: TextToSpeech, fromIndex: Int) {
+        if (fromIndex >= items.size) {
             _state.value = _state.value.copy(status = TtsStatus.IDLE)
             _completionEvent.tryEmit(Unit)
             return
         }
-        // Encode generation into utteranceId so onDone can reject stale callbacks.
-        val id = "${utteranceGeneration}_${currentUtteranceIndex}"
-        engine.speak(chunk, TextToSpeech.QUEUE_FLUSH, null, id)
+        for (index in fromIndex..items.lastIndex) {
+            // Encode generation and item index into utteranceId so onDone can reject
+            // stale callbacks and track queue progress.
+            val id = "${utteranceGeneration}_$index"
+            when (val item = items[index]) {
+                is PlaybackItem.Speech -> engine.speak(item.text, TextToSpeech.QUEUE_ADD, null, id)
+                is PlaybackItem.Silence ->
+                    engine.playSilentUtterance(item.durationMs, TextToSpeech.QUEUE_ADD, id)
+            }
+        }
     }
 
     // Callbacks arrive on the TTS engine's internal thread. We post every
@@ -178,9 +226,12 @@ class AndroidTtsEngine @Inject constructor(
                 val gen = utteranceId?.substringBefore('_')?.toIntOrNull() ?: return@post
                 if (gen != utteranceGeneration) return@post
                 if (_state.value.status != TtsStatus.PLAYING) return@post
-                currentUtteranceIndex++
-                val engine = tts ?: return@post
-                speakNext(engine)
+                val index = utteranceId.substringAfter('_').toIntOrNull() ?: return@post
+                currentItemIndex = index + 1
+                if (currentItemIndex >= items.size) {
+                    _state.value = _state.value.copy(status = TtsStatus.IDLE)
+                    _completionEvent.tryEmit(Unit)
+                }
             }
         }
 
@@ -207,6 +258,9 @@ class AndroidTtsEngine @Inject constructor(
     private fun splitIntoUtterances(text: String): List<String> =
         Companion.splitIntoUtterances(text)
 
+    private fun buildPlaybackItems(segments: List<NarrationSegment>): List<PlaybackItem> =
+        Companion.buildPlaybackItems(segments)
+
     companion object {
         // Visible for testing.
         internal fun splitIntoUtterances(text: String): List<String> {
@@ -229,6 +283,28 @@ class AndroidTtsEngine @Inject constructor(
             }
 
             return chunks
+        }
+
+        private fun pauseDurationMs(hint: NarrationSegment.PauseHint): Long? = when (hint) {
+            NarrationSegment.PauseHint.NONE -> null
+            NarrationSegment.PauseHint.SENTENCE -> PAUSE_SENTENCE_MS
+            NarrationSegment.PauseHint.PARAGRAPH -> PAUSE_PARAGRAPH_MS
+            NarrationSegment.PauseHint.SCENE_BREAK -> PAUSE_SCENE_BREAK_MS
+        }
+
+        // Visible for testing. A segment's own text can still exceed
+        // MAX_UTTERANCE_CHARS (a long unbroken paragraph), so its chunks still go
+        // through splitIntoUtterances — the silence for pauseBefore only precedes the
+        // first chunk, never gets repeated for a segment's internal chunk splits.
+        internal fun buildPlaybackItems(segments: List<NarrationSegment>): List<PlaybackItem> {
+            val items = mutableListOf<PlaybackItem>()
+            for (segment in segments) {
+                pauseDurationMs(segment.pauseBefore)?.let { items += PlaybackItem.Silence(it) }
+                items += splitIntoUtterances(segment.text)
+                    .filter { it.isNotBlank() }
+                    .map { PlaybackItem.Speech(it) }
+            }
+            return items
         }
     }
 

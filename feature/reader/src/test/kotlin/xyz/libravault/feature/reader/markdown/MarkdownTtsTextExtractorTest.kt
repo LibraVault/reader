@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import xyz.libravault.core.tts.NarrationSegment
 
 /**
  * Unit tests for [MarkdownTtsTextExtractor] — the Markdown-syntax-stripping half of
@@ -138,5 +139,87 @@ class MarkdownTtsTextExtractorTest {
     fun `table rows and the separator row are removed entirely`() {
         val cleaned = MarkdownTtsTextExtractor.stripMarkdownSyntax("| A | B |\n|---|---|\n| 1 | 2 |")
         assertEquals("", cleaned)
+    }
+
+    // ── Narration segments (#636) ────────────────────────────────────────────────
+
+    private fun segments(text: String) = MarkdownTtsTextExtractor.extractNarrationSegments(text)
+
+    @Test
+    fun `a heading becomes its own Heading-kind segment`() {
+        val result = segments("# A Title\nBody text.")
+        assertEquals(
+            listOf(
+                NarrationSegment("A Title", NarrationSegment.Kind.HEADING, NarrationSegment.PauseHint.NONE),
+                NarrationSegment("Body text.", NarrationSegment.Kind.PLAIN, NarrationSegment.PauseHint.NONE),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `bold and italic runs mark the segment as Emphasis`() {
+        val result = segments("Some **bold** text.")
+        assertEquals(listOf(NarrationSegment("Some bold text.", NarrationSegment.Kind.EMPHASIS)), result)
+    }
+
+    @Test
+    fun `a block quote is marked Quote-kind and multi-line quotes merge into one segment`() {
+        val result = segments("> First line.\n> Second line.")
+        assertEquals(
+            listOf(NarrationSegment("First line. Second line.", NarrationSegment.Kind.QUOTE)),
+            result,
+        )
+    }
+
+    @Test
+    fun `a soft-wrapped paragraph merges into one segment instead of several`() {
+        val result = segments("First line of a paragraph\nsecond line of the same paragraph.")
+        assertEquals(
+            listOf(NarrationSegment("First line of a paragraph second line of the same paragraph.")),
+            result,
+        )
+    }
+
+    @Test
+    fun `a blank line between paragraphs gives the next segment a Paragraph pause`() {
+        val result = segments("First paragraph.\n\nSecond paragraph.")
+        assertEquals(
+            listOf(
+                NarrationSegment("First paragraph."),
+                NarrationSegment("Second paragraph.", pauseBefore = NarrationSegment.PauseHint.PARAGRAPH),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `a thematic break gives the following segment a SceneBreak pause and is not itself spoken`() {
+        val result = segments("Above.\n\n---\n\nBelow.")
+        assertEquals(
+            listOf(
+                NarrationSegment("Above."),
+                NarrationSegment("Below.", pauseBefore = NarrationSegment.PauseHint.SCENE_BREAK),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `list items each become their own segment with a Sentence pause`() {
+        val result = segments("- First\n- Second")
+        assertEquals(
+            listOf(
+                NarrationSegment("First"),
+                NarrationSegment("Second", pauseBefore = NarrationSegment.PauseHint.SENTENCE),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `code-only, table-only, and thematic-break-only content produces no segments`() {
+        val source = "```\nsome code\n```\n\n---\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        assertTrue(segments(source).isEmpty())
     }
 }

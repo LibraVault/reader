@@ -918,7 +918,7 @@ class ReaderViewModelTest {
         val vm = viewModel()
         vm.startReadAloud(getInitialText = { null }, getNextText = { null })
         io.mockk.verify { fakeTtsEngine.stop() }
-        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak(any()) }
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak(any<String>()) }
     }
 
     @Test
@@ -957,7 +957,7 @@ class ReaderViewModelTest {
         // elsewhere sharing the singleton TtsEngineProvider) must not be misread
         // as "advance the book".
         ttsCompletionEvent.emit(Unit)
-        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak(any()) }
+        io.mockk.coVerify(exactly = 0) { fakeTtsEngine.speak(any<String>()) }
     }
 
     @Test
@@ -1111,7 +1111,7 @@ class ReaderViewModelTest {
         vm.startReadAloud(getInitialText = { "Last chapter." }, getNextText = { null })
         vm.nextReadAloudChapter()
         // No stop, no crash — startReadAloud's initial speak is the only call.
-        io.mockk.coVerify(exactly = 1) { fakeTtsEngine.speak(any()) }
+        io.mockk.coVerify(exactly = 1) { fakeTtsEngine.speak(any<String>()) }
         io.mockk.verify(exactly = 0) { fakeTtsEngine.stop() }
     }
 
@@ -1136,7 +1136,7 @@ class ReaderViewModelTest {
             getPreviousText = { null },
         )
         vm.previousReadAloudChapter()
-        io.mockk.coVerify(exactly = 1) { fakeTtsEngine.speak(any()) }
+        io.mockk.coVerify(exactly = 1) { fakeTtsEngine.speak(any<String>()) }
     }
 
     @Test
