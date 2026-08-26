@@ -13,6 +13,18 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    // :feature:player -> :core:vaultcontent -> readium-shared requires core library
+    // desugaring — AGP's checkDebugAndroidTestAarMetadata enforces this on the
+    // androidTest variant too, same as core:vaultcontent's own fix for issue #253,
+    // just one dependency hop further out. Was always latent here (this module has
+    // never declared its own androidTest sources, so nothing ever ran this check to
+    // completion) — only surfaced once #582's AGP bump got checkDebugAndroidTestAarMetadata
+    // running to completion for the first time instead of dying earlier on the old
+    // AGP/R8-vs-Kotlin-2.2 metadata bug.
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
 }
 
 dependencies {
@@ -35,6 +47,8 @@ dependencies {
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     // Debug-only manifest declaring the ComponentActivity that Compose's
     // createComposeRule() launches to host test content — picked up by unit
     // tests too via testOptions.unitTests.isIncludeAndroidResources above.
