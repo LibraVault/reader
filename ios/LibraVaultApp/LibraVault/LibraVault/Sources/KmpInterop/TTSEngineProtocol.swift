@@ -26,14 +26,16 @@ protocol TTSEngineProtocol: AnyObject {
 
     /// Segment-aware narration (#499 v2a Phase A) — carries prosody hints
     /// (pause/emphasis) derived from source document structure, instead of
-    /// the one flat `String` `speak(text:rate:)` gets. Only `TTSEngineBridge`
-    /// (System Voice) can do anything real with this today, by rendering to
-    /// SSML — see its own override. Pocket TTS has no markup lever at all in
-    /// its bound API (issue #638) and Cloud isn't in scope for this phase, so
-    /// both fall through to the default extension below, which just narrates
-    /// the segments' flattened plain text exactly as `speak(text:rate:)`
-    /// already would have — never a regression for either engine, just no
-    /// new capability yet.
+    /// the one flat `String` `speak(text:rate:)` gets. `TTSEngineBridge`
+    /// (System Voice) renders segments to SSML; `PocketTTSEngine` (#638)
+    /// splices silence between separately-synthesized chunks for
+    /// `.paragraph`/`.sceneBreak` pause hints — it has no lever at all for
+    /// `.emphasis`/`.quote` (a permanent capability gap in its bound API),
+    /// so those segments' text is narrated exactly as plain text. Cloud
+    /// isn't in scope for this phase, so it falls through to the default
+    /// extension below, which just narrates the segments' flattened plain
+    /// text exactly as `speak(text:rate:)` already would have — never a
+    /// regression, just no new capability yet.
     func speak(segments: [NarrationSegment], rate: Double) async
 }
 
