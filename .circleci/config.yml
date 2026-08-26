@@ -337,7 +337,14 @@ jobs:
                     return 1
                   }
 
-                  mark() { adb shell log -t AB-MARKER "$*"; }
+                  # `adb shell` reconstructs multiple arguments into a single
+                  # command line on the device WITHOUT preserving local
+                  # quoting — run_cycle's labels contain literal parens (e.g.
+                  # "BASELINE (pre-#543/#604, ...)"), which the device's
+                  # /system/bin/sh then sees unquoted and rejects with
+                  # "syntax error: unexpected '('". Pass the whole remote
+                  # command as ONE pre-quoted string instead.
+                  mark() { adb shell "log -t AB-MARKER '$*'"; }
 
                   run_cycle() {
                     local pkg="$1"
