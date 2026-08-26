@@ -390,5 +390,53 @@ final class VaultStoreTests: XCTestCase {
         XCTAssertNil(try store.listEntries()[0].coverArtFileId, "a failed setCoverArt must not leave the manifest pointing at the new (nonexistent) cover")
     }
 
+    // MARK: - Concurrency (#669)
+
+    /// Regression coverage for #669: `VaultReaderViewModel`/
+    /// `VaultPlayerViewModel` hold a `VaultStore` reference past `load()`
+    /// and call reading methods on it directly from `@MainActor` code,
+    /// while `VaultForegroundLockObserver` calls `lock()` from
+    /// `VaultSessionManager`'s own actor executor — a different thread.
+    /// Before `vmkLock`, both sides touched the bare `vmk` property with no
+    /// synchronization at all, which is undefined behavior independent of
+    /// whether any single run happens to crash.
+    ///
+    /// Deliberately only `listEntries()` (read-only) and `lock()` here, not
+    /// a mutating call like `addBookmark` — concurrent *writes* to the same
+    /// manifest file are a separate, known, not-yet-fixed hazard (the fuller
+    /// Android-style fix adds a generation counter/mutation mutex for that;
+    /// see #669's own "not verified/scoped here" note), and mixing that in
+    /// would make this test fail for a reason unrelated to `vmkLock`. This
+    /// test's only target is the race this PR actually closes: unsynchronized
+    /// concurrent access to the `vmk` property itself.
+    ///
+    /// This can't prove the fix by itself the way a deterministic test
+    /// would — proving the absence of a data race needs Thread Sanitizer,
+    /// which this test target doesn't currently enable (worth turning on
+    /// given this exact bug class) — but it's still a meaningful regression
+    /// net: against the pre-fix code, hammering an unsynchronized `Optional
+    /// <Data>` from two threads like this is exactly the shape that produces
+    /// an intermittent crash or torn read.
+    func testConcurrentLockDuringInFlightListEntriesCallsDoesNotCrash() throws {
+        let store = newStore()
+        _ = try store.create(pin: pin("1234"), argon2Params: fastParams)
+
+        DispatchQueue.concurrentPerform(iterations: 500) { i in
+            if i % 2 == 0 {
+                _ = try? store.listEntries() // no assertion on the per-call result — either outcome (succeeds before the lock lands, or throws .vaultLocked after) is valid; only a crash/hang would fail this test
+            } else {
+                store.lock()
+            }
+        }
+
+        // No concurrent unlock happens above, so the store must end locked —
+        // and isUnlocked's answer must agree with what listEntries() does,
+        // not just "didn't crash."
+        XCTAssertFalse(store.isUnlocked)
+        XCTAssertThrowsError(try store.listEntries()) { error in
+            XCTAssertEqual(error as? VaultStoreError, .vaultLocked)
+        }
+    }
+
     private func pin(_ s: String) -> [UInt8] { Array(s.utf8) }
 }

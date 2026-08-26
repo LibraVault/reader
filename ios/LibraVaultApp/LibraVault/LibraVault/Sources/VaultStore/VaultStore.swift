@@ -107,8 +107,30 @@ final class VaultStore {
     private let onCreateFailureVmkForTesting: ((Data) -> Void)?
 
     private var vmk: Data?
+    // Guards every read/write of `vmk` itself (#669). `VaultStore`'s own doc
+    // comment says callers are expected to route everything through
+    // `VaultSessionManager`'s actor isolation instead of relying on this
+    // class for thread-safety — but `VaultReaderViewModel`/
+    // `VaultPlayerViewModel` violate exactly that: once `load()` grabs a
+    // `VaultStore` reference via `requireUnlocked()`, every later mutating
+    // call goes straight to it from `@MainActor` code, never back through
+    // the actor, while `VaultForegroundLockObserver` locks via
+    // `Task { await sessionManager.lockAll() }` on the actor's own executor
+    // — a different thread. `vmk` is a plain `Optional<Data>`; unsynchronized
+    // concurrent read/write of it is undefined behavior regardless of `Data`
+    // being a copy-on-write value type, since the race is on the property's
+    // own storage slot, not its payload. This lock only ever guards the
+    // property access itself (a handful of instructions), never the
+    // surrounding crypto/file work each caller does with its own already-
+    // captured copy — so it can't turn into a bottleneck or a deadlock
+    // hazard against the actor.
+    private let vmkLock = NSLock()
 
-    var isUnlocked: Bool { vmk != nil }
+    var isUnlocked: Bool {
+        vmkLock.lock()
+        defer { vmkLock.unlock() }
+        return vmk != nil
+    }
     func exists() -> Bool { VaultConfig.exists(vaultDir: vaultDir) }
 
     /// - Parameters:
@@ -190,7 +212,9 @@ final class VaultStore {
                 wrappedVmkByRecovery: newVault.material.wrappedVmkByRecovery
             )
             try VaultManifest.write(vaultDir: vaultDir, vmk: newVault.vmk, entries: [])
+            vmkLock.lock()
             vmk = newVault.vmk
+            vmkLock.unlock()
             return newVault.recoveryKey
         } catch {
             // Scrub in place, not a copy — see NewVault.vmk's doc comment for
@@ -231,7 +255,9 @@ final class VaultStore {
                 argon2Params: config.argon2Params,
                 wrappedVmkByKek: WrappedKey(serialized: kekWrappedVmkBytes)
             )
+            vmkLock.lock()
             vmk = unlockedVmk
+            vmkLock.unlock()
             outcome = .success
         } catch VaultCryptoError.authenticationFailed {
             outcome = .wrongCredential
@@ -251,7 +277,10 @@ final class VaultStore {
     func unlockWithRecoveryKey(_ recoveryKey: Data) throws -> UnlockOutcome {
         let config = try VaultConfig.read(vaultDir: vaultDir)
         do {
-            vmk = try VaultKeyManager.unlockWithRecoveryKey(recoveryKey: recoveryKey, wrappedVmkByRecovery: config.wrappedVmkByRecovery)
+            let unlockedVmk = try VaultKeyManager.unlockWithRecoveryKey(recoveryKey: recoveryKey, wrappedVmkByRecovery: config.wrappedVmkByRecovery)
+            vmkLock.lock()
+            vmk = unlockedVmk
+            vmkLock.unlock()
             return .success
         } catch VaultCryptoError.authenticationFailed {
             return .wrongCredential
@@ -260,11 +289,15 @@ final class VaultStore {
 
     /// Zeroes the in-memory VMK and drops the reference. Idempotent.
     func lock() {
+        vmkLock.lock()
         vmk?.secureZero()
         vmk = nil
+        vmkLock.unlock()
     }
 
     private func requireUnlocked() throws -> Data {
+        vmkLock.lock()
+        defer { vmkLock.unlock() }
         guard let vmk else { throw VaultStoreError.vaultLocked }
         return vmk
     }
