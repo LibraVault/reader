@@ -195,14 +195,29 @@ jobs:
       - run:
           name: Grant execute permission for gradlew
           command: chmod +x gradlew
-      # Same single real test today as ui-tests.yml documents: feature:reader's
-      # ReadiumIntegrationTest. core:tts's PocketTtsAudioOutputTest self-skips
-      # on any x86_64 target (arm64-only sherpa-onnx AAR) — see the
-      # tts-audio-test job below for that one's real signal.
+      # Explicit module list, NOT the blanket `connectedDebugAndroidTest` task
+      # name (found 08-26, issue #582 fallout investigation): that fans out
+      # across every module in the multi-project build on ONE shared
+      # emulator, including ~12 with zero androidTest sources that each still
+      # pay a full install/uninstall round-trip for nothing. First time this
+      # job ever got far enough to actually reach the end of that chain (it
+      # was previously cut short earlier by #582), it hung indefinitely and
+      # hit CircleCI's no-output timeout twice in a row, both times on the
+      # LAST module in the sequence — consistent with cumulative ADB/emulator
+      # degradation from that many install/run/uninstall cycles in one job,
+      # not a real test hang (the modules it died on have no androidTest
+      # sources at all). Scoping to just the modules that actually have real
+      # androidTest sources removes ~12 pointless cycles and the likely root
+      # cause. core:tts's PocketTtsAudioOutputTest self-skips on any x86_64
+      # target (arm64-only sherpa-onnx AAR) — see the tts-audio-test job below
+      # for that one's real signal. If a new module gains androidTest
+      # sources, add it here explicitly — same silent-skip trap as :app's
+      # flavor-dimensioned connectedDebugAndroidTest documented elsewhere in
+      # this file.
       - android/start-emulator-and-run-tests:
           system-image: system-images;android-34;google_apis;x86_64
           post-emulator-launch-assemble-command: ""
-          test-command: "./gradlew connectedDebugAndroidTest --continue"
+          test-command: "./gradlew :core:tts:connectedDebugAndroidTest :core:vaultstore:connectedDebugAndroidTest :feature:reader:connectedDebugAndroidTest --continue"
       # Same trap jvm-tests' own "Collect reports for upload" step documents:
       # each module writes its own build/reports/androidTests and
       # build/outputs/androidTest-results, never one top-level dir, and
