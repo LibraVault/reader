@@ -84,8 +84,52 @@ jobs:
         id: build-number
         env:
           BUILD_NUMBER_INPUT: ${{ inputs.build_number }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
         run: |
-          BUILD_NUMBER="${BUILD_NUMBER_INPUT:-${{ github.run_number }}}"
+          if [ -n "$BUILD_NUMBER_INPUT" ]; then
+            BUILD_NUMBER="$BUILD_NUMBER_INPUT"
+            echo "Using explicit build_number input: $BUILD_NUMBER"
+          else
+            # github.run_number is NOT a safe default on its own -- it's this
+            # workflow's own run counter, blind to builds uploaded any other
+            # way. A build numbered lower than one Apple has already seen for
+            # this app version silently uploads and validates fine (Apple's
+            # uniqueness check is per exact number, not strictly-increasing),
+            # but TestFlight never treats it as newer than what's already
+            # live, so it's never offered to testers and never notifies --
+            # no error anywhere, just silent invisibility. Hit for real:
+            # build 148 (an out-of-band CircleCI fallback-pipeline test
+            # upload, see docs/circleci-agent-pipeline-design.md) landed with
+            # a build number far above this workflow's own run_number-based
+            # sequence, and every run_number-based build after it (40, 41)
+            # was silently invisible to every tester until this fix.
+            echo "$PRIVATE_KEY" > AuthKey.p8
+            HIGHEST=$(ruby -rspaceship -e '
+              token = Spaceship::ConnectAPI::Token.create(
+                key_id: ENV["KEY_ID"],
+                issuer_id: ENV["ISSUER_ID"],
+                filepath: "AuthKey.p8",
+              )
+              Spaceship::ConnectAPI.token = token
+
+              apps = Spaceship::ConnectAPI::App.all(filter: { bundleId: ENV["APPLE_BUNDLE_ID"] })
+              raise "No app found for bundle id #{ENV["APPLE_BUNDLE_ID"]}" if apps.empty?
+              app = apps.first
+
+              builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, platform: "IOS", limit: 200)
+              highest = builds.map { |b| b.version.to_i }.max || 0
+              puts highest
+            ')
+            rm -f AuthKey.p8
+
+            RUN_NUMBER=${{ github.run_number }}
+            BUILD_NUMBER=$(( HIGHEST > RUN_NUMBER ? HIGHEST + 1 : RUN_NUMBER ))
+            echo "Highest build number Apple has seen for this app: $HIGHEST. This workflow's own run_number: $RUN_NUMBER. Using: $BUILD_NUMBER"
+          fi
+
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
           echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Using build number: $BUILD_NUMBER"
