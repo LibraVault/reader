@@ -21,6 +21,10 @@ on:
         description: "Optional: a specific tester email to check invite/accept state for"
         required: false
         type: string
+      compare_build_numbers:
+        description: "Optional: comma-separated build numbers to dump full raw attributes for, side by side (e.g. 39,40,41)"
+        required: false
+        type: string
 
 jobs:
   list-groups:
@@ -37,6 +41,7 @@ jobs:
           APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
           FOCUS_BUILD_NUMBER: ${{ inputs.focus_build_number }}
           FOCUS_TESTER_EMAIL: ${{ inputs.focus_tester_email }}
+          COMPARE_BUILD_NUMBERS: ${{ inputs.compare_build_numbers }}
         run: |
           echo "$PRIVATE_KEY" > AuthKey.p8
 
@@ -97,6 +102,47 @@ jobs:
                 localizations = b.get_beta_build_localizations rescue []
                 puts "beta build localizations (#{localizations.size}):"
                 localizations.each { |l| puts "  locale=#{l.locale} whatsNew=#{l.whats_new.inspect}" }
+              end
+            end
+
+            if ENV["COMPARE_BUILD_NUMBERS"] && !ENV["COMPARE_BUILD_NUMBERS"].empty?
+              ENV["COMPARE_BUILD_NUMBERS"].split(",").map(&:strip).each do |num|
+                puts ""
+                puts "=== Full raw attributes: build #{num} ==="
+                builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: num, limit: 5, includes: "app,buildBetaDetail,preReleaseVersion,betaAppReviewSubmission,individualTesters")
+                if builds.empty?
+                  puts "No build found with that number."
+                  next
+                end
+                b = builds.first
+                d = b.build_beta_detail
+                puts "id=#{b.id}"
+                puts "version=#{b.version.inspect} processingState=#{b.processing_state.inspect}"
+                puts "usesNonExemptEncryption=#{b.uses_non_exempt_encryption.inspect}"
+                puts "minOsVersion=#{b.min_os_version.inspect} iconAssetToken=#{b.icon_asset_token.inspect}"
+                puts "expired=#{b.expired.inspect} expirationDate=#{b.expiration_date.inspect} uploadedDate=#{b.uploaded_date.inspect}"
+                puts "buildBetaDetail: autoNotifyEnabled=#{d&.auto_notify_enabled.inspect} didNotify=#{d&.did_notify.inspect} internalState=#{d&.internal_build_state.inspect} externalState=#{d&.external_build_state.inspect}"
+
+                submission = b.beta_app_review_submission
+                if submission.nil?
+                  puts "betaAppReviewSubmission: (none associated on this Build object, fetching directly)"
+                  begin
+                    subs = Spaceship::ConnectAPI.get_beta_app_review_submissions(filter: { build: b.id }).all_pages.flat_map(&:to_models)
+                    subs.each { |s| puts "  betaReviewState=#{s.beta_review_state.inspect} id=#{s.id}" }
+                    puts "  (none found)" if subs.empty?
+                  rescue => e
+                    puts "  error fetching: #{e.message}"
+                  end
+                else
+                  puts "betaAppReviewSubmission: betaReviewState=#{submission.beta_review_state.inspect}"
+                end
+
+                indiv = b.individual_testers
+                puts "individualTesters=#{indiv.inspect}"
+
+                locs = b.get_beta_build_localizations rescue []
+                puts "betaBuildLocalizations (#{locs.size}):"
+                locs.each { |l| puts "  locale=#{l.locale.inspect} whatsNew=#{l.whats_new.inspect}" }
               end
             end
 
