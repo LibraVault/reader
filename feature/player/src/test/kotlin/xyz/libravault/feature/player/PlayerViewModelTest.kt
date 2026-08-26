@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -126,6 +127,70 @@ class PlayerViewModelTest {
             assertEquals("Test Audiobook", loaded.item!!.title)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * Regression test for #642 (Bug 1): [PlayerViewModel.playerListener] must be
+     * assigned *before* `init{}` can invoke `connectWithRetry()`'s callback — a
+     * property declared after `init{}` in the class body is still null at the
+     * point `init{}` runs, and `controller.addListener(null)` either NPEs here
+     * (capturing `null` into a non-null-typed slot) or, on a real device against
+     * a real `MediaController`, throws "listener must not be null" inside
+     * Media3's own implementation. This harness's `mockController` is relaxed
+     * and accepts a null listener silently (no real implementation behind it to
+     * validate the contract) — which is exactly why this bug shipped invisibly
+     * to the existing suite; the only way to catch it here is to capture the
+     * actual argument and prove it's a working listener, not just that some
+     * call happened.
+     */
+    @Test
+    fun `playerListener is fully initialized before it's attached to the controller`() = runTest {
+        val listenerSlot = slot<androidx.media3.common.Player.Listener>()
+        every { mockController.addListener(capture(listenerSlot)) } returns Unit
+
+        viewModel().uiState.test {
+            awaitItem() // loaded state
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        assertTrue(listenerSlot.isCaptured)
+        // false (not true) deliberately: playGeneration is already >0 from the initial
+        // attach, so this hits onIsPlayingChanged's own early-return "stale" branch —
+        // side-effect-free (doesn't start a real, unbounded startPolling() loop under
+        // this harness's dispatcher) while still proving the point: a null capture
+        // would NPE right here, on the call itself, regardless of the argument.
+        listenerSlot.captured.onIsPlayingChanged(false)
+        assertTrue(true) // reaching here means the captured listener is real
+    }
+
+    /**
+     * Regression test for #642 (Bug 2): [PlayerViewModel.loadItem] and
+     * `connectWithRetry()` each independently try to bootstrap playback once
+     * `controller` is available — [PlayerViewModel.attachOrPlay] is the shared,
+     * now-guarded tail both call into. The real race (loadItem's coroutine and
+     * connectWithRetry's callback completing on real, independent dispatcher
+     * timing) isn't reproducible through this module's synchronous
+     * `UnconfinedTestDispatcher` harness, so this calls [PlayerViewModel.attachOrPlay]
+     * directly a second time — exactly what the real race would do — and
+     * asserts it's a no-op the second time.
+     */
+    @Test
+    fun `attachOrPlay only bootstraps playback once per ViewModel instance`() = runTest {
+        val vm = viewModel()
+        vm.uiState.test {
+            awaitItem() // loaded state — normal init flow already called attachOrPlay once
+            cancelAndIgnoreRemainingEvents()
+        }
+        io.mockk.clearMocks(mockController, answers = false, recordedCalls = true)
+        every { mockController.isPlaying } returns true // so a real second attach wouldn't call play() either way
+
+        vm.attachOrPlay(mockController, fakeItem, startPositionMs = 0L, startSpeed = 1.0f)
+
+        // A second, unguarded attach would re-seek/re-set-speed/re-play; the guard
+        // must make this entirely inert.
+        verify(exactly = 0) { mockController.seekTo(any<Long>()) }
+        verify(exactly = 0) { mockController.setPlaybackSpeed(any()) }
+        verify(exactly = 0) { mockController.play() }
     }
 
     @Test
