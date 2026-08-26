@@ -109,7 +109,7 @@ jobs:
               ENV["COMPARE_BUILD_NUMBERS"].split(",").map(&:strip).each do |num|
                 puts ""
                 puts "=== Full raw attributes: build #{num} ==="
-                builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: num, limit: 5, includes: "app,buildBetaDetail,preReleaseVersion,betaAppReviewSubmission")
+                builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: num, limit: 5, includes: "app,buildBetaDetail,preReleaseVersion,betaAppReviewSubmission,individualTesters")
                 if builds.empty?
                   puts "No build found with that number."
                   next
