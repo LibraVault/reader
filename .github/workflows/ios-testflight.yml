@@ -119,14 +119,20 @@ jobs:
               raise "No app found for bundle id #{ENV["APPLE_BUNDLE_ID"]}" if apps.empty?
               app = apps.first
 
-              builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, platform: "IOS", limit: 200)
+              builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, platform: "IOS", sort: "-uploadedDate", limit: 200)
               highest = builds.map { |b| b.version.to_i }.max || 0
               puts highest
             ')
             rm -f AuthKey.p8
 
             RUN_NUMBER=${{ github.run_number }}
-            BUILD_NUMBER=$(( HIGHEST > RUN_NUMBER ? HIGHEST + 1 : RUN_NUMBER ))
+            # Always strictly greater than both -- HIGHEST == RUN_NUMBER is a
+            # real, routinely-hit case here (e.g. an explicit build_number
+            # dispatch, or the CircleCI fallback path landing a build with
+            # today's run_number), and a bare `HIGHEST > RUN_NUMBER ? +1 : `
+            # ternary silently re-picks a number Apple has already seen in
+            # that case -- the exact bug this step exists to prevent.
+            BUILD_NUMBER=$(( (HIGHEST > RUN_NUMBER ? HIGHEST : RUN_NUMBER) + 1 ))
             echo "Highest build number Apple has seen for this app: $HIGHEST. This workflow's own run_number: $RUN_NUMBER. Using: $BUILD_NUMBER"
           fi
 
