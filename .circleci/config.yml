@@ -289,14 +289,15 @@ jobs:
                   adb install -r "$BASELINE_APK"
                   adb install -r "$CURRENT_APK"
 
-                  # NOTE: deliberately no heredoc (<<MARKER) here — a raw '<<'
-                  # inside a step passed through the android orb's `steps`
-                  # parameter gets scanned by CircleCI's own config-templating
-                  # engine as its native << parameter-expression >> syntax,
-                  # which then fails config compilation with "Expressions must
-                  # be less than 2048 characters" before any job even starts
-                  # (silently — no ci/circleci:* status is ever posted). Use
-                  # printf instead of a heredoc for this tiny XML payload.
+                  # NOTE: deliberately no bash heredoc here. A step nested
+                  # inside the android orb's `steps` parameter is scanned by
+                  # CircleCI's own config-templating engine, which treats any
+                  # unescaped angle-bracket pair as its native parameter-
+                  # expression syntax (config v2.1+ requires escaping a
+                  # literal one with a leading backslash) and fails config
+                  # compilation before any job even starts (silently — no
+                  # ci/circleci:* status is ever posted). printf sidesteps
+                  # the problem entirely for this tiny XML payload.
                   seed_onboarded() {
                     local pkg="$1"
                     printf '%s\n' \
