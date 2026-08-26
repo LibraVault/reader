@@ -15,10 +15,11 @@ import ZIPFoundation
 /// only thing that actually differs is *where the archive's bytes live*
 /// (ZIPFoundation's in-memory `MemoryFile` backing needs no real file for
 /// random ZIP access). The HTML→text conversion itself is not duplicated:
-/// `EPUBParser.plainText(fromHTML:)`/`strippingTags(from:)` and
-/// `resolveEntryPath(_:)` are `internal`, not `private`, precisely so this
-/// adapter (and its tests) can call them directly instead of re-implementing
-/// prose extraction a second time.
+/// `EPUBParser.plainText(fromHTML:)`/`strippingTags(from:)`,
+/// `EPUBParser.parseBlocks(fromHTML:)` and `resolveEntryPath(_:)` are
+/// `internal`, not `private`, precisely so this adapter (and its tests) can
+/// call them directly instead of re-implementing prose/block extraction a
+/// second time.
 enum VaultEPUBParser {
 
     static func parse(data: Data) throws -> [BookChapter] {
@@ -35,7 +36,16 @@ enum VaultEPUBParser {
             let html = (try? extractSpineItem(href, from: archive)) ?? Data()
             let text = EPUBParser.plainText(fromHTML: html)
             let title = chapterTitle(fromHTML: html, fallback: "Chapter \(index + 1)")
-            return BookChapter(title: title, text: text)
+            // Blocks/segments (#635) — same one-line addition non-vault EPUBs
+            // already had (see EPUBParser.parse), so vault EPUBs get
+            // structural narration signal too instead of staying on the flat
+            // text-only path forever. Image resolution (#357) stays
+            // EPUBParser-only — narration is this issue's concern, not
+            // on-screen rendering of vault EPUBs, which VaultEPUBParser
+            // doesn't otherwise support yet.
+            let blocks = EPUBParser.parseBlocks(fromHTML: html)
+            let segments = NarrationSegmenter.segments(forBlocks: blocks)
+            return BookChapter(title: title, text: text, blocks: blocks, segments: segments)
         }
     }
 

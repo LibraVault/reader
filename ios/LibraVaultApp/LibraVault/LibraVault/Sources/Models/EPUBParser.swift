@@ -57,7 +57,8 @@ enum EPUBParser {
             let title = chapterTitle(fromHTML: html, fallback: "Chapter \(index + 1)")
             let blocks = parseBlocks(fromHTML: html)
             let images = resolveImages(for: blocks, chapterHref: href, archive: archive)
-            return BookChapter(title: title, text: text, blocks: blocks, images: images)
+            let segments = NarrationSegmenter.segments(forBlocks: blocks)
+            return BookChapter(title: title, text: text, blocks: blocks, images: images, segments: segments)
         }
     }
 
@@ -441,9 +442,10 @@ enum EPUBParser {
     /// XHTML that's valid-but-unusual (undeclared entities, unusual doctypes) still
     /// makes `XMLParser` fail outright rather than degrade gracefully — the same shape
     /// of problem `plainText(fromHTML:)` exists to solve (#108) — so on any parse
-    /// failure, or a parse that yields nothing, this falls back to `strippingTags`'s
-    /// flat text as a single `.paragraph` block. Never an empty array for a document
-    /// with prose: that would be the blank page, restated as a block-model invariant.
+    /// failure, or a parse that yields nothing, this falls back to a single
+    /// `.paragraph` block built by `fallbackInlineRuns(from:)` (#635). Never an empty
+    /// array for a document with prose: that would be the blank page, restated as a
+    /// block-model invariant.
     static func parseBlocks(fromHTML data: Data) -> [MarkdownBlock] {
         guard !data.isEmpty else { return [] }
 
@@ -451,9 +453,91 @@ enum EPUBParser {
             return blocks
         }
 
-        let text = strippingTags(from: data)
-        guard !text.isEmpty else { return [] }
-        return [.paragraph(text: [MarkdownInlineRun(text: text, bold: false, italic: false, code: false)])]
+        let runs = fallbackInlineRuns(from: data)
+        return runs.isEmpty ? [] : [.paragraph(text: runs)]
+    }
+
+    /// `parseBlocks`'s fallback for XHTML `parseXHTMLBlocks` can't parse at all — the
+    /// same malformed-but-valid-EPUB case `strippingTags`/`plainText` exist to handle
+    /// (#108). Before #635, this degraded to one flat `MarkdownInlineRun` with
+    /// `bold`/`italic` always `false` — `strippingTags` treats `<em>/<i>/<b>/<strong>`
+    /// identically to every other tag it strips, so a document that hits this path lost
+    /// all emphasis signal, unlike the primary `parseXHTMLBlocks`/`walkInline` path,
+    /// which already distinguishes them. That gap matters now that `blocks` feeds
+    /// `NarrationSegmenter` (#635): a bold/italic run reaching this fallback would
+    /// otherwise render as `.plain` regardless of source markup.
+    ///
+    /// Scans for `<em>/<i>/<b>/<strong>` span boundaries directly (`parseXHTMLBlocks`
+    /// already failed on the whole document, so there's no XML tree left to walk), and
+    /// otherwise reuses `strippingTags`'s own head/script/style/comment removal and
+    /// block-boundary-to-newline rules before stripping whatever tags remain per
+    /// resulting fragment. Doesn't attempt to recover block structure (headings, lists,
+    /// paragraph boundaries) beyond the single fallback `.paragraph` — there's no
+    /// reliable structure left to recover once the whole document has failed to parse.
+    private static func fallbackInlineRuns(from data: Data) -> [MarkdownInlineRun] {
+        guard let html = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1) else { return [] }
+
+        var text = html
+        for pattern in [
+            #"(?s)<!--.*?-->"#,
+            #"(?is)<head\b[^>]*>.*?</head>"#,
+            #"(?is)<script\b[^>]*>.*?</script>"#,
+            #"(?is)<style\b[^>]*>.*?</style>"#,
+        ] {
+            text = text.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        text = text.replacingOccurrences(
+            of: #"(?i)</(p|div|h[1-6]|li|tr|blockquote|section)\s*>|<br\s*/?>"#,
+            with: "\n",
+            options: .regularExpression
+        )
+
+        guard let emphasisTagRegex = try? NSRegularExpression(pattern: #"(?is)<(/?)(em|i|b|strong)\b[^>]*>"#) else {
+            let flat = collapsingWhitespace(decodingEntities(stripRemainingTags(text)))
+            return flat.isEmpty ? [] : [MarkdownInlineRun(text: flat, bold: false, italic: false, code: false)]
+        }
+
+        let nsText = text as NSString
+        var runs: [MarkdownInlineRun] = []
+        var bold = false
+        var italic = false
+        var cursor = 0
+
+        func appendRun(upTo location: Int) {
+            guard location > cursor else { return }
+            let fragment = nsText.substring(with: NSRange(location: cursor, length: location - cursor))
+            let plain = collapsingWhitespace(decodingEntities(stripRemainingTags(fragment))).trimmingCharacters(in: .whitespaces)
+            if !plain.isEmpty {
+                runs.append(MarkdownInlineRun(text: plain, bold: bold, italic: italic, code: false))
+            }
+        }
+
+        let matches = emphasisTagRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        for match in matches {
+            appendRun(upTo: match.range.location)
+            let isClosing = nsText.substring(with: match.range(at: 1)) == "/"
+            switch nsText.substring(with: match.range(at: 2)).lowercased() {
+            case "b", "strong": bold = !isClosing
+            case "i", "em": italic = !isClosing
+            default: break
+            }
+            cursor = match.range.location + match.range.length
+        }
+        appendRun(upTo: nsText.length)
+
+        return trimmedEdges(runs)
+    }
+
+    /// Removes any tag other than the `<em>/<i>/<b>/<strong>` ones `fallbackInlineRuns`
+    /// already consumed before calling this — used per-fragment there, so entities are
+    /// decoded by the caller afterward, same order `strippingTags` uses.
+    private static func stripRemainingTags(_ fragment: String) -> String {
+        fragment.replacingOccurrences(
+            of: #"(?s)<(?:[^>"']|"[^"]*"|'[^']*')*>"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 
     // MARK: - Chapter image resolution (#357)
