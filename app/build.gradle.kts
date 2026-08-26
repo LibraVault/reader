@@ -42,6 +42,9 @@ android {
 
     defaultConfig {
         applicationId = "xyz.libravault.app"
+        // Only needed for connectedDebugAndroidTest (SettingsNavJankTest, #653's
+        // CI jank-regression check) — app had no androidTest source set before.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // versionCode defaults to this literal for local/F-Droid builds (F-Droid's
         // reproducible build must match what's committed here). CI test-distribution
         // builds (android-firebase-distribution.yml) override it per-run via
@@ -221,4 +224,12 @@ dependencies {
     testImplementation(libs.bundles.testing.android)
     testImplementation(libs.junit)
     testRuntimeOnly(libs.junit5.vintage.engine)
+
+    // Instrumented (on-device) — SettingsNavJankTest only, #653's CI jank-regression
+    // check. Drives the real, installed app black-box via UiAutomator (same technique
+    // as the manual adb/uiautomator repro script) rather than launching through
+    // ComposeTestRule/Hilt test scaffolding, which this module has never needed before
+    // and which a black-box driver sidesteps entirely.
+    androidTestImplementation(libs.bundles.testing.instrumentation)
+    androidTestImplementation(libs.androidx.uiautomator)
 }
