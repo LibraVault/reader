@@ -11,12 +11,16 @@ private enum Lora {
     /// OpenType spec — `UIFontDescriptor` has no named constant for it.
     private static let wghtAxis: UInt32 = 0x77_67_68_74
 
-    static func font(size: CGFloat, weight: CGFloat) -> Font {
+    static func uiFont(size: CGFloat, weight: CGFloat) -> UIFont {
         let descriptor = UIFontDescriptor(fontAttributes: [
             .name: "Lora-Regular",
             UIFontDescriptor.AttributeName(rawValue: "NSCTFontVariationAttribute"): [wghtAxis: weight],
         ])
-        return Font(UIFont(descriptor: descriptor, size: size))
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    static func font(size: CGFloat, weight: CGFloat) -> Font {
+        Font(uiFont(size: size, weight: weight))
     }
 }
 
@@ -39,4 +43,13 @@ enum LibraVaultTypography {
     static let labelLarge  = Font.system(size: 14, weight: .medium)
     static let labelMedium = Font.system(size: 12, weight: .medium)
     static let labelSmall  = Font.system(size: 11, weight: .medium)
+
+    /// `UIFont` twin of [titleLarge], for `UINavigationBarAppearance` —
+    /// `UIKit` attributed-string APIs take `UIFont`, not SwiftUI's `Font`.
+    /// Same Lora/18pt/weight-500 values as `titleLarge`, which is also what
+    /// Android's nav bar titles render in: Material3 `TopAppBar`'s `title`
+    /// slot defaults to `MaterialTheme.typography.titleLarge`
+    /// (core/ui/theme/Type.kt), itself Lora. See
+    /// `LibraVaultNavigationBarAppearance` (#661).
+    static let navigationTitleUIFont = Lora.uiFont(size: 18, weight: 500)
 }

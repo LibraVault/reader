@@ -40,6 +40,7 @@ struct CreateEncryptedVaultView: View {
                 .foregroundStyle(LibraVaultColor.onBackground)
             TextField("Vault name", text: $viewModel.displayName)
                 .textFieldStyle(.roundedBorder)
+                .font(LibraVaultTypography.bodyLarge)
             errorText
             Spacer()
             Button("Next") { viewModel.proceedFromName() }

@@ -21,6 +21,7 @@ struct PinField: View {
                     SecureField(label, text: $text)
                 }
             }
+            .font(LibraVaultTypography.bodyLarge)
             .keyboardType(.asciiCapable)
 
             Button {

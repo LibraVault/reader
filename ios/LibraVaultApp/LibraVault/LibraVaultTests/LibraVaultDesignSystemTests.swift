@@ -129,6 +129,34 @@ final class LibraVaultDesignSystemTests: XCTestCase {
         )
     }
 
+    // MARK: - Navigation bar title font (#661)
+
+    func testNavigationTitleUIFontIsLoraAtEighteenPoints() {
+        let font = LibraVaultTypography.navigationTitleUIFont
+        XCTAssertTrue(
+            font.familyName.localizedCaseInsensitiveContains("Lora"),
+            "Nav bar title should render in Lora, matching Android's TopAppBar (titleLarge); got family '\(font.familyName)'"
+        )
+        XCTAssertEqual(font.pointSize, 18, "Should match LibraVaultTypography.titleLarge's 18pt size, and Android's titleLarge")
+    }
+
+    func testNavigationBarAppearanceAppliesLoraTitleFont() {
+        LibraVaultNavigationBarAppearance.apply()
+
+        for appearance in [
+            UINavigationBar.appearance().standardAppearance,
+            UINavigationBar.appearance().compactAppearance,
+            UINavigationBar.appearance().scrollEdgeAppearance,
+        ] {
+            let font = appearance?.titleTextAttributes[.font] as? UIFont
+            XCTAssertNotNil(font, "Expected titleTextAttributes to carry an explicit font")
+            XCTAssertTrue(
+                font?.familyName.localizedCaseInsensitiveContains("Lora") ?? false,
+                "Nav bar title font should be Lora, not the system default; got family '\(font?.familyName ?? "nil")'"
+            )
+        }
+    }
+
     // MARK: - Spacing / Shape scales stay in sync with Android's Dimens.kt / Shape.kt
 
     func testSpacingScaleMatchesDimens() {
