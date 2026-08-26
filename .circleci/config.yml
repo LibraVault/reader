@@ -195,14 +195,17 @@ jobs:
       - run:
           name: Grant execute permission for gradlew
           command: chmod +x gradlew
-      # Same single real test today as ui-tests.yml documents: feature:reader's
-      # ReadiumIntegrationTest. core:tts's PocketTtsAudioOutputTest self-skips
-      # on any x86_64 target (arm64-only sherpa-onnx AAR) — see the
-      # tts-audio-test job below for that one's real signal.
+      # feature:reader's ReadiumIntegrationTest runs via the plain task name below.
+      # core:tts's PocketTtsAudioOutputTest self-skips on any x86_64 target
+      # (arm64-only sherpa-onnx AAR) — see the tts-audio-test job below for that
+      # one's real signal. :app has flavorDimensions, so its androidTest source
+      # (#653's SettingsNavJankTest) only produces connected{Fdroid,Play}DebugAndroidTest,
+      # never a plain connectedDebugAndroidTest — same silent-skip trap
+      # ui-tests.yml documents at length, spelled out explicitly here too.
       - android/start-emulator-and-run-tests:
           system-image: system-images;android-34;google_apis;x86_64
           post-emulator-launch-assemble-command: ""
-          test-command: "./gradlew connectedDebugAndroidTest --continue"
+          test-command: "./gradlew connectedDebugAndroidTest :app:connectedFdroidDebugAndroidTest --continue"
       # Same trap jvm-tests' own "Collect reports for upload" step documents:
       # each module writes its own build/reports/androidTests and
       # build/outputs/androidTest-results, never one top-level dir, and
