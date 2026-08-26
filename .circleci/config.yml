@@ -289,14 +289,22 @@ jobs:
                   adb install -r "$BASELINE_APK"
                   adb install -r "$CURRENT_APK"
 
+                  # NOTE: deliberately no heredoc (<<MARKER) here — a raw '<<'
+                  # inside a step passed through the android orb's `steps`
+                  # parameter gets scanned by CircleCI's own config-templating
+                  # engine as its native << parameter-expression >> syntax,
+                  # which then fails config compilation with "Expressions must
+                  # be less than 2048 characters" before any job even starts
+                  # (silently — no ci/circleci:* status is ever posted). Use
+                  # printf instead of a heredoc for this tiny XML payload.
                   seed_onboarded() {
                     local pkg="$1"
-                    adb shell "run-as $pkg sh -c 'mkdir -p shared_prefs && cat > shared_prefs/libravault_prefs.xml'" <<'ONBOARDXML'
-                  <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
-                  <map>
-                      <boolean name="onboarded" value="true" />
-                  </map>
-                  ONBOARDXML
+                    printf '%s\n' \
+                      "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
+                      '<map>' \
+                      '    <boolean name="onboarded" value="true" />' \
+                      '</map>' \
+                      | adb shell "run-as $pkg sh -c 'mkdir -p shared_prefs && cat > shared_prefs/libravault_prefs.xml'"
                   }
                   seed_onboarded "$BASELINE_PKG"
                   seed_onboarded "$CURRENT_PKG"
