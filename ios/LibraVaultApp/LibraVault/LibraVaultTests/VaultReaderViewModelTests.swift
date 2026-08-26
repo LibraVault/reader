@@ -232,6 +232,69 @@ final class VaultReaderViewModelTests: XCTestCase {
         XCTAssertEqual(vm2.highlights.count, 1)
     }
 
+    // MARK: - Lock lifecycle (#526/#668)
+
+    /// The core regression this reopens #526 for: nothing previously
+    /// re-checked lock state after `load()`, so a lock that fired while the
+    /// screen was already open went unnoticed.
+    func testCheckStillUnlockedFlipsWasLockedWhenTheVaultLockedWhileOpen() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureEPUB(into: manager, vaultId: id, chapterBodies: ["<p>One.</p>"])
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+        XCTAssertFalse(vm.wasLocked)
+
+        await manager.lock(id) // simulates VaultForegroundLockObserver firing while this screen is open
+
+        await vm.checkStillUnlocked()
+        XCTAssertTrue(vm.wasLocked)
+    }
+
+    func testCheckStillUnlockedIsANoOpWhileStillUnlocked() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureEPUB(into: manager, vaultId: id, chapterBodies: ["<p>One.</p>"])
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+
+        await vm.checkStillUnlocked()
+
+        XCTAssertFalse(vm.wasLocked)
+    }
+
+    /// `lock()` is the active path (#668, wired to `.vaultContentSecurity()`'s
+    /// capture-detected callback) — unlike `checkStillUnlocked()`, it must
+    /// actually lock the vault itself, not just notice an external lock.
+    func testLockActuallyLocksTheVaultAndFlipsWasLocked() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureEPUB(into: manager, vaultId: id, chapterBodies: ["<p>One.</p>"])
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+
+        await vm.lock()
+
+        XCTAssertTrue(vm.wasLocked)
+        let stillUnlocked = await manager.isUnlocked(id)
+        XCTAssertFalse(stillUnlocked)
+    }
+
+    /// A mutating call racing a lock that happened between `load()` and the
+    /// call must surface as `wasLocked`, not as a generic `errorMessage` —
+    /// the same "notice it, don't just report a scary opaque error" behavior
+    /// Kotlin's `launchOrNoticeLock` gives the unified `ReaderViewModel`.
+    func testAddBookmarkAfterVaultLocksWhileScreenIsOpenSurfacesWasLockedNotAGenericError() async throws {
+        let (manager, id) = try await makeUnlockedVault()
+        let fileId = try await importFixtureEPUB(into: manager, vaultId: id, chapterBodies: ["<p>One.</p>"])
+        let vm = VaultReaderViewModel(vaultId: id, fileId: fileId, sessionManager: manager)
+        await vm.load()
+        await manager.lock(id)
+
+        await vm.addBookmark(label: "too late")
+
+        XCTAssertTrue(vm.wasLocked)
+        XCTAssertNil(vm.errorMessage)
+        XCTAssertTrue(vm.bookmarks.isEmpty)
+    }
+
     func testNavigateToBookmarkUpdatesTheCurrentChapterIndex() async throws {
         let (manager, id) = try await makeUnlockedVault()
         let fileId = try await importFixtureEPUB(into: manager, vaultId: id, chapterBodies: ["<p>One.</p>", "<p>Two.</p>", "<p>Three.</p>"])

@@ -37,10 +37,17 @@ final class VaultFileReader {
     let plainSize: Int64
     private let formatVersion: UInt8
     private let cipherId: UInt8
-    private let fileContentKey: Data
+    // `private(set)`, not `private` — external read access (write stays
+    // internal-only) is what lets `VaultFileReaderTests.
+    // testCloseZeroesFileContentKeyAndCachedChunk` actually observe that
+    // `close()` zeroed these in place rather than a copy, the same
+    // "otherwise no black-box way to tell zeroed-in-place from zeroed-a-copy"
+    // reasoning `VaultStore.create`'s `onCreateFailureVmkForTesting` hook's
+    // own doc comment gives for its identical problem.
+    private(set) var fileContentKey: Data
 
     private var cachedChunkIndex: Int64 = -1
-    private var cachedChunk: Data?
+    private(set) var cachedChunk: Data?
 
     /// Counts actual chunk decryptions (cache misses) - lets tests assert the
     /// cache and lazy random-access behavior actually work as designed.
@@ -193,11 +200,22 @@ final class VaultFileReader {
         return result
     }
 
+    /// Closes the file handle and scrubs this instance's own derived key
+    /// material and last-decrypted plaintext chunk — a direct Swift port of
+    /// the Kotlin fix from #525/#526 (PR #539's `VaultFileReader.close()`
+    /// change), which found the same gap: closing only the file handle left
+    /// a live, unscrubbed copy of `fileContentKey` sitting in memory for as
+    /// long as this instance itself lived. Idempotent — re-zeroing already-
+    /// zeroed `Data` is harmless, so a caller (or `deinit`) calling this
+    /// twice is safe.
     func close() {
         try? fileHandle.close()
+        fileContentKey.secureZero()
+        cachedChunk?.secureZero()
+        cachedChunk = nil
     }
 
     deinit {
-        try? fileHandle.close()
+        close()
     }
 }
