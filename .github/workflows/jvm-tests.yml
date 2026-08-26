@@ -66,7 +66,13 @@ jobs:
   test:
     name: Unit & Integration Tests (JVM)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Was 15 — too tight once Run Lint (the job's last step, ~20 modules)
+    # lands right after a cold-cache Run JVM tests. Found on PR #672 (#679):
+    # the Gradle 8.13/AGP 8.13.2 bump missed setup-gradle's cache key on its
+    # first run, Run JVM tests alone took ~12m38s, and the timeout killed
+    # Run Lint 3 modules in. Real headroom, not just tolerating a hang —
+    # every step observed was steadily progressing, never stuck.
+    timeout-minutes: 25
     needs: changes
     # Skip for draft PRs — see ios-app-build.yml's identical guard for
     # why. Also skip when the PR's diff doesn't touch `android` per the
