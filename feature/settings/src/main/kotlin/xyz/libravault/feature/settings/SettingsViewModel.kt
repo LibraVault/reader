@@ -223,6 +223,20 @@ class SettingsViewModel @Inject constructor(
         it.copy(screenSecurityEnabled = enabled)
     }
 
+    // ── Encrypted Vaults, Phase 3 (#508) ────────────────────────────────────
+
+    fun onVaultLibraryVisibleToggled(enabled: Boolean) = update {
+        it.copy(vaultLibraryVisible = enabled)
+    }
+
+    fun onVaultNotificationRealMetadataToggled(enabled: Boolean) = update {
+        it.copy(vaultNotificationRealMetadata = enabled)
+    }
+
+    fun onVaultStopOnLockToggled(enabled: Boolean) = update {
+        it.copy(vaultStopOnLock = enabled)
+    }
+
     // ── Text-to-Speech ───────────────────────────────────────────────────────
 
     /**

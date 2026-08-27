@@ -146,7 +146,16 @@ fun LibraryScreen(
     // Re-scan when the app itself comes back to the foreground, not just on cold
     // start or vault addition — e.g. after the user drops new files into a vault
     // folder from a file manager, then switches back to the app (see #96).
-    LibraryResumeEffect { viewModel.refresh() }
+    // Also refreshes the Encrypted Vault merge (Phase 3, #508) on the same
+    // trigger — locked/unlocked state can drift while this screen isn't
+    // front-most, same reasoning as VaultListScreen's own ON_RESUME refresh.
+    // Uses LibraryResumeEffect (#653/#694) — ProcessLifecycleOwner-scoped, not
+    // LocalLifecycleOwner, so plain in-app back-navigation to this screen
+    // doesn't re-trigger a full rescan.
+    LibraryResumeEffect {
+        viewModel.refresh()
+        viewModel.onLibraryResumed()
+    }
 
     // Show stale file snackbar
     LaunchedEffect(state.staleItemMessage) {

@@ -228,6 +228,29 @@ class SettingsViewModelTest {
         verify { prefsRepo.update(match { !it.screenSecurityEnabled }) }
     }
 
+    // ── Encrypted Vaults, Phase 3 (#508) ────────────────────────────────────
+
+    @Test
+    fun `vault library visibility toggle persists`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onVaultLibraryVisibleToggled(true)
+        verify { prefsRepo.update(match { it.vaultLibraryVisible }) }
+    }
+
+    @Test
+    fun `vault notification metadata toggle persists`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onVaultNotificationRealMetadataToggled(true)
+        verify { prefsRepo.update(match { it.vaultNotificationRealMetadata }) }
+    }
+
+    @Test
+    fun `vault stop-on-lock toggle persists`() = runTest(mainDispatcher) {
+        val vm = viewModel()
+        vm.onVaultStopOnLockToggled(false)
+        verify { prefsRepo.update(match { !it.vaultStopOnLock }) }
+    }
+
     @Test
     fun `clear cover cache wipes files AND nulls coverArtPaths so refresh can recover`() =
         runTest(mainDispatcher) {

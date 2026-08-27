@@ -24,6 +24,7 @@ import coil.compose.AsyncImage
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.ui.components.CoverFormatBadge
 import xyz.libravault.core.ui.components.GeneratedCover
+import xyz.libravault.core.ui.components.VaultLockBadge
 import xyz.libravault.core.ui.theme.Dimens
 
 @Composable
@@ -52,11 +53,18 @@ internal fun LibraryItemCard(item: LibraryItem, onClick: () -> Unit) {
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
+                    // Vault items always render via this branch — coverArtPath is
+                    // never set for them (no real decrypted cover art in the list,
+                    // matches VaultContentsScreen's own behavior, avoids plumbing
+                    // cover decryption into list rendering).
                     GeneratedCover(
                         title = item.title,
                         modifier = Modifier.fillMaxSize(),
                         format = CoverFormatBadge.fromFormatName(item.format.name),
                     )
+                    if (isVaultLibraryItem(item)) {
+                        VaultLockBadge(modifier = Modifier.align(Alignment.TopEnd).padding(3.dp))
+                    }
                 }
             }
             Spacer(Modifier.height(Dimens.spaceSm))

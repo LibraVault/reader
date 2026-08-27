@@ -85,10 +85,16 @@ class PlaybackService : MediaSessionService() {
      * `VaultSessionManager`'s own observer doesn't matter — `player.pause()` is safe
      * regardless of whether the VMK has been zeroed yet. A no-op for a real-file item
      * (`vaultEntry == null`).
+     *
+     * Gated behind [VaultStopOnLockPreference] (Phase 3, #508) — default true,
+     * matching the unconditional behavior this observer originally shipped
+     * with. `this` (the service) is a valid [android.content.Context] for the
+     * plain-reader overload, same as [SkipDurationPreference.getSkipDurationMs]
+     * below in [onCreate].
      */
     private val vaultAutoStopObserver = object : DefaultLifecycleObserver {
         override fun onStop(owner: LifecycleOwner) {
-            if (playbackStateHolder.state.value.vaultEntry != null) {
+            if (playbackStateHolder.state.value.vaultEntry != null && VaultStopOnLockPreference.isEnabled(this@PlaybackService)) {
                 Log.i(TAG, "onStop: app backgrounded with vault audio active — pausing")
                 player.pause()
             }

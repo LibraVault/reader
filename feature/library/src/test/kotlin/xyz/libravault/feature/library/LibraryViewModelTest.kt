@@ -19,6 +19,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import xyz.libravault.core.domain.model.LibraryItem
@@ -34,8 +36,13 @@ import xyz.libravault.core.domain.usecase.RemoveVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.ScanVaultUseCase
 import xyz.libravault.core.domain.usecase.SearchLibraryUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.storage.LibravaultPreferences
 import xyz.libravault.core.storage.SupporterRepository
 import xyz.libravault.core.storage.VaultManager
+import xyz.libravault.core.vaultstore.VaultManifestEntry
+import xyz.libravault.core.vaultstore.VaultRegistryEntryDto
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.VaultStore
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 
 /**
@@ -60,6 +67,9 @@ class LibraryViewModelTest {
     private val deleteBookmark = mockk<DeleteBookmarkUseCase>(relaxed = true)
     private val controllerFuture = mockk<ListenableFuture<androidx.media3.session.MediaController>>(relaxed = true)
     private val supporterRepository = mockk<SupporterRepository>(relaxed = true)
+    private val sessionManager = mockk<VaultSessionManager>(relaxed = true)
+    private val appContext = mockk<android.content.Context>(relaxed = true)
+    private val fakePrefs = mockk<android.content.SharedPreferences>(relaxed = true)
 
     private fun item(id: Long, vaultId: Long = 1L, format: MediaFormat = MediaFormat.EPUB) = LibraryItem(
         id = id,
@@ -92,6 +102,13 @@ class LibraryViewModelTest {
         every { observeAllBookmarks() } returns flowOf(emptyList())
         every { supporterRepository.observe() } returns flowOf(false)
         every { supporterRepository.isSupporter() } returns false
+
+        // Phase 3 (#508) defaults: no vaults, visibility off — a test that
+        // doesn't care about vault-library merging sees the exact same
+        // allItems it saw before this feature existed.
+        coEvery { sessionManager.listVaults() } returns emptyList()
+        every { appContext.getSharedPreferences(any(), any()) } returns fakePrefs
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns false
     }
 
     @AfterEach
@@ -115,7 +132,8 @@ class LibraryViewModelTest {
         deleteBookmark = deleteBookmark,
         controllerFuture = controllerFuture,
         supporterRepository = supporterRepository,
-        appContext = mockk(relaxed = true),
+        sessionManager = sessionManager,
+        appContext = appContext,
     )
 
     // ── Format filter ─────────────────────────────────────────────────────────
@@ -265,6 +283,111 @@ class LibraryViewModelTest {
         coVerify { removeVaultFolder(5) }
     }
 
+    // ── Encrypted Vault library merge (Phase 3, #508) ────────────────────────
+
+    private fun vaultEntry(title: String, fileId: Byte = 0x01, format: String = "MP3") = VaultManifestEntry(
+        fileId = byteArrayOf(fileId),
+        title = title,
+        author = "Vault Author",
+        format = format,
+        sizeBytes = 1024L,
+        addedAtEpochMillis = 0L,
+    )
+
+    private fun unlockedVault(id: String = "vault-1", entries: List<VaultManifestEntry>) {
+        coEvery { sessionManager.listVaults() } returns listOf(VaultRegistryEntryDto(id, "My Vault", 0L))
+        every { sessionManager.isUnlocked(id) } returns true
+        val store = mockk<VaultStore>()
+        every { sessionManager.requireUnlocked(id) } returns store
+        coEvery { store.listEntries() } returns entries
+    }
+
+    @Test
+    fun `visibility off excludes unlocked vault items from allItems`() = runTest(mainDispatcher) {
+        unlockedVault(entries = listOf(vaultEntry("Vault Book")))
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns false
+
+        viewModel().uiState.test {
+            assertTrue(awaitItem().allItems.none { it.title == "Vault Book" })
+        }
+    }
+
+    @Test
+    fun `visibility on merges unlocked vault items into allItems`() = runTest(mainDispatcher) {
+        unlockedVault(entries = listOf(vaultEntry("Vault Book")))
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns true
+
+        viewModel().uiState.test {
+            val state = awaitItem()
+            assertTrue(state.allItems.any { it.title == "Vault Book" }, "vault item must appear once visibility is on")
+        }
+    }
+
+    @Test
+    fun `a locked vault contributes no items even with visibility on`() = runTest(mainDispatcher) {
+        coEvery { sessionManager.listVaults() } returns listOf(VaultRegistryEntryDto("vault-1", "My Vault", 0L))
+        every { sessionManager.isUnlocked("vault-1") } returns false
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns true
+
+        val vm = viewModel()
+        vm.uiState.test {
+            assertTrue(awaitItem().allItems.isEmpty())
+        }
+        verify(exactly = 0) { sessionManager.requireUnlocked(any()) }
+    }
+
+    @Test
+    fun `vault items never appear in vaultGroupedItems`() = runTest(mainDispatcher) {
+        unlockedVault(entries = listOf(vaultEntry("Vault Book")))
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns true
+
+        viewModel().uiState.test {
+            val state = awaitItem()
+            assertTrue(state.vaultGroupedItems.values.flatten().none { it.title == "Vault Book" })
+        }
+    }
+
+    @Test
+    fun `an unsupported vault entry format is dropped rather than crashing the merge`() = runTest(mainDispatcher) {
+        unlockedVault(entries = listOf(vaultEntry("Corrupt", format = "NOT_A_REAL_FORMAT")))
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns true
+
+        viewModel().uiState.test {
+            assertTrue(awaitItem().allItems.isEmpty())
+        }
+    }
+
+    @Test
+    fun `onLibraryResumed re-reads vault contents`() = runTest(mainDispatcher) {
+        every { fakePrefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false) } returns true
+        val vm = viewModel()
+        vm.uiState.test { awaitItem(); cancelAndIgnoreRemainingEvents() }
+
+        unlockedVault(entries = listOf(vaultEntry("Vault Book")))
+        vm.onLibraryResumed()
+
+        vm.uiState.test {
+            assertTrue(awaitItem().allItems.any { it.title == "Vault Book" })
+        }
+    }
+
+    // ── vaultLibraryItemId (pure helper) ─────────────────────────────────────
+
+    @Test
+    fun `vaultLibraryItemId is negative and stable for the same inputs`() {
+        val id1 = vaultLibraryItemId("vault-1", "aabbcc")
+        val id2 = vaultLibraryItemId("vault-1", "aabbcc")
+        assertEquals(id1, id2)
+        assertTrue(id1 < 0)
+    }
+
+    @Test
+    fun `vaultLibraryItemId differs for different files`() {
+        val a = vaultLibraryItemId("vault-1", "aabbcc")
+        val b = vaultLibraryItemId("vault-1", "ddeeff")
+        assertTrue(a != b)
+    }
+
     // ── Search ────────────────────────────────────────────────────────────────
 
     @Test
@@ -318,7 +441,8 @@ class LibraryViewModelTest {
             deleteBookmark = deleteBookmark,
             controllerFuture = future,
             supporterRepository = supporterRepository,
-            appContext = mockk(relaxed = true),
+            sessionManager = sessionManager,
+            appContext = appContext,
         )
     }
 

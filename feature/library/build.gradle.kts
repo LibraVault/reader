@@ -31,6 +31,11 @@ dependencies {
     implementation(project(":core:storage"))
     implementation(project(":core:logger"))
     implementation(project(":feature:player"))
+    // Phase 3 (#508) — LibraryViewModel merges unlocked vault items into the
+    // main Library list via VaultSessionManager's already-public API. No
+    // core:vaultcrypto/core:vaultstore *files* change, only this new
+    // dependency edge — see LibraryViewModel's doc comment.
+    implementation(project(":core:vaultstore"))
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")

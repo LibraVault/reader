@@ -2,6 +2,7 @@ package xyz.libravault.feature.library
 
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.VAULT_MEDIA_URI_SCHEME
 
 /**
  * Pure decision logic lifted out of [LibraryScreen]'s composable body.
@@ -150,3 +151,14 @@ internal const val DEFAULT_VAULT_NAME = "My Vault"
  * for direct test coverage.
  */
 internal fun shouldShowMiniPlayer(nowPlaying: PlaybackStateHolder.State): Boolean = nowPlaying.isActive
+
+/**
+ * Whether [item] is a synthetic Encrypted Vault entry merged into the Library
+ * list by [LibraryViewModel] (Phase 3, #508), as opposed to a real,
+ * Room-backed file — checked via [LibraryItem.filePath]'s scheme rather than
+ * `item.id < 0` (its actual sign, see `LibraryViewModel.vaultLibraryItemId`)
+ * so the check stays meaningful even if that id-generation detail changes.
+ * [LibraryItemCard] uses this to decide whether to overlay the padlock badge.
+ */
+internal fun isVaultLibraryItem(item: LibraryItem): Boolean =
+    item.filePath.startsWith("$VAULT_MEDIA_URI_SCHEME://")

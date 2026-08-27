@@ -299,4 +299,16 @@ class LibraryScreenLogicTest {
     fun `mini-player does not show when nothing has ever loaded`() {
         assertFalse(shouldShowMiniPlayer(xyz.libravault.feature.player.service.PlaybackStateHolder().state.value))
     }
+
+    // ── isVaultLibraryItem (Phase 3, #508) ────────────────────────────────────
+
+    @Test
+    fun `recognizes a vault-sourced item by its filePath scheme`() {
+        assertTrue(isVaultLibraryItem(item(1, MediaFormat.MP3).copy(filePath = "vault://vault-1/aabbcc")))
+    }
+
+    @Test
+    fun `does not flag a real SAF-backed item`() {
+        assertFalse(isVaultLibraryItem(item(1, MediaFormat.EPUB).copy(filePath = "content://tree/books/x.epub")))
+    }
 }

@@ -44,6 +44,11 @@ class UserPreferencesRepository @Inject constructor(
         loggingEnabled       = prefs.getBoolean(KEY_LOGGING_ENABLED, false),
         dynamicColorEnabled  = prefs.getBoolean(KEY_DYNAMIC_COLOR, true),
         screenSecurityEnabled = prefs.getBoolean(LibravaultPreferences.KEY_SCREEN_SECURITY_ENABLED, true),
+        vaultLibraryVisible  = prefs.getBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, false),
+        vaultNotificationRealMetadata = prefs.getBoolean(
+            LibravaultPreferences.KEY_VAULT_NOTIFICATION_REAL_METADATA, false,
+        ),
+        vaultStopOnLock      = prefs.getBoolean(LibravaultPreferences.KEY_VAULT_STOP_ON_LOCK, true),
     )
 
     fun update(prefs: UserPreferences) {
@@ -54,6 +59,9 @@ class UserPreferencesRepository @Inject constructor(
             .putBoolean(KEY_LOGGING_ENABLED, prefs.loggingEnabled)
             .putBoolean(KEY_DYNAMIC_COLOR, prefs.dynamicColorEnabled)
             .putBoolean(LibravaultPreferences.KEY_SCREEN_SECURITY_ENABLED, prefs.screenSecurityEnabled)
+            .putBoolean(LibravaultPreferences.KEY_VAULT_LIBRARY_VISIBLE, prefs.vaultLibraryVisible)
+            .putBoolean(LibravaultPreferences.KEY_VAULT_NOTIFICATION_REAL_METADATA, prefs.vaultNotificationRealMetadata)
+            .putBoolean(LibravaultPreferences.KEY_VAULT_STOP_ON_LOCK, prefs.vaultStopOnLock)
             .apply()
     }
 }
