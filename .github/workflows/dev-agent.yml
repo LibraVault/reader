@@ -478,21 +478,42 @@ jobs:
             # ceiling was too tight for this project's current issue sizes.
             --max-turns 150
 
+      - name: Re-mint pipeline App token
+        # GitHub App installation tokens (actions/create-github-app-token@v2)
+        # are valid for 1h. The "Mint pipeline App token" step above runs
+        # before "Run dev agent", which is uncapped in wall time short of
+        # --max-turns (150) — issue #697 hit a live run of ~78 minutes, well
+        # past that TTL, and the *next* step below then failed with
+        # `HTTP 401: Bad credentials` trying to self-apply status:needs-qa
+        # with the now-stale token from steps.app-token.outputs.token. The
+        # PR itself was otherwise fine (implementation done, CI green) — it
+        # just never got the label that would trigger qa-agent.yml, and
+        # nothing else in this workflow would ever retry it. Re-minting here,
+        # immediately before the only other consumer of the App token,
+        # keeps that call within its own token's fresh 1h window regardless
+        # of how long "Run dev agent" took. See that step's own comment for
+        # why an App token is needed here at all (GITHUB_TOKEN can't
+        # self-apply a label that triggers a further workflow run).
+        if: steps.guard.outputs.skip != 'true' && !cancelled()
+        id: app-token-refresh
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
       - name: Force-classify risk and advance to QA
         # !cancelled() rather than the implicit success()-only default: if
         # "Run dev agent" fails/errors (max-turns exhausted, crash) rather
         # than being cancelled, this step must still run — otherwise a
         # revise-mode failure leaves the PR stuck on status:in-progress
         # forever with status:needs-qa never reapplied and no visible
-        # signal beyond a red X nobody's watching. (The App token itself
-        # is minted earlier now, before "Run dev agent" — see that step's
-        # comment — so steps.app-token.outputs.token is already available
-        # here regardless of how "Run dev agent" went.)
+        # signal beyond a red X nobody's watching.
         if: steps.guard.outputs.skip != 'true' && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Only for the one call that must cross into qa-agent.yml.
-          APP_GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Freshly minted immediately above, not the one from before "Run
+          # dev agent" — see "Re-mint pipeline App token"'s comment.
+          APP_GH_TOKEN: ${{ steps.app-token-refresh.outputs.token }}
         run: |
           set -euo pipefail
 
