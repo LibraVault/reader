@@ -24,6 +24,26 @@ data class UserPreferences(
      * no-cross-module-dependency pattern `defaultSkipDurationSec` uses for
      * `feature:player`. */
     val screenSecurityEnabled: Boolean        = true,
+    /** Phase 3 (#508) — whether unlocked Encrypted Vault items appear in the
+     * main Library list, not just via "Manage Encrypted Vaults". Default
+     * false: a pure opt-in addition, zero behavior change for anyone who
+     * doesn't touch this setting. Read directly by `feature:library` via
+     * `core.storage.LibravaultPreferences`'s shared key, same pattern as
+     * [screenSecurityEnabled]. */
+    val vaultLibraryVisible: Boolean          = false,
+    /** Phase 3 (#508) — whether the lock-screen/notification for vault audio
+     * shows the real title/author instead of a generic "Vault" placeholder.
+     * Default false (placeholder) — unlike [screenSecurityEnabled], the safer
+     * default here is the newly-added, more private option, not today's
+     * shipped behavior (which had no toggle at all). Read directly by
+     * `feature:player`. */
+    val vaultNotificationRealMetadata: Boolean = false,
+    /** Phase 3 (#508) — whether vault audio pauses automatically when the app
+     * backgrounds. Default true, matching the always-pause behavior shipped
+     * in Phase 2 (a correctness fix, not just a preference — see
+     * `PlaybackService.vaultAutoStopObserver`'s doc). Read directly by
+     * `feature:player`. */
+    val vaultStopOnLock: Boolean               = true,
 )
 
 /**

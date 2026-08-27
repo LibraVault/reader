@@ -72,7 +72,9 @@ class SettingsScreenshotTest {
         onCloudVoiceIdChanged = {}, onValidateAndSaveCloudKey = { _, _ -> Result.success(Unit) },
         onClearCloudKey = {}, onUseCloudEngineToggled = {}, onDynamicColorToggled = {},
         onLoggingToggled = {}, onViewLogs = {}, onClearLogs = {}, onClearCoverCache = {},
-        onScreenSecurityToggled = {}, onSupportProjectClick = {}, onSubscribeClick = {}, onTipClick = {},
+        onScreenSecurityToggled = {}, onVaultLibraryVisibleToggled = {},
+        onVaultNotificationRealMetadataToggled = {}, onVaultStopOnLockToggled = {},
+        onSupportProjectClick = {}, onSubscribeClick = {}, onTipClick = {},
     )
 
     @Test

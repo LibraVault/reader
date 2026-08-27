@@ -149,6 +149,9 @@ fun SettingsScreen(
         onClearLogs = viewModel::clearLogs,
         onClearCoverCache = viewModel::clearCoverCache,
         onScreenSecurityToggled = viewModel::onScreenSecurityToggled,
+        onVaultLibraryVisibleToggled = viewModel::onVaultLibraryVisibleToggled,
+        onVaultNotificationRealMetadataToggled = viewModel::onVaultNotificationRealMetadataToggled,
+        onVaultStopOnLockToggled = viewModel::onVaultStopOnLockToggled,
         onSupportProjectClick = {
             runCatching {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_URL)))
@@ -210,6 +213,9 @@ internal data class SettingsActions(
     val onClearLogs: () -> Unit,
     val onClearCoverCache: () -> Unit,
     val onScreenSecurityToggled: (Boolean) -> Unit,
+    val onVaultLibraryVisibleToggled: (Boolean) -> Unit,
+    val onVaultNotificationRealMetadataToggled: (Boolean) -> Unit,
+    val onVaultStopOnLockToggled: (Boolean) -> Unit,
     val onSupportProjectClick: () -> Unit,
     val onSubscribeClick: () -> Unit,
     val onTipClick: () -> Unit,
@@ -496,6 +502,38 @@ internal fun SettingsContent(
                         "to Encrypted Vault content. Applies to all vaults; on by default.",
                 checked  = prefs.screenSecurityEnabled,
                 onCheckedChange = actions.onScreenSecurityToggled,
+            )
+
+            // ── Phase 3 (#508) — the remaining PRD §8 settings. All three
+            // default to today's shipped behavior — this is a pure opt-in
+            // addition. Auto-lock exemption during playback is deliberately
+            // NOT here — split out to issue #612 (needs a real timer/grace-
+            // period mechanism inside VaultSessionManager, security-sensitive
+            // design left unscheduled, same conservative call Phase 2 made).
+            SwitchSetting(
+                title    = "Show Vault items in Library",
+                subtitle = "Include unlocked Encrypted Vault items in the main Library list, " +
+                        "not just via \"Manage Encrypted Vaults\" above. A locked vault's items " +
+                        "stay hidden either way. Off by default.",
+                checked  = prefs.vaultLibraryVisible,
+                onCheckedChange = actions.onVaultLibraryVisibleToggled,
+            )
+
+            SwitchSetting(
+                title    = "Real title in Vault notifications",
+                subtitle = "Show the real title and author on the lock screen and playback " +
+                        "notification for Vault audio, instead of a generic \"Vault\" label. " +
+                        "Off by default.",
+                checked  = prefs.vaultNotificationRealMetadata,
+                onCheckedChange = actions.onVaultNotificationRealMetadataToggled,
+            )
+
+            SwitchSetting(
+                title    = "Pause Vault audio when app backgrounds",
+                subtitle = "Recommended: leaving this on avoids a playback error that can occur " +
+                        "if a Vault locks while its audio is still streaming. On by default.",
+                checked  = prefs.vaultStopOnLock,
+                onCheckedChange = actions.onVaultStopOnLockToggled,
             )
 
             Divider()

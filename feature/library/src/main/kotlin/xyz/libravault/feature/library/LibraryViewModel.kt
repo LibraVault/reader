@@ -31,6 +31,7 @@ import xyz.libravault.core.domain.usecase.AddVaultFolderUseCase
 import xyz.libravault.core.domain.usecase.GetLibraryUseCase
 import xyz.libravault.core.domain.usecase.RemoveVaultFolderUseCase
 import xyz.libravault.core.storage.SupporterRepository
+import xyz.libravault.core.storage.VaultLibraryVisibilityPreference
 import xyz.libravault.core.storage.VaultManager
 import xyz.libravault.core.domain.usecase.ObserveCurrentlyReadingUseCase
 import xyz.libravault.core.domain.usecase.ObserveVaultsUseCase
@@ -39,10 +40,15 @@ import xyz.libravault.core.domain.usecase.SearchLibraryUseCase
 import xyz.libravault.core.domain.usecase.ObserveAllBookmarksUseCase
 import xyz.libravault.core.domain.usecase.DeleteBookmarkUseCase
 import xyz.libravault.core.logger.LibravaultLogger
+import xyz.libravault.core.vaultstore.VaultManifestEntry
+import xyz.libravault.core.vaultstore.VaultSessionManager
+import xyz.libravault.core.vaultstore.toHexString
 import com.google.common.util.concurrent.MoreExecutors
 import xyz.libravault.feature.player.service.PlaybackStateHolder
 import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SkipDurationPreference
+import xyz.libravault.feature.player.service.VAULT_MEDIA_URI_SCHEME
+import java.time.Instant
 import javax.inject.Inject
 
 data class LibraryUiState(
@@ -79,6 +85,11 @@ class LibraryViewModel @Inject constructor(
     private val deleteBookmark: DeleteBookmarkUseCase,
     private val controllerFuture: ListenableFuture<MediaController>,
     private val supporterRepository: SupporterRepository,
+    // Phase 3 (#508) — merges unlocked Encrypted Vault entries into the
+    // Library list (gated by VaultLibraryVisibilityPreference). Room/
+    // LibraryRepository stay untouched; this is a purely in-memory,
+    // session-scoped merge at the ViewModel layer — see refreshVaultLibraryItems().
+    private val sessionManager: VaultSessionManager,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -95,6 +106,19 @@ class LibraryViewModel @Inject constructor(
     private val _formatFilter = MutableStateFlow<String?>(null)
     private var searchJob: Job? = null
     private var scanJob: Job? = null
+
+    // ── Encrypted Vault library visibility (Phase 3, #508) ────────────────────
+
+    /** Synthetic [LibraryItem]s built from every unlocked vault's
+     * [VaultManifestEntry.listEntries] — see [refreshVaultLibraryItems]. Empty
+     * until the first refresh completes; a locked vault contributes nothing. */
+    private val _vaultLibraryItems = MutableStateFlow<List<LibraryItem>>(emptyList())
+
+    val vaultLibraryVisible: StateFlow<Boolean> = VaultLibraryVisibilityPreference.observe(appContext)
+        .stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            VaultLibraryVisibilityPreference.isEnabled(appContext),
+        )
 
     val nowPlaying: StateFlow<PlaybackStateHolder.State> = playbackStateHolder.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackStateHolder.State())
@@ -130,12 +154,17 @@ class LibraryViewModel @Inject constructor(
     )
 
     val uiState: StateFlow<LibraryUiState> = combine(
-        observeVaults(),
-        getLibrary(),
-        observeCurrentlyReading.reading(),
-        observeCurrentlyReading.listening(),
-        _extras,
-    ) { vaults, items, reading, listening, extras ->
+        observeVaults(), getLibrary(), observeCurrentlyReading.reading(), observeCurrentlyReading.listening(),
+        _extras, _vaultLibraryItems, vaultLibraryVisible,
+    ) { arr: Array<*> ->
+        @Suppress("UNCHECKED_CAST") val vaults = arr[0] as List<VaultFolder>
+        @Suppress("UNCHECKED_CAST") val items = arr[1] as List<LibraryItem>
+        @Suppress("UNCHECKED_CAST") val reading = arr[2] as List<LibraryItem>
+        @Suppress("UNCHECKED_CAST") val listening = arr[3] as List<LibraryItem>
+        val extras = arr[4] as Extras
+        @Suppress("UNCHECKED_CAST") val vaultItems = arr[5] as List<LibraryItem>
+        val vaultVisible = arr[6] as Boolean
+
         val vaultById = vaults.associateBy { it.id }
 
         // Apply format filter at the ViewModel level so the UI always receives
@@ -147,6 +176,12 @@ class LibraryViewModel @Inject constructor(
             else   -> items.filter { it.format.name == fmt }
         }
 
+        // vaultGroupedItems (the vault-name/SAF-folder chip grouping) is built
+        // from real, SAF-backed items only — an encrypted-vault item has no
+        // SAF VaultFolder, so it only ever appears in the flat/"All" view
+        // below, never under a folder chip or a format-filtered per-vault
+        // section (resolves PRD §7's open question toward the simpler
+        // option, consistent with every other §8 default leaning private/simple).
         val grouped = filteredItems.groupBy { item ->
             vaultById[item.vaultFolderId] ?: VaultFolder(
                 id = item.vaultFolderId,
@@ -161,7 +196,13 @@ class LibraryViewModel @Inject constructor(
 
         LibraryUiState(
             vaults            = vaults,
-            allItems          = items,          // intentionally unfiltered (used for bookmark lookup)
+            // Gated by the visibility toggle but deliberately NOT format-filtered
+            // here (same "intentionally unfiltered, used for bookmark lookup"
+            // contract allItems already had before vault items existed) — a
+            // format filter only ever changes what vaultGroupedItems shows
+            // (the AllGrouped flat view that reads allItems only renders when
+            // formatFilter == null, where filtering would be a no-op anyway).
+            allItems          = items + (if (vaultVisible) vaultItems else emptyList()),
             continueItems     = continueItems,
             isScanning        = extras.scanning,
             scanError         = extras.error,
@@ -195,6 +236,66 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun dismissVaultError() { _addVaultError.value = null }
+
+    // ── Encrypted Vault library visibility (Phase 3, #508) ────────────────────
+
+    /**
+     * Called from [LibraryScreen]'s existing `ON_RESUME` lifecycle hook,
+     * alongside [refresh] — vault contents live in a per-vault manifest, not
+     * Room, so nothing else invalidates this list when the screen isn't
+     * front-most. Mirrors [xyz.libravault.feature.vault.VaultListScreen]'s own
+     * `ON_RESUME`-refresh precedent for the identical locked/unlocked-drift
+     * problem.
+     */
+    fun onLibraryResumed() = refreshVaultLibraryItems()
+
+    /**
+     * Rebuilds [_vaultLibraryItems] from every currently-unlocked vault's
+     * manifest. A locked vault contributes nothing — `VaultStore.listEntries()`
+     * requires an unlocked session and there is no unencrypted metadata cache
+     * anywhere, so "locked vault's items are absent from the list" falls out
+     * for free with zero new plaintext-at-rest exposure.
+     *
+     * `runCatching` per vault so one vault racing to lock mid-refresh (e.g. the
+     * app backgrounds while this is running) can't drop every other vault's
+     * items — matches [PlayerViewModel.loadVaultItem][xyz.libravault.feature.player.PlayerViewModel]'s
+     * own defensive-per-vault-operation style.
+     */
+    private fun refreshVaultLibraryItems() {
+        viewModelScope.launch {
+            val vaults = runCatching { sessionManager.listVaults() }.getOrDefault(emptyList())
+            _vaultLibraryItems.value = vaults.flatMap { vault ->
+                if (!sessionManager.isUnlocked(vault.id)) return@flatMap emptyList()
+                runCatching { sessionManager.requireUnlocked(vault.id).listEntries() }
+                    .getOrDefault(emptyList())
+                    .mapNotNull { entry -> entry.toLibraryItem(vault.id) }
+            }
+        }
+    }
+
+    /**
+     * Maps a vault entry to a synthetic [LibraryItem], mirroring
+     * [PlayerViewModel.loadVaultItem][xyz.libravault.feature.player.PlayerViewModel]'s
+     * existing construction — same `vault://$vaultId/$fileIdHex` [LibraryItem.filePath]
+     * shape and `vaultFolderId = 0L` sentinel (unused: these items never enter
+     * [LibraryUiState.vaultGroupedItems], which groups by real SAF folders only).
+     * `null` for an entry whose stored format name doesn't match any
+     * [MediaFormat] (corrupt/future-version manifest) — dropped rather than
+     * crashing the merge.
+     */
+    private fun VaultManifestEntry.toLibraryItem(vaultId: String): LibraryItem? {
+        val fmt = MediaFormat.entries.find { it.name == format } ?: return null
+        val fileIdHex = fileId.toHexString()
+        return LibraryItem(
+            id            = vaultLibraryItemId(vaultId, fileIdHex),
+            vaultFolderId = 0L,
+            filePath      = "$VAULT_MEDIA_URI_SCHEME://$vaultId/$fileIdHex",
+            title         = title,
+            author        = author ?: "",
+            format        = fmt,
+            addedAt       = Instant.ofEpochMilli(addedAtEpochMillis),
+        )
+    }
 
     fun removeVault(vault: VaultFolder) {
         viewModelScope.launch {
@@ -429,7 +530,26 @@ class LibraryViewModel @Inject constructor(
             // the recovery coroutine and finds 0 vaults.
             triggerScan()
         }
+        refreshVaultLibraryItems()
     }
+}
+
+/**
+ * Stable per-`(vaultId, fileIdHex)` negative id for a synthetic vault
+ * [LibraryItem] — cosmetic only (LazyColumn key / list identity), never
+ * reverse-mapped: click-routing always re-derives `vaultId`/`fileIdHex` by
+ * parsing [LibraryItem.filePath] (see `LibravaultNavHost.onItemClick`).
+ *
+ * Distinct from [xyz.libravault.feature.player.PlayerViewModel]'s shared
+ * `VAULT_TRANSIENT_ITEM_ID` sentinel (`-1L`) — that precedent is for a single
+ * transient now-playing item, where one shared id is fine. Here, many vault
+ * items must coexist as distinct list entries simultaneously, so each needs
+ * its own stable, negative (never colliding with a real Room-generated
+ * positive id) value.
+ */
+internal fun vaultLibraryItemId(vaultId: String, fileIdHex: String): Long {
+    val hash = "$vaultId:$fileIdHex".hashCode().toLong()
+    return -(kotlin.math.abs(hash) + 1)
 }
 
 /**

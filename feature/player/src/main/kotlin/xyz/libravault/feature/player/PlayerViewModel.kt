@@ -1,5 +1,6 @@
 package xyz.libravault.feature.player
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -11,6 +12,7 @@ import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,6 +52,7 @@ import xyz.libravault.feature.player.service.SeekClamp
 import xyz.libravault.feature.player.service.SleepTimer
 import xyz.libravault.feature.player.service.SleepTimerState
 import xyz.libravault.feature.player.service.VAULT_MEDIA_URI_SCHEME
+import xyz.libravault.feature.player.service.VaultNotificationMetadataPreference
 import java.time.Instant
 import javax.inject.Inject
 
@@ -106,6 +109,10 @@ class PlayerViewModel @Inject constructor(
     // #493 — resolves a ContentSource.VaultEntry and its bookmarks, mirroring
     // ReaderViewModel's own vaultRef/sessionManager fork.
     private val sessionManager: VaultSessionManager,
+    // Phase 3 (#508) — read-once-per-MediaItem-build access to
+    // VaultNotificationMetadataPreference in buildMediaItem, same plain-reader
+    // shape SkipDurationPreference already uses elsewhere in this module.
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     companion object {
@@ -506,22 +513,30 @@ class PlayerViewModel @Inject constructor(
      * behavior is left untouched (avoids an unrelated regression risk on the far
      * larger non-vault user base) — only a vault `MediaItem` gets explicit
      * [MediaMetadata] attached, which Media3 always prefers over an extracted tag.
-     * Defaults to the real title/author (Phase 3 wires the actual placeholder-vs-real
-     * toggle per PRD §8) — an explicit, intentional default per the Phase 2 plan, not
-     * an oversight; what this fixes is the *silent* embedded-tag leak, not the
-     * placeholder toggle itself.
+     * Phase 3 (#508) wires the actual placeholder-vs-real toggle
+     * ([VaultNotificationMetadataPreference]): real title/author when enabled,
+     * a generic "Vault" title with no artist when disabled (the new default —
+     * see that object's doc for why this polarity, unlike Screen Security,
+     * defaults to the more private option rather than to today's shipped
+     * behavior).
      */
     private fun buildMediaItem(uri: Uri): MediaItem {
         if (uri.scheme != VAULT_MEDIA_URI_SCHEME) return MediaItem.fromUri(uri)
         val item = _uiState.value.item
+        val metadata = if (VaultNotificationMetadataPreference.isEnabled(appContext)) {
+            MediaMetadata.Builder()
+                .setTitle(item?.title)
+                .setArtist(item?.author)
+                .build()
+        } else {
+            MediaMetadata.Builder()
+                .setTitle(VAULT_PLACEHOLDER_TITLE)
+                .setArtist(null)
+                .build()
+        }
         return MediaItem.Builder()
             .setUri(uri)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(item?.title)
-                    .setArtist(item?.author)
-                    .build()
-            )
+            .setMediaMetadata(metadata)
             .build()
     }
 
@@ -913,6 +928,11 @@ class PlayerViewModel @Inject constructor(
  * rather than a new cross-module dependency, matching that precedent.
  */
 private const val VAULT_TRANSIENT_ITEM_ID = -1L
+
+/** Generic lock-screen/notification title for a vault item when
+ * [VaultNotificationMetadataPreference] is disabled (the default) — see
+ * [PlayerViewModel.buildMediaItem]. */
+private const val VAULT_PLACEHOLDER_TITLE = "Vault"
 
 private fun VaultBookmark.toDomainBookmark(): Bookmark = Bookmark(
     id          = id,

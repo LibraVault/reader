@@ -146,10 +146,16 @@ fun LibraryScreen(
     // Re-scan whenever the screen becomes visible again, not just on cold start
     // or vault addition — e.g. after the user drops new files into a vault
     // folder from a file manager, then switches back to the app (see #96).
+    // Also refreshes the Encrypted Vault merge (Phase 3, #508) on the same
+    // trigger — locked/unlocked state can drift while this screen isn't
+    // front-most, same reasoning as VaultListScreen's own ON_RESUME refresh.
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentViewModel = rememberUpdatedState(viewModel)
     DisposableEffect(lifecycleOwner) {
-        val observer = libraryResumeObserver { currentViewModel.value.refresh() }
+        val observer = libraryResumeObserver {
+            currentViewModel.value.refresh()
+            currentViewModel.value.onLibraryResumed()
+        }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }

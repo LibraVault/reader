@@ -104,7 +104,24 @@ fun LibravaultNavHost(
         composable(Screen.Library.route) {
             LibraryScreen(
                 onItemClick = { item ->
+                    // Phase 3 (#508) — a vault-sourced Library item carries a
+                    // vault://$vaultId/$fileIdHex filePath (see LibraryViewModel's
+                    // toLibraryItem); parse it the same way
+                    // VaultAwareMediaSourceFactory does rather than adding a new
+                    // routing concept, and route to the vault-aware screens instead
+                    // of Screen.Player/Screen.Reader (item.id is a synthetic,
+                    // non-Room id for these — Screen.Reader/Player expect a real one).
+                    val vaultUri = Uri.parse(item.filePath)
                     val route = when {
+                        vaultUri.scheme == "vault" -> {
+                            val vaultId = requireNotNull(vaultUri.host)
+                            val fileIdHex = requireNotNull(vaultUri.lastPathSegment)
+                            if (item.format.isAudio()) {
+                                Screen.VaultPlay.createRoute(vaultId, fileIdHex)
+                            } else {
+                                Screen.VaultRead.createRoute(vaultId, fileIdHex)
+                            }
+                        }
                         item.format.isAudio() -> Screen.Player.createRoute(item.id)
                         else                  -> Screen.Reader.createRoute(item.id)
                     }

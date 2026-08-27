@@ -237,6 +237,37 @@ class PlaybackServiceTest {
         verify(exactly = 0) { player.pause() }
     }
 
+    /**
+     * Phase 3 (#508) — [VaultStopOnLockPreference] defaults to true (always
+     * pause), so this is a regression guard: without the gate this test
+     * would fail identically to `backgrounding the app pauses playback when
+     * a vault item is loaded` above.
+     */
+    @Test
+    fun `stop-on-lock disabled leaves a playing vault item alone`() {
+        val service = buildService()
+        service.playbackStateHolder.updateVault(
+            vaultEntry = xyz.libravault.core.domain.model.ContentSource.VaultEntry(
+                vaultId = "vault-1",
+                fileIdHex = "aa",
+                format = xyz.libravault.core.domain.model.MediaFormat.MP3,
+            ),
+            title = "Title", author = "Author", coverArtPath = null, isPlaying = true,
+        )
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSharedPreferences(
+                xyz.libravault.core.storage.LibravaultPreferences.FILE_NAME,
+                android.content.Context.MODE_PRIVATE,
+            )
+            .edit()
+            .putBoolean(xyz.libravault.core.storage.LibravaultPreferences.KEY_VAULT_STOP_ON_LOCK, false)
+            .apply()
+
+        vaultAutoStopObserverOf(service).onStop(mockk(relaxed = true))
+
+        verify(exactly = 0) { player.pause() }
+    }
+
     private fun vaultAutoStopObserverOf(service: PlaybackService): androidx.lifecycle.DefaultLifecycleObserver {
         val field = PlaybackService::class.java.getDeclaredField("vaultAutoStopObserver")
         field.isAccessible = true
