@@ -195,4 +195,47 @@ final class AppStateFolderTests: XCTestCase {
 
         XCTAssertNil(LibravaultDomainBridge.shared.bookmarks[book.id])
     }
+
+    /// Regression guard for issue #683: a folder backed by a network file provider
+    /// (iCloud Drive being the reported case) makes `FileManager`'s enumerator do a
+    /// round trip to that provider for every item, not an instant local stat call.
+    /// Before the fix, `loadLibrary()`'s scan ran with no suspension point in its own
+    /// body — the whole thing (including that provider round-tripping) executed as one
+    /// uninterrupted hop on the MainActor, long enough for a folder of any real size to
+    /// trip iOS's launch/main-thread watchdog and get the app killed, indistinguishable
+    /// from a crash to anyone hitting it ("crashes on startup immediately"). This can't
+    /// reproduce the slow provider round trip itself against a local temp folder in
+    /// CI, but it can verify the actual fix: the scan must no longer monopolize the
+    /// MainActor while it runs, whatever the folder is backed by.
+    func testLoadLibraryDoesNotMonopolizeTheMainActorWhileScanning() async throws {
+        let persistence = makeIsolatedPersistence()
+        let folder = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("MyAudiobook.mp3"))
+
+        let state = AppState(folderPersistence: persistence)
+        state.addFolder(pickedURL: folder)
+
+        let loadTask = Task { await state.loadLibrary() }
+
+        // Before the fix, loadLibrary() had no `await` between setting isLoading and
+        // finishing the scan, so once the scheduler started running it on the
+        // MainActor, it ran to completion in one uninterrupted hop — this loop (also
+        // MainActor-isolated, like the test class itself) would never get scheduled
+        // until after loadTask had already finished, by which point isLoading was
+        // already back to false. Fixed, the scan suspends on a detached Task, freeing
+        // the MainActor to run this loop while the scan is still in flight.
+        var observedLoadingWhileTaskWasInFlight = false
+        for _ in 0..<50 {
+            if state.isLoading {
+                observedLoadingWhileTaskWasInFlight = true
+                break
+            }
+            if loadTask.isCancelled { break }
+            await Task.yield()
+        }
+
+        await loadTask.value
+        XCTAssertTrue(observedLoadingWhileTaskWasInFlight)
+    }
 }
