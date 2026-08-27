@@ -55,7 +55,21 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
         // (dev's own concurrent JVM Tests run succeeded at the same time). Repo-wide since
         // every module shares this convention plugin and other modules were creeping
         // toward the same ceiling.
+        //
+        // 4096m alone still wasn't enough on real CI (confirmed via the OOM'd test
+        // executor's own report — "Caused by: java.lang.OutOfMemoryError: Java heap
+        // space" after 3m42s, 731 tasks in, well inside a single JVM run of
+        // feature:player's 16 test classes). Root cause: several of those classes
+        // are Robolectric+Compose UI tests (PlayerAccessibilityTest,
+        // PlayerScreenLandscapeTest) that accumulate significant Shadow/Compose
+        // state per class, and with no forkEvery the whole module runs in one
+        // never-recycled JVM, so that state just piles up across all 16 classes
+        // instead of getting reclaimed. Chasing this with ever-higher maxHeapSize
+        // is an arms race that loses every time a module gains another Robolectric
+        // test class — forkEvery fixes the actual leak-shaped problem by recycling
+        // the worker (and its heap) periodically instead.
         tasks.withType(Test::class.java).configureEach {
+            forkEvery = 8
             maxHeapSize = "4096m"
         }
     }
