@@ -80,7 +80,7 @@ import xyz.libravault.core.domain.usecase.SaveListeningProgressUseCase
  * metadata, and the in-app player exposes real chapter navigation via
  * `PlayerViewModel.goToChapter`. But this `MediaSession.Callback` runs in the playback
  * service, with no access to that ViewModel-scoped chapter list. So Prev/Next on the
- * lockscreen tile switch to the previous/next sibling audio file within the same vault folder (ordered
+ * lockscreen tile switch to the previous/next sibling audio file within the same library folder (ordered
  * by [xyz.libravault.core.domain.model.LibraryItem.filePath]) via [GetAdjacentLibraryItemUseCase]
  * — the practical "next chapter" for audiobooks split across multiple physical files (e.g.
  * "Chapter 01.mp3", "Chapter 02.mp3"). If there is no sibling file in that direction (already
@@ -258,7 +258,7 @@ internal class LibravaultMediaCallback(
     }
 
     /**
-     * Switches playback to the next/previous sibling file in the current item's vault
+     * Switches playback to the next/previous sibling file in the current item's library
      * folder (see [GetAdjacentLibraryItemUseCase] — a SAF-watched-folder concept,
      * unrelated to the Encrypted Vault feature despite the name). No-ops if no item is
      * currently loaded ([PlaybackStateHolder] is empty) or there is no sibling file in

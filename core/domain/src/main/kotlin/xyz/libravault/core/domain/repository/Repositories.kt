@@ -26,10 +26,10 @@ interface LibraryRepository {
     suspend fun getItemById(id: Long): LibraryItem?
     suspend fun findByPath(path: String): LibraryItem?
 
-    /** Next sibling file in the same vault folder, ordered by [LibraryItem.filePath]. */
+    /** Next sibling file in the same library folder, ordered by [LibraryItem.filePath]. */
     suspend fun getNextItemInVault(vaultFolderId: Long, filePath: String): LibraryItem?
 
-    /** Previous sibling file in the same vault folder, ordered by [LibraryItem.filePath]. */
+    /** Previous sibling file in the same library folder, ordered by [LibraryItem.filePath]. */
     suspend fun getPreviousItemInVault(vaultFolderId: Long, filePath: String): LibraryItem?
     suspend fun search(query: String): List<LibraryItem>
     suspend fun upsert(item: LibraryItem): Long

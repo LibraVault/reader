@@ -74,7 +74,7 @@ data class ReaderUiState(
     val showTocSheet: Boolean       = false,
     /** Set briefly after a bookmark is added; the screen shows a confirmation toast. */
     val lastAddedBookmarkId: Long?  = null,
-    /** The item's *unencrypted* SAF vault folder tree URI — used by the Markdown
+    /** The item's *unencrypted* SAF library folder tree URI — used by the Markdown
      *  reader to resolve relative image references (see MarkdownAssetResolver).
      *  A different, unrelated concept from [ContentSource.VaultEntry] (the
      *  encrypted-vault feature) despite the name — see #505's naming-collision

@@ -44,7 +44,7 @@ internal object CustomCommandActions {
     const val SEEK_BY = PREFIX + "SEEK_BY"
 
     /**
-     * Tap target: jump to the previous sibling file in the current item's vault folder.
+     * Tap target: jump to the previous sibling file in the current item's library folder.
      * No extras — dispatches to [LibravaultMediaCallback]'s file-switch path (see its
      * class KDoc), which is the practical "previous chapter" on the lockscreen tile since
      * that dispatch path runs in the playback service and has no access to the in-app
@@ -53,7 +53,7 @@ internal object CustomCommandActions {
     const val PREVIOUS = PREFIX + "PREVIOUS"
 
     /**
-     * Tap target: jump to the next sibling file in the current item's vault folder.
+     * Tap target: jump to the next sibling file in the current item's library folder.
      * No extras — dispatches to [LibravaultMediaCallback]'s file-switch path (see its
      * class KDoc), which is the practical "next chapter" today since there is no real
      * per-file chapter navigation. No-ops if already at the last file.

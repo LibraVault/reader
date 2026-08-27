@@ -13,7 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages persistent access to user-selected Vault folders via SAF.
+ * Manages persistent access to user-selected library folders via SAF.
  *
  * No broad storage permissions are ever requested — the user explicitly selects
  * each folder via ACTION_OPEN_DOCUMENT_TREE, and we persist the URI grant.
