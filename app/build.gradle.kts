@@ -80,6 +80,46 @@ android {
                 "proguard-rules.pro",
             )
         }
+
+        // `androidx.baselineprofile` (applied below) auto-derives a
+        // "benchmarkRelease" and a "nonMinifiedRelease" build type from
+        // `release` for :benchmark/:baselineprofile to target — but a
+        // silent auto-derivation inherits `release`'s own signingConfig
+        // too, which needs the real production keystore. Confirmed live
+        // (issue #695/#707 follow-up): `./gradlew :app:assembleFdroidBenchmarkRelease`
+        // and `:app:assembleFdroidNonMinifiedRelease` both fail identically
+        // without `keystore.properties` — "SigningConfig 'release' is
+        // missing required property 'storeFile'" — meaning neither
+        // `:benchmark:connectedFdroidBenchmarkAndroidTest` nor
+        // `:baselineprofile:generateBaselineProfile` can actually run on a
+        // machine without the production keystore, contrary to what both
+        // modules' own comments/docs claimed. Declaring these two build
+        // types explicitly (rather than leaving them to the plugin's
+        // silent default) overrides that: the plugin detects an
+        // already-declared build type of the name it would otherwise
+        // create and uses this declaration instead of its own.
+        create("benchmarkRelease") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            // :app's own library-module dependencies (core:*, feature:*)
+            // only declare debug/release — matches this repo's existing
+            // :benchmark/:baselineprofile matchingFallbacks convention.
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+        }
+        create("nonMinifiedRelease") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+            // "non-minified" — Baseline Profile generation needs real
+            // (un-obfuscated) method/class names to produce a profile that
+            // actually matches what R8 later optimizes in the real release
+            // build; that's the whole reason this build type exists
+            // separately from "release" and "benchmarkRelease".
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
     }
 
     // ── Reproducible builds (required for F-Droid) ────────────────────────────

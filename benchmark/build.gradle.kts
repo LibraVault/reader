@@ -29,13 +29,19 @@ android {
 
     // Benchmarks run against a release-shaped build (minified, non-debuggable)
     // but debug-signed so this module never needs the real release keystore.
-    // `matchingFallbacks` targets :app's real "release" build type since :app
-    // does not define a separate "benchmark" build type of its own.
+    // `matchingFallbacks` targets :app's explicit "benchmarkRelease" build
+    // type (see app/build.gradle.kts) — NOT "release" itself. Confirmed live
+    // (issue #695/#707 follow-up) that falling back to "release" resolves
+    // :app's genuinely-signed production variant, which fails to package
+    // without the real release keystore ("SigningConfig 'release' is
+    // missing required property 'storeFile'"). "benchmarkRelease" is
+    // release-shaped (minified, non-debuggable) but explicitly debug-signed
+    // for exactly this reason.
     buildTypes {
         create("benchmark") {
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
+            matchingFallbacks += listOf("benchmarkRelease")
         }
     }
 
