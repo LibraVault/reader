@@ -479,7 +479,7 @@ class SettingsViewModelTest {
     @Test
     fun `appVersionName reads the real version from PackageManager rather than a hardcoded string`() =
         runTest(mainDispatcher) {
-            assertEquals("9.9.9-test", viewModel().appVersionName)
+            assertEquals("9.9.9-test", viewModel().appVersionName.value)
         }
 
     @Test
@@ -488,8 +488,18 @@ class SettingsViewModelTest {
             every { packageManager.getPackageInfo("xyz.libravault.app", 0) } throws
                 PackageManager.NameNotFoundException()
 
-            assertEquals("unknown", viewModel().appVersionName)
+            assertEquals("unknown", viewModel().appVersionName.value)
         }
+
+    // NOTE: no test here for "construction doesn't block on PackageManager" —
+    // this suite's UnconfinedTestDispatcher runs the ViewModel's
+    // viewModelScope.launch { ... } eagerly to completion before the
+    // constructor even returns, so appVersionName.value is already resolved
+    // by the time any test could observe an intermediate "" state. The
+    // deferred-not-blocking behaviour this fix actually relies on is a
+    // real-dispatcher timing property this test infra can't distinguish from
+    // the old synchronous version — verified instead by code review (no
+    // longer an eager constructor property) and on-device testing.
 
     // ── Support ──────────────────────────────────────────────────────────────
 
