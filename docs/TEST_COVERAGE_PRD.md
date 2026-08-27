@@ -328,7 +328,7 @@ A schema-shape mistake in a rebuild-the-table migration throws on **every existi
 ### S3 — No visual, accessibility, or performance regression testing
 - **Visual:** Compose/SwiftUI tests assert node existence, never appearance. `ColorSchemeContrastTest` is the only pixel-adjacent check.
 - **Accessibility:** no TalkBack/VoiceOver traversal test, no touch-target-size assertions, no content-description audit. For a reading app this is a first-class user requirement, not a nice-to-have.
-- **Performance:** no macrobenchmark module, no startup or scroll-jank baseline. Argon2id KDF cost on real hardware is an open, unmeasured follow-up.
+- **Performance:** startup macrobenchmark/baseline-profile modules exist now (issue #695 Phase 0 — `:benchmark`, `:baselineprofile`, iOS `testLaunchPerformance`; see `docs/PERF_BASELINE.md`), but no numbers are committed yet and no scroll-jank baseline exists (#695 Phase 0b). Argon2id KDF cost on real hardware is an open, unmeasured follow-up.
 
 ### S3 — `TEST_PLAN.md` is stale and partly fabricated
 Self-declares stale in its own header. Predates `core:vaultcrypto`, `core:vaultstore`, `core:vaultcontent`, `feature:vault`. Its metrics table cites "v0.3.0-alpha, ~77 unit tests" against an actual 870. Its "Future Testing Priorities" section lists work already completed. Actively misleading to both humans and the dev-agent, which reads repo docs as ground truth.

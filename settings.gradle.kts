@@ -35,6 +35,8 @@ dependencyResolutionManagement {
 rootProject.name = "libravault"
 
 include(":app")
+include(":benchmark")
+include(":baselineprofile")
 
 // Core modules
 include(":core:database")

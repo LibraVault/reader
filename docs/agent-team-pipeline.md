@@ -272,6 +272,31 @@ provable after the fact, which is exactly why this needs to be a rule
 agents and humans follow going in, not a thing to debug after a silent
 miss. This applies regardless of which token is used.
 
+**`gh pr ready` with the default token doesn't get you a fresh CI run
+either — same restriction, different trigger.** Marking a draft PR ready
+fires `pull_request: ready_for_review`, which `jvm-tests.yml`/
+`ios-app-build.yml` both listen for specifically so a draft-opened PR gets
+real signal once it's actually ready (see those workflows' own `on:`
+comments) — but only if something *other than the default token* performs
+the toggle. Done via `GITHUB_TOKEN` (what `gh pr ready` uses when no
+`GH_TOKEN` env override is set), the resulting event is
+GITHUB_TOKEN-authored and, like every other action taken with that token,
+cannot spawn a new workflow run. Observed live on PR #697: the JVM/iOS
+jobs' `if: github.event.pull_request.draft == false` had only ever been
+evaluated against the *prior*, still-draft push, so they read `skipped`
+even after the PR was genuinely ready — and stayed that way, because no
+new `pull_request` event ever arrived to re-evaluate them against the now-
+true state. The fix is not a different flag on `gh pr ready` — the toggle
+itself is fine and is exactly what the dev-agent persona instructs. What
+actually gets a live run is any subsequent push (this doc's existing App
+token guidance covers why that's a distinct, unrestricted actor), which
+delivers a fresh `synchronize` event and re-reads the PR's current draft
+status for real. An agent marking a PR ready with nothing left to push
+should read the *previous* push's CI run's job-level conclusions (not just
+the workflow's overall conclusion, which can read `success` while the job
+that matters inside it reads `skipped`) rather than assume `gh pr ready`
+alone produces one.
+
 ## PR intake backstop (manually-opened PRs)
 
 `dev-agent.yml`'s risk-classification + `status:needs-qa` handoff (above)
