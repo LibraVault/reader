@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import LibraVault
 
@@ -194,5 +195,54 @@ final class AppStateFolderTests: XCTestCase {
         await state.removeFolder(addedFolder)
 
         XCTAssertNil(LibravaultDomainBridge.shared.bookmarks[book.id])
+    }
+
+    /// Regression guard for #683: a TestFlight report of the app crashing on every
+    /// startup after adding an iCloud Drive folder. `FileManager.enumerator` is real
+    /// synchronous I/O, and for a file-provider-backed folder (iCloud Drive) it can mean
+    /// the OS fetching remote metadata for every placeholder it walks — slow enough to
+    /// trip the main-thread hang watchdog if `loadLibrary()` ran it inline on
+    /// `AppState`'s own `@MainActor`. This doesn't (and can't, from a unit test with no
+    /// real iCloud folder) reproduce the watchdog kill itself; it instead directly
+    /// verifies the fix's actual mechanism — that the scan runs off the main actor —
+    /// via a hook fired from the exact call site the scan happens at. Before the fix,
+    /// `loadLibrary()` called that scan inline, so this hook fired on the main thread
+    /// and this assertion failed.
+    func testLoadLibraryScansFoldersOffTheMainActor() async throws {
+        let persistence = makeIsolatedPersistence()
+        let folder = try makeTempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("MyAudiobook.mp3"))
+
+        let state = AppState(folderPersistence: persistence)
+        state.addFolder(pickedURL: folder)
+
+        let recorder = MainThreadRecorder()
+        state.onFolderScanForTesting = { recorder.record(wasMainThread: Thread.isMainThread) }
+
+        await state.loadLibrary()
+
+        XCTAssertEqual(recorder.wasMainThread, false)
+    }
+}
+
+/// Thread-safe capture box for `testLoadLibraryScansFoldersOffTheMainActor` — the hook
+/// under test fires from inside a `Task.detached` closure, off the main actor, so a
+/// plain `var` captured by the test's `@MainActor` closure would be an unsynchronized
+/// cross-thread write.
+private final class MainThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _wasMainThread: Bool?
+
+    func record(wasMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        _wasMainThread = wasMainThread
+    }
+
+    var wasMainThread: Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _wasMainThread
     }
 }
