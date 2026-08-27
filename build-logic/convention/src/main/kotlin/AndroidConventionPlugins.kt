@@ -43,11 +43,15 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
         }
 
         // Configure test worker JVM heap to prevent OutOfMemoryError in Gradle Test Executor
-        // The default forked JVM heap (~512m-1g) is insufficient with Hilt/MockK/Coroutines test setup
+        // The default forked JVM heap (~512m-1g) is insufficient with Hilt/MockK/Coroutines test setup.
+        // Was 2048m; raised to 3072m after feature:player's testDebugUnitTest OOM'd twice in a row
+        // in CI (Gradle Test Executor heap exhaustion, not an assertion failure) once its suite grew
+        // by a few Robolectric/Hilt tests — see issue #700. Applies to every feature:* module, not
+        // just feature:player, since other modules were already creeping toward the same ceiling.
         // Note: using Java class reference (::class.java) because withType<T>() reified generics
         // don't work in compiled convention plugins — only in .gradle.kts scripts
         tasks.withType(Test::class.java).configureEach {
-            maxHeapSize = "2048m"
+            maxHeapSize = "3072m"
         }
     }
 }
