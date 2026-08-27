@@ -18,7 +18,7 @@ import javax.inject.Inject
  *     so the reader/player can open it immediately. The item uses vaultFolderId=0
  *     to indicate it came from an external intent rather than a vault scan.
  *     It is NOT persisted to Room — we don't add files to the library without
- *     the user explicitly granting vault folder access.
+ *     the user explicitly granting library folder access.
  *
  * Format detection is done from the URI's MIME type or file extension.
  *

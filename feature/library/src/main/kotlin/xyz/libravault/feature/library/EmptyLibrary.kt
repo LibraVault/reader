@@ -31,8 +31,8 @@ internal fun EmptyLibrary(
     onAddVault: () -> Unit,
     onRescan: () -> Unit,
 ) {
-    val headlineRes = if (hasVaults) R.string.empty_headline_with_vaults else R.string.empty_headline_no_vaults
-    val bodyRes = if (hasVaults) R.string.empty_library_with_vaults else R.string.empty_library_no_vaults
+    val headlineRes = if (hasVaults) R.string.empty_headline_with_folders else R.string.empty_headline_no_folders
+    val bodyRes = if (hasVaults) R.string.empty_library_with_folders else R.string.empty_library_no_folders
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -64,7 +64,7 @@ internal fun EmptyLibrary(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.size(Dimens.spaceSm))
-                    Text(stringResource(R.string.empty_cta_add_vault))
+                    Text(stringResource(R.string.empty_cta_add_folder))
                 }
             }
         }
