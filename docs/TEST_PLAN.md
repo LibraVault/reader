@@ -174,6 +174,16 @@ Line coverage is a floor, not a grade. Reading the table:
 - ContentResolver/SAF URI enumeration has no pure-function surface
 - Deferred to integration tests with mock ContentProvider or instrumented tests
 
+**`benchmark` and `baselineprofile`** (issue #695 Phase 0)
+- `com.android.test` modules whose only content *is* an instrumented test
+  (`StartupBenchmark`/`BaselineProfileGenerator`) — there is no separate
+  unit-testable logic to cover, and Kover reports 0% for both by
+  construction (no `test<Variant>UnitTest` task produces meaningful output)
+- Not gated in CI: no workflow runs `connectedFdroidBenchmarkAndroidTest` or
+  `generateBaselineProfile` yet (tracked as #695 Phase 1); both need a
+  physical device/emulator neither this repo's CI nor a Linux dev-agent
+  runner has. See `docs/PERF_BASELINE.md`.
+
 ---
 
 ## Future Testing Priorities
