@@ -61,7 +61,7 @@ fun OnboardingScreen(
             val displayName = uri.lastPathSegment
                 ?.substringAfterLast(':')
                 ?.substringAfterLast('/')
-                ?: "My Vault"
+                ?: "My Folder"
             viewModel.onFolderPicked(uri, displayName)
         }
     }
@@ -123,7 +123,7 @@ fun OnboardingScreen(
 
             // ── Step label ───────────────────────────────────────────────────
             Text(
-                text = "Set up your Vault",
+                text = "Set up your library",
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.fillMaxWidth(),
