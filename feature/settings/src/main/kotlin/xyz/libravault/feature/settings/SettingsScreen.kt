@@ -59,6 +59,7 @@ import xyz.libravault.core.domain.model.formatPlaybackSpeed
 import xyz.libravault.core.cloudtts.CloudProviderId
 import xyz.libravault.core.tts.TtsEngineType
 import xyz.libravault.core.ui.findActivity
+import xyz.libravault.core.ui.hintHighRefreshRateForUpcomingFrame
 import xyz.libravault.feature.settings.ui.CloudVoicesSection
 import xyz.libravault.feature.settings.ui.TtsSettingsSection
 
@@ -121,7 +122,13 @@ fun SettingsScreen(
     )
 
     val actions = SettingsActions(
-        onBack = onBack,
+        onBack = {
+            // #686 — hint ahead of the pop, rather than let the OS discover the need for
+            // a high refresh rate reactively mid-transition (measured stalling this exact
+            // transition ~800-900ms on Samsung One UI hardware; see #653).
+            activity?.window?.decorView?.hintHighRefreshRateForUpcomingFrame()
+            onBack()
+        },
         onEncryptedVaultsClick = onEncryptedVaultsClick,
         onAddVaultClick = {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
