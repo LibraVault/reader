@@ -98,6 +98,7 @@ fun LibravaultNavHost(
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 },
+                onSettingsClick = { navController.navigate(Screen.Settings.route) },
             )
         }
 

@@ -27,9 +27,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -47,6 +49,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun OnboardingScreen(
     onFinished: () -> Unit,
+    onSettingsClick: () -> Unit,
     viewModel: OnboardingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -73,6 +76,21 @@ fun OnboardingScreen(
         folderPickerLauncher.launch(intent)
     }
 
+    OnboardingContent(
+        state = state,
+        onAddFolderClick = ::launchFolderPicker,
+        onFinished = onFinished,
+        onSettingsClick = onSettingsClick,
+    )
+}
+
+@Composable
+internal fun OnboardingContent(
+    state: OnboardingUiState,
+    onAddFolderClick: () -> Unit,
+    onFinished: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -83,6 +101,20 @@ fun OnboardingScreen(
                 .padding(horizontal = 32.dp, vertical = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // ── Top bar: Settings entry point (#690) ───────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                IconButton(onClick = onSettingsClick) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             // ── Header ──────────────────────────────────────────────────────
             Spacer(Modifier.height(40.dp))
             Text(
@@ -156,7 +188,7 @@ fun OnboardingScreen(
 
             // ── Add folder button ────────────────────────────────────────────
             OutlinedButton(
-                onClick = { launchFolderPicker() },
+                onClick = onAddFolderClick,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.isLoading,
             ) {
