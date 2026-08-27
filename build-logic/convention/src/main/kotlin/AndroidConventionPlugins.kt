@@ -46,8 +46,17 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
         // The default forked JVM heap (~512m-1g) is insufficient with Hilt/MockK/Coroutines test setup
         // Note: using Java class reference (::class.java) because withType<T>() reified generics
         // don't work in compiled convention plugins — only in .gradle.kts scripts
+        //
+        // Raised 2048m -> 4096m (issue #700): feature:player's Test task runs the whole
+        // module in one forked JVM (no forkEvery/maxParallelForks), and PR #693's new
+        // tests (a Robolectric PlaybackServiceTest case + a few plain unit tests) pushed
+        // peak heap (Hilt + MockK + Robolectric + Kover instrumentation) over the 2048m
+        // ceiling on 2 consecutive CI runs — a real, reproducible OOM, not runner flakiness
+        // (dev's own concurrent JVM Tests run succeeded at the same time). Repo-wide since
+        // every module shares this convention plugin and other modules were creeping
+        // toward the same ceiling.
         tasks.withType(Test::class.java).configureEach {
-            maxHeapSize = "2048m"
+            maxHeapSize = "4096m"
         }
     }
 }
