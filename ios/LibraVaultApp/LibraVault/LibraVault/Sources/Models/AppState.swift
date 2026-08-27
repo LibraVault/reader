@@ -323,7 +323,24 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let scanned = scanFolders()
+        // Off the main actor, not a plain synchronous call (issue #683): scanning a
+        // folder backed by a network file provider (iCloud Drive being the reported
+        // case — Google Drive/Dropbox document-provider folders are the same shape)
+        // means FileManager's enumerator blocks on a round trip to that provider for
+        // every single item, not an instant local stat call. This used to run inline
+        // on the MainActor, and that synchronous walk pins the main thread for as
+        // long as the provider takes to answer — long enough, for a folder of any
+        // real size, to trip iOS's launch/main-thread watchdog and get the app killed
+        // (0x8badf00d), which is indistinguishable from a crash to anyone hitting it:
+        // exactly the "crashes on startup immediately" field report.
+        // `folders` and `folderPersistence` are captured by value up front since both
+        // are plain, effectively-Sendable data (see BookData/Folder's own field
+        // lists) — nothing actor-isolated is touched inside the detached task.
+        let currentFolders = folders
+        let persistence = folderPersistence
+        let scanned = await Task.detached(priority: .userInitiated) {
+            Self.scanFolders(folders: currentFolders, folderPersistence: persistence)
+        }.value
         books = scanned.map { BookItem(from: $0) }
         bridge.log("Loaded \(books.count) books from library", tag: "Library")
 
@@ -553,7 +570,12 @@ final class AppState: ObservableObject {
         return candidate
     }
 
-    private func scanFolders() -> [BookData] {
+    /// `nonisolated` + `static`, called from `loadLibrary()`'s detached task — see that
+    /// call site's comment for why this can't run on the MainActor. Takes `folders`/
+    /// `folderPersistence` as explicit parameters rather than reading `self.folders`
+    /// directly (which would require hopping back to the MainActor to read a
+    /// `@Published` property, defeating the point).
+    private nonisolated static func scanFolders(folders: [Folder], folderPersistence: FolderPersistence) -> [BookData] {
         folders.flatMap { folder -> [BookData] in
             guard let resolvedURL = folderPersistence.resolvedURL(for: folder) else { return [] }
             return LibraryFileScanner.scan(folder: folder, resolvedURL: resolvedURL)
