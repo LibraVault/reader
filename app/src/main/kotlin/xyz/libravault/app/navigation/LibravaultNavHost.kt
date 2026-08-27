@@ -9,12 +9,14 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.vaultstore.VAULT_AUDIO_FORMAT_NAMES
 import xyz.libravault.core.vaultstore.toHexString
 import xyz.libravault.feature.library.LibraryScreen
 import xyz.libravault.feature.onboarding.OnboardingScreen
 import xyz.libravault.feature.player.PlayerScreen
 import xyz.libravault.feature.player.service.PlaybackStateHolder
+import xyz.libravault.feature.player.service.VAULT_MEDIA_URI_SCHEME
 import xyz.libravault.feature.reader.ReaderScreen
 import xyz.libravault.feature.settings.SettingsScreen
 import xyz.libravault.feature.vault.CreateVaultScreen
@@ -80,6 +82,39 @@ private fun navigateToNowPlaying(navController: NavHostController, state: Playba
     }
 }
 
+/**
+ * Decides the route for a Library item tap (Phase 3, #508) — extracted per
+ * `AGENTS.md`'s guidance to keep "what happens" decisions unit-testable
+ * rather than left inline in a composable body, matching
+ * `LibraryScreenLogic.kt`'s `isVaultLibraryItem`/`shouldShowMiniPlayer`
+ * precedent and this file's own `ScreenRouteTest`.
+ *
+ * A vault-sourced [LibraryItem] carries a `vault://$vaultId/$fileIdHex`
+ * `filePath` (see `LibraryViewModel.toLibraryItem`) — parsed here with plain
+ * string splitting rather than `android.net.Uri.parse`, both because
+ * `item.id` is a synthetic, non-Room id for these (`Screen.Reader`/`Player`
+ * expect a real one, so they'd resolve nothing) and because a malformed
+ * `filePath` degrades to [Screen.Reader]/[Screen.Player] instead of crashing
+ * on a `requireNotNull` — this is app-level navigation, not an internal
+ * invariant, so tolerating unexpected input beats an unhandled exception.
+ */
+internal fun libraryItemClickRoute(item: LibraryItem): String {
+    val vaultPrefix = "$VAULT_MEDIA_URI_SCHEME://"
+    val rest = item.filePath.removePrefix(vaultPrefix)
+    if (rest != item.filePath) {
+        val vaultId = rest.substringBefore('/')
+        val fileIdHex = rest.substringAfter('/', missingDelimiterValue = "")
+        if (vaultId.isNotEmpty() && fileIdHex.isNotEmpty()) {
+            return if (item.format.isAudio()) {
+                Screen.VaultPlay.createRoute(vaultId, fileIdHex)
+            } else {
+                Screen.VaultRead.createRoute(vaultId, fileIdHex)
+            }
+        }
+    }
+    return if (item.format.isAudio()) Screen.Player.createRoute(item.id) else Screen.Reader.createRoute(item.id)
+}
+
 @Composable
 fun LibravaultNavHost(
     navController: NavHostController,
@@ -103,30 +138,7 @@ fun LibravaultNavHost(
 
         composable(Screen.Library.route) {
             LibraryScreen(
-                onItemClick = { item ->
-                    // Phase 3 (#508) — a vault-sourced Library item carries a
-                    // vault://$vaultId/$fileIdHex filePath (see LibraryViewModel's
-                    // toLibraryItem); parse it the same way
-                    // VaultAwareMediaSourceFactory does rather than adding a new
-                    // routing concept, and route to the vault-aware screens instead
-                    // of Screen.Player/Screen.Reader (item.id is a synthetic,
-                    // non-Room id for these — Screen.Reader/Player expect a real one).
-                    val vaultUri = Uri.parse(item.filePath)
-                    val route = when {
-                        vaultUri.scheme == "vault" -> {
-                            val vaultId = requireNotNull(vaultUri.host)
-                            val fileIdHex = requireNotNull(vaultUri.lastPathSegment)
-                            if (item.format.isAudio()) {
-                                Screen.VaultPlay.createRoute(vaultId, fileIdHex)
-                            } else {
-                                Screen.VaultRead.createRoute(vaultId, fileIdHex)
-                            }
-                        }
-                        item.format.isAudio() -> Screen.Player.createRoute(item.id)
-                        else                  -> Screen.Reader.createRoute(item.id)
-                    }
-                    navController.navigate(route)
-                },
+                onItemClick = { item -> navController.navigate(libraryItemClickRoute(item)) },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 onNowPlayingClick = { state -> navigateToNowPlaying(navController, state) },
                 onBookmarkItemClick = { item, seekMs ->
