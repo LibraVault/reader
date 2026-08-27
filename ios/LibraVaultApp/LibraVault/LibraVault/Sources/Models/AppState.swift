@@ -210,6 +210,13 @@ final class AppState: ObservableObject {
     // not a fallback/demo one.
     @Published private(set) var folders: [Folder] = []
 
+    /// Test-only hook, invoked the moment `scanFoldersOffMainActor()` actually starts
+    /// scanning — lets a test observe which thread that happens on (see that method's
+    /// doc comment for why the thread matters) without relying on timing. Always `nil`
+    /// in production. `@Sendable` because it's read on the main actor but invoked from
+    /// inside a `Task.detached` closure.
+    var onFolderScanForTesting: (@Sendable () -> Void)?
+
     private var playbackTimer: Timer?
     private var sleepTimer: Timer?
     private var sleepFadeTimer: Timer?
@@ -323,7 +330,7 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let scanned = scanFolders()
+        let scanned = await scanFoldersOffMainActor()
         books = scanned.map { BookItem(from: $0) }
         bridge.log("Loaded \(books.count) books from library", tag: "Library")
 
@@ -553,11 +560,31 @@ final class AppState: ObservableObject {
         return candidate
     }
 
-    private func scanFolders() -> [BookData] {
-        folders.flatMap { folder -> [BookData] in
-            guard let resolvedURL = folderPersistence.resolvedURL(for: folder) else { return [] }
-            return LibraryFileScanner.scan(folder: folder, resolvedURL: resolvedURL)
-        }
+    /// Walks every added folder's contents off the main actor. `FileManager.enumerator`
+    /// is real synchronous filesystem I/O, and for a folder backed by a file-provider
+    /// extension (iCloud Drive being the most common) that can mean the OS fetching
+    /// remote metadata for every not-yet-downloaded placeholder it walks — slow enough,
+    /// for a large enough folder, to trip the main-thread hang watchdog if run inline on
+    /// `AppState`'s own actor. `loadLibrary()` runs on every launch (see `init`'s own
+    /// `Task`), so a slow folder didn't just lag the UI once — it made the app look like
+    /// it crashed on startup every single time (#683's field report: "set my vault to an
+    /// icloud folder and now it crashes on startup immediately").
+    ///
+    /// Takes `folders`/`folderPersistence` as captured locals rather than reading
+    /// `self` from inside the detached task — both are plain value types (`[Folder]`,
+    /// `FolderPersistence`), so this needs no `self` capture at all and sidesteps
+    /// crossing the actor boundary with anything but data.
+    private func scanFoldersOffMainActor() async -> [BookData] {
+        let currentFolders = folders
+        let persistence = folderPersistence
+        let scanStartedHook = onFolderScanForTesting
+        return await Task.detached(priority: .userInitiated) {
+            scanStartedHook?()
+            return currentFolders.flatMap { folder -> [BookData] in
+                guard let resolvedURL = persistence.resolvedURL(for: folder) else { return [] }
+                return LibraryFileScanner.scan(folder: folder, resolvedURL: resolvedURL)
+            }
+        }.value
     }
 
     func clearError() {
