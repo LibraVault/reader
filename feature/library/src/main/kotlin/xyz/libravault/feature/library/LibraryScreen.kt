@@ -61,10 +61,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import xyz.libravault.core.domain.model.LibraryItem
 import xyz.libravault.core.domain.model.VaultFolder
 import xyz.libravault.core.ui.theme.Dimens
@@ -143,16 +143,10 @@ fun LibraryScreen(
         )
     }
 
-    // Re-scan whenever the screen becomes visible again, not just on cold start
-    // or vault addition — e.g. after the user drops new files into a vault
+    // Re-scan when the app itself comes back to the foreground, not just on cold
+    // start or vault addition — e.g. after the user drops new files into a vault
     // folder from a file manager, then switches back to the app (see #96).
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val currentViewModel = rememberUpdatedState(viewModel)
-    DisposableEffect(lifecycleOwner) {
-        val observer = libraryResumeObserver { currentViewModel.value.refresh() }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    LibraryResumeEffect { viewModel.refresh() }
 
     // Show stale file snackbar
     LaunchedEffect(state.staleItemMessage) {
@@ -564,11 +558,43 @@ fun LibraryScreen(
 }
 
 /**
+ * Wires [libraryResumeObserver] to [lifecycle] for as long as this composable
+ * stays in composition.
+ *
+ * Defaults to [ProcessLifecycleOwner]'s lifecycle in production — deliberately
+ * NOT [androidx.compose.ui.platform.LocalLifecycleOwner]. Inside a NavHost
+ * `composable()` destination, `LocalLifecycleOwner` is scoped to that
+ * destination's own `NavBackStackEntry`, which fires `ON_RESUME` on every plain
+ * in-app back-navigation to this screen (e.g. Settings -> Library) even though
+ * the process never left the foreground. That was re-triggering a full vault
+ * rescan — and its pull-to-refresh spinner — on every such trip, which is both
+ * unnecessary and, on slower builds/devices, visibly disruptive (#653).
+ * `ProcessLifecycleOwner` only fires `ON_RESUME` on true background->foreground
+ * transitions of the whole app, matching #96's actual intent.
+ *
+ * [lifecycle] is a parameter (not read directly from `ProcessLifecycleOwner`
+ * inline) specifically so this wiring — "which lifecycle source do we attach
+ * to" — is unit-testable against a fake lifecycle instead of only reviewable.
+ */
+@Composable
+internal fun LibraryResumeEffect(
+    lifecycle: Lifecycle = ProcessLifecycleOwner.get().lifecycle,
+    onResume: () -> Unit,
+) {
+    val currentOnResume = rememberUpdatedState(onResume)
+    DisposableEffect(lifecycle) {
+        val observer = libraryResumeObserver { currentOnResume.value() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+}
+
+/**
  * Builds the [LifecycleEventObserver] that drives the "re-scan on return to the
- * screen" behaviour. Extracted as a plain function (rather than inlined into the
- * `DisposableEffect` above) so the ON_RESUME-only filtering can be unit-tested
- * without a Compose host — see [LibraryScreen]'s pull-to-refresh entry point for
- * the manual-trigger counterpart.
+ * screen" behaviour. Extracted as a plain function (rather than inlined into
+ * [LibraryResumeEffect] above) so the ON_RESUME-only filtering can be
+ * unit-tested without a Compose host — see [LibraryScreen]'s pull-to-refresh
+ * entry point for the manual-trigger counterpart.
  */
 internal fun libraryResumeObserver(onResume: () -> Unit): LifecycleEventObserver =
     LifecycleEventObserver { _, event ->

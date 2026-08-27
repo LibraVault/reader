@@ -12,6 +12,10 @@ import org.junit.jupiter.api.Test
  * files to a library folder from outside the app and switches back. Asserted as a
  * plain [androidx.lifecycle.LifecycleEventObserver], no Compose host needed,
  * since it's a pure function of (owner, event) -> Unit.
+ *
+ * See [LibraryResumeEffectTest] for coverage of *which* lifecycle this observer
+ * gets wired to — a Compose-hosted (JUnit4/Robolectric) test, kept separate
+ * since this class is JUnit5 and can't host `createComposeRule()`.
  */
 class LibraryScreenResumeTest {
 
