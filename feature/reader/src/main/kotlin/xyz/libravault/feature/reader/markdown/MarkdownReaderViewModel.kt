@@ -63,7 +63,7 @@ class MarkdownReaderViewModel @Inject constructor(
      * Reads the Markdown file at [source] (#505 — a real file or an Encrypted
      * Vault entry). Idempotent — if the same [ContentSource] is already loaded
      * (or loading), does nothing. [vaultTreeUri] is the item's *unencrypted*
-     * SAF vault folder (a different, unrelated concept from
+     * SAF library folder (a different, unrelated concept from
      * [ContentSource.VaultEntry] — see the naming-collision note on
      * [xyz.libravault.feature.reader.ReaderUiState.vaultTreeUri]; only ever
      * non-null for [ContentSource.RealFile]) — used to resolve the file's

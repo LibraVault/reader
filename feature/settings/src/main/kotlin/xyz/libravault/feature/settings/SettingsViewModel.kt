@@ -96,12 +96,34 @@ class SettingsViewModel @Inject constructor(
      * runtime rather than hardcoded — this project doesn't use BuildConfig (see
      * app/build.gradle.kts). Falls back to "unknown" if the package somehow can't
      * be looked up, which should never happen for the app's own package.
+     *
+     * Fetched via [viewModelScope], not as a synchronous constructor property:
+     * `getPackageInfo` is a cross-process Binder call to system_server's
+     * PackageManagerService, and this ViewModel is constructed on the main
+     * thread during SettingsScreen's composition (a fresh instance every time
+     * you navigate into Settings, scoped to the NavBackStackEntry) — a
+     * blocking call here was stalling the very first frame of every Settings
+     * entry (#653 follow-up). Deliberately not pinned to Dispatchers.IO/Default
+     * — this codebase has no injectable-dispatcher seam for tests (see
+     * refreshConfiguredCloudProviders below, same convention), so an explicit
+     * background dispatcher here would just make this non-deterministic under
+     * the tests' UnconfinedTestDispatcher, which only overrides Main. Posting
+     * via viewModelScope.launch still un-blocks the first frame — the call
+     * runs on a later main-thread loop turn instead of synchronously during
+     * construction — even though it's still technically on Main.
      */
-    val appVersionName: String = runCatching {
-        @Suppress("DEPRECATION") // getPackageInfo(String, Int) — the non-deprecated
-        // overload needs PackageManager.PackageInfoFlags, API 33+; minSdk here is 31.
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName
-    }.getOrNull() ?: "unknown"
+    private val _appVersionName = MutableStateFlow("")
+    val appVersionName: StateFlow<String> = _appVersionName.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _appVersionName.value = runCatching {
+                @Suppress("DEPRECATION") // getPackageInfo(String, Int) — the non-deprecated
+                // overload needs PackageManager.PackageInfoFlags, API 33+; minSdk here is 31.
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull() ?: "unknown"
+        }
+    }
 
     /**
      * Reflects whatever's already stored — nothing in *this* purchase flow

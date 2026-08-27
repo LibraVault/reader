@@ -88,6 +88,7 @@ fun SettingsScreen(
     val cloudVoicesConsent by viewModel.cloudVoicesConsent.collectAsState()
     val selectedCloudProvider by viewModel.selectedCloudProvider.collectAsState()
     val configuredCloudProviders by viewModel.configuredCloudProviders.collectAsState()
+    val appVersionName by viewModel.appVersionName.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
 
@@ -113,7 +114,7 @@ fun SettingsScreen(
         productsAvailable = productsAvailable,
         subscriptionActive = subscriptionActive,
         isBillingSupported = viewModel.isBillingSupported,
-        appVersionName = viewModel.appVersionName,
+        appVersionName = appVersionName,
         ttsState = ttsState,
         cloudVoicesConsent = cloudVoicesConsent,
         selectedCloudProvider = selectedCloudProvider,

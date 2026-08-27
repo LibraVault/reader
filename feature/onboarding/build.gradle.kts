@@ -5,6 +5,14 @@ plugins {
 
 android {
     namespace = "xyz.libravault.feature.onboarding"
+
+    // Robolectric-hosted Compose UI tests (OnboardingScreenTest) need the merged
+    // manifest/resources to resolve the ComponentActivity that createComposeRule()
+    // launches to host content — see the ui-test-manifest dependency below.
+    // Same setup as :feature:library and :feature:settings.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -14,4 +22,16 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+
+    // Compose UI test for OnboardingScreen's Settings entry point — Robolectric
+    // hosts a real Compose tree on the JVM, no emulator/device needed. JUnit4
+    // (Compose test rules are JUnit4-only) runs alongside this module's JUnit5
+    // tests via the vintage engine. Mirrors :feature:library and :feature:settings.
+    testImplementation(libs.bundles.testing.android)
+    testImplementation(libs.junit)
+    testRuntimeOnly(libs.junit5.vintage.engine)
+    // Debug-only manifest declaring the ComponentActivity that Compose's
+    // createComposeRule() launches to host test content — picked up by unit
+    // tests too via testOptions.unitTests.isIncludeAndroidResources above.
+    debugImplementation(libs.compose.ui.test.manifest)
 }

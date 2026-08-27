@@ -85,9 +85,9 @@ import kotlin.math.roundToInt
  * @param scrollToSectionIndex One-shot scroll target set when the user taps a TOC entry —
  *                             a [TocEntry.sectionIndex] directly, not a fraction.
  * @param onSectionScrollConsumed Called once [scrollToSectionIndex] has been applied.
- * @param vaultTreeUri         The item's vault folder SAF tree URI, for resolving relative
+ * @param vaultTreeUri         The item's library folder SAF tree URI, for resolving relative
  *                             image references (see MarkdownAssetResolver) — null if the
- *                             item has no vault association (opened via external intent).
+ *                             item has no library-folder association (opened via external intent).
  */
 @Composable
 fun MarkdownReaderScreen(

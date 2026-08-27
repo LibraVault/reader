@@ -11,13 +11,13 @@
     <string name="search_placeholder">Search title, author, narrator, series…</string>
     <string name="all_items">All items</string>
     <string name="view_all">View all</string>
-    <string name="all_vaults_filter">All</string>
+    <string name="all_folders_filter">All</string>
     <string name="results_for">Results for &quot;%s&quot;</string>
     <string name="stale_file_message">File not found — it may have been moved or deleted. It will be removed on the next scan.</string>
     <string name="continue_reading">Continue reading</string>
     <string name="continue_listening">Continue listening</string>
-    <string name="empty_library_no_vaults">Tap + to select folders where your books and audiobooks are stored.</string>
-    <string name="empty_library_with_vaults">No items found in your vaults. Pull down to scan for new files.</string>
+    <string name="empty_library_no_folders">Tap + to select folders where your books and audiobooks are stored.</string>
+    <string name="empty_library_with_folders">No items found in your library. Pull down to scan for new files.</string>
 
     <!-- Search -->
     <string name="search">Search</string>
@@ -51,11 +51,11 @@
     <string name="increase_speed">Increase speed</string>
 
     <!-- Settings screen -->
-    <string name="settings_vaults">Vaults</string>
-    <string name="settings_no_vaults">No vaults configured. Tap Add vault to get started.</string>
-    <string name="settings_add_vault">Add vault</string>
-    <string name="settings_remove_vault">Remove vault?</string>
-    <string name="settings_remove_vault_msg">This will remove &quot;%s&quot; and all its items from the library.</string>
+    <string name="settings_folders">Folders</string>
+    <string name="settings_no_folders">No folders configured. Tap Add folder to get started.</string>
+    <string name="settings_add_folder">Add folder</string>
+    <string name="settings_remove_folder">Remove folder?</string>
+    <string name="settings_remove_folder_msg">This will remove &quot;%s&quot; and all its items from the library.</string>
     <string name="settings_reading">Reading</string>
     <string name="settings_default_theme">Default theme</string>
     <string name="settings_playback">Playback</string>
@@ -79,7 +79,7 @@
     <string name="settings_donate_btc">Donate BTC</string>
     <string name="settings_github_sponsors">Also on GitHub Sponsors</string>
     <string name="address_copied">%s address copied</string>
-    <string name="adding_vault">Adding vault…</string>
+    <string name="adding_folder">Adding folder…</string>
     <string name="premium">Premium</string>
     <string name="premium_get">Get Premium</string>
     <string name="premium_feature">Premium feature</string>
@@ -87,14 +87,14 @@
     <!-- Onboarding -->
     <string name="onboarding_welcome">Your library, under lock and key.</string>
     <string name="onboarding_privacy">🔒 No internet permission · No accounts · No tracking</string>
-    <string name="onboarding_setup">Set up your Vault</string>
+    <string name="onboarding_setup">Set up your library</string>
     <string name="onboarding_instructions">Select folders where your books and audiobooks are stored.</string>
     <string name="onboarding_add_folder">Add folder</string>
     <string name="onboarding_add_more">Add more folders or tap Open Library when ready.</string>
     <string name="onboarding_open_library">Open Library</string>
     <string name="onboarding_add_at_least_one">Add at least one folder to get started</string>
-    <string name="vault_folder">Vault folder</string>
-    <string name="remove_vault">Remove vault</string>
+    <string name="library_folder">Library folder</string>
+    <string name="remove_folder">Remove folder</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
     <string name="ok">OK</string>

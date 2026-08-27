@@ -35,7 +35,7 @@ import xyz.libravault.feature.player.R
  *   `MediaSession.customLayout` as `PlaybackStateCompat.customActions`, and removes the
  *   overlapping standard commands from `availablePlayerCommands` so the system tile doesn't
  *   also derive duplicate standard-actions buttons for the same controls. Prev/Next switch
- *   to the previous/next sibling audio file in the current item's vault folder — see
+ *   to the previous/next sibling audio file in the current item's library folder — see
  *   [LibravaultMediaCallback]'s KDoc for why (the callback runs in the playback service and
  *   has no access to the in-app player's chapter list, so file-switching is the practical
  *   "next chapter" on the lockscreen tile).

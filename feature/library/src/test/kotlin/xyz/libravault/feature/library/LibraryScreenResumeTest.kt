@@ -9,9 +9,13 @@ import org.junit.jupiter.api.Test
 /**
  * Coverage for [libraryResumeObserver] — the observer that re-scans the library
  * whenever the screen becomes visible again (#96), e.g. after the user adds
- * files to a vault folder from outside the app and switches back. Asserted as a
+ * files to a library folder from outside the app and switches back. Asserted as a
  * plain [androidx.lifecycle.LifecycleEventObserver], no Compose host needed,
  * since it's a pure function of (owner, event) -> Unit.
+ *
+ * See [LibraryResumeEffectTest] for coverage of *which* lifecycle this observer
+ * gets wired to — a Compose-hosted (JUnit4/Robolectric) test, kept separate
+ * since this class is JUnit5 and can't host `createComposeRule()`.
  */
 class LibraryScreenResumeTest {
 

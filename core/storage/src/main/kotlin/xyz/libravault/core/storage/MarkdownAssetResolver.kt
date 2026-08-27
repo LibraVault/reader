@@ -20,7 +20,7 @@ import javax.inject.Singleton
  * behavior, this walks the actual [DocumentFile] tree from the vault root to find
  * the Markdown file's parent directory, then descends the relative path's segments
  * from there — correct for any provider, at the cost of one directory listing per
- * path segment (vault folders are typically shallow, so this is cheap; the parent
+ * path segment (library folders are typically shallow, so this is cheap; the parent
  * lookup itself is O(vault size) and should be done once per file open, not once
  * per image reference — see [findParentDirectory] vs [resolveMarkdownAssetPath]).
  */
