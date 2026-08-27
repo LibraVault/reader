@@ -76,6 +76,21 @@ fun OnboardingScreen(
         folderPickerLauncher.launch(intent)
     }
 
+    OnboardingContent(
+        state = state,
+        onAddFolderClick = ::launchFolderPicker,
+        onFinished = onFinished,
+        onSettingsClick = onSettingsClick,
+    )
+}
+
+@Composable
+internal fun OnboardingContent(
+    state: OnboardingUiState,
+    onAddFolderClick: () -> Unit,
+    onFinished: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -173,7 +188,7 @@ fun OnboardingScreen(
 
             // ── Add folder button ────────────────────────────────────────────
             OutlinedButton(
-                onClick = { launchFolderPicker() },
+                onClick = onAddFolderClick,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.isLoading,
             ) {
