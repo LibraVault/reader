@@ -330,7 +330,24 @@ class PlayerViewModelTest {
     // syncPlaybackStateHolder's own test doc for why android.net.Uri.parse
     // isn't meaningfully mockable in this module's plain-JUnit5 tests. play()
     // takes a Uri parameter directly, so this sidesteps that entirely.
-
+    //
+    // Because it's a real Uri (not one that blows up on Uri.parse), play()
+    // here actually runs to completion and starts PlayerViewModel's internal
+    // startProgressSaving() `while (isActive) { delay(...); ... }` loop — the
+    // one background job in this ViewModel with no bounded exit condition
+    // (unlike connectWithRetry's, which is capped at MAX_RETRIES). Every other
+    // test in this file hits Uri.parse's real-stub-throws-in-plain-JUnit5
+    // failure first (caught by connectController's runCatching), so play()
+    // never actually completes and that loop never starts — these two tests
+    // are the first ones that do. Left dangling, runTest's own implicit
+    // final advanceUntilIdle() drains it forever (its delay reuses runTest's
+    // scheduler), spinning at 100% CPU until the forked test JVM OOMs —
+    // confirmed by reproducing this in isolation and reading a live jstack
+    // dump of the hung executor mid-run. vm.cancelBackgroundWork() cancels it
+    // (along with retryJob) before the test body returns — the internal
+    // subset of onCleared()'s teardown that's actually reachable from a test
+    // in this module (onCleared() itself stays protected, matching
+    // ViewModel's own contract).
     @Test
     fun `vault MediaItem uses a generic placeholder title by default`() = runTest {
         val store = mockk<xyz.libravault.core.vaultstore.VaultStore>()
@@ -353,6 +370,7 @@ class PlayerViewModelTest {
         verify(exactly = 1) { mockController.setMediaItem(capture(slot), any<Long>()) }
         assertEquals("Vault", slot.captured.mediaMetadata.title)
         assertNull(slot.captured.mediaMetadata.artist)
+        vm.cancelBackgroundWork()
     }
 
     @Test
@@ -377,6 +395,7 @@ class PlayerViewModelTest {
         verify(exactly = 1) { mockController.setMediaItem(capture(slot), any<Long>()) }
         assertEquals("Vault Audiobook", slot.captured.mediaMetadata.title)
         assertEquals("Vault Author", slot.captured.mediaMetadata.artist)
+        vm.cancelBackgroundWork()
     }
 
     /**

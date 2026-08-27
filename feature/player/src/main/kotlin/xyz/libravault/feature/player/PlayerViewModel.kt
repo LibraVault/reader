@@ -880,10 +880,27 @@ class PlayerViewModel @Inject constructor(
         return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
     }
 
-    override fun onCleared() {
+    /**
+     * Split out from [onCleared] (which stays `protected`, matching [ViewModel]'s own
+     * contract — Kotlin doesn't allow widening a `protected` override to `internal`
+     * anyway) so tests in this module can call the cancellation directly — same
+     * "mark pure-enough helpers internal for direct testability" convention as
+     * [attachOrPlay] above. Needed so a test that successfully exercises [play] (and
+     * therefore starts the never-bounded [startProgressSaving] loop below) can cancel it
+     * before the test ends; otherwise `runTest`'s own implicit final `advanceUntilIdle()`
+     * drains that loop forever, since nothing else ever stops it. See the two
+     * "buildMediaItem placeholder toggle" tests in `PlayerViewModelTest` for the case that
+     * actually hits this (every other test's [play] attempt dies on `Uri.parse`'s
+     * real-stub-throws-in-plain-JUnit5 behavior first, so the loop never starts for them).
+     */
+    internal fun cancelBackgroundWork() {
         stopPolling()
         progressSaveJob?.cancel()
         retryJob?.cancel()
+    }
+
+    override fun onCleared() {
+        cancelBackgroundWork()
         // lastPolledPositionMs is updated every 200 ms by the polling loop and is more
         // reliable than controller?.currentPosition, which can be 0 if the controller
         // is mid-transition when onCleared() fires.

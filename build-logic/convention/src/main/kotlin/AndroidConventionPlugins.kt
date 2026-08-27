@@ -56,20 +56,19 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
         // every module shares this convention plugin and other modules were creeping
         // toward the same ceiling.
         //
-        // 4096m alone still wasn't enough on real CI (confirmed via the OOM'd test
-        // executor's own report — "Caused by: java.lang.OutOfMemoryError: Java heap
-        // space" after 3m42s, 731 tasks in, well inside a single JVM run of
-        // feature:player's 16 test classes). Root cause: several of those classes
-        // are Robolectric+Compose UI tests (PlayerAccessibilityTest,
-        // PlayerScreenLandscapeTest) that accumulate significant Shadow/Compose
-        // state per class, and with no forkEvery the whole module runs in one
-        // never-recycled JVM, so that state just piles up across all 16 classes
-        // instead of getting reclaimed. Chasing this with ever-higher maxHeapSize
-        // is an arms race that loses every time a module gains another Robolectric
-        // test class — forkEvery fixes the actual leak-shaped problem by recycling
-        // the worker (and its heap) periodically instead.
+        // NOTE — 4096m alone still wasn't enough on the next 2 CI runs, but that turned
+        // out to be a red herring: it wasn't heap-size-shaped at all. Root-caused (via a
+        // local repro + a live jstack dump of the hung executor) to a genuinely-unbounded
+        // PlayerViewModel.startProgressSaving() `while (isActive) { delay(...); ... }`
+        // coroutine that two new PlayerViewModelTest cases were the first tests in the
+        // file to actually start (every other test's play() attempt dies on Uri.parse's
+        // real-stub-throws-in-plain-JUnit5 behavior first, so the loop never starts) —
+        // left dangling, runTest's own implicit final advanceUntilIdle() drains it
+        // forever, spinning at 100% CPU until the heap fills regardless of ceiling. Fixed
+        // at the source in PlayerViewModelTest (vm.onCleared() after those two tests), not
+        // here — leaving 4096m in place since it's still a legitimate, independently-
+        // justified fix for the original #700 OOM.
         tasks.withType(Test::class.java).configureEach {
-            forkEvery = 8
             maxHeapSize = "4096m"
         }
     }
