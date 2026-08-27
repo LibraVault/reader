@@ -56,3 +56,6 @@ include(":feature:reader")
 include(":feature:player")
 include(":feature:settings")
 include(":feature:vault")
+
+// Macrobenchmark (issue #695) — startup/frame-timing regression baseline
+include(":benchmark")

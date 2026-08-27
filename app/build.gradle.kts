@@ -79,6 +79,22 @@ android {
                 "proguard-rules.pro",
             )
         }
+        // Macrobenchmark target (issue #695). Mirrors `release` — minified,
+        // non-debuggable — because startup/jank numbers measured against the
+        // debug build type are not representative of what users run. Two
+        // differences from `release`: signed with the debug key (so it builds
+        // and installs in CI/locally without keystore.properties) and
+        // `isProfileable = true` (required for Macrobenchmark to attribute
+        // trace data back to this build). `:benchmark`'s `targetProjectPath`
+        // + `testBuildType = "benchmark"` point instrumented tests at this
+        // build type instead of `release`.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+            isProfileable = true
+        }
     }
 
     // ── Reproducible builds (required for F-Droid) ────────────────────────────

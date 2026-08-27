@@ -2,6 +2,7 @@
 plugins {
     alias(libs.plugins.android.application)  apply false
     alias(libs.plugins.android.library)      apply false
+    alias(libs.plugins.android.test)         apply false
     alias(libs.plugins.kotlin.android)       apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.compose.compiler)     apply false
@@ -65,6 +66,12 @@ subprojects {
     // `include(":core:database")` entries in settings.gradle.kts — no build
     // file, no sources, nothing to instrument.
     if (!buildFile.exists()) return@subprojects
+
+    // :benchmark is a `com.android.test` module (issue #695) — it has no unit
+    // tests to instrument, only Macrobenchmark instrumented tests that run
+    // against :app on a device. Kover's Android integration targets
+    // application/library variants, not `com.android.test`'s TestExtension.
+    if (name == "benchmark") return@subprojects
 
     apply(plugin = "org.jetbrains.kotlinx.kover")
 
