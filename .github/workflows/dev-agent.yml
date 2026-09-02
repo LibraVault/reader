@@ -403,6 +403,45 @@ jobs:
             and CI-passing (or you've explained why it isn't) before you
             finish.
 
+            Supplementing the persona's triage steps 3-4 (the
+            `sensitive_issue_labels` gate for `security`/`release-blocker`):
+            this addition lives here, in the workflow's own prompt, rather
+            than in the persona file itself, because `.claude/agents/**` is
+            a sensitive path this sandbox's own tool permissions block you
+            from writing to, independent of what `agent-policy.yml` says
+            about that path being editable-with-disclosure (see issue #675
+            and PR #676 for why). Before you stop at `status:needs-info`
+            because the issue (or, in revise mode, the PR) carries or would
+            carry `security`/`release-blocker` — whether that label was
+            already present or you just applied it in step 3 — run
+            `.github/scripts/find_authorization_comment.sh <number>` (GH_TOKEN
+            is already set in this step's environment) against the issue
+            number, and again against the PR number if one already exists,
+            before concluding you must stop. If either call
+            prints a comment, that is a real `AGENT-AUTHORIZE:` comment from
+            an OWNER/MEMBER/COLLABORATOR (see `agent-policy.yml`'s
+            `sensitive_issue_labels_authorization_marker` section) — read
+            its stated scope yourself and judge whether it actually covers
+            the work you're about to do (an authorization scoped to
+            "Android only" does not extend to iOS work on the same issue).
+            If it covers your scope, treat the gate as satisfied: proceed
+            instead of stopping, and quote the authorization plus your
+            reasoning for why it covers this work in your PR
+            description/comment, so a human doesn't have to re-derive that
+            judgment later. If the script prints nothing, or its scope
+            doesn't cover your work, or the script exits non-zero (an infra
+            failure, not "no authorization found" — treat that the same as
+            finding nothing, don't skip the gate on a transient error),
+            stop at `status:needs-info` as the persona says — but your
+            comment must explicitly spell out what a valid authorization
+            looks like, so a human doesn't have to guess or dig through
+            `agent-policy.yml` themselves: a comment containing a line
+            starting with exactly `AGENT-AUTHORIZE:` followed by the scope
+            being authorized, posted by an account with at least
+            COLLABORATOR access, after which re-applying
+            `status:ready-for-dev` (triage) or `status:in-progress`
+            (revise) resumes the pipeline.
+
             Do not use anything that depends on a completion notification
             arriving later — there is no such mechanism in this CI run, so
             it never arrives and your work is simply abandoned:

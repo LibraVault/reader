@@ -82,6 +82,34 @@ sensitive_issue_labels:
   - "security"
   - "release-blocker"
 
+# Retroactive authorization format for the sensitive_issue_labels gate
+# above. A dev-agent triage pass (or a QA pass re-checking scope on a PR)
+# that would otherwise stop/re-stop at status:needs-info because of
+# `security`/`release-blocker` can treat that gate as satisfied — for the
+# scope actually stated, not automatically for the whole issue — if it
+# finds a comment on the issue or PR that:
+#
+#   - contains a line starting with exactly `AGENT-AUTHORIZE:` followed by
+#     a description of the scope being authorized, e.g.
+#     `AGENT-AUTHORIZE: iOS scope for this issue, matching the fix already
+#     shipped for Android in PR #670.`
+#   - was posted by a comment author whose `author_association` is
+#     `OWNER`, `MEMBER`, or `COLLABORATOR` (same bar as the trust gate in
+#     docs/agent-team-pipeline.md).
+#
+# The agent still has to judge whether the stated scope actually covers
+# what it's about to implement/review — an authorization scoped to
+# "Android only" does not extend to iOS work on the same issue. This does
+# not change risk:high classification or the human-merge decision for
+# anything on sensitive_paths above; it only stops a real, already-given
+# authorization from being invisible to the next automated pass. See
+# issue #675 for the gap this closes and #526/#550/#668/PR #670 for the
+# live example that surfaced it. A human still needs to move the label
+# that triggers the next pass (re-applying status:ready-for-dev or
+# status:needs-qa) — this only fixes the agent bouncing the item straight
+# back to status:needs-info once that pass runs.
+sensitive_issue_labels_authorization_marker: "AGENT-AUTHORIZE:"
+
 # A human (or an agent acting on explicit human instruction) has applied
 # this to a specific issue or PR to stop the pipeline from touching it,
 # independent of the repo-wide kill switch (the `AGENTS_PAUSED` repository
