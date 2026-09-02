@@ -675,21 +675,67 @@ jobs:
           fi
           echo "Classifying risk for PR #$PR_NUMBER"
 
-          # Safety net for the persona's "open early as --draft, mark ready
-          # once done" workflow: the run just reported success
+          # Safety net for the persona's "open early as --draft, mark
+          # ready once done" workflow: the run just reported success
           # (steps.agent.outcome != 'failure' above), so this PR is about
           # to be advanced into real QA/review regardless — a still-draft
-          # PR can't be merged later even after passing both, and sits in a
-          # confusing state (status:needs-qa on something GitHub still
-          # marks "Draft"). `gh pr ready` is a no-op if it's already ready,
-          # so this is harmless on the common path where the agent already
-          # did it itself; `|| true` because a PR the agent explicitly left
-          # in draft on purpose (persona says stop-and-ask, not stop-mid-
-          # draft, so this shouldn't happen, but fail open rather than
-          # blocking classification over it) shouldn't hard-fail this step.
-          gh pr ready "$PR_NUMBER" 2>/dev/null || true
+          # PR can't be merged later even after passing both, and sits in
+          # a confusing state (status:needs-qa on something GitHub still
+          # marks "Draft"). Uses APP_GH_TOKEN, not the default
+          # GITHUB_TOKEN this step otherwise uses: GitHub Actions never
+          # creates a workflow run for a `ready_for_review` event
+          # attributed to GITHUB_TOKEN (its own anti-recursion
+          # protection). `gh pr ready` is a no-op if already ready, so
+          # this is harmless on the common path where the agent already
+          # did it itself from inside "Run dev agent" — but that path is
+          # also the actual bug: claude-code-action forces the agent's own
+          # git/gh identity onto GITHUB_TOKEN regardless of GH_TOKEN/
+          # APP_GH_TOKEN (see that step's env comment), so the persona
+          # still instructs the agent to self-ready and there is no way,
+          # from here, to stop that winning the race and making this call
+          # a no-op. Fixing the token here is still correct — it's what
+          # helps on the path where this step gets there first — but the
+          # forced synchronize commit below is what actually closes the
+          # gap on the common path (confirmed live on PR #432; see issue
+          # #433 for the full diagnosis). `|| true` because a PR the agent
+          # explicitly left in draft on purpose (persona says stop-and-
+          # ask, not stop-mid-draft, so this shouldn't happen, but fail
+          # open rather than blocking classification over it) shouldn't
+          # hard-fail this step.
+          GH_TOKEN="$APP_GH_TOKEN" gh pr ready "$PR_NUMBER" 2>/dev/null || true
 
           HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
+
+          # Belt-and-suspenders for the same gap, independent of which
+          # token actually performed the draft->ready toggle above: force
+          # a real `synchronize` event under the App token — not subject
+          # to GitHub's GITHUB_TOKEN anti-recursion suppression — so
+          # jvm-tests.yml/ios-app-build.yml are guaranteed at least one
+          # real run against this PR's current head before it advances to
+          # QA. Scoped to triage mode only: that's the one point in a PR's
+          # life where it leaves draft, so it's the only point this gap
+          # can occur. A revise-mode run's own fix commits (already pushed
+          # via APP_GH_TOKEN — see the persona/"Run dev agent" env
+          # comment) already produce genuine synchronize events on every
+          # round, so repeating this there would just be a redundant empty
+          # commit.
+          if [ "${{ steps.guard.outputs.mode }}" = "triage" ]; then
+            git fetch origin "$HEAD_REF"
+            git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
+            # See the matching comment on "Check out PR branch" above
+            # (issue #386): a plain checkout has been observed leaving
+            # unrelated files' working-tree content mismatched against
+            # HEAD despite reporting a clean switch — force it instead of
+            # assuming it, since `git commit` right below trusts the tree
+            # to match HEAD.
+            git reset --hard HEAD
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "ci: retrigger checks after ready_for_review produced no run" \
+              -m "Guarantees a real jvm-tests.yml/ios-app-build.yml run against this PR before it advances to QA, regardless of whether the earlier draft->ready toggle was attributed to a token GitHub Actions creates workflow runs for (issue #433)."
+            git push "https://x-access-token:${APP_GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:$HEAD_REF"
+          fi
+
           git fetch origin dev "$HEAD_REF"
 
           pip install --quiet pyyaml
