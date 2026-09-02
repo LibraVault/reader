@@ -354,9 +354,35 @@ same tick), re-scanning every open PR
 for the same "risk present, status absent" combination and applying
 `status:needs-qa`/`status:needs-review` with the exact same linked-issue
 logic as `intake` above. Also a pure deterministic backstop, no agent
-involved. See issue [#388](https://github.com/LibraVault/reader/issues/388)
-for the mirror-image gap (status present, risk missing, via a different
-crash-recovery path) — not handled by this job.
+involved.
+
+**`sweep-missing-risk` (same workflow file, same schedule trigger)** closes
+the mirror-image gap ([#388](https://github.com/LibraVault/reader/issues/388)):
+a PR can end up with a `status:*` label but no `risk:*` label at all, via a
+different crash-recovery path than the one above. Confirmed live on PR #374:
+`dev-agent.yml`'s triage-and-implement run for issue #371 finished
+successfully but was failed post-hoc by `claude-code-action`'s own
+turn-count wrapper, so the workflow's crash branch ran instead of its
+success branch — which is the only place that calls `classify_pr_risk.py`.
+A human/`human-merge-sweep-agent` correctly diagnosed this as a near-miss
+(not a genuine crash) and manually relabeled the PR straight to
+`status:needs-qa`, but that manual recovery doesn't itself invoke the
+classifier, so the PR proceeded through QA and into principal review with
+no risk label at all — until a human noticed during principal review and
+re-ran the script by hand. `sweep-missing-risk` re-scans every open PR for
+the opposite combination ("status present, risk absent") and runs
+`classify_pr_risk.py --apply-label` against it directly — no status-label
+routing decision to make here, unlike `sweep-missing-status`, since the PR
+already carries whatever status label got it into the pipeline; this just
+backfills the classification it should already have. Also a pure
+deterministic backstop, no agent involved, and no App token needed (nothing
+in this pipeline triggers on a `risk:*` label event, see "Risk
+classification" above). Its filter explicitly excludes PRs carrying
+`status:blocked` — that label is itself a `status:*` label, so without the
+exclusion a PR a human parked specifically on `status:blocked` (with no
+`risk:*` yet applied) would match "any status:* present, risk:* absent"
+and get relabeled/commented on, unlike every other entry point in this
+pipeline, which treats `status:blocked` as a hard stop.
 
 ## `claude-code-action` gotchas
 

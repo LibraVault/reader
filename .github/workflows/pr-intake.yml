@@ -43,8 +43,24 @@ name: PR Intake
 # on. `sweep-missing-status` runs on a schedule instead, re-scanning every
 # open PR for exactly this "risk present, status absent" combination — same
 # deterministic classify-and-label shape as `intake`, just triggered
-# differently. See issue #388 for the mirror-image gap (status present,
-# risk absent after a different crash-recovery path) — not handled here.
+# differently.
+#
+# `sweep-missing-risk` (same schedule trigger) is the mirror image (issue
+# #388): a PR can end up with a `status:*` label but no `risk:*` label at
+# all, via a different crash-recovery path than the one above — a manual/
+# human-merge-sweep-agent "near-miss" recovery (turn-budget wrapper firing
+# after the dev agent's run actually succeeded) that hand-relabels straight
+# to `status:needs-qa`/`status:needs-review` without ever invoking
+# `classify_pr_risk.py`, the same way `dev-agent.yml`'s own success-path
+# tail step would have. Confirmed live: PR #374, which sat through its
+# entire QA and principal-review cycle with no risk label at all until a
+# human noticed during principal review and re-ran the classifier by hand.
+# `sweep-missing-risk` re-scans every open PR for the opposite combination
+# ("status present, risk absent") and runs the same classifier against it —
+# no status-label decision to make here, unlike `sweep-missing-status`,
+# since the PR already carries whatever status label routed it into the
+# pipeline; this just backfills the risk classification it should already
+# have.
 
 on:
   pull_request:
@@ -321,4 +337,84 @@ jobs:
           # above, since it's still missing a status:* label).
           echo "$MATCHES" | jq -r '.[:15][]' | while IFS= read -r PR_NUMBER; do
             ( process_pr "$PR_NUMBER" ) || echo "::warning::Failed to process PR #$PR_NUMBER this round — will retry on the next scheduled run." >&2
+          done
+
+  sweep-missing-risk:
+    # Mirror image of `sweep-missing-status` above (issue #388, see the
+    # top-of-file comment) — finds PRs carrying a status:* label but no
+    # risk:* label at all, and backfills the classification. No App token
+    # needed anywhere in this job: unlike a status:* handoff, applying a
+    # risk:* label doesn't need to trigger any other workflow (nothing in
+    # this pipeline triggers on a risk:* label event — see
+    # docs/agent-team-pipeline.md's "Risk classification" section), so the
+    # default GITHUB_TOKEN is sufficient for the `gh pr edit` the classifier
+    # script itself runs.
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      vars.AGENTS_PAUSED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find and label PRs carrying status:* but no risk:* label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          pip install --quiet pyyaml
+
+          ALL_PRS=$(gh pr list --state open --json number,labels,baseRefName,headRefName --limit 200)
+          # Excludes PRs carrying status:blocked, the same hard stop every
+          # other entry point in this pipeline (intake's own guard step
+          # above, dev-agent.yml, qa-agent.yml, principal-review.yml) applies
+          # before acting on a PR. Unlike sweep-missing-status's filter
+          # ("risk:* present, status:* absent entirely"), this job's filter
+          # is "any status:* present, risk:* absent" — and status:blocked is
+          # itself a status:* label, so without this exclusion a PR a human
+          # parked specifically on status:blocked would still match and get
+          # relabeled/commented on here.
+          MATCHES=$(echo "$ALL_PRS" | jq -c '
+            [.[] | select(
+              (.labels | map(.name) | any(startswith("status:"))) and
+              (.labels | map(.name) | any(startswith("risk:")) | not) and
+              (.labels | map(.name) | any(. == "status:blocked") | not)
+            )]
+          ')
+          COUNT=$(echo "$MATCHES" | jq 'length')
+          echo "Found $COUNT open PR(s) carrying status:* but no risk:* label (excluding status:blocked)."
+
+          if [ "$COUNT" -eq 0 ]; then
+            exit 0
+          fi
+
+          # Same "flag the volume, don't silently truncate" cap as
+          # `sweep-missing-status` above and human-merge-sweep-agent.md's
+          # own per-part queries.
+          if [ "$COUNT" -gt 15 ]; then
+            echo "::warning::$COUNT PRs are missing a risk:* label despite carrying status:* — capping this run at the first 15. That volume itself is unusual and worth a human look."
+          fi
+
+          process_pr() {
+            local PR_NUMBER="$1"
+            local BASE_REF="$2"
+            local HEAD_REF="$3"
+            echo "Processing PR #$PR_NUMBER (base=$BASE_REF, head=$HEAD_REF)..."
+
+            git fetch origin "$BASE_REF" "$HEAD_REF"
+            python3 .github/scripts/classify_pr_risk.py \
+              "origin/$BASE_REF" "origin/$HEAD_REF" --apply-label "$PR_NUMBER"
+
+            gh pr comment "$PR_NUMBER" --body "This PR carried a \`status:*\` label but no \`risk:*\` label at all — it likely reached its current stage via a manual/near-miss recovery that skipped \`classify_pr_risk.py\` instead of dev-agent.yml's own success-path tail step running it (see issue #388 for the confirmed-live case, PR #374). A scheduled sweep (\`pr-intake.yml\`'s \`sweep-missing-risk\` job) found it and ran the classifier against the current diff to backfill the missing label."
+          }
+
+          # Each PR is handled in its own subshell so one flaky `gh`/`git`
+          # call (rate limit, transient 5xx) can't abort the whole batch
+          # under this script's `set -e` — it just gets flagged, and the
+          # next scheduled run picks it back up (it'll still match the
+          # filter above, since it's still missing a risk:* label).
+          echo "$MATCHES" | jq -r '.[:15][] | "\(.number)\t\(.baseRefName)\t\(.headRefName)"' | while IFS=$'\t' read -r PR_NUMBER BASE_REF HEAD_REF; do
+            ( process_pr "$PR_NUMBER" "$BASE_REF" "$HEAD_REF" ) || echo "::warning::Failed to process PR #$PR_NUMBER this round — will retry on the next scheduled run." >&2
           done
