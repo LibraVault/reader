@@ -303,6 +303,18 @@ jobs:
           app-id: ${{ vars.PIPELINE_APP_ID }}
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
 
+      - name: Record pre-agent timestamp
+        # Lets the classify step below distinguish "dev agent posted a
+        # comment during this run" from a stale comment left over from a
+        # previous run on the same issue — see the #532/#544 note on the
+        # triage no-PR branch further down. Captured here (immediately
+        # before "Run dev agent" starts) rather than derived from the job
+        # or workflow-run start time, so a slow guard/app-token/drift-check
+        # sequence ahead of it can't produce false negatives.
+        if: steps.guard.outputs.skip != 'true'
+        id: pre-agent-time
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Run dev agent
         if: steps.guard.outputs.skip != 'true' && steps.workflow-drift.outputs.drift != 'true'
         id: agent
@@ -649,9 +661,29 @@ jobs:
             if echo ",$CURRENT_ISSUE_LABELS," | grep -qE ",status:(ready-for-dev|in-progress|needs-info),"; then
               echo "No PR found referencing issue #$ISSUE_NUMBER, but it carries an expected status label — dev agent legitimately stopped at triage. Nothing to classify."
             else
-              echo "Dev agent run completed without error but took no visible action on issue #$ISSUE_NUMBER (no PR, no expected status label) — treating as a malfunction, not a legitimate triage stop." >&2
-              gh issue edit "$ISSUE_NUMBER" --add-label status:needs-info
-              gh issue comment "$ISSUE_NUMBER" --body "The dev agent's run completed without error, but took no visible action on this issue — no PR opened, no status label applied, no comment explaining why it stopped. Routed to status:needs-info for a human to look at directly; see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) (issue #207)."
+              # Label-only evidence misses a legitimate stop that leaves
+              # labels untouched on purpose — e.g. issue #532: the issue's
+              # own body told the dev agent to leave status:triage alone
+              # (out of scope, needs a human with infra access), so it
+              # posted an explanatory comment instead of moving a label.
+              # This guard originally only checked labels (#207's
+              # zero-signal malfunction case) and misread that as "took no
+              # visible action," adding a contradictory status:needs-info
+              # plus a comment falsely claiming no explanation was posted.
+              # Before falling to the malfunction branch, also check for a
+              # comment posted after this run's own agent step started —
+              # not just any comment ever, since an old comment from a
+              # prior run wouldn't be evidence of *this* run doing anything
+              # (see the pre-agent-time step above).
+              AGENT_RUN_START="${{ steps.pre-agent-time.outputs.time }}"
+              COMMENTS_SINCE_START=$(gh issue view "$ISSUE_NUMBER" --json comments -q "[.comments[] | select(.createdAt > \"$AGENT_RUN_START\")] | length" 2>/dev/null || echo "0")
+              if [ "$COMMENTS_SINCE_START" -gt 0 ]; then
+                echo "No PR found and no expected status label on issue #$ISSUE_NUMBER, but the dev agent posted $COMMENTS_SINCE_START comment(s) during this run — legitimate triage stop with an explanation, not the #207 zero-signal malfunction. Nothing to classify."
+              else
+                echo "Dev agent run completed without error but took no visible action on issue #$ISSUE_NUMBER (no PR, no expected status label, no comment posted this run) — treating as a malfunction, not a legitimate triage stop." >&2
+                gh issue edit "$ISSUE_NUMBER" --add-label status:needs-info
+                gh issue comment "$ISSUE_NUMBER" --body "The dev agent's run completed without error, but took no visible action on this issue — no PR opened, no status label applied, no comment explaining why it stopped. Routed to status:needs-info for a human to look at directly; see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) (issue #207)."
+              fi
             fi
             exit 0
           fi
